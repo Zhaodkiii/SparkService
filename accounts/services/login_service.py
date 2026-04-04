@@ -12,11 +12,27 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from common.exceptions import APIError
 from accounts.models import AccountProfile, LoginAudit, SocialIdentity
 from accounts.services.apple_identity_service import AppleIdentityService
+from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
 
 
 class LoginService:
+    @staticmethod
+    def _try_grant_auto_trial(*, user, request_id: str):
+        try:
+            TrialService.grant_auto_trial_if_eligible(user=user)
+        except Exception as exc:  # noqa: BLE001 - trial should not block sign-in
+            flow_logger.warning(
+                "auth.trial.auto_grant.skipped",
+                extra={
+                    "action": "auth.trial.auto_grant",
+                    "request_id": request_id,
+                    "user_id": getattr(user, "id", None),
+                    "reason": str(exc),
+                },
+            )
+
     @staticmethod
     def _load_apple_identity_for_update(*, bundle_id: str, subject: str, request_id: str):
         """
@@ -118,6 +134,7 @@ class LoginService:
 
         # Ensure profile exists for phone-related flows.
         AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
+        LoginService._try_grant_auto_trial(user=user, request_id=request_id)
 
         LoginAudit.objects.create(
             user=user,
@@ -295,6 +312,8 @@ class LoginService:
             },
             request_id=request_id or "",
         )
+
+        LoginService._try_grant_auto_trial(user=user, request_id=request_id)
 
         result = LoginService._issue_tokens(user)
         result["email"] = user.email or chosen_email

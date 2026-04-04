@@ -1,0 +1,115 @@
+import http from '../http';
+
+export interface AIScenario {
+  id: number;
+  scenario: string;
+  /** 模型 / 智能体 */
+  identity: string;
+  /** 模型目录中的 name（Slug） */
+  model: string;
+  /** 只读：由后端根据厂商解析 */
+  endpoint: string;
+  provider_company?: string;
+  provider_name?: string;
+  temperature: number;
+  max_tokens: number;
+  is_active: boolean;
+}
+
+export interface AIProvider {
+  id: number;
+  kind: string;
+  name: string;
+  company: string;
+  request_url: string;
+  is_hidden: boolean;
+  is_using: boolean;
+  capability_class: string;
+  help: string;
+  privacy_policy_url: string;
+  source: string;
+  position: number;
+  is_active: boolean;
+}
+
+export function fetchAIScenarios() {
+  return http.get<unknown, AIScenario[]>('/api/admin/v1/ai/scenarios/');
+}
+
+export function createAIScenario(payload: Partial<AIScenario>) {
+  return http.post('/api/admin/v1/ai/scenarios/', payload);
+}
+
+export function updateAIScenario(id: number, payload: Partial<AIScenario>) {
+  return http.patch(`/api/admin/v1/ai/scenarios/${id}/`, payload);
+}
+
+export interface AIModelCatalog {
+  id: number;
+  name: string;
+  display_name: string;
+  position: number;
+  company: string;
+  is_hidden: boolean;
+  supports_search: boolean;
+  supports_multimodal: boolean;
+  supports_reasoning: boolean;
+  supports_tool_use: boolean;
+  supports_voice_gen: boolean;
+  supports_image_gen: boolean;
+  /** 0 免费 1 经济 2 标准 3 高级 */
+  price_tier: number;
+  supports_text: boolean;
+  reasoning_controllable: boolean;
+  source: string;
+  is_active: boolean;
+}
+
+export function fetchAIModelCatalog() {
+  return http.get<unknown, AIModelCatalog[]>('/api/admin/v1/ai/models/');
+}
+
+export function createAIModelCatalog(payload: Record<string, unknown>) {
+  return http.post('/api/admin/v1/ai/models/', payload);
+}
+
+export function updateAIModelCatalog(id: number, payload: Record<string, unknown>) {
+  return http.patch(`/api/admin/v1/ai/models/${id}/`, payload);
+}
+
+export function fetchAIProviders(kind = '') {
+  return http.get<unknown, AIProvider[]>('/api/admin/v1/ai/providers/', { params: { kind } });
+}
+
+export function createAIProvider(payload: Record<string, unknown>) {
+  return http.post('/api/admin/v1/ai/providers/', payload);
+}
+
+export function updateAIProvider(id: number, payload: Record<string, unknown>) {
+  return http.patch(`/api/admin/v1/ai/providers/${id}/`, payload);
+}
+
+export interface TrialApplicationItem {
+  id: number;
+  user: number;
+  applicant: string;
+  applicant_email: string;
+  status: string;
+  grant_source: string;
+  started_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface TrialListResponse {
+  items: TrialApplicationItem[];
+  pagination: { page: number; page_size: number; total: number; total_pages: number };
+}
+
+export function fetchAITrials(params: { page: number; page_size: number; status?: string }) {
+  return http.get<unknown, TrialListResponse>('/api/admin/v1/ai/trials/', { params });
+}
+
+export function trialAction(trialId: number, action: 'approve' | 'reject' | 'recycle', note = '') {
+  return http.post(`/api/admin/v1/ai/trials/${trialId}/${action}/`, { note });
+}

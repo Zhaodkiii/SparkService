@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from common.exceptions import APIError
 from accounts.infrastructure.email_provider import EmailProvider
 from accounts.models import AccountProfile, EmailOTP, LoginAudit
+from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
 
@@ -166,6 +167,19 @@ class OTPService:
                     "request_id": request_id,
                     "channel": "email_otp",
                     "user_id": user.id,
+                },
+            )
+
+        try:
+            TrialService.grant_auto_trial_if_eligible(user=user)
+        except Exception as exc:  # noqa: BLE001 - trial should not block sign-in
+            flow_logger.warning(
+                "auth.trial.auto_grant.skipped",
+                extra={
+                    "action": "auth.trial.auto_grant",
+                    "request_id": request_id,
+                    "user_id": user.id,
+                    "reason": str(exc),
                 },
             )
 

@@ -1,22 +1,29 @@
+_DEFAULT_CHAT = {
+    "endpoint": "https://api.sparkclient.local/v1/chat/completions",
+    "model": "spark-chat-default",
+    "temperature": 0.2,
+    "max_tokens": 4096,
+}
+_DEFAULT_EMBED = {
+    "endpoint": "https://api.sparkclient.local/v1/embeddings",
+    "model": "spark-embedding-default",
+    "temperature": 0.0,
+    "max_tokens": 2048,
+}
+
 DEFAULT_SCENARIOS = {
-    "chat": {
+    "chat": dict(_DEFAULT_CHAT),
+    "optimization_text": {
         "endpoint": "https://api.sparkclient.local/v1/chat/completions",
         "model": "spark-chat-default",
-        "temperature": 0.2,
-        "max_tokens": 4096,
-    },
-    "medical_extraction": {
-        "endpoint": "https://api.sparkclient.local/v1/chat/completions",
-        "model": "spark-medical-extraction",
         "temperature": 0.0,
         "max_tokens": 4096,
     },
-    "embedding": {
-        "endpoint": "https://api.sparkclient.local/v1/embeddings",
-        "model": "spark-embedding-default",
-        "temperature": 0.0,
-        "max_tokens": 2048,
-    },
+    "optimization_visual": dict(_DEFAULT_CHAT),
+    "context_folding": dict(_DEFAULT_CHAT),
+    "router": dict(_DEFAULT_CHAT),
+    "model_config": dict(_DEFAULT_EMBED),
+    "report_interpretation": dict(_DEFAULT_CHAT),
 }
 
 DEFAULT_API_KEYS = [
@@ -99,7 +106,6 @@ DEFAULT_MODELS = [
     {
         "name": "spark-chat-default",
         "display_name": "Spark Chat Default",
-        "identity": "model",
         "position": 0,
         "company": "SPARK",
         "is_hidden": False,
@@ -109,12 +115,14 @@ DEFAULT_MODELS = [
         "supports_tool_use": True,
         "supports_voice_gen": False,
         "supports_image_gen": False,
+        "price_tier": 0,
+        "supports_text": True,
+        "reasoning_controllable": False,
         "source": "system",
     },
     {
         "name": "spark-embedding-default",
         "display_name": "Spark Embedding Default",
-        "identity": "model",
         "position": 10,
         "company": "SPARK",
         "is_hidden": False,
@@ -124,12 +132,14 @@ DEFAULT_MODELS = [
         "supports_tool_use": False,
         "supports_voice_gen": False,
         "supports_image_gen": False,
+        "price_tier": 0,
+        "supports_text": True,
+        "reasoning_controllable": False,
         "source": "system",
     },
     {
         "name": "spark-tts-default",
         "display_name": "Spark TTS Default",
-        "identity": "model",
         "position": 20,
         "company": "SPARK",
         "is_hidden": False,
@@ -139,6 +149,9 @@ DEFAULT_MODELS = [
         "supports_tool_use": False,
         "supports_voice_gen": True,
         "supports_image_gen": False,
+        "price_tier": 0,
+        "supports_text": True,
+        "reasoning_controllable": False,
         "source": "system",
     },
 ]

@@ -85,6 +85,7 @@ INSTALLED_APPS = [
     'chat_sync',
     'medical',
     'file_manager',
+    'backoffice',
 ]
 
 MIDDLEWARE = [
@@ -214,9 +215,26 @@ SIMPLE_JWT = {
 }
 
 # -------------------------
+# AI Trial
+# -------------------------
+AI_TRIAL_DURATION_DAYS = int(os.getenv("AI_TRIAL_DURATION_DAYS", "15"))
+AI_TRIAL_AUTO_APPROVE_APPLICATIONS = os.getenv("AI_TRIAL_AUTO_APPROVE_APPLICATIONS", "true").lower() in ("1", "true", "yes", "y")
+
+# -------------------------
 # CORS
 # -------------------------
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "false").lower() in ("1", "true", "yes", "y")
+CORS_ALLOWED_ORIGINS = [
+    item.strip()
+    for item in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:5174,http://127.0.0.1:5174,"
+        "http://localhost:5175,http://127.0.0.1:5175,"
+        "http://localhost:6018,http://127.0.0.1:6018",
+    ).split(",")
+    if item.strip()
+]
 
 # -------------------------
 # Celery
