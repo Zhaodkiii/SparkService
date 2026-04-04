@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# Optional: high-performance C driver for MySQL.
+# On Apple Silicon you need system packages first:
+#   brew install mysql-client pkg-config
+#
+# If build still fails, prefer PyMySQL-only setup (already included in requirements.txt).
+mysqlclient>=2.2,<3.0

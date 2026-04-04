@@ -1,0 +1,25 @@
+# Secrets
+.env
+
+# Uploaded/generated files
+media/
+staticfiles/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Django
+db.sqlite3
+
+# Celery/beat
+celerybeat-schedule
+
+# Runtime process control
+run/
+
+# Logs
+logs/*.log
+logs/*.stdout.log
+logs/*.stderr.log
