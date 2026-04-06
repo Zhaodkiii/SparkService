@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioConfig, TrialApplication
+from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, TrialApplication
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 
 
@@ -27,60 +27,36 @@ class AdminUserStatusSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
 
 
-class AdminAIScenarioConfigSerializer(serializers.ModelSerializer):
-    model = serializers.SlugRelatedField(
-        slug_field="name",
-        queryset=AIModelCatalog.objects.filter(is_active=True),
+class AdminAIScenarioSummarySerializer(serializers.Serializer):
+    """One row per fixed scenario key (list/overview)."""
+
+    scenario = serializers.CharField()
+    label = serializers.CharField()
+    models_count = serializers.IntegerField()
+    default_model = serializers.CharField(allow_null=True)
+    active_bindings = serializers.IntegerField()
+
+
+def _resolve_provider_for_catalog_model(model_obj: AIModelCatalog):
+    return (
+        AIProviderKeyConfig.objects.filter(
+            kind=AIProviderKeyConfig.Kind.API,
+            company=model_obj.company,
+            is_active=True,
+        )
+        .order_by("-is_using", "position", "name")
+        .first()
     )
+
+
+class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
+    model = serializers.SlugRelatedField(slug_field="name", queryset=AIModelCatalog.objects.filter(is_active=True))
     endpoint = serializers.SerializerMethodField()
     provider_company = serializers.SerializerMethodField()
     provider_name = serializers.SerializerMethodField()
 
-    def validate(self, attrs):
-        model_obj = attrs.get("model")
-        if self.instance and model_obj is None:
-            model_obj = self.instance.model
-        if model_obj is None:
-            return attrs
-
-        provider = (
-            AIProviderKeyConfig.objects.filter(
-                kind=AIProviderKeyConfig.Kind.API,
-                company=model_obj.company,
-                is_active=True,
-            )
-            .order_by("-is_using", "position", "name")
-            .first()
-        )
-        if provider is None:
-            raise serializers.ValidationError({"model": "provider_not_configured_for_model_company"})
-        return attrs
-
-    def _resolve_provider(self, obj):
-        return (
-            AIProviderKeyConfig.objects.filter(
-                kind=AIProviderKeyConfig.Kind.API,
-                company=obj.model.company,
-                is_active=True,
-            )
-            .order_by("-is_using", "position", "name")
-            .first()
-        )
-
-    def get_endpoint(self, obj):
-        provider = self._resolve_provider(obj)
-        return provider.request_url if provider else ""
-
-    def get_provider_company(self, obj):
-        provider = self._resolve_provider(obj)
-        return provider.company if provider else obj.model.company
-
-    def get_provider_name(self, obj):
-        provider = self._resolve_provider(obj)
-        return provider.name if provider else ""
-
     class Meta:
-        model = AIScenarioConfig
+        model = AIScenarioModelBinding
         fields = (
             "id",
             "scenario",
@@ -91,11 +67,65 @@ class AdminAIScenarioConfigSerializer(serializers.ModelSerializer):
             "provider_name",
             "temperature",
             "max_tokens",
+            "position",
+            "is_default",
             "is_active",
             "updated_at",
             "created_at",
         )
-        read_only_fields = ("id", "updated_at", "created_at")
+        read_only_fields = ("id", "scenario", "updated_at", "created_at")
+
+    def _resolve_provider(self, obj: AIScenarioModelBinding):
+        return _resolve_provider_for_catalog_model(obj.model)
+
+    def get_endpoint(self, obj):
+        p = self._resolve_provider(obj)
+        return p.request_url if p else ""
+
+    def get_provider_company(self, obj):
+        p = self._resolve_provider(obj)
+        return p.company if p else obj.model.company
+
+    def get_provider_name(self, obj):
+        p = self._resolve_provider(obj)
+        return p.name if p else ""
+
+    def validate(self, attrs):
+        model_obj = attrs.get("model")
+        if self.instance and model_obj is None:
+            model_obj = self.instance.model
+        if model_obj is None:
+            return attrs
+        if _resolve_provider_for_catalog_model(model_obj) is None:
+            raise serializers.ValidationError({"model": "provider_not_configured_for_model_company"})
+        scenario = self.context.get("scenario") or (self.instance.scenario if self.instance else None)
+        if scenario and self.instance is None:
+            if not AIScenarioModelBinding.objects.filter(scenario=scenario).exists():
+                attrs.setdefault("is_default", True)
+        return attrs
+
+    def create(self, validated_data):
+        scenario = self.context.get("scenario")
+        if not scenario:
+            raise serializers.ValidationError({"scenario": "missing_context"})
+        validated_data["scenario"] = scenario
+        inst = super().create(validated_data)
+        if inst.is_default:
+            self._clear_defaults(inst.scenario, exclude_pk=inst.pk)
+        return inst
+
+    def update(self, instance, validated_data):
+        inst = super().update(instance, validated_data)
+        if inst.is_default:
+            self._clear_defaults(inst.scenario, exclude_pk=inst.pk)
+        return inst
+
+    @staticmethod
+    def _clear_defaults(scenario: str, exclude_pk: int):
+        AIScenarioModelBinding.objects.filter(scenario=scenario, is_default=True).exclude(pk=exclude_pk).update(
+            is_default=False,
+            default_marker=None,
+        )
 
 
 def _validate_price_tier(value) -> int:

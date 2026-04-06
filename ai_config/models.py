@@ -3,31 +3,62 @@ from django.db import models
 from django.utils import timezone
 
 
-class AIScenarioConfig(models.Model):
-    class Scenario(models.TextChoices):
-        CHAT = "chat"
-        OPTIMIZATION_TEXT = "optimization_text"
-        OPTIMIZATION_VISUAL = "optimization_visual"
-        CONTEXT_FOLDING = "context_folding"
-        ROUTER = "router"
-        MODEL_CONFIG = "model_config"
-        REPORT_INTERPRETATION = "report_interpretation"
+class ScenarioKey(models.TextChoices):
+    """Seven fixed scenario identifiers (aligned with client and bootstrap keys)."""
 
-    class Identity(models.TextChoices):
-        MODEL = "model"
-        AGENT = "agent"
+    CHAT = "chat"
+    OPTIMIZATION_TEXT = "optimization_text"
+    OPTIMIZATION_VISUAL = "optimization_visual"
+    CONTEXT_FOLDING = "context_folding"
+    ROUTER = "router"
+    MODEL_CONFIG = "model_config"
+    REPORT_INTERPRETATION = "report_interpretation"
 
-    scenario = models.CharField(max_length=64, choices=Scenario.choices, unique=True)
-    identity = models.CharField(max_length=16, choices=Identity.choices, default=Identity.MODEL)
-    model = models.ForeignKey("ai_config.AIModelCatalog", on_delete=models.PROTECT, related_name="scenario_configs")
+
+class IdentityKind(models.TextChoices):
+    MODEL = "model"
+    AGENT = "agent"
+
+
+class AIScenarioModelBinding(models.Model):
+    """Multiple catalog models per scenario; exactly one active default per scenario (enforced in DB + save logic)."""
+
+    scenario = models.CharField(max_length=64, choices=ScenarioKey.choices, db_index=True)
+    identity = models.CharField(max_length=16, choices=IdentityKind.choices, default=IdentityKind.MODEL)
+    model = models.ForeignKey("ai_config.AIModelCatalog", on_delete=models.PROTECT, related_name="scenario_bindings")
     temperature = models.FloatField(default=0.2)
     max_tokens = models.IntegerField(default=2048)
+    position = models.IntegerField(default=0, db_index=True)
+    is_default = models.BooleanField(default=False, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    # MySQL cannot enforce partial UNIQUE (is_default=True); use a nullable sentinel unique per scenario.
+    default_marker = models.CharField(
+        max_length=80,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text="Set to '<scenario>:default' when is_default; NULL otherwise. Enforces one default per scenario on MySQL.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["scenario"]
+        ordering = ["scenario", "position", "model__name"]
+        constraints = [
+            models.UniqueConstraint(fields=["scenario", "model"], name="uniq_scenario_model_binding"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.is_default:
+            AIScenarioModelBinding.objects.filter(scenario=self.scenario).exclude(pk=self.pk).update(
+                is_default=False,
+                default_marker=None,
+            )
+            self.default_marker = f"{self.scenario}:default"
+        else:
+            self.default_marker = None
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.scenario}:{self.model.name}"
@@ -189,20 +220,42 @@ class TrialModelPolicy(models.Model):
 
 class TrialModelPolicyItem(models.Model):
     policy = models.ForeignKey(TrialModelPolicy, on_delete=models.CASCADE, related_name="items")
-    scenario = models.CharField(max_length=64, choices=AIScenarioConfig.Scenario.choices)
+    scenario = models.CharField(max_length=64, choices=ScenarioKey.choices)
+    identity = models.CharField(max_length=16, choices=IdentityKind.choices, default=IdentityKind.MODEL)
     model = models.ForeignKey("ai_config.AIModelCatalog", on_delete=models.PROTECT, related_name="trial_policy_items")
     temperature = models.FloatField(default=0.2)
     max_tokens = models.IntegerField(default=2048)
     position = models.IntegerField(default=0)
+    is_default = models.BooleanField(default=False, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    trial_default_marker = models.CharField(
+        max_length=96,
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text="Set to 'p<policy_id>_s<scenario>:default' when is_default; NULL otherwise (MySQL-safe unique).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["position", "scenario", "model__name"]
         constraints = [
-            models.UniqueConstraint(fields=["policy", "scenario"], name="uniq_trial_model_policy_scenario"),
+            models.UniqueConstraint(fields=["policy", "scenario", "model"], name="uniq_trial_policy_scenario_model"),
         ]
+
+    def save(self, *args, **kwargs):
+        policy_id = self.policy_id
+        if self.is_default and policy_id is not None:
+            TrialModelPolicyItem.objects.filter(policy_id=policy_id, scenario=self.scenario).exclude(pk=self.pk).update(
+                is_default=False,
+                trial_default_marker=None,
+            )
+            self.trial_default_marker = f"p{policy_id}_s{self.scenario}:default"
+        else:
+            self.trial_default_marker = None
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.policy.key}:{self.scenario}:{self.model.name}"

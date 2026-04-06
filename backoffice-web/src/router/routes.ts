@@ -15,6 +15,12 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/dashboard', name: 'Dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '仪表盘' } },
       { path: '/tasks', name: 'Tasks', component: () => import('../views/TasksDashboardView.vue'), meta: { title: '异步任务看板' } },
       { path: '/users', name: 'Users', component: () => import('../views/UsersView.vue'), meta: { title: '用户管理' } },
+      {
+        path: '/ai-config/scenarios/:scenarioKey',
+        name: 'AIScenarioModels',
+        component: () => import('../views/AIScenarioModelsView.vue'),
+        meta: { title: '场景模型' },
+      },
       { path: '/ai-config/scenarios', name: 'AIScenarios', component: () => import('../views/AIScenariosView.vue'), meta: { title: 'AI场景配置' } },
       { path: '/ai-config/models', name: 'AIModels', component: () => import('../views/AIModelsView.vue'), meta: { title: '模型目录' } },
       { path: '/ai-config/providers', name: 'AIProviders', component: () => import('../views/AIProvidersView.vue'), meta: { title: 'Provider配置' } },

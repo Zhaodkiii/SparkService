@@ -18,7 +18,7 @@ from ai_config.models import (
     AIBootstrapProfile,
     AIModelCatalog,
     AIProviderKeyConfig,
-    AIScenarioConfig,
+    AIScenarioModelBinding,
     TrialApplication,
     TrialModelPolicy,
     TrialModelPolicyItem,
@@ -70,29 +70,72 @@ class AIBootstrapConfigView(APIView):
         return success_response(payload, msg="ok", code=0)
 
     def _build_scenarios(self, provider_by_company, model_company_by_name):
-        rows = AIScenarioConfig.objects.select_related("model").filter(is_active=True)
-        if rows.exists() is False:
-            return DEFAULT_SCENARIOS
-
-        payload = dict(DEFAULT_SCENARIOS)
-        for row in rows:
-            fallback = payload.get(row.scenario) or {}
-            merged = self._merge_provider_for_model(
-                model_name=row.model.name,
-                fallback_endpoint=str(fallback.get("endpoint", "") or ""),
-                fallback_api_key=str(fallback.get("api_key", "") or ""),
-                provider_by_company=provider_by_company,
-                model_company_by_name=model_company_by_name,
+        """Each scenario key maps to ``default_model`` + ``models[]`` (multi-model bindings)."""
+        payload = {}
+        for scenario_key in DEFAULT_SCENARIOS.keys():
+            bindings = (
+                AIScenarioModelBinding.objects.select_related("model")
+                .filter(scenario=scenario_key, is_active=True)
+                .order_by("position", "id")
             )
-            payload[row.scenario] = {
-                "endpoint": merged["endpoint"],
-                "model": row.model.name,
-                "api_key": merged["api_key"],
-                "temperature": row.temperature,
-                "max_tokens": row.max_tokens,
-                "provider_company": merged["provider_company"],
-                "provider_name": merged["provider_name"],
-            }
+            fallback = DEFAULT_SCENARIOS.get(scenario_key) or {}
+            if not bindings.exists():
+                merged = self._merge_provider_for_model(
+                    model_name=str(fallback.get("model", "") or ""),
+                    fallback_endpoint=str(fallback.get("endpoint", "") or ""),
+                    fallback_api_key=str(fallback.get("api_key", "") or ""),
+                    provider_by_company=provider_by_company,
+                    model_company_by_name=model_company_by_name,
+                )
+                model_name = str(fallback.get("model", "") or "")
+                payload[scenario_key] = {
+                    "default_model": model_name,
+                    "models": [
+                        {
+                            "model": model_name,
+                            "is_default": True,
+                            "identity": "model",
+                            "temperature": float(fallback.get("temperature", 0.2)),
+                            "max_tokens": int(fallback.get("max_tokens", 2048)),
+                            "endpoint": merged["endpoint"],
+                            "api_key": merged["api_key"],
+                            "provider_company": merged["provider_company"],
+                            "provider_name": merged["provider_name"],
+                        }
+                    ],
+                }
+                continue
+
+            models_list = []
+            default_model = None
+            for row in bindings:
+                merged = self._merge_provider_for_model(
+                    model_name=row.model.name,
+                    fallback_endpoint=str(fallback.get("endpoint", "") or ""),
+                    fallback_api_key=str(fallback.get("api_key", "") or ""),
+                    provider_by_company=provider_by_company,
+                    model_company_by_name=model_company_by_name,
+                )
+                if row.is_default:
+                    default_model = row.model.name
+                models_list.append(
+                    {
+                        "model": row.model.name,
+                        "is_default": bool(row.is_default),
+                        "identity": row.identity,
+                        "temperature": row.temperature,
+                        "max_tokens": row.max_tokens,
+                        "endpoint": merged["endpoint"],
+                        "api_key": merged["api_key"],
+                        "provider_company": merged["provider_company"],
+                        "provider_name": merged["provider_name"],
+                    }
+                )
+            if default_model is None and models_list:
+                default_model = models_list[0]["model"]
+                for item in models_list:
+                    item["is_default"] = item["model"] == default_model
+            payload[scenario_key] = {"default_model": default_model or "", "models": models_list}
         return payload
 
     def _build_provider_keys(self, kind, default_payload, payload_key: str):
@@ -218,15 +261,17 @@ class AIBootstrapConfigView(APIView):
             )
             result.append(
                 {
-                "scenario": row.scenario,
-                "endpoint": merged["endpoint"],
-                "model": row.model.name,
-                "api_key": merged["api_key"],
-                "temperature": row.temperature,
-                "max_tokens": row.max_tokens,
-                "provider_company": merged["provider_company"],
-                "provider_name": merged["provider_name"],
-            }
+                    "scenario": row.scenario,
+                    "model": row.model.name,
+                    "is_default": bool(row.is_default),
+                    "identity": row.identity,
+                    "endpoint": merged["endpoint"],
+                    "api_key": merged["api_key"],
+                    "temperature": row.temperature,
+                    "max_tokens": row.max_tokens,
+                    "provider_company": merged["provider_company"],
+                    "provider_name": merged["provider_name"],
+                }
             )
         return result
 
@@ -267,7 +312,7 @@ class AIBootstrapConfigView(APIView):
 
     def _resolve_revision(self):
         points = [
-            AIScenarioConfig.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
+            AIScenarioModelBinding.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             AIProviderKeyConfig.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             AIModelCatalog.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             AIBootstrapProfile.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),

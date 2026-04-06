@@ -1,19 +1,48 @@
 import http from '../http';
 
-export interface AIScenario {
+/** GET /ai/scenarios/ — seven fixed rows, aggregate per scenario */
+export interface AIScenarioSummary {
+  scenario: string;
+  label: string;
+  models_count: number;
+  default_model: string | null;
+  active_bindings: number;
+}
+
+/** GET/PATCH scenario binding (multi-model row) */
+export interface AIScenarioModelBinding {
   id: number;
   scenario: string;
-  /** 模型 / 智能体 */
   identity: string;
-  /** 模型目录中的 name（Slug） */
   model: string;
-  /** 只读：由后端根据厂商解析 */
   endpoint: string;
   provider_company?: string;
   provider_name?: string;
   temperature: number;
   max_tokens: number;
+  position: number;
+  is_default: boolean;
   is_active: boolean;
+}
+
+export function fetchAIScenarioSummaries() {
+  return http.get<unknown, AIScenarioSummary[]>('/api/admin/v1/ai/scenarios/');
+}
+
+export function fetchScenarioBindings(scenarioKey: string) {
+  return http.get<unknown, AIScenarioModelBinding[]>(`/api/admin/v1/ai/scenarios/${scenarioKey}/models/`);
+}
+
+export function createScenarioBinding(scenarioKey: string, payload: Record<string, unknown>) {
+  return http.post(`/api/admin/v1/ai/scenarios/${scenarioKey}/models/`, payload);
+}
+
+export function updateScenarioBinding(bindingId: number, payload: Record<string, unknown>) {
+  return http.patch(`/api/admin/v1/ai/scenario-models/${bindingId}/`, payload);
+}
+
+export function deleteScenarioBinding(bindingId: number) {
+  return http.delete(`/api/admin/v1/ai/scenario-models/${bindingId}/`);
 }
 
 export interface AIProvider {
@@ -30,18 +59,6 @@ export interface AIProvider {
   source: string;
   position: number;
   is_active: boolean;
-}
-
-export function fetchAIScenarios() {
-  return http.get<unknown, AIScenario[]>('/api/admin/v1/ai/scenarios/');
-}
-
-export function createAIScenario(payload: Partial<AIScenario>) {
-  return http.post('/api/admin/v1/ai/scenarios/', payload);
-}
-
-export function updateAIScenario(id: number, payload: Partial<AIScenario>) {
-  return http.patch(`/api/admin/v1/ai/scenarios/${id}/`, payload);
 }
 
 export interface AIModelCatalog {

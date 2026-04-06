@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from django.db import transaction
+from django.db.models import Max
 from django.utils.dateparse import parse_datetime
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -160,6 +161,39 @@ class ChatSyncPushView(APIView):
         return success_response({"messages": result}, msg="ok", code=0)
 
 
+class ChatSyncThreadHeadView(APIView):
+    """返回指定会话在服务端最新消息的 server_updated_at，供客户端与本地水位比对后决定是否拉取。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        thread_id_raw = request.query_params.get("thread_id")
+        if not thread_id_raw:
+            raise APIError(msg="thread_id_required", code=40031, status_code=400)
+
+        try:
+            thread_uuid = uuid.UUID(thread_id_raw)
+        except ValueError as exc:
+            raise APIError(msg="invalid_thread_id", code=40032, status_code=400) from exc
+
+        thread = ChatThread.objects.filter(id=thread_uuid, user=request.user).first()
+        if thread is None:
+            raise APIError(msg="thread_not_found", code=40401, status_code=404)
+
+        max_dt = ChatMessage.objects.filter(user=request.user, thread_id=thread_uuid).aggregate(
+            m=Max("server_updated_at")
+        )["m"]
+
+        return success_response(
+            {
+                "thread_id": str(thread.id),
+                "last_server_updated_at": max_dt.isoformat() if max_dt is not None else None,
+            },
+            msg="ok",
+            code=0,
+        )
+
+
 class ChatSyncPullView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -168,6 +202,17 @@ class ChatSyncPullView(APIView):
         cursor_dt = _normalize_cursor(cursor)
 
         queryset = ChatMessage.objects.filter(user=request.user)
+
+        thread_id_raw = request.query_params.get("thread_id")
+        if thread_id_raw:
+            try:
+                thread_uuid = uuid.UUID(thread_id_raw)
+            except ValueError as exc:
+                raise APIError(msg="invalid_thread_id", code=40032, status_code=400) from exc
+            if not ChatThread.objects.filter(id=thread_uuid, user=request.user).exists():
+                raise APIError(msg="thread_not_found", code=40401, status_code=404)
+            queryset = queryset.filter(thread_id=thread_uuid)
+
         if cursor_dt is not None:
             queryset = queryset.filter(server_updated_at__gt=cursor_dt)
 

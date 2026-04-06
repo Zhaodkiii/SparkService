@@ -4,18 +4,19 @@ from ai_config.models import (
     AIBootstrapProfile,
     AIModelCatalog,
     AIProviderKeyConfig,
-    AIScenarioConfig,
+    AIScenarioModelBinding,
     TrialApplication,
     TrialModelPolicy,
     TrialModelPolicyItem,
 )
 
 
-@admin.register(AIScenarioConfig)
-class AIScenarioConfigAdmin(admin.ModelAdmin):
-    list_display = ("scenario", "identity", "model", "is_active", "updated_at")
-    list_filter = ("scenario", "is_active")
+@admin.register(AIScenarioModelBinding)
+class AIScenarioModelBindingAdmin(admin.ModelAdmin):
+    list_display = ("scenario", "identity", "model", "is_default", "is_active", "position", "updated_at")
+    list_filter = ("scenario", "is_active", "is_default")
     search_fields = ("scenario", "model__name", "model__display_name")
+    ordering = ("scenario", "position")
 
 
 @admin.register(AIProviderKeyConfig)

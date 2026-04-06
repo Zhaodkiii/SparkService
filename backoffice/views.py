@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from accounts.models import AccountDeactivation
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioConfig, TrialApplication
+from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, TrialApplication
 from ai_config.services import TrialService
 from chat_sync.models import ChatMessage, ChatThread
 from common.permissions import AdminCodePermission, AdminOnlyPermission
@@ -33,7 +33,7 @@ from backoffice.serializers import (
     AdminAIProviderKeyCreateSerializer,
     AdminAIProviderKeySerializer,
     AdminAIProviderKeyUpdateSerializer,
-    AdminAIScenarioConfigSerializer,
+    AdminAIScenarioModelBindingSerializer,
     AdminAuditLogSerializer,
     AdminPermissionSerializer,
     AdminRolePermissionAssignSerializer,
@@ -192,26 +192,74 @@ class AdminUserStatusView(APIView):
         return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAIScenarioListView(APIView):
+SCENARIO_LABEL_ZH = {
+    "chat": "对话",
+    "optimization_text": "文本优化模型",
+    "optimization_visual": "视觉优化模型",
+    "context_folding": "上下文折叠",
+    "router": "Router 模型",
+    "model_config": "模型配置",
+    "report_interpretation": "报告解读模型",
+}
+
+
+def _scenario_key_valid(scenario_key: str) -> bool:
+    return scenario_key in {m.value for m in ScenarioKey}
+
+
+class AdminAIScenarioSummaryListView(APIView):
+    """Fixed seven scenarios: aggregate counts and default model per scenario."""
+
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        rows = AIScenarioConfig.objects.all().order_by("scenario")
-        payload = AdminAIScenarioConfigSerializer(rows, many=True).data
+        rows_out = []
+        for member in ScenarioKey:
+            key = member.value
+            qs = AIScenarioModelBinding.objects.filter(scenario=key)
+            active = qs.filter(is_active=True).order_by("position", "id")
+            default_row = active.filter(is_default=True).first()
+            rows_out.append(
+                {
+                    "scenario": key,
+                    "label": SCENARIO_LABEL_ZH.get(key, key),
+                    "models_count": qs.count(),
+                    "default_model": default_row.model.name if default_row else None,
+                    "active_bindings": active.count(),
+                }
+            )
+        return success_response(rows_out, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAIScenarioBindingListCreateView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request, scenario_key: str):
+        if not _scenario_key_valid(scenario_key):
+            return error_response(msg="invalid_scenario", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+        rows = (
+            AIScenarioModelBinding.objects.select_related("model")
+            .filter(scenario=scenario_key)
+            .order_by("position", "id")
+        )
+        payload = AdminAIScenarioModelBindingSerializer(rows, many=True).data
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
-    def post(self, request):
+    def post(self, request, scenario_key: str):
         permission_codes = get_user_permission_codes(request.user.id)
         if not request.user.is_superuser and "button:ai:scenario:create" not in permission_codes:
             return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
-        serializer = AdminAIScenarioConfigSerializer(data=request.data)
+        if not _scenario_key_valid(scenario_key):
+            return error_response(msg="invalid_scenario", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+        serializer = AdminAIScenarioModelBindingSerializer(data=request.data, context={"scenario": scenario_key})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        with transaction.atomic():
+            serializer.save()
         payload = serializer.data
         write_audit_log(
             request,
-            action="admin.ai.scenario.create",
-            resource_type="ai_scenario",
+            action="admin.ai.scenario_binding.create",
+            resource_type="ai_scenario_binding",
             resource_id=str(payload["id"]),
             status_code=201,
             response_payload=payload,
@@ -219,25 +267,49 @@ class AdminAIScenarioListView(APIView):
         return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
-class AdminAIScenarioDetailView(APIView):
+class AdminAIScenarioBindingDetailView(APIView):
     permission_classes = [AdminCodePermission]
     required_permission_code = "button:ai:scenario:update"
 
-    def patch(self, request, scenario_id: int):
-        row = get_object_or_404(AIScenarioConfig, pk=scenario_id)
-        serializer = AdminAIScenarioConfigSerializer(row, data=request.data, partial=True)
+    def patch(self, request, binding_id: int):
+        row = get_object_or_404(AIScenarioModelBinding, pk=binding_id)
+        serializer = AdminAIScenarioModelBindingSerializer(row, data=request.data, partial=True, context={"scenario": row.scenario})
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        with transaction.atomic():
+            serializer.save()
         payload = serializer.data
         write_audit_log(
             request,
-            action="admin.ai.scenario.update",
-            resource_type="ai_scenario",
+            action="admin.ai.scenario_binding.update",
+            resource_type="ai_scenario_binding",
             resource_id=str(row.id),
             status_code=200,
             response_payload=payload,
         )
         return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def delete(self, request, binding_id: int):
+        row = get_object_or_404(AIScenarioModelBinding, pk=binding_id)
+        others = AIScenarioModelBinding.objects.filter(scenario=row.scenario).exclude(pk=row.pk)
+        if not others.exists():
+            return error_response(msg="cannot_delete_last_binding", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            was_default = row.is_default
+            row.delete()
+            if was_default:
+                nxt = others.filter(is_active=True).order_by("position", "id").first() or others.order_by("position", "id").first()
+                if nxt and not AIScenarioModelBinding.objects.filter(scenario=nxt.scenario, is_default=True).exists():
+                    nxt.is_default = True
+                    nxt.save()
+        write_audit_log(
+            request,
+            action="admin.ai.scenario_binding.delete",
+            resource_type="ai_scenario_binding",
+            resource_id=str(binding_id),
+            status_code=200,
+            response_payload={},
+        )
+        return success_response({}, msg="deleted", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminAIModelCatalogListView(APIView):

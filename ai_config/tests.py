@@ -26,6 +26,21 @@ class AIBootstrapConfigViewTests(APITestCase):
         self.assertIn("trial", payload["data"])
         self.assertIn("trial_model_policy", payload["data"])
 
+    def test_bootstrap_scenarios_multi_model_shape(self):
+        """Each scenario key must expose default_model + models[] (client multi-model contract)."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/ai/config/bootstrap/")
+        self.assertEqual(response.status_code, 200)
+        scenarios = response.json()["data"]["scenarios"]
+        self.assertIsInstance(scenarios, dict)
+        for _key, block in scenarios.items():
+            self.assertIn("default_model", block)
+            self.assertIn("models", block)
+            self.assertIsInstance(block["models"], list)
+            for row in block["models"]:
+                self.assertIn("model", row)
+                self.assertIn("is_default", row)
+
     def test_bootstrap_requires_authenticated_user(self):
         response = self.client.get("/api/v1/ai/config/bootstrap/")
         self.assertEqual(response.status_code, 401)
