@@ -10,7 +10,6 @@ from medical.models import (
     MedExamDetail,
     MedicalCase,
     ModelChangeLog,
-    MedicalReport,
     Member,
     PrescriptionBatch,
     Surgery,
@@ -80,13 +79,6 @@ class MedExamDetailAdmin(admin.ModelAdmin):
     list_display = ("id", "business_type", "business_id", "member", "item_name", "flag", "result_at", "is_deleted")
     list_filter = ("business_type", "flag", "is_deleted")
     search_fields = ("item_name", "item_code", "result_value", "diagnosis")
-
-
-@admin.register(MedicalReport)
-class MedicalReportAdmin(admin.ModelAdmin):
-    list_display = ("id", "member", "title", "report_type", "date", "is_deleted")
-    list_filter = ("report_type", "is_deleted")
-    search_fields = ("title", "hospital", "doctor")
 
 
 @admin.register(PrescriptionBatch)

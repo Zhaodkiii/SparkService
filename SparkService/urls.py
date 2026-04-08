@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/v1/ai/chat/', include('chat_sync.urls')),
     path('api/v1/medical/', include('medical.urls')),
     path('api/v1/files/', include('file_manager.urls')),
+    path('api/v1/oss/', include('file_manager.oss_urls')),
     path('api/admin/v1/', include('backoffice.urls')),
 ]
 

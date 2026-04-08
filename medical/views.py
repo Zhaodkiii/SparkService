@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from common.http_cache import build_etag, normalize_etag
-from common.response import success_response
+from common.response import error_response, success_response
 from medical.models import (
     ExaminationReport,
     FollowUp,
@@ -17,7 +17,6 @@ from medical.models import (
     MedExamDetail,
     MedicalCase,
     ModelChangeLog,
-    MedicalReport,
     Member,
     PrescriptionBatch,
     Surgery,
@@ -33,16 +32,15 @@ from medical.serializers import (
     MedicationTakenRecordSerializer,
     MedExamDetailSerializer,
     MedicalCaseSerializer,
-    MedicalReportSerializer,
-    MedicalSnapshotUploadSerializer,
     MemberSerializer,
     PrescriptionBatchSerializer,
     SurgerySerializer,
     SymptomSerializer,
     VisitSerializer,
 )
+from file_manager.models import ManagedFile
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("medical.flow")
 
 
 class WrappedModelViewSet(viewsets.ModelViewSet):
@@ -230,11 +228,16 @@ class HealthExamReportViewSet(WrappedModelViewSet):
 
 
 class MedExamDetailViewSet(WrappedModelViewSet):
+    """明细表无 `user` 外键，通过 `member.user` 做数据隔离（勿复用 `WrappedModelViewSet.get_queryset` 的 user 过滤）。"""
+
     queryset = MedExamDetail.objects.select_related("member").all()
     serializer_class = MedExamDetailSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = MedExamDetail.objects.select_related("member").filter(
+            member__user_id=self.request.user.id,
+            is_deleted=False,
+        )
         member_id = self.request.query_params.get("member_id")
         business_type = self.request.query_params.get("business_type")
         business_id = self.request.query_params.get("business_id")
@@ -246,17 +249,12 @@ class MedExamDetailViewSet(WrappedModelViewSet):
             queryset = queryset.filter(business_id=business_id)
         return queryset
 
+    def perform_create(self, serializer):
+        serializer.save()
 
-class MedicalReportViewSet(WrappedModelViewSet):
-    queryset = MedicalReport.objects.select_related("member", "medical_case").all()
-    serializer_class = MedicalReportSerializer
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        member_id = self.request.query_params.get("member_id")
-        if member_id:
-            queryset = queryset.filter(member_id=member_id)
-        return queryset
+    def perform_destroy(self, instance):
+        instance.is_deleted = True
+        instance.save(update_fields=["is_deleted", "updated_at"])
 
 
 class PrescriptionBatchViewSet(WrappedModelViewSet):
@@ -266,8 +264,11 @@ class PrescriptionBatchViewSet(WrappedModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
+        medical_case_id = self.request.query_params.get("medical_case_id")
         if member_id:
             queryset = queryset.filter(member_id=member_id)
+        if medical_case_id:
+            queryset = queryset.filter(medical_case_id=medical_case_id)
         return queryset
 
 
@@ -305,529 +306,354 @@ class HealthMetricRecordViewSet(WrappedModelViewSet):
     queryset = HealthMetricRecord.objects.all()
     serializer_class = HealthMetricRecordSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        profile_uid = self.request.query_params.get("profile_client_uid")
+        if profile_uid:
+            queryset = queryset.filter(profile_client_uid=profile_uid)
+        return queryset
 
-class MedicalSyncBootstrapView(APIView):
+
+class MemberMedicalSummaryView(APIView):
     permission_classes = [IsAuthenticated]
     etag_max_age = 120
 
-    def get(self, request):
-        members = list(Member.objects.filter(user=request.user, is_deleted=False).values())
-        medical_cases = list(MedicalCase.objects.filter(user=request.user, is_deleted=False).values())
-        symptoms = list(Symptom.objects.filter(user=request.user, is_deleted=False).values())
-        visits = list(Visit.objects.filter(user=request.user, is_deleted=False).values())
-        surgeries = list(Surgery.objects.filter(user=request.user, is_deleted=False).values())
-        follow_ups = list(FollowUp.objects.filter(user=request.user, is_deleted=False).values())
-        health_exam_reports = list(HealthExamReport.objects.filter(user=request.user, is_deleted=False).values())
-        examination_reports = list(ExaminationReport.objects.filter(user=request.user, is_deleted=False).values())
-        med_exam_details = list(MedExamDetail.objects.filter(is_deleted=False, member__user=request.user).values())
-        medical_reports = list(MedicalReport.objects.filter(user=request.user, is_deleted=False).values())
-        prescription_batches = list(PrescriptionBatch.objects.filter(user=request.user, is_deleted=False).values())
-        medications = list(Medication.objects.filter(user=request.user, is_deleted=False).values())
-        medication_taken_records = list(MedicationTakenRecord.objects.filter(user=request.user, is_deleted=False).values())
-        health_metrics = list(HealthMetricRecord.objects.filter(user=request.user, is_deleted=False).values())
+    def get(self, request, member_id: int):
+        try:
+            member = Member.objects.get(id=member_id, user=request.user, is_deleted=False)
+        except Member.DoesNotExist:
+            return error_response(msg="member_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
 
-        payload = {
-            "members": members,
-            "medical_cases": medical_cases,
-            "symptoms": symptoms,
-            "visits": visits,
-            "surgeries": surgeries,
-            "follow_ups": follow_ups,
-            "health_exam_reports": health_exam_reports,
-            "examination_reports": examination_reports,
-            "med_exam_details": med_exam_details,
-            "medical_reports": medical_reports,
-            "prescription_batches": prescription_batches,
-            "medications": medications,
-            "medication_taken_records": medication_taken_records,
-            "health_metrics": health_metrics,
-        }
-        etag = build_etag({"user_id": request.user.id, "signature": self._snapshot_signature(request.user.id)})
-        incoming = normalize_etag(request.headers.get("If-None-Match"))
-        if incoming and incoming == normalize_etag(etag):
+        medical_cases = MedicalCase.objects.select_related("member").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        )
+        health_exam_reports = HealthExamReport.objects.select_related("member").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        )
+        examination_reports = ExaminationReport.objects.select_related("member", "medical_record").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        )
+        medications = Medication.objects.select_related("member", "batch").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        )
+        medication_taken_records = MedicationTakenRecord.objects.select_related("member", "medication").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        )
+
+        etag = self._build_summary_etag(
+            request=request,
+            member=member,
+            medical_cases=medical_cases,
+            health_exam_reports=health_exam_reports,
+            examination_reports=examination_reports,
+            medications=medications,
+            medication_taken_records=medication_taken_records,
+        )
+        if self._is_not_modified(request, etag):
             response = success_response(None, msg="not_modified", code=0, status_code=status.HTTP_304_NOT_MODIFIED)
             response.content = b""
+            self._set_cache_headers(response, etag)
             return response
 
+        payload = {
+            "member": MemberSerializer(member).data,
+            "medical_cases": MedicalCaseSerializer(medical_cases, many=True).data,
+            "health_exam_reports": HealthExamReportSerializer(health_exam_reports, many=True).data,
+            "examination_reports": ExaminationReportSerializer(examination_reports, many=True).data,
+            "medications": MedicationSerializer(medications, many=True).data,
+            "medication_taken_records": MedicationTakenRecordSerializer(medication_taken_records, many=True).data,
+        }
         response = success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
-        response["ETag"] = etag
-        # response["Cache-Control"] = f"private, max-age={self.etag_max_age}"
+        self._set_cache_headers(response, etag)
         return response
 
-    def _snapshot_signature(self, user_id):
-        def signature_for(model):
-            if model is MedExamDetail:
-                rows = model.objects.filter(member__user_id=user_id, is_deleted=False).values_list("id", "updated_at")
-            else:
-                rows = model.objects.filter(user_id=user_id, is_deleted=False).values_list("id", "updated_at")
-            count = 0
-            latest = ""
-            id_sum = 0
-            for row_id, updated_at in rows:
-                count += 1
-                id_sum += int(row_id)
-                if updated_at:
-                    stamp = updated_at.isoformat()
-                    if stamp > latest:
-                        latest = stamp
-            return {"count": count, "latest": latest, "id_sum": id_sum}
-
-        return {
-            "members": signature_for(Member),
-            "medical_cases": signature_for(MedicalCase),
-            "symptoms": signature_for(Symptom),
-            "visits": signature_for(Visit),
-            "surgeries": signature_for(Surgery),
-            "follow_ups": signature_for(FollowUp),
-            "health_exam_reports": signature_for(HealthExamReport),
-            "examination_reports": signature_for(ExaminationReport),
-            "med_exam_details": signature_for(MedExamDetail),
-            "medical_reports": signature_for(MedicalReport),
-            "prescription_batches": signature_for(PrescriptionBatch),
-            "medications": signature_for(Medication),
-            "medication_taken_records": signature_for(MedicationTakenRecord),
-            "health_metrics": signature_for(HealthMetricRecord),
+    def _build_summary_etag(
+        self,
+        request,
+        member,
+        medical_cases,
+        health_exam_reports,
+        examination_reports,
+        medications,
+        medication_taken_records,
+    ):
+        payload = {
+            "path": request.path,
+            "user_id": request.user.id,
+            "member": (member.id, member.updated_at),
+            "collections": {
+                "medical_cases": list(medical_cases.values_list("id", "updated_at")),
+                "health_exam_reports": list(health_exam_reports.values_list("id", "updated_at")),
+                "examination_reports": list(examination_reports.values_list("id", "updated_at")),
+                "medications": list(medications.values_list("id", "updated_at")),
+                "medication_taken_records": list(medication_taken_records.values_list("id", "updated_at")),
+            },
         }
+        return build_etag(payload)
+
+    def _is_not_modified(self, request, etag):
+        incoming = normalize_etag(request.headers.get("If-None-Match"))
+        if incoming == "":
+            return False
+        return incoming == normalize_etag(etag)
+
+    def _set_cache_headers(self, response, etag):
+        response["ETag"] = etag
+        response["Cache-Control"] = f"private, max-age={self.etag_max_age}"
 
 
-class MedicalSyncUploadView(APIView):
+class _WorkflowBaseAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def _bind_files(self, user, business_type, business_id, file_ids):
+        if not file_ids:
+            return
+        ManagedFile.objects.filter(user=user, id__in=file_ids, is_deleted=False).update(
+            business_type=business_type,
+            business_id=str(business_id),
+        )
+
+    def _validate_or_error(self, serializer):
+        if serializer.is_valid():
+            return None
+        # 保留字段级结构，客户端可读化后统一拼接本地化前缀。
+        return error_response(msg=serializer.errors, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+class MedicalCaseWorkflowSaveView(_WorkflowBaseAPIView):
     @transaction.atomic
     def post(self, request):
-        serializer = MedicalSnapshotUploadSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        payload = serializer.validated_data
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        serializer = MedicalCaseSerializer(data=payload)
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
+        self._bind_files(request.user, "medical_case", obj.id, file_ids)
+        return success_response(serializer.data, msg="saved", code=0, status_code=status.HTTP_201_CREATED)
 
-        self._upsert_members(request.user.id, payload.get("members", []))
-        self._upsert_medical_cases(request.user.id, payload.get("medical_cases", []))
-        self._upsert_symptoms(request.user.id, payload.get("symptoms", []))
-        self._upsert_visits(request.user.id, payload.get("visits", []))
-        self._upsert_surgeries(request.user.id, payload.get("surgeries", []))
-        self._upsert_follow_ups(request.user.id, payload.get("follow_ups", []))
-        self._upsert_health_exam_reports(request.user.id, payload.get("health_exam_reports", []))
-        self._upsert_examination_reports(request.user.id, payload.get("examination_reports", []))
-        self._upsert_med_exam_details(request.user.id, payload.get("med_exam_details", []))
-        self._upsert_medical_reports(request.user.id, payload.get("medical_reports", []))
-        self._upsert_prescription_batches(request.user.id, payload.get("prescription_batches", []))
-        self._upsert_medications(request.user.id, payload.get("medications", []))
-        self._upsert_medication_taken_records(request.user.id, payload.get("medication_taken_records", []))
-        self._upsert_health_metrics(request.user.id, payload.get("health_metrics", []))
 
-        return success_response({"uploaded": True}, msg="uploaded", code=0, status_code=status.HTTP_200_OK)
+class HealthExamWorkflowSaveView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        detail_rows = payload.pop("details", [])
+        serializer = HealthExamReportSerializer(data=payload)
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
 
-    def _upsert_members(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                Member.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            Member.objects.create(**defaults)
-        logger.info("medical.sync.members.upserted", extra={"user_id": user_id, "record_count": len(rows)})
+        created_details = []
+        for idx, detail in enumerate(detail_rows):
+            detail_payload = {
+                "business_type": MedExamDetail.BusinessType.HEALTH_EXAM_REPORT,
+                "business_id": obj.id,
+                "member": obj.member_id,
+                "category": detail.get("category", ""),
+                "sub_category": detail.get("sub_category") or detail.get("subCategory", ""),
+                "item_name": detail.get("item_name") or detail.get("itemName", ""),
+                "item_code": detail.get("item_code") or detail.get("itemCode", ""),
+                "result_value": detail.get("result_value") or detail.get("resultValue", ""),
+                "unit": detail.get("unit", ""),
+                "reference_range": detail.get("reference_range") or detail.get("referenceRange", ""),
+                "flag": detail.get("flag", ""),
+                "result_at": detail.get("result_at")
+                or detail.get("resultAt")
+                or (f"{obj.exam_date.isoformat()}T00:00:00Z" if obj.exam_date else None),
+                "modality": detail.get("modality", ""),
+                "body_part": detail.get("body_part") or detail.get("bodyPart", ""),
+                "diagnosis": detail.get("diagnosis", ""),
+                "extra": detail.get("extra", {}),
+                "sort_order": detail.get("sort_order", detail.get("sortOrder", idx)),
+            }
+            detail_serializer = MedExamDetailSerializer(data=detail_payload)
+            validation_error = self._validate_or_error(detail_serializer)
+            if validation_error is not None:
+                return validation_error
+            created = detail_serializer.save()
+            created_details.append(MedExamDetailSerializer(created).data)
 
-    def _upsert_medical_cases(self, user_id, rows):
-        allowed_fields = {
-            "member_id",
-            "record_type",
-            "status",
-            "title",
-            "hospital_name",
-            "age_at_visit",
-            "diagnosis_summary",
-            "extra",
-        }
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            if member_id:
-                row["member_id"] = member_id
-            if not row.get("member_id"):
-                continue
-            safe_row = {key: value for key, value in row.items() if key in allowed_fields}
-            defaults = {**safe_row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                MedicalCase.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            MedicalCase.objects.create(**defaults)
-        logger.info("medical.sync.medical_cases.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _resolve_case_for_row(self, user_id, member_id, medical_case_id, entity_name):
-        """校验子表 user/member 与主档一致，避免跨成员错误挂载。"""
-        if not member_id or not medical_case_id:
-            logger.warning(
-                f"medical.sync.{entity_name}.skipped_missing_relation",
-                extra={"user_id": user_id, "member_id": member_id, "medical_case_id": medical_case_id},
-            )
-            return None
-        medical_case = MedicalCase.objects.filter(id=medical_case_id, user_id=user_id, is_deleted=False).first()
-        if not medical_case:
-            logger.warning(
-                f"medical.sync.{entity_name}.skipped_case_not_found",
-                extra={"user_id": user_id, "member_id": member_id, "medical_case_id": medical_case_id},
-            )
-            return None
-        if medical_case.member_id != int(member_id):
-            logger.warning(
-                f"medical.sync.{entity_name}.skipped_member_mismatch",
-                extra={
-                    "user_id": user_id,
-                    "member_id": member_id,
-                    "medical_case_id": medical_case_id,
-                    "case_member_id": medical_case.member_id,
-                },
-            )
-            return None
-        return medical_case
-
-    def _upsert_symptoms(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_case_id = row.pop("medical_case", None) or row.pop("medical_case_id", None)
-            if not self._resolve_case_for_row(user_id, member_id, medical_case_id, "symptoms"):
-                continue
-            row["member_id"] = member_id
-            row["medical_case_id"] = medical_case_id
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                Symptom.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            Symptom.objects.create(**defaults)
-        logger.info("medical.sync.symptoms.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_visits(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_case_id = row.pop("medical_case", None) or row.pop("medical_case_id", None)
-            if not self._resolve_case_for_row(user_id, member_id, medical_case_id, "visits"):
-                continue
-            row["member_id"] = member_id
-            row["medical_case_id"] = medical_case_id
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                Visit.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            Visit.objects.create(**defaults)
-        logger.info("medical.sync.visits.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_surgeries(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_case_id = row.pop("medical_case", None) or row.pop("medical_case_id", None)
-            if not self._resolve_case_for_row(user_id, member_id, medical_case_id, "surgeries"):
-                continue
-            row["member_id"] = member_id
-            row["medical_case_id"] = medical_case_id
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                Surgery.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            Surgery.objects.create(**defaults)
-        logger.info("medical.sync.surgeries.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_follow_ups(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_case_id = row.pop("medical_case", None) or row.pop("medical_case_id", None)
-            if not self._resolve_case_for_row(user_id, member_id, medical_case_id, "follow_ups"):
-                continue
-            row["member_id"] = member_id
-            row["medical_case_id"] = medical_case_id
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                FollowUp.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            FollowUp.objects.create(**defaults)
-        logger.info("medical.sync.follow_ups.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_health_exam_reports(self, user_id, rows):
-        allowed_fields = {
-            "institution_name",
-            "report_no",
-            "exam_date",
-            "exam_type",
-            "summary",
-            "source",
-            "raw_ocr",
-            "status",
-            "extra",
-        }
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            if member_id:
-                row["member_id"] = member_id
-            if not row.get("member_id"):
-                continue
-            safe_row = {key: value for key, value in row.items() if key in allowed_fields or key == "member_id"}
-            defaults = {**safe_row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                HealthExamReport.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            HealthExamReport.objects.create(**defaults)
-        logger.info("medical.sync.health_exam_reports.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_examination_reports(self, user_id, rows):
-        allowed_fields = {
-            "category",
-            "sub_category",
-            "item_name",
-            "performed_at",
-            "reported_at",
-            "organization_name",
-            "department_name",
-            "doctor_name",
-            "findings",
-            "impression",
-            "source",
-            "raw_ocr",
-            "status",
-            "extra",
-        }
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_record_id = row.pop("medical_record", None) or row.pop("medical_record_id", None)
-            if member_id:
-                row["member_id"] = member_id
-            if medical_record_id:
-                row["medical_record_id"] = medical_record_id
-            if not row.get("member_id"):
-                continue
-            safe_row = {key: value for key, value in row.items() if key in allowed_fields or key in {"member_id", "medical_record_id"}}
-            defaults = {**safe_row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                ExaminationReport.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            ExaminationReport.objects.create(**defaults)
-        logger.info("medical.sync.examination_reports.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_med_exam_details(self, user_id, rows):
-        allowed_fields = {
-            "business_type",
-            "business_id",
-            "category",
-            "sub_category",
-            "item_name",
-            "item_code",
-            "result_value",
-            "unit",
-            "reference_range",
-            "flag",
-            "result_at",
-            "modality",
-            "body_part",
-            "diagnosis",
-            "extra",
-            "sort_order",
-        }
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            if member_id:
-                row["member_id"] = member_id
-            if not row.get("member_id"):
-                continue
-            if row.get("business_type") not in {
-                MedExamDetail.BusinessType.HEALTH_EXAM_REPORT,
-                MedExamDetail.BusinessType.EXAMINATION_REPORT,
-            }:
-                continue
-            safe_row = {key: value for key, value in row.items() if key in allowed_fields or key == "member_id"}
-            defaults = {**safe_row, "is_deleted": False}
-            if row_id:
-                MedExamDetail.objects.update_or_create(id=row_id, member_id=row["member_id"], defaults=defaults)
-                continue
-            MedExamDetail.objects.create(**defaults)
-        logger.info("medical.sync.med_exam_details.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _upsert_medical_reports(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_case_id = row.pop("medical_case", None) or row.pop("medical_case_id", None)
-            if member_id:
-                row["member_id"] = member_id
-            if medical_case_id:
-                row["medical_case_id"] = medical_case_id
-            if not row.get("member_id"):
-                continue
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                MedicalReport.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                continue
-            MedicalReport.objects.create(**defaults)
-        logger.info("medical.sync.medical_reports.upserted", extra={"user_id": user_id, "record_count": len(rows)})
-
-    def _record_model_change(
-        self, *, user_id, member_id, entity, entity_id, action, from_status="", to_status="", changed_fields=None
-    ):
-        ModelChangeLog.objects.create(
-            user_id=user_id,
-            member_id=member_id,
-            entity=entity,
-            entity_id=entity_id,
-            action=action,
-            from_status=from_status,
-            to_status=to_status,
-            changed_fields=changed_fields or {},
+        self._bind_files(request.user, "health_exam_report", obj.id, file_ids)
+        return success_response(
+            {"id": obj.id, "report": HealthExamReportSerializer(obj).data, "details": created_details},
+            msg="saved",
+            code=0,
+            status_code=status.HTTP_201_CREATED,
         )
 
-    def _upsert_prescription_batches(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medical_case_id = row.pop("medical_case", None) or row.pop("medical_case_id", None)
-            if member_id:
-                row["member_id"] = member_id
-            if medical_case_id:
-                row["medical_case_id"] = medical_case_id
-            if not row.get("member_id"):
-                continue
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                obj, _ = PrescriptionBatch.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                self._record_model_change(
-                    user_id=user_id,
-                    member_id=obj.member_id,
-                    entity="PrescriptionBatch",
-                    entity_id=obj.id,
-                    action="upsert",
-                    to_status=obj.status,
-                )
-                continue
-            obj = PrescriptionBatch.objects.create(**defaults)
-            self._record_model_change(
-                user_id=user_id,
-                member_id=obj.member_id,
-                entity="PrescriptionBatch",
-                entity_id=obj.id,
-                action="create",
-                to_status=obj.status,
-            )
-        logger.info("medical.sync.prescription_batches.upserted", extra={"user_id": user_id, "record_count": len(rows)})
 
-    def _upsert_medications(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            batch_id = row.pop("batch", None) or row.pop("batch_id", None)
-            if member_id:
-                row["member_id"] = member_id
-            if batch_id:
-                row["batch_id"] = batch_id
-            if not row.get("member_id") or not row.get("batch_id"):
-                continue
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                obj, _ = Medication.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                self._record_model_change(
-                    user_id=user_id,
-                    member_id=obj.member_id,
-                    entity="Medication",
-                    entity_id=obj.id,
-                    action="upsert",
-                )
-                continue
-            obj = Medication.objects.create(**defaults)
-            self._record_model_change(
-                user_id=user_id,
-                member_id=obj.member_id,
-                entity="Medication",
-                entity_id=obj.id,
-                action="create",
-            )
-        logger.info("medical.sync.medications.upserted", extra={"user_id": user_id, "record_count": len(rows)})
+class MedicalReportWorkflowSaveView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        detail_rows = payload.pop("details", [])
 
-    def _upsert_medication_taken_records(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            member_id = row.pop("member", None) or row.pop("member_id", None)
-            medication_id = row.pop("medication", None) or row.pop("medication_id", None)
-            if member_id:
-                row["member_id"] = member_id
-            if medication_id:
-                row["medication_id"] = medication_id
-            if not row.get("member_id") or not row.get("medication_id"):
-                continue
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                obj, _ = MedicationTakenRecord.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
-                self._record_model_change(
-                    user_id=user_id,
-                    member_id=obj.member_id,
-                    entity="MedicationTakenRecord",
-                    entity_id=obj.id,
-                    action="upsert",
-                    to_status=obj.status,
-                )
-                continue
-            obj = MedicationTakenRecord.objects.create(**defaults)
-            self._record_model_change(
-                user_id=user_id,
-                member_id=obj.member_id,
-                entity="MedicationTakenRecord",
-                entity_id=obj.id,
-                action="create",
-                to_status=obj.status,
-            )
-        logger.info(
-            "medical.sync.medication_taken_records.upserted",
-            extra={"user_id": user_id, "record_count": len(rows)},
+        report_payload = {
+            "member": payload.get("member"),
+            "medical_record": payload.get("medical_case"),
+            "category": payload.get("report_type", "") or "medical_report",
+            "sub_category": "",
+            "item_name": payload.get("title", "") or "医疗报告",
+            "performed_at": payload.get("date"),
+            "reported_at": payload.get("date"),
+            "organization_name": payload.get("organization_name") or payload.get("hospital", "") or "",
+            "department_name": "",
+            "doctor_name": payload.get("doctor_name") or payload.get("doctor", "") or "",
+            "findings": payload.get("content", "") or "",
+            "impression": payload.get("content", "") or "",
+            "source": ExaminationReport.Source.OCR,
+            "raw_ocr": {"text": payload.get("content", "") or ""},
+            "status": ExaminationReport.Status.DRAFT,
+            "extra": {"source": "typed_upload"},
+        }
+        report_serializer = ExaminationReportSerializer(data=report_payload)
+        validation_error = self._validate_or_error(report_serializer)
+        if validation_error is not None:
+            return validation_error
+        report = report_serializer.save(user=request.user)
+
+        created_details = []
+        for idx, detail in enumerate(detail_rows):
+            detail_payload = {
+                "business_type": MedExamDetail.BusinessType.EXAMINATION_REPORT,
+                "business_id": report.id,
+                "member": report.member_id,
+                "category": detail.get("category", "") or report.category,
+                "sub_category": detail.get("sub_category", ""),
+                "item_name": detail.get("item_name", "") or report.item_name,
+                "item_code": detail.get("item_code", ""),
+                "result_value": detail.get("result_value", ""),
+                "unit": detail.get("unit", ""),
+                "reference_range": detail.get("reference_range", ""),
+                "flag": detail.get("flag", ""),
+                "result_at": detail.get("result_at", report.reported_at),
+                "modality": detail.get("modality", ""),
+                "body_part": detail.get("body_part", ""),
+                "diagnosis": detail.get("diagnosis", ""),
+                "extra": detail.get("extra", {}),
+                "sort_order": detail.get("sort_order", idx),
+            }
+            detail_serializer = MedExamDetailSerializer(data=detail_payload)
+            validation_error = self._validate_or_error(detail_serializer)
+            if validation_error is not None:
+                return validation_error
+            created = detail_serializer.save()
+            created_details.append(MedExamDetailSerializer(created).data)
+
+        self._bind_files(request.user, "examination_report", report.id, file_ids)
+        return success_response(
+            {"id": report.id, "report": ExaminationReportSerializer(report).data, "details": created_details},
+            msg="saved",
+            code=0,
+            status_code=status.HTTP_201_CREATED,
         )
 
-    def _upsert_health_metrics(self, user_id, rows):
-        for row in rows:
-            row = dict(row)
-            row_id = row.pop("id", None)
-            row.pop("created_at", None)
-            row.pop("updated_at", None)
-            defaults = {**row, "user_id": user_id, "is_deleted": False}
-            if row_id:
-                HealthMetricRecord.objects.update_or_create(id=row_id, user_id=user_id, defaults=defaults)
+
+class PrescriptionWorkflowSaveView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        medications = payload.pop("medications", [])
+        serializer = PrescriptionBatchSerializer(data=payload)
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        batch = serializer.save(user=request.user)
+
+        medication_results = []
+        for idx, medication in enumerate(medications):
+            row = self._normalize_medication_payload(medication, batch, idx)
+            item_serializer = MedicationSerializer(data=row)
+            validation_error = self._validate_or_error(item_serializer)
+            if validation_error is not None:
+                return validation_error
+            item = item_serializer.save(user=request.user)
+            medication_results.append(MedicationSerializer(item).data)
+
+        self._bind_files(request.user, "prescription_batch", batch.id, file_ids)
+        return success_response(
+            {"batch": PrescriptionBatchSerializer(batch).data, "medications": medication_results},
+            msg="saved",
+            code=0,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+    def _normalize_medication_payload(self, medication, batch, sort_order):
+        row = dict(medication)
+        row["member"] = batch.member_id
+        row["batch"] = batch.id
+        row["sort_order"] = row.get("sort_order", sort_order)
+
+        # Aera 风格字段兼容映射
+        row["drug_name"] = row.get("drug_name") or row.get("name") or row.get("generic_name") or row.get("brand_name") or ""
+        row["generic_name"] = row.get("generic_name") or row.get("name") or row["drug_name"]
+        row["brand_name"] = row.get("brand_name", "")
+        row["strength"] = row.get("strength") or row.get("specification") or ""
+        row["dose_per_time"] = row.get("dose_per_time") or row.get("dosage") or ""
+        row["frequency_text"] = row.get("frequency_text") or row.get("frequency") or ""
+        row["instructions"] = row.get("instructions", "")
+        row["period"] = row.get("period", "")
+        row["route"] = row.get("route", "")
+        row["dosage_form"] = row.get("dosage_form", "")
+        row["dose_unit"] = row.get("dose_unit", "")
+        row["frequency_code"] = row.get("frequency_code", "")
+        row["reminder_enabled"] = row.get("reminder_enabled", False)
+        row["reminder_times"] = row.get("reminder_times", [])
+
+        if row.get("duration_days") in (None, ""):
+            duration = row.get("duration")
+            if isinstance(duration, int):
+                row["duration_days"] = duration
+            elif isinstance(duration, str):
+                digits = "".join(ch for ch in duration if ch.isdigit())
+                row["duration_days"] = int(digits) if digits else None
+
+        return row
+
+
+class MedicationWorkflowSaveView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        serializer = MedicationSerializer(data=payload)
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
+        self._bind_files(request.user, "medication", obj.id, file_ids)
+        return success_response(serializer.data, msg="saved", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class MedicalAttachmentBatchBindView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def patch(self, request):
+        items = request.data.get("items", [])
+        updated = 0
+        for item in items:
+            file_id = item.get("file_id")
+            business_type = item.get("business_type")
+            business_id = item.get("business_id")
+            if not file_id or not business_type or business_id is None:
                 continue
-            HealthMetricRecord.objects.create(**defaults)
-        logger.info("medical.sync.health_metrics.upserted", extra={"user_id": user_id, "record_count": len(rows)})
+            count = ManagedFile.objects.filter(user=request.user, id=file_id, is_deleted=False).update(
+                business_type=business_type,
+                business_id=str(business_id),
+            )
+            updated += count
+        return success_response({"updated": updated}, msg="updated", code=0, status_code=status.HTTP_200_OK)

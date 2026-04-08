@@ -6,6 +6,7 @@ import os
 
 logger = logging.getLogger("accounts.request")
 io_logger = logging.getLogger("accounts.api_io")
+medical_io_logger = logging.getLogger("medical.api_io")
 API_IO_ENABLED = os.getenv("LOG_API_IO_ENABLED", "true").lower() in ("1", "true", "yes", "y")
 
 
@@ -92,6 +93,7 @@ class RequestLoggingMiddleware:
 
     def __call__(self, request):
         start = time.perf_counter()
+        request_io_logger = self._io_logger_for_path(request.path)
         request_headers = _headers_for_log(dict(request.headers))
         request_body = _body_for_log(request.body, request.content_type)
         user_id = None
@@ -102,7 +104,7 @@ class RequestLoggingMiddleware:
             user_id = user.id
 
         if API_IO_ENABLED:
-            io_logger.info(
+            request_io_logger.info(
                 "HTTP 请求进入: %s %s headers=%s body=%s"
                 % (
                     request.method,
@@ -143,7 +145,7 @@ class RequestLoggingMiddleware:
                 },
             )
             if API_IO_ENABLED:
-                io_logger.exception(
+                request_io_logger.exception(
                     "HTTP 响应发送异常: %s %s headers=%s body=%s"
                     % (
                         request.method,
@@ -199,8 +201,7 @@ class RequestLoggingMiddleware:
             },
         )
         if API_IO_ENABLED:
-            io_logger.log(
-                summary_level,
+            response_msg = (
                 "HTTP 响应摘要: %s %s status=%s duration_ms=%s bytes=%s headers=%s body=%s"
                 % (
                     request.method,
@@ -210,18 +211,28 @@ class RequestLoggingMiddleware:
                     response_bytes,
                     _short_repr(response_headers),
                     _short_repr(response_body),
-                ),
-                extra={
-                    "path": request.path,
-                    "method": request.method,
-                    "status_code": status_code,
-                    "duration_ms": duration_ms,
-                    "user_id": user_id,
-                    "client_ip": client_ip,
-                    "user_agent": user_agent,
-                    "response_bytes": response_bytes,
-                    "response_headers": response_headers,
-                    "response_body": response_body,
-                },
+                )
             )
+            response_extra = {
+                "path": request.path,
+                "method": request.method,
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+                "user_id": user_id,
+                "client_ip": client_ip,
+                "user_agent": user_agent,
+                "response_bytes": response_bytes,
+                "response_headers": response_headers,
+                "response_body": response_body,
+            }
+            if status_code >= 400:
+                response_msg += " request_body=%s" % (_short_repr(request_body),)
+                response_extra["request_body"] = request_body
+            request_io_logger.log(summary_level, response_msg, extra=response_extra)
         return response
+
+    @staticmethod
+    def _io_logger_for_path(path: str):
+        if path.startswith("/api/v1/medical/"):
+            return medical_io_logger
+        return io_logger

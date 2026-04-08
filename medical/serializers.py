@@ -12,7 +12,6 @@ from medical.models import (
     Medication,
     MedicationTakenRecord,
     MedicalCase,
-    MedicalReport,
     Member,
     PrescriptionBatch,
     Surgery,
@@ -67,20 +66,6 @@ class MemberSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
-
-
-class SyncMemberSerializer(serializers.Serializer):
-    id = serializers.IntegerField(required=False)
-    name = serializers.CharField(max_length=64)
-    gender = serializers.CharField(max_length=16, required=False, allow_blank=True, default=Member.Gender.UNKNOWN)
-    relationship = serializers.CharField(max_length=64, required=False, allow_blank=True, default="self")
-    birth_date = FlexibleDateField(required=False, allow_null=True)
-    blood_type = serializers.CharField(max_length=8, required=False, allow_blank=True, default="")
-    allergies = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-    chronic_conditions = serializers.ListField(child=serializers.CharField(), required=False, default=list)
-    notes = serializers.CharField(required=False, allow_blank=True, default="")
-    avatar_url = serializers.CharField(required=False, allow_blank=True, default="")
-    is_primary = serializers.BooleanField(required=False, default=False)
 
 
 class MedicalCaseSerializer(serializers.ModelSerializer):
@@ -238,6 +223,12 @@ class HealthExamReportSerializer(serializers.ModelSerializer):
 
 
 class MedExamDetailSerializer(serializers.ModelSerializer):
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and value.user_id != request.user.id:
+            raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
     class Meta:
         model = MedExamDetail
         fields = (
@@ -271,26 +262,12 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
         return value
 
 
-class MedicalReportSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = MedicalReport
-        fields = (
-            "id",
-            "member",
-            "medical_case",
-            "report_type",
-            "title",
-            "hospital",
-            "doctor",
-            "content",
-            "date",
-            "created_at",
-            "updated_at",
-        )
-        read_only_fields = ("id", "created_at", "updated_at")
-
-
 class PrescriptionBatchSerializer(serializers.ModelSerializer):
+    def validate_batch_no(self, value):
+        if value == "":
+            return None
+        return value
+
     class Meta:
         model = PrescriptionBatch
         fields = (
@@ -381,19 +358,3 @@ class HealthMetricRecordSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "created_at", "updated_at")
 
-
-class MedicalSnapshotUploadSerializer(serializers.Serializer):
-    members = SyncMemberSerializer(many=True, required=False, default=list)
-    medical_cases = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    symptoms = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    visits = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    surgeries = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    follow_ups = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    health_exam_reports = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    examination_reports = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    med_exam_details = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    medical_reports = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    prescription_batches = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    medications = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    medication_taken_records = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    health_metrics = serializers.ListField(child=serializers.DictField(), required=False, default=list)

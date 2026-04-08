@@ -62,6 +62,16 @@ APPLE_ALLOWED_BUNDLE_IDS = [
     if item.strip()
 ]
 
+# Aliyun OSS / STS（`file_manager` 签发客户端临时凭证）
+# 来源：项目根目录 `.env`（由上方 `load_dotenv` 注入 `os.environ`），部署环境也可用容器/系统环境变量覆盖。
+ALIYUN_ACCESS_KEY_ID = (os.getenv("ALIYUN_ACCESS_KEY_ID") or "").strip()
+ALIYUN_ACCESS_KEY_SECRET = (os.getenv("ALIYUN_ACCESS_KEY_SECRET") or "").strip()
+ALIYUN_STS_ROLE_ARN = (os.getenv("ALIYUN_STS_ROLE_ARN") or "").strip()
+ALIYUN_OSS_BUCKET = (os.getenv("ALIYUN_OSS_BUCKET") or "").strip() or "spark-oss"
+ALIYUN_OSS_REGION = (os.getenv("ALIYUN_OSS_REGION") or "").strip() or "cn-hangzhou"
+ALIYUN_OSS_ENDPOINT = (os.getenv("ALIYUN_OSS_ENDPOINT") or "").strip()
+ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600"))
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -361,6 +371,26 @@ LOGGING = {
             "level": LOG_LEVEL,
             "filters": ["request_id"],
         },
+        "medical_flow_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "medical_flow.log"),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
+        "medical_api_io_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "medical_api_io.log"),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
     },
     "loggers": {
         "django": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": True},
@@ -370,5 +400,11 @@ LOGGING = {
         "accounts.flow": {"handlers": ["console", "access_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "celery": {"handlers": ["console", "celery_file"], "level": LOG_LEVEL, "propagate": True},
         "chat_sync": {"handlers": ["console", "chat_sync_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
+        "medical.flow": {"handlers": ["console", "medical_flow_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
+        "medical.api_io": {
+            "handlers": ["console", "medical_api_io_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
     },
 }

@@ -222,7 +222,7 @@ class ExaminationReport(MedicalBaseModel):
     item_name = models.CharField(max_length=255)
     performed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     reported_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    organization_name = models.CharField(max_length=255)
+    organization_name = models.CharField(max_length=255, blank=True, null=True, default="")
     department_name = models.CharField(max_length=128, blank=True, default="")
     doctor_name = models.CharField(max_length=128, blank=True, default="")
     findings = models.TextField(blank=True, null=True)
@@ -233,7 +233,7 @@ class ExaminationReport(MedicalBaseModel):
     extra = models.JSONField(null=True, blank=True)
 
     class Meta:
-        db_table = "examination_report"
+        db_table = "medical_examination_report"
         ordering = ["-reported_at", "-updated_at", "-id"]
         indexes = [
             models.Index(fields=["member", "status", "is_deleted"]),
@@ -262,7 +262,7 @@ class HealthExamReport(MedicalBaseModel):
         VERIFIED = 3, "verified"
 
     member = models.ForeignKey(Member, related_name="health_exam_reports", on_delete=models.CASCADE, db_index=True)
-    institution_name = models.CharField(max_length=255)
+    institution_name = models.CharField(max_length=255, blank=True, default="")
     report_no = models.CharField(max_length=128, blank=True, default="", db_index=True)
     exam_date = models.DateField(null=True, blank=True, db_index=True)
     exam_type = models.PositiveSmallIntegerField(choices=ExamType.choices, default=ExamType.ROUTINE)
@@ -273,7 +273,7 @@ class HealthExamReport(MedicalBaseModel):
     extra = models.JSONField(null=True, blank=True)
 
     class Meta:
-        db_table = "health_exam_report"
+        db_table = "medical_health_exam_report"
         ordering = ["-exam_date", "-updated_at", "-id"]
         indexes = [
             models.Index(fields=["member", "exam_date", "is_deleted"]),
@@ -310,7 +310,7 @@ class MedExamDetail(models.Model):
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:
-        db_table = "med_exam_detail"
+        db_table = "medical_med_exam_detail"
         ordering = ["sort_order", "-updated_at", "-id"]
         indexes = [
             models.Index(fields=["business_type", "business_id", "is_deleted"]),
@@ -318,24 +318,6 @@ class MedExamDetail(models.Model):
             models.Index(fields=["category", "sub_category", "is_deleted"]),
             models.Index(fields=["business_type", "business_id", "sort_order"]),
         ]
-
-
-class MedicalReport(MedicalBaseModel):
-    """广义医疗文书/报告（类型由 report_type 区分）。"""
-
-    member = models.ForeignKey(Member, related_name="medical_reports", on_delete=models.CASCADE, db_index=True)
-    medical_case = models.ForeignKey(
-        MedicalCase, related_name="medical_reports", on_delete=models.SET_NULL, null=True, blank=True, db_index=True
-    )
-    report_type = models.CharField(max_length=64, blank=True, default="")
-    title = models.CharField(max_length=255)
-    hospital = models.CharField(max_length=255, blank=True, default="")
-    doctor = models.CharField(max_length=128, blank=True, default="")
-    content = models.TextField(blank=True, default="")
-    date = models.DateTimeField()
-
-    class Meta:
-        ordering = ["-date", "-updated_at", "-id"]
 
 
 class PrescriptionBatch(MedicalBaseModel):
@@ -385,9 +367,10 @@ class PrescriptionBatch(MedicalBaseModel):
     batch_no = models.CharField(
         max_length=128,
         blank=True,
-        default="",
+        null=True,
+        default=None,
         unique=True,
-        help_text=_("业务批次号/处方号"),
+        help_text=_("业务批次号/处方号；未填时存库为 NULL，避免与 unique 冲突"),
         db_comment="业务唯一批次号",
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
@@ -398,7 +381,7 @@ class PrescriptionBatch(MedicalBaseModel):
     extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
 
     class Meta:
-        db_table = "prescription_batch"
+        db_table = "medical_prescription_batch"
         db_table_comment = "处方批次：一次处方或用药方案的批次头信息。"
         verbose_name = _("处方批次")
         verbose_name_plural = _("处方批次")
@@ -420,6 +403,8 @@ class PrescriptionBatch(MedicalBaseModel):
                 raise ValidationError({"medical_case": _("medical_case.member mismatch with batch.member")})
 
     def save(self, *args, **kwargs):
+        if self.batch_no == "":
+            self.batch_no = None
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -457,7 +442,7 @@ class Medication(MedicalBaseModel):
     extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
 
     class Meta:
-        db_table = "medication"
+        db_table = "medical_medication"
         db_table_comment = "用药记录：处方批次下的药品行与提醒规则。"
         verbose_name = _("用药记录")
         verbose_name_plural = _("用药记录")
@@ -518,7 +503,7 @@ class MedicationTakenRecord(MedicalBaseModel):
     extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
 
     class Meta:
-        db_table = "medication_taken_record"
+        db_table = "medical_medication_taken_record"
         db_table_comment = "服药打卡记录：单次应服/已服/漏服事实。"
         verbose_name = _("服药打卡")
         verbose_name_plural = _("服药打卡")
@@ -564,7 +549,7 @@ class ModelChangeLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
-        db_table = "model_change_log"
+        db_table = "medical_model_change_log"
         db_table_comment = "通用模型审计日志：追踪医疗域关键状态与字段变更。"
         verbose_name = _("模型变更日志")
         verbose_name_plural = _("模型变更日志")
