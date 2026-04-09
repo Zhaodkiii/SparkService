@@ -5,14 +5,10 @@ from django.db import models
 from django.utils import timezone
 
 
-def upload_to(instance, filename):
-    return f"managed_files/{instance.user_id}/{instance.file_uuid}/{filename}"
-
-
 class ManagedFile(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="managed_files", on_delete=models.CASCADE, db_index=True)
     file_uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
-    file = models.FileField(upload_to=upload_to, max_length=512)
+    file_path = models.CharField(max_length=1024, blank=True, default="")
     original_name = models.CharField(max_length=255)
     file_ext = models.CharField(max_length=32, blank=True, default="")
     mime_type = models.CharField(max_length=128, blank=True, default="application/octet-stream")
@@ -21,6 +17,8 @@ class ManagedFile(models.Model):
     is_public = models.BooleanField(default=False, db_index=True)
     business_type = models.CharField(max_length=64, blank=True, default="", db_index=True)
     business_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    object_key = models.CharField(max_length=1024, blank=True, default="")
+    storage_type = models.CharField(max_length=32, blank=True, default="oss")
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

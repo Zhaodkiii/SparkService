@@ -391,6 +391,16 @@ LOGGING = {
             "level": LOG_LEVEL,
             "filters": ["request_id"],
         },
+        "file_manager_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "file_manager.log"),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
     },
     "loggers": {
         "django": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": True},
@@ -406,5 +416,7 @@ LOGGING = {
             "level": LOG_LEVEL,
             "propagate": False,
         },
+        "file_manager": {"handlers": ["console", "file_manager_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
+        "file_manager.api_io": {"handlers": ["console", "file_manager_file"], "level": LOG_LEVEL, "propagate": False},
     },
 }
