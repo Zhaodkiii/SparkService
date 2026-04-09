@@ -88,6 +88,12 @@ class AIBootstrapConfigView(APIView):
                     model_company_by_name=model_company_by_name,
                 )
                 model_name = str(fallback.get("model", "") or "")
+                if not model_name:
+                    payload[scenario_key] = {
+                        "default_model": "",
+                        "models": [],
+                    }
+                    continue
                 payload[scenario_key] = {
                     "default_model": model_name,
                     "models": [

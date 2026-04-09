@@ -7,6 +7,13 @@ class ScenarioKey(models.TextChoices):
     """Seven fixed scenario identifiers (aligned with client and bootstrap keys)."""
 
     CHAT = "chat"
+    MEDICAL_STRUCTURED_EXTRACTION = "medical_structured_extraction"
+    MEDICAL_DOCUMENT_TYPE_RECOGNITION = "medical_document_type_recognition"
+    MEDICAL_CASE_EXTRACTION = "medical_case_extraction"
+    HEALTH_EXAM_EXTRACTION = "health_exam_extraction"
+    MEDICAL_REPORT_EXTRACTION = "medical_report_extraction"
+    PRESCRIPTION_EXTRACTION = "prescription_extraction"
+    MEDICATION_EXTRACTION = "medication_extraction"
     OPTIMIZATION_TEXT = "optimization_text"
     OPTIMIZATION_VISUAL = "optimization_visual"
     CONTEXT_FOLDING = "context_folding"

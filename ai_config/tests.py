@@ -5,6 +5,32 @@ from ai_config.models import TrialApplication
 
 
 class AIBootstrapConfigViewTests(APITestCase):
+    EXPECTED_SCENARIOS = {
+        "chat",
+        "medical_structured_extraction",
+        "medical_document_type_recognition",
+        "medical_case_extraction",
+        "health_exam_extraction",
+        "medical_report_extraction",
+        "prescription_extraction",
+        "medication_extraction",
+        "optimization_text",
+        "optimization_visual",
+        "context_folding",
+        "router",
+        "model_config",
+        "report_interpretation",
+    }
+    MEDICAL_PLACEHOLDER_SCENARIOS = {
+        "medical_structured_extraction",
+        "medical_document_type_recognition",
+        "medical_case_extraction",
+        "health_exam_extraction",
+        "medical_report_extraction",
+        "prescription_extraction",
+        "medication_extraction",
+    }
+
     def setUp(self):
         user_model = get_user_model()
         self.user = user_model.objects.create_user(username="trial-user", email="trial@example.com", password="secret123")
@@ -33,6 +59,7 @@ class AIBootstrapConfigViewTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         scenarios = response.json()["data"]["scenarios"]
         self.assertIsInstance(scenarios, dict)
+        self.assertEqual(set(scenarios.keys()), self.EXPECTED_SCENARIOS)
         for _key, block in scenarios.items():
             self.assertIn("default_model", block)
             self.assertIn("models", block)
@@ -40,6 +67,10 @@ class AIBootstrapConfigViewTests(APITestCase):
             for row in block["models"]:
                 self.assertIn("model", row)
                 self.assertIn("is_default", row)
+
+        for key in self.MEDICAL_PLACEHOLDER_SCENARIOS:
+            self.assertEqual(scenarios[key]["default_model"], "")
+            self.assertEqual(scenarios[key]["models"], [])
 
     def test_bootstrap_requires_authenticated_user(self):
         response = self.client.get("/api/v1/ai/config/bootstrap/")

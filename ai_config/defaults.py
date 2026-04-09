@@ -13,6 +13,13 @@ _DEFAULT_EMBED = {
 
 DEFAULT_SCENARIOS = {
     "chat": dict(_DEFAULT_CHAT),
+    "medical_structured_extraction": {},
+    "medical_document_type_recognition": {},
+    "medical_case_extraction": {},
+    "health_exam_extraction": {},
+    "medical_report_extraction": {},
+    "prescription_extraction": {},
+    "medication_extraction": {},
     "optimization_text": {
         "endpoint": "https://api.sparkclient.local/v1/chat/completions",
         "model": "spark-chat-default",
