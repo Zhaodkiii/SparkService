@@ -14,6 +14,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from common.exceptions import APIError
 from accounts.infrastructure.email_provider import EmailProvider
 from accounts.models import AccountProfile, EmailOTP, LoginAudit
+from accounts.services.device_linking_service import DeviceLinkingService
 from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
@@ -202,6 +203,12 @@ class OTPService:
         flow_logger.info(
             "auth.otp.verify.service.success",
             extra={"action": "auth.otp.verify.service", "request_id": request_id, "otp_id": otp_id, "user_id": user.id},
+        )
+        DeviceLinkingService.try_attach_user_to_trusted_device(
+            user=user,
+            device_id=device_id,
+            bundle_id=bundle_id,
+            request_id=request_id,
         )
         return {
             "user_id": user.id,

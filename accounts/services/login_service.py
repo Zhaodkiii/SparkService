@@ -12,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from common.exceptions import APIError
 from accounts.models import AccountProfile, LoginAudit, SocialIdentity
 from accounts.services.apple_identity_service import AppleIdentityService
+from accounts.services.device_linking_service import DeviceLinkingService
 from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
@@ -149,6 +150,12 @@ class LoginService:
         )
 
         tokens = LoginService._issue_tokens(user)
+        DeviceLinkingService.try_attach_user_to_trusted_device(
+            user=user,
+            device_id=device_id,
+            bundle_id=bundle_id,
+            request_id=request_id,
+        )
         flow_logger.info(
             "密码登录鉴权成功",
             extra={
@@ -319,6 +326,12 @@ class LoginService:
         result["email"] = user.email or chosen_email
         result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
         result["is_new_user"] = created_user
+        DeviceLinkingService.try_attach_user_to_trusted_device(
+            user=user,
+            device_id=device_id,
+            bundle_id=matched_audience,
+            request_id=request_id,
+        )
         flow_logger.info(
             "Apple 登录鉴权成功并签发令牌",
             extra={

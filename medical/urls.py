@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from medical.unified_resources import UnifiedMedicalResourceViewSet
 from medical.views import (
+    CombinedMedicalCreateAPIView,
     ExaminationReportViewSet,
     FollowUpViewSet,
     HealthExamReportViewSet,
@@ -50,4 +51,6 @@ urlpatterns = [
     path("workflows/prescriptions/save/", PrescriptionWorkflowSaveView.as_view(), name="medical-workflow-prescription-save"),
     path("workflows/medications/save/", MedicationWorkflowSaveView.as_view(), name="medical-workflow-medication-save"),
     path("workflows/attachments/batch-bind/", MedicalAttachmentBatchBindView.as_view(), name="medical-workflow-attachment-batch-bind"),
+    # 新增组合创建 API（一次性创建完整医疗记录）
+    path("combined-create/", CombinedMedicalCreateAPIView.as_view(), name="medical-combined-create"),
 ]

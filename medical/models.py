@@ -369,9 +369,8 @@ class PrescriptionBatch(MedicalBaseModel):
         blank=True,
         null=True,
         default=None,
-        unique=True,
-        help_text=_("业务批次号/处方号；未填时存库为 NULL，避免与 unique 冲突"),
-        db_comment="业务唯一批次号",
+        help_text=_("业务批次号/处方号；不同病例可重复，未填时存库为 NULL"),
+        db_comment="业务批次号/处方号（非全局唯一）",
     )
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
     auditor_name = models.CharField(

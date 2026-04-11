@@ -1,8 +1,11 @@
 import logging
 
 from django.db import transaction
+from django.utils import timezone
+from django.utils.translation import gettext as _
 from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from common.http_cache import build_etag, normalize_etag
@@ -429,6 +432,39 @@ class _WorkflowBaseAPIView(APIView):
         # 保留字段级结构，客户端可读化后统一拼接本地化前缀。
         return error_response(msg=serializer.errors, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
 
+    def _normalize_medication_payload(self, medication, batch, sort_order):
+        """统一药品行字段（处方批次与用药工作流复用）；batch 为 ``PrescriptionBatch`` 实例。"""
+        row = dict(medication)
+        row["member"] = batch.member_id
+        row["batch"] = batch.id
+        row["sort_order"] = row.get("sort_order", sort_order)
+
+        # Aera 风格字段兼容映射
+        row["drug_name"] = row.get("drug_name") or row.get("name") or row.get("generic_name") or row.get("brand_name") or ""
+        row["generic_name"] = row.get("generic_name") or row.get("name") or row["drug_name"]
+        row["brand_name"] = row.get("brand_name", "")
+        row["strength"] = row.get("strength") or row.get("specification") or ""
+        row["dose_per_time"] = row.get("dose_per_time") or row.get("dosage") or ""
+        row["frequency_text"] = row.get("frequency_text") or row.get("frequency") or ""
+        row["instructions"] = row.get("instructions", "")
+        row["period"] = row.get("period", "")
+        row["route"] = row.get("route", "")
+        row["dosage_form"] = row.get("dosage_form", "")
+        row["dose_unit"] = row.get("dose_unit", "")
+        row["frequency_code"] = row.get("frequency_code", "")
+        row["reminder_enabled"] = row.get("reminder_enabled", False)
+        row["reminder_times"] = row.get("reminder_times", [])
+
+        if row.get("duration_days") in (None, ""):
+            duration = row.get("duration")
+            if isinstance(duration, int):
+                row["duration_days"] = duration
+            elif isinstance(duration, str):
+                digits = "".join(ch for ch in duration if ch.isdigit())
+                row["duration_days"] = int(digits) if digits else None
+
+        return row
+
 
 class MedicalCaseWorkflowSaveView(_WorkflowBaseAPIView):
     @transaction.atomic
@@ -593,44 +629,94 @@ class PrescriptionWorkflowSaveView(_WorkflowBaseAPIView):
             status_code=status.HTTP_201_CREATED,
         )
 
-    def _normalize_medication_payload(self, medication, batch, sort_order):
-        row = dict(medication)
-        row["member"] = batch.member_id
-        row["batch"] = batch.id
-        row["sort_order"] = row.get("sort_order", sort_order)
-
-        # Aera 风格字段兼容映射
-        row["drug_name"] = row.get("drug_name") or row.get("name") or row.get("generic_name") or row.get("brand_name") or ""
-        row["generic_name"] = row.get("generic_name") or row.get("name") or row["drug_name"]
-        row["brand_name"] = row.get("brand_name", "")
-        row["strength"] = row.get("strength") or row.get("specification") or ""
-        row["dose_per_time"] = row.get("dose_per_time") or row.get("dosage") or ""
-        row["frequency_text"] = row.get("frequency_text") or row.get("frequency") or ""
-        row["instructions"] = row.get("instructions", "")
-        row["period"] = row.get("period", "")
-        row["route"] = row.get("route", "")
-        row["dosage_form"] = row.get("dosage_form", "")
-        row["dose_unit"] = row.get("dose_unit", "")
-        row["frequency_code"] = row.get("frequency_code", "")
-        row["reminder_enabled"] = row.get("reminder_enabled", False)
-        row["reminder_times"] = row.get("reminder_times", [])
-
-        if row.get("duration_days") in (None, ""):
-            duration = row.get("duration")
-            if isinstance(duration, int):
-                row["duration_days"] = duration
-            elif isinstance(duration, str):
-                digits = "".join(ch for ch in duration if ch.isdigit())
-                row["duration_days"] = int(digits) if digits else None
-
-        return row
-
 
 class MedicationWorkflowSaveView(_WorkflowBaseAPIView):
+    """用药工作流保存。
+
+    - **单条（兼容）**：请求体为单条 ``Medication`` 字段（须含 ``member``、``batch``）。
+    - **批量**：请求体含 ``medications`` 为非空数组时，先为 **首条或顶层** 指定的 ``member``
+      创建占位 ``PrescriptionBatch``，再逐条写入药品行；**成员 ID 以第一条药品上的 ``member`` 为准**，
+      若首条未带则使用顶层 ``member``。各行的 ``member`` 将统一覆盖为该值，避免串档。
+    """
+
     @transaction.atomic
     def post(self, request):
         payload = request.data.copy()
         file_ids = payload.pop("file_ids", [])
+        medications = payload.pop("medications", None)
+
+        if medications is not None:
+            if not isinstance(medications, list) or len(medications) == 0:
+                return error_response(
+                    msg={"medications": [_("medications must be a non-empty array")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            first = medications[0]
+            primary_member = None
+            if isinstance(first, dict):
+                primary_member = first.get("member")
+            if primary_member is None:
+                primary_member = payload.get("member")
+            if primary_member is None:
+                return error_response(
+                    msg={"member": [_("set member on first medication row or as top-level member")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not Member.objects.filter(id=primary_member, user=request.user, is_deleted=False).exists():
+                return error_response(
+                    msg={"member": [_("invalid member")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            batch_payload = {
+                "member": primary_member,
+                "diagnosis": "",
+                "prescriber_name": "",
+                "institution_name": "",
+                "extra": {"source": "medication_workflow_bulk"},
+            }
+            batch_serializer = PrescriptionBatchSerializer(data=batch_payload)
+            validation_error = self._validate_or_error(batch_serializer)
+            if validation_error is not None:
+                return validation_error
+            batch = batch_serializer.save(user=request.user)
+
+            medication_results = []
+            for idx, med in enumerate(medications):
+                if not isinstance(med, dict):
+                    return error_response(
+                        msg={"medications": [_("each item must be an object")]},
+                        code=-1,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+                med = {**med, "member": primary_member}
+                row = self._normalize_medication_payload(med, batch, idx)
+                row["member"] = primary_member
+                item_serializer = MedicationSerializer(data=row)
+                validation_error = self._validate_or_error(item_serializer)
+                if validation_error is not None:
+                    return validation_error
+                item = item_serializer.save(user=request.user)
+                medication_results.append(MedicationSerializer(item).data)
+
+            self._bind_files(request.user, "prescription_batch", batch.id, file_ids)
+            first_id = medication_results[0]["id"] if medication_results else batch.id
+            return success_response(
+                {
+                    "id": first_id,
+                    "batch": PrescriptionBatchSerializer(batch).data,
+                    "medications": medication_results,
+                },
+                msg="saved",
+                code=0,
+                status_code=status.HTTP_201_CREATED,
+            )
+
         serializer = MedicationSerializer(data=payload)
         validation_error = self._validate_or_error(serializer)
         if validation_error is not None:
@@ -657,3 +743,217 @@ class MedicalAttachmentBatchBindView(_WorkflowBaseAPIView):
             )
             updated += count
         return success_response({"updated": updated}, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class CombinedMedicalCreateAPIView(APIView):
+    """
+    一次性创建完整医疗记录（组合创建 API）。
+
+    流程：
+    1) member: 若带 id → 校验存在与归属；否则创建；得到 member_id
+    2) medical_case: 必传，使用 member_id 创建；得到 case_id
+    3) symptom/visit/surgery/follow-up/examination_reports/prescription_batches: 可选，有则使用 case_id 逐一创建
+    4) 返回统一结果（已创建对象的精简信息/主键）
+
+    参考：HealthClient 的 SeverMedicalCreateAPI 和 ZhaodkDream 的 SeverMedicalCreateAPI
+    """
+    permission_classes = [IsAuthenticated]
+    _NULLISH_DATETIME_TOKENS = {"", "无", "未提及", "未知", "none", "null", "n/a", "na", "-", "--"}
+
+    @classmethod
+    def _normalize_nullable_datetime(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if trimmed.lower() in cls._NULLISH_DATETIME_TOKENS or trimmed in cls._NULLISH_DATETIME_TOKENS:
+                return None
+            return trimmed
+        return value
+
+    @transaction.atomic
+    def post(self, request):
+        data = request.data or {}
+
+        # ------ (0) 基本校验：member + medical_case 必须提供 ------
+        member_payload = data.get("member")
+        case_payload = data.get("medical_case")
+
+        if not member_payload or not case_payload:
+            return Response(
+                {"detail": "member 与 medical_case 均为必填"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # =========================================================
+        # (1) 处理成员：若带 id → 校验并取用；否则创建
+        # =========================================================
+        member_id = member_payload.get("id")
+        if member_id:
+            # 有 id：校验成员存在 & 归属权限
+            try:
+                member_obj = Member.objects.get(pk=member_id, is_deleted=False)
+            except Member.DoesNotExist:
+                return Response(
+                    {"detail": f"成员(id={member_id})不存在"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if (not request.user.is_staff) and (member_obj.user_id != request.user.id):
+                return Response({"detail": "无权使用该成员"}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            # 无 id：创建成员
+            ser_m = MemberSerializer(data=member_payload, context={"request": request})
+            ser_m.is_valid(raise_exception=True)
+            member_obj = ser_m.save()
+
+        member_id = member_obj.id
+
+        # =========================================================
+        # (2) 处理病历 MedicalCase：必须
+        # =========================================================
+        case_payload["member"] = member_id
+        case_payload["user"] = request.user.id
+        case_ser = MedicalCaseSerializer(data=case_payload, context={"request": request})
+        case_ser.is_valid(raise_exception=True)
+        case_obj = case_ser.save()
+        case_id = case_obj.id
+
+        # =========================================================
+        # (3) 可选创建：symptom/visit/surgery/follow-up/examination_reports/prescription_batches
+        # =========================================================
+        result = {
+            "member_id": member_id,
+            "medical_case_id": case_id,
+            "created_at": timezone.now().isoformat(),
+        }
+
+        # ---------- symptom（单个，可选）----------
+        symptom_payload = data.get("symptom")
+        if symptom_payload:
+            payload = dict(symptom_payload)
+            payload["started_at"] = self._normalize_nullable_datetime(payload.get("started_at"))
+            payload["member"] = member_id
+            payload["user"] = request.user.id
+            payload["medical_case"] = case_id
+            ser = SymptomSerializer(data=payload, context={"request": request})
+            ser.is_valid(raise_exception=True)
+            obj = ser.save()
+            result["symptom_id"] = obj.id
+
+        # ---------- visit（单个，可选）----------
+        visit_payload = data.get("visit")
+        if visit_payload:
+            payload = dict(visit_payload)
+            payload["visited_at"] = self._normalize_nullable_datetime(payload.get("visited_at"))
+            payload["member"] = member_id
+            payload["user"] = request.user.id
+            payload["medical_case"] = case_id
+            ser = VisitSerializer(data=payload, context={"request": request})
+            ser.is_valid(raise_exception=True)
+            obj = ser.save()
+            result["visit_id"] = obj.id
+
+        # ---------- surgery（单个，可选）----------
+        surgery_payload = data.get("surgery")
+        if surgery_payload:
+            payload = dict(surgery_payload)
+            payload["performed_at"] = self._normalize_nullable_datetime(payload.get("performed_at"))
+            payload["member"] = member_id
+            payload["user"] = request.user.id
+            payload["medical_case"] = case_id
+            ser = SurgerySerializer(data=payload, context={"request": request})
+            ser.is_valid(raise_exception=True)
+            obj = ser.save()
+            result["surgery_id"] = obj.id
+
+        # ---------- follow_up（单个，可选）----------
+        follow_up_payload = data.get("follow_up")
+        if follow_up_payload:
+            payload = dict(follow_up_payload)
+            payload["planned_at"] = self._normalize_nullable_datetime(payload.get("planned_at"))
+            payload["completed_at"] = self._normalize_nullable_datetime(payload.get("completed_at"))
+            payload["member"] = member_id
+            payload["user"] = request.user.id
+            payload["medical_case"] = case_id
+            ser = FollowUpSerializer(data=payload, context={"request": request})
+            ser.is_valid(raise_exception=True)
+            obj = ser.save()
+            result["follow_up_id"] = obj.id
+
+        # ---------- examination_reports（批量，可选）----------
+        exam_reports_payload = data.get("examination_reports") or []
+        if isinstance(exam_reports_payload, list) and exam_reports_payload:
+            result["examination_report_ids"] = []
+            for rep in exam_reports_payload:
+                payload = dict(rep or {})
+                payload["performed_at"] = self._normalize_nullable_datetime(payload.get("performed_at"))
+                payload["reported_at"] = self._normalize_nullable_datetime(payload.get("reported_at"))
+                payload["member"] = member_id
+                payload["user"] = request.user.id
+                # ExaminationReport 模型使用 medical_record 字段名（不是 medical_case）
+                payload["medical_record"] = case_id
+                # details 单独处理
+                details = payload.pop("details", [])
+
+                ser = ExaminationReportSerializer(data=payload, context={"request": request})
+                ser.is_valid(raise_exception=True)
+                obj = ser.save()
+                result["examination_report_ids"].append(obj.id)
+
+                # 创建明细
+                for idx, detail in enumerate(details):
+                    normalized_detail = dict(detail or {})
+                    normalized_detail["result_at"] = self._normalize_nullable_datetime(normalized_detail.get("result_at"))
+                    detail_payload = {
+                        "business_type": MedExamDetail.BusinessType.EXAMINATION_REPORT,
+                        "business_id": obj.id,
+                        "member": member_id,
+                        **normalized_detail,
+                    }
+                    detail_ser = MedExamDetailSerializer(data=detail_payload, context={"request": request})
+                    detail_ser.is_valid(raise_exception=True)
+                    detail_ser.save()
+
+        # ---------- prescription_batches（批量，可选）----------
+        batches_payload = data.get("prescription_batches") or []
+        if isinstance(batches_payload, list) and batches_payload:
+            result["prescription_batch_ids"] = []
+            for batch_data in batches_payload:
+                batch_payload = dict(batch_data or {})
+                batch_payload["member"] = member_id
+                batch_payload["user"] = request.user.id
+                batch_payload["medical_case"] = case_id
+                # medications 单独处理
+                medications = batch_payload.pop("medications", [])
+
+                batch_ser = PrescriptionBatchSerializer(data=batch_payload, context={"request": request})
+                batch_ser.is_valid(raise_exception=True)
+                batch_obj = batch_ser.save()
+                batch_id = batch_obj.id
+                result["prescription_batch_ids"].append(batch_id)
+
+                # 创建该批次下的用药记录
+                for idx, med in enumerate(medications):
+                    med_payload = dict(med or {})
+                    med_payload["member"] = member_id
+                    med_payload["user"] = request.user.id
+                    med_payload["batch"] = batch_id
+                    med_ser = MedicationSerializer(data=med_payload, context={"request": request})
+                    med_ser.is_valid(raise_exception=True)
+                    med_ser.save()
+
+        # ---------- source_file_ids（附件绑定，可选）----------
+        source_file_ids = data.get("source_file_ids") or []
+        if isinstance(source_file_ids, list) and source_file_ids:
+            # 绑定文件到病历
+            for file_id in source_file_ids:
+                try:
+                    file_record = ManagedFile.objects.get(id=file_id, user=request.user)
+                    file_record.business_type = "medical_case"
+                    file_record.business_id = str(case_id)
+                    file_record.save(update_fields=["business_type", "business_id"])
+                except ManagedFile.DoesNotExist:
+                    pass  # 忽略不存在的文件
+
+        return Response(result, status=status.HTTP_201_CREATED)

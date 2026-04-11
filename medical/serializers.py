@@ -52,6 +52,7 @@ class MemberSerializer(serializers.ModelSerializer):
         model = Member
         fields = (
             "id",
+            "user",
             "name",
             "gender",
             "relationship",
@@ -73,6 +74,7 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
         model = MedicalCase
         fields = (
             "id",
+            "user",
             "member",
             "record_type",
             "status",
@@ -92,6 +94,7 @@ class SymptomSerializer(serializers.ModelSerializer):
         model = Symptom
         fields = (
             "id",
+            "user",
             "member",
             "medical_case",
             "name",
@@ -114,6 +117,7 @@ class VisitSerializer(serializers.ModelSerializer):
         model = Visit
         fields = (
             "id",
+            "user",
             "member",
             "medical_case",
             "visit_type",
@@ -135,6 +139,7 @@ class SurgerySerializer(serializers.ModelSerializer):
         model = Surgery
         fields = (
             "id",
+            "user",
             "member",
             "medical_case",
             "procedure_name",
@@ -159,6 +164,7 @@ class FollowUpSerializer(serializers.ModelSerializer):
         model = FollowUp
         fields = (
             "id",
+            "user",
             "member",
             "medical_case",
             "planned_at",
@@ -179,6 +185,7 @@ class ExaminationReportSerializer(serializers.ModelSerializer):
         model = ExaminationReport
         fields = (
             "id",
+            "user",
             "member",
             "medical_record",
             "category",
@@ -206,6 +213,7 @@ class HealthExamReportSerializer(serializers.ModelSerializer):
         model = HealthExamReport
         fields = (
             "id",
+            "user",
             "member",
             "institution_name",
             "report_no",
@@ -263,15 +271,32 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
 
 
 class PrescriptionBatchSerializer(serializers.ModelSerializer):
+    # 容错处理：允许客户端不传/传空/传错，统一在 validate_status 回落到 ACTIVE。
+    status = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     def validate_batch_no(self, value):
         if value == "":
             return None
         return value
 
+    def validate_status(self, value):
+        normalized = (value or "").strip().lower()
+        allowed = {
+            PrescriptionBatch.Status.ACTIVE,
+            PrescriptionBatch.Status.AUDITED,
+            PrescriptionBatch.Status.REJECTED,
+            PrescriptionBatch.Status.COMPLETED,
+            PrescriptionBatch.Status.CANCELLED,
+        }
+        if not normalized or normalized not in allowed:
+            return PrescriptionBatch.Status.ACTIVE
+        return normalized
+
     class Meta:
         model = PrescriptionBatch
         fields = (
             "id",
+            "user",
             "member",
             "medical_case",
             "prescriber_name",
@@ -290,10 +315,20 @@ class PrescriptionBatchSerializer(serializers.ModelSerializer):
 
 
 class MedicationSerializer(serializers.ModelSerializer):
+    # JSON numbers for iOS Codable (Double); DRF default coerces Decimal to string.
+    dose_value = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        required=False,
+        allow_null=True,
+        coerce_to_string=False,
+    )
+
     class Meta:
         model = Medication
         fields = (
             "id",
+            "user",
             "member",
             "batch",
             "generic_name",
