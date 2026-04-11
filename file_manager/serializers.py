@@ -3,6 +3,7 @@ import logging
 from rest_framework import serializers
 
 from file_manager.models import ManagedFile
+from file_manager.url_utils import managed_file_download_url
 
 logger = logging.getLogger("file_manager")
 
@@ -25,6 +26,32 @@ class ManagedFileRecordSerializer(serializers.ModelSerializer):
             "storage_type",
             "created_at",
         )
+
+
+class ManagedFileAttachmentOutSerializer(serializers.ModelSerializer):
+    """附件输出：含可直链访问的 ``file_url``（与下载接口构造规则一致）。"""
+
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ManagedFile
+        fields = (
+            "id",
+            "file_uuid",
+            "original_name",
+            "file_size",
+            "mime_type",
+            "file_md5",
+            "business_type",
+            "business_id",
+            "object_key",
+            "storage_type",
+            "created_at",
+            "file_url",
+        )
+
+    def get_file_url(self, obj):
+        return managed_file_download_url(obj)
 
 
 class ManagedFileUploadSerializer(serializers.Serializer):

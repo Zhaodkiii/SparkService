@@ -31,7 +31,6 @@ MEDICAL_UNIFIED_ALLOWED_QUERY_PARAMS: dict[str, frozenset[str]] = {
     "prescription-batches": frozenset({"member_id", "medical_case_id"}),
     "medications": frozenset({"member_id", "batch_id"}),
     "medication-taken-records": frozenset({"member_id", "medication_id"}),
-    "health-metrics": frozenset({"profile_client_uid"}),
 }
 
 
@@ -53,7 +52,6 @@ def _register_unified_resources() -> None:
         "prescription-batches": medical_views.PrescriptionBatchViewSet,
         "medications": medical_views.MedicationViewSet,
         "medication-taken-records": medical_views.MedicationTakenRecordViewSet,
-        "health-metrics": medical_views.HealthMetricRecordViewSet,
     }
 
 

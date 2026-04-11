@@ -4,7 +4,6 @@ from medical.models import (
     ExaminationReport,
     FollowUp,
     HealthExamReport,
-    HealthMetricRecord,
     Medication,
     MedicationTakenRecord,
     MedExamDetail,
@@ -108,9 +107,3 @@ class ModelChangeLogAdmin(admin.ModelAdmin):
     list_filter = ("entity", "action", "created_at")
     search_fields = ("entity", "trace_id", "operator")
 
-
-@admin.register(HealthMetricRecord)
-class HealthMetricRecordAdmin(admin.ModelAdmin):
-    list_display = ("id", "profile_client_uid", "metric_type", "value", "unit", "recorded_at", "is_deleted")
-    list_filter = ("metric_type", "is_deleted")
-    search_fields = ("profile_client_uid", "metric_type")

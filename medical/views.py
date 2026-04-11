@@ -1,6 +1,7 @@
 import logging
 
 from django.db import transaction
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import status, viewsets
@@ -14,7 +15,6 @@ from medical.models import (
     ExaminationReport,
     FollowUp,
     HealthExamReport,
-    HealthMetricRecord,
     Medication,
     MedicationTakenRecord,
     MedExamDetail,
@@ -30,7 +30,6 @@ from medical.serializers import (
     ExaminationReportSerializer,
     FollowUpSerializer,
     HealthExamReportSerializer,
-    HealthMetricRecordSerializer,
     MedicationSerializer,
     MedicationTakenRecordSerializer,
     MedExamDetailSerializer,
@@ -42,6 +41,7 @@ from medical.serializers import (
     VisitSerializer,
 )
 from file_manager.models import ManagedFile
+from file_manager.serializers import ManagedFileAttachmentOutSerializer
 
 logger = logging.getLogger("medical.flow")
 
@@ -305,21 +305,11 @@ class MedicationTakenRecordViewSet(WrappedModelViewSet):
         return queryset
 
 
-class HealthMetricRecordViewSet(WrappedModelViewSet):
-    queryset = HealthMetricRecord.objects.all()
-    serializer_class = HealthMetricRecordSerializer
+class MemberCompleteDataAPI(APIView):
+    """成员医疗数据汇总（单接口）：病例汇总、体检/检查报告头、处方批次与附件；不含检验/体检明细行。"""
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        profile_uid = self.request.query_params.get("profile_client_uid")
-        if profile_uid:
-            queryset = queryset.filter(profile_client_uid=profile_uid)
-        return queryset
-
-
-class MemberMedicalSummaryView(APIView):
     permission_classes = [IsAuthenticated]
-    etag_max_age = 120
+    etag_max_age = 86400
 
     def get(self, request, member_id: int):
         try:
@@ -327,40 +317,46 @@ class MemberMedicalSummaryView(APIView):
         except Member.DoesNotExist:
             return error_response(msg="member_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
 
-        medical_cases = MedicalCase.objects.select_related("member").filter(
-            user=request.user,
-            is_deleted=False,
-            member_id=member_id,
-        )
-        health_exam_reports = HealthExamReport.objects.select_related("member").filter(
-            user=request.user,
-            is_deleted=False,
-            member_id=member_id,
-        )
-        examination_reports = ExaminationReport.objects.select_related("member", "medical_record").filter(
-            user=request.user,
-            is_deleted=False,
-            member_id=member_id,
-        )
-        medications = Medication.objects.select_related("member", "batch").filter(
-            user=request.user,
-            is_deleted=False,
-            member_id=member_id,
-        )
-        medication_taken_records = MedicationTakenRecord.objects.select_related("member", "medication").filter(
-            user=request.user,
-            is_deleted=False,
-            member_id=member_id,
+        medical_cases = (
+            MedicalCase.objects.filter(user=request.user, is_deleted=False, member_id=member_id)
+            .prefetch_related(
+                "symptoms",
+                Prefetch(
+                    "prescription_batches",
+                    queryset=PrescriptionBatch.objects.filter(is_deleted=False).prefetch_related("medications"),
+                ),
+            )
+            .order_by("-created_at")
         )
 
-        etag = self._build_summary_etag(
+        health_exam_reports = HealthExamReport.objects.filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("-exam_date", "-updated_at")
+
+        examination_reports = ExaminationReport.objects.select_related("medical_record").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("-performed_at", "-updated_at")
+
+        prescription_batches = (
+            PrescriptionBatch.objects.filter(user=request.user, is_deleted=False, member_id=member_id)
+            .prefetch_related("medications")
+            .order_by("-prescribed_at", "-updated_at")
+        )
+
+        standalone_medications = Medication.objects.none()
+
+        etag = self._build_complete_etag(
             request=request,
             member=member,
             medical_cases=medical_cases,
             health_exam_reports=health_exam_reports,
             examination_reports=examination_reports,
-            medications=medications,
-            medication_taken_records=medication_taken_records,
+            prescription_batches=prescription_batches,
+            standalone_medications=standalone_medications,
         )
         if self._is_not_modified(request, etag):
             response = success_response(None, msg="not_modified", code=0, status_code=status.HTTP_304_NOT_MODIFIED)
@@ -368,28 +364,115 @@ class MemberMedicalSummaryView(APIView):
             self._set_cache_headers(response, etag)
             return response
 
+        def attachments_payload(business_type: str, business_id: int):
+            qs = ManagedFile.objects.filter(
+                user=request.user,
+                business_type=business_type,
+                business_id=str(business_id),
+                is_deleted=False,
+            ).order_by("-created_at")
+            return ManagedFileAttachmentOutSerializer(qs, many=True).data
+
+        medical_cases_payload = []
+        for c in medical_cases:
+            symptom_names = [s.name for s in c.symptoms.all()]
+            drug_names = []
+            for pb in c.prescription_batches.all():
+                for m in pb.medications.all():
+                    dn = (m.drug_name or m.generic_name or "").strip()
+                    if dn and dn not in drug_names:
+                        drug_names.append(dn)
+            medical_cases_payload.append(
+                {
+                    "id": c.id,
+                    "member": c.member_id,
+                    "record_type": c.record_type,
+                    "status": c.status,
+                    "title": c.title,
+                    "hospital_name": c.hospital_name,
+                    "age_at_visit": c.age_at_visit,
+                    "diagnosis_summary": c.diagnosis_summary,
+                    "extra": c.extra,
+                    "created_at": c.created_at,
+                    "updated_at": c.updated_at,
+                    "symptoms": symptom_names,
+                    "medications": drug_names,
+                    "attachments": attachments_payload("medical_case", c.id),
+                }
+            )
+
+        health_payload = []
+        for h in health_exam_reports:
+            row = dict(HealthExamReportSerializer(h).data)
+            row.pop("raw_ocr", None)
+            row["attachments"] = attachments_payload("health_exam_report", h.id)
+            health_payload.append(row)
+
+        exam_payload = []
+        for e in examination_reports:
+            row = dict(ExaminationReportSerializer(e).data)
+            row.pop("raw_ocr", None)
+            row["attachments"] = attachments_payload("examination_report", e.id)
+            exam_payload.append(row)
+
+        batch_payload = []
+        for b in prescription_batches:
+            row = dict(PrescriptionBatchSerializer(b).data)
+            row["medications"] = MedicationSerializer(b.medications.all(), many=True).data
+            row["attachments"] = attachments_payload("prescription_batch", b.id)
+            batch_payload.append(row)
+
+        standalone_payload = MedicationSerializer(standalone_medications, many=True).data
+
         payload = {
+            "member_id": member_id,
             "member": MemberSerializer(member).data,
-            "medical_cases": MedicalCaseSerializer(medical_cases, many=True).data,
-            "health_exam_reports": HealthExamReportSerializer(health_exam_reports, many=True).data,
-            "examination_reports": ExaminationReportSerializer(examination_reports, many=True).data,
-            "medications": MedicationSerializer(medications, many=True).data,
-            "medication_taken_records": MedicationTakenRecordSerializer(medication_taken_records, many=True).data,
+            "medical_cases": medical_cases_payload,
+            "health_exam_reports": health_payload,
+            "examination_reports": exam_payload,
+            "prescription_batches": batch_payload,
+            "standalone_medications": standalone_payload,
         }
         response = success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
         self._set_cache_headers(response, etag)
         return response
 
-    def _build_summary_etag(
+    def _build_complete_etag(
         self,
         request,
         member,
         medical_cases,
         health_exam_reports,
         examination_reports,
-        medications,
-        medication_taken_records,
+        prescription_batches,
+        standalone_medications,
     ):
+        case_ids = [str(pk) for pk in medical_cases.values_list("id", flat=True)]
+        hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
+        er_ids = [str(pk) for pk in examination_reports.values_list("id", flat=True)]
+        pb_ids = [str(pk) for pk in prescription_batches.values_list("id", flat=True)]
+
+        att_q = []
+        if case_ids:
+            att_q.append(Q(business_type="medical_case", business_id__in=case_ids))
+        if hex_ids:
+            att_q.append(Q(business_type="health_exam_report", business_id__in=hex_ids))
+        if er_ids:
+            att_q.append(Q(business_type="examination_report", business_id__in=er_ids))
+        if pb_ids:
+            att_q.append(Q(business_type="prescription_batch", business_id__in=pb_ids))
+
+        attachments_fingerprint = []
+        if att_q:
+            combined = att_q[0]
+            for q in att_q[1:]:
+                combined |= q
+            attachments_fingerprint = list(
+                ManagedFile.objects.filter(user=request.user, is_deleted=False)
+                .filter(combined)
+                .values_list("id", "updated_at")
+            )
+
         payload = {
             "path": request.path,
             "user_id": request.user.id,
@@ -398,8 +481,9 @@ class MemberMedicalSummaryView(APIView):
                 "medical_cases": list(medical_cases.values_list("id", "updated_at")),
                 "health_exam_reports": list(health_exam_reports.values_list("id", "updated_at")),
                 "examination_reports": list(examination_reports.values_list("id", "updated_at")),
-                "medications": list(medications.values_list("id", "updated_at")),
-                "medication_taken_records": list(medication_taken_records.values_list("id", "updated_at")),
+                "prescription_batches": list(prescription_batches.values_list("id", "updated_at")),
+                "standalone_medications": list(standalone_medications.values_list("id", "updated_at")),
+                "attachments": attachments_fingerprint,
             },
         }
         return build_etag(payload)

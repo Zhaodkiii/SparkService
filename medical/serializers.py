@@ -7,7 +7,6 @@ from medical.models import (
     ExaminationReport,
     FollowUp,
     HealthExamReport,
-    HealthMetricRecord,
     MedExamDetail,
     Medication,
     MedicationTakenRecord,
@@ -371,23 +370,6 @@ class MedicationTakenRecordSerializer(serializers.ModelSerializer):
             "timezone",
             "notes",
             "extra",
-            "created_at",
-            "updated_at",
-        )
-        read_only_fields = ("id", "created_at", "updated_at")
-
-
-class HealthMetricRecordSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = HealthMetricRecord
-        fields = (
-            "id",
-            "profile_client_uid",
-            "metric_type",
-            "value",
-            "unit",
-            "recorded_at",
-            "note",
             "created_at",
             "updated_at",
         )

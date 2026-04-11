@@ -8,8 +8,7 @@ from medical.views import (
     FollowUpViewSet,
     HealthExamReportViewSet,
     HealthExamWorkflowSaveView,
-    HealthMetricRecordViewSet,
-    MemberMedicalSummaryView,
+    MemberCompleteDataAPI,
     MedicalAttachmentBatchBindView,
     MedicationTakenRecordViewSet,
     MedicationWorkflowSaveView,
@@ -39,12 +38,11 @@ router.register("med-exam-details", MedExamDetailViewSet, basename="medical-med-
 router.register("prescription-batches", PrescriptionBatchViewSet, basename="medical-prescription-batches")
 router.register("medications", MedicationViewSet, basename="medical-medications")
 router.register("medication-taken-records", MedicationTakenRecordViewSet, basename="medical-medication-taken-records")
-router.register("health-metrics", HealthMetricRecordViewSet, basename="medical-health-metrics")
 router.register("resources", UnifiedMedicalResourceViewSet, basename="medical-unified-resources")
 
 urlpatterns = [
     path("", include(router.urls)),
-    path("members/<int:member_id>/summary/", MemberMedicalSummaryView.as_view(), name="medical-member-summary"),
+    path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),
     path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),
     path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),
     path("workflows/medical-reports/save/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-save"),

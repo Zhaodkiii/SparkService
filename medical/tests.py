@@ -397,29 +397,6 @@ class MedicalAPITests(APITestCase):
         self.assertEqual(one.status_code, 200)
         self.assertEqual(one.json()["data"]["medication"], med_id)
 
-    def test_unified_health_metrics_crud(self):
-        uid = str(uuid.uuid4())
-        c = self.client.post(
-            f"{UNIFIED_BASE}?kind=health-metrics",
-            {
-                "profile_client_uid": uid,
-                "metric_type": "weight",
-                "value": 70.5,
-                "unit": "kg",
-                "recorded_at": "2026-04-07T12:00:00Z",
-            },
-            format="json",
-        )
-        self.assertEqual(c.status_code, 201)
-        hid = c.json()["data"]["id"]
-
-        lst = self.client.get(f"{UNIFIED_BASE}?kind=health-metrics&profile_client_uid={uid}")
-        self.assertEqual(lst.status_code, 200)
-        self.assertEqual(len(lst.json()["data"]), 1)
-
-        g = self.client.get(f"{UNIFIED_BASE}{hid}/?kind=health-metrics&profile_client_uid={uid}")
-        self.assertEqual(g.status_code, 200)
-
     def test_unified_examination_report_accepts_medical_case_alias(self):
         member_resp = self.client.post(
             f"{UNIFIED_BASE}?kind=members",

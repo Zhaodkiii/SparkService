@@ -1,8 +1,5 @@
 import logging
 import time
-from urllib.parse import quote
-
-from django.conf import settings
 from django.db import DatabaseError
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -16,6 +13,7 @@ from file_manager.serializers import (
     ManagedFileRecordSerializer,
     ManagedFileUploadSerializer,
 )
+from file_manager.url_utils import managed_file_download_url
 
 logger = logging.getLogger("file_manager")
 file_io_logger = logging.getLogger("file_manager.api_io")
@@ -231,23 +229,13 @@ class ManagedFileDownloadURLView(APIView):
             logger.warning("下载URL生成失败：文件不存在", extra={"user_id": request.user.id, "file_id": file_id})
             return error_response(msg="file_not_found", code=4040, status_code=status.HTTP_404_NOT_FOUND)
 
-        if not file_record.object_key:
-            logger.warning("下载URL生成失败：object_key为空", extra={"user_id": request.user.id, "file_id": file_id})
-            return error_response(msg="object_key_missing", code=4042, status_code=status.HTTP_404_NOT_FOUND)
-
-        endpoint = (settings.ALIYUN_OSS_ENDPOINT or "").strip()
-        bucket = (settings.ALIYUN_OSS_BUCKET or "").strip()
-        if not endpoint or not bucket:
+        url = managed_file_download_url(file_record)
+        if not url:
+            if not file_record.object_key:
+                logger.warning("下载URL生成失败：object_key为空", extra={"user_id": request.user.id, "file_id": file_id})
+                return error_response(msg="object_key_missing", code=4042, status_code=status.HTTP_404_NOT_FOUND)
             logger.error("下载URL生成失败：OSS配置缺失", extra={"file_id": file_id})
             return error_response(msg="oss_endpoint_not_configured", code=5003, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        normalized = endpoint if endpoint.startswith("http") else f"https://{endpoint}"
-        if normalized.endswith("/"):
-            normalized = normalized[:-1]
-        if bucket not in normalized:
-            normalized = normalized.replace("://", f"://{bucket}.", 1)
-        object_key = quote(file_record.object_key.lstrip("/"), safe="/")
-        url = f"{normalized}/{object_key}"
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         file_io_logger.info(
             "下载URL生成成功",
