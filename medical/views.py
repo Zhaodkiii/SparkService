@@ -306,7 +306,7 @@ class MedicationTakenRecordViewSet(WrappedModelViewSet):
 
 
 class MemberCompleteDataAPI(APIView):
-    """成员医疗数据汇总（单接口）：病例汇总、体检/检查报告头、处方批次与附件；不含检验/体检明细行。"""
+    """成员医疗数据汇总（单接口）：病例汇总、症状/就诊/手术/随访、体检/检查报告头、处方批次与附件；不含检验/体检明细行。"""
 
     permission_classes = [IsAuthenticated]
     etag_max_age = 86400
@@ -347,6 +347,19 @@ class MemberCompleteDataAPI(APIView):
             .order_by("-prescribed_at", "-updated_at")
         )
 
+        symptoms = Symptom.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+            "-created_at", "-updated_at", "-id"
+        )
+        visits = Visit.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+            "-visited_at", "-updated_at", "-id"
+        )
+        surgeries = Surgery.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+            "-performed_at", "-updated_at", "-id"
+        )
+        follow_ups = FollowUp.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+            "-completed_at", "-updated_at", "-id"
+        )
+
         standalone_medications = Medication.objects.none()
 
         etag = self._build_complete_etag(
@@ -357,6 +370,10 @@ class MemberCompleteDataAPI(APIView):
             examination_reports=examination_reports,
             prescription_batches=prescription_batches,
             standalone_medications=standalone_medications,
+            symptoms=symptoms,
+            visits=visits,
+            surgeries=surgeries,
+            follow_ups=follow_ups,
         )
         if self._is_not_modified(request, etag):
             response = success_response(None, msg="not_modified", code=0, status_code=status.HTTP_304_NOT_MODIFIED)
@@ -424,6 +441,11 @@ class MemberCompleteDataAPI(APIView):
 
         standalone_payload = MedicationSerializer(standalone_medications, many=True).data
 
+        symptoms_payload = SymptomSerializer(symptoms, many=True).data
+        visits_payload = VisitSerializer(visits, many=True).data
+        surgeries_payload = SurgerySerializer(surgeries, many=True).data
+        follow_ups_payload = FollowUpSerializer(follow_ups, many=True).data
+
         payload = {
             "member_id": member_id,
             "member": MemberSerializer(member).data,
@@ -432,6 +454,10 @@ class MemberCompleteDataAPI(APIView):
             "examination_reports": exam_payload,
             "prescription_batches": batch_payload,
             "standalone_medications": standalone_payload,
+            "symptoms": symptoms_payload,
+            "visits": visits_payload,
+            "surgeries": surgeries_payload,
+            "follow_ups": follow_ups_payload,
         }
         response = success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
         self._set_cache_headers(response, etag)
@@ -446,6 +472,10 @@ class MemberCompleteDataAPI(APIView):
         examination_reports,
         prescription_batches,
         standalone_medications,
+        symptoms,
+        visits,
+        surgeries,
+        follow_ups,
     ):
         case_ids = [str(pk) for pk in medical_cases.values_list("id", flat=True)]
         hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
@@ -483,6 +513,10 @@ class MemberCompleteDataAPI(APIView):
                 "examination_reports": list(examination_reports.values_list("id", "updated_at")),
                 "prescription_batches": list(prescription_batches.values_list("id", "updated_at")),
                 "standalone_medications": list(standalone_medications.values_list("id", "updated_at")),
+                "symptoms": list(symptoms.values_list("id", "updated_at")),
+                "visits": list(visits.values_list("id", "updated_at")),
+                "surgeries": list(surgeries.values_list("id", "updated_at")),
+                "follow_ups": list(follow_ups.values_list("id", "updated_at")),
                 "attachments": attachments_fingerprint,
             },
         }
