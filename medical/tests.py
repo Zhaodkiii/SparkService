@@ -3,7 +3,7 @@ import uuid
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from medical.models import ExaminationReport
+from medical.models import ExaminationReport, Member
 
 User = get_user_model()
 
@@ -281,6 +281,123 @@ class MedicalAPITests(APITestCase):
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.json()["data"]["report"]["institution_name"], "")
+
+    def test_medical_report_workflow_create_uses_category_only_without_medical_case(self):
+        member = Member.objects.create(user=self.user, name="成员J", gender="male", relationship="self")
+        member_id = member.id
+
+        resp = self.client.post(
+            "/api/v1/medical/workflows/medical-reports/create/",
+            {
+                "member": member_id,
+                "category": "imaging",
+                "title": "胸部CT",
+                "hospital": "测试医院",
+                "doctor": "张医生",
+                "content": "双肺纹理增多。",
+                "date": "2026-04-07T10:00:00Z",
+                "details": [
+                    {
+                        "category": "imaging",
+                        "item_name": "胸部CT",
+                        "result_value": "双肺纹理增多",
+                        "sort_order": 0,
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        payload = resp.json()["data"]
+        self.assertEqual(payload["report"]["category"], "imaging")
+        self.assertIsNone(payload["report"]["medical_record"])
+        self.assertEqual(len(payload["details"]), 1)
+
+    def test_workflow_create_symptom_visit_surgery_follow_up(self):
+        member = Member.objects.create(user=self.user, name="成员K", gender="female", relationship="self")
+        member_id = member.id
+        case_resp = self.client.post(
+            "/api/v1/medical/cases/",
+            {"member": member_id, "title": "流程新建测试病例"},
+            format="json",
+        )
+        self.assertEqual(case_resp.status_code, 201)
+        case_id = case_resp.json()["data"]["id"]
+
+        symptom_resp = self.client.post(
+            "/api/v1/medical/workflows/symptoms/create/",
+            {
+                "member": member_id,
+                "medical_case": case_id,
+                "name": "头痛",
+                "severity": "moderate",
+                "started_at": "2026-04-10T08:00:00Z",
+            },
+            format="json",
+        )
+        self.assertEqual(symptom_resp.status_code, 201)
+        self.assertIsNotNone(symptom_resp.json()["data"]["id"])
+
+        visit_resp = self.client.post(
+            "/api/v1/medical/workflows/visits/create/",
+            {
+                "member": member_id,
+                "medical_case": case_id,
+                "visit_type": "outpatient",
+                "visited_at": "2026-04-10T09:30:00Z",
+                "department": "neurology",
+            },
+            format="json",
+        )
+        self.assertEqual(visit_resp.status_code, 201)
+        self.assertIsNotNone(visit_resp.json()["data"]["id"])
+
+        surgery_resp = self.client.post(
+            "/api/v1/medical/workflows/surgeries/create/",
+            {
+                "member": member_id,
+                "medical_case": case_id,
+                "procedure_name": "阑尾切除术",
+                "performed_at": "2026-04-11T10:30:00Z",
+                "surgeon": "Dr. Lee",
+            },
+            format="json",
+        )
+        self.assertEqual(surgery_resp.status_code, 201)
+        self.assertIsNotNone(surgery_resp.json()["data"]["id"])
+
+        follow_up_resp = self.client.post(
+            "/api/v1/medical/workflows/follow-ups/create/",
+            {
+                "member": member_id,
+                "medical_case": case_id,
+                "planned_at": "2026-04-20T09:00:00Z",
+                "status": "planned",
+                "method": "phone",
+                "outcome": "stable",
+            },
+            format="json",
+        )
+        self.assertEqual(follow_up_resp.status_code, 201)
+        self.assertIsNotNone(follow_up_resp.json()["data"]["id"])
+
+    def test_workflow_create_symptom_auto_creates_case_when_missing_medical_case(self):
+        member = Member.objects.create(user=self.user, name="成员L", gender="male", relationship="self")
+        member_id = member.id
+
+        resp = self.client.post(
+            "/api/v1/medical/workflows/symptoms/create/",
+            {
+                "member": member_id,
+                "name": "发热",
+                "severity": "mild",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        payload = resp.json()["data"]
+        self.assertEqual(payload["member"], member_id)
+        self.assertIsNotNone(payload["medical_case"])
 
     # --- Unified resource API (/resources/?kind=...) ---
 

@@ -5,6 +5,7 @@ from medical.unified_resources import UnifiedMedicalResourceViewSet
 from medical.views import (
     CombinedMedicalCreateAPIView,
     ExaminationReportViewSet,
+    FollowUpWorkflowCreateView,
     FollowUpViewSet,
     HealthExamReportViewSet,
     HealthExamWorkflowSaveView,
@@ -19,9 +20,12 @@ from medical.views import (
     MedicalReportWorkflowSaveView,
     MemberViewSet,
     PrescriptionWorkflowSaveView,
+    SurgeryWorkflowCreateView,
     PrescriptionBatchViewSet,
+    SymptomWorkflowCreateView,
     SurgeryViewSet,
     SymptomViewSet,
+    VisitWorkflowCreateView,
     VisitViewSet,
 )
 
@@ -45,7 +49,11 @@ urlpatterns = [
     path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),
     path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),
     path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),
-    path("workflows/medical-reports/save/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-save"),
+    path("workflows/medical-reports/create/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-create"),
+    path("workflows/symptoms/create/", SymptomWorkflowCreateView.as_view(), name="medical-workflow-symptom-create"),
+    path("workflows/visits/create/", VisitWorkflowCreateView.as_view(), name="medical-workflow-visit-create"),
+    path("workflows/surgeries/create/", SurgeryWorkflowCreateView.as_view(), name="medical-workflow-surgery-create"),
+    path("workflows/follow-ups/create/", FollowUpWorkflowCreateView.as_view(), name="medical-workflow-follow-up-create"),
     path("workflows/prescriptions/save/", PrescriptionWorkflowSaveView.as_view(), name="medical-workflow-prescription-save"),
     path("workflows/medications/save/", MedicationWorkflowSaveView.as_view(), name="medical-workflow-medication-save"),
     path("workflows/attachments/batch-bind/", MedicalAttachmentBatchBindView.as_view(), name="medical-workflow-attachment-batch-bind"),

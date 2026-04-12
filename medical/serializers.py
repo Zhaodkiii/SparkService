@@ -65,7 +65,7 @@ class MemberSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class MedicalCaseSerializer(serializers.ModelSerializer):
@@ -85,7 +85,7 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class SymptomSerializer(serializers.ModelSerializer):
@@ -108,7 +108,7 @@ class SymptomSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class VisitSerializer(serializers.ModelSerializer):
@@ -130,7 +130,7 @@ class VisitSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class SurgerySerializer(serializers.ModelSerializer):
@@ -155,7 +155,7 @@ class SurgerySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class FollowUpSerializer(serializers.ModelSerializer):
@@ -176,7 +176,7 @@ class FollowUpSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class ExaminationReportSerializer(serializers.ModelSerializer):
@@ -204,7 +204,7 @@ class ExaminationReportSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class HealthExamReportSerializer(serializers.ModelSerializer):
@@ -226,7 +226,7 @@ class HealthExamReportSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class MedExamDetailSerializer(serializers.ModelSerializer):
@@ -310,7 +310,7 @@ class PrescriptionBatchSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class MedicationSerializer(serializers.ModelSerializer):
@@ -352,7 +352,8 @@ class MedicationSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        # user 与其它医疗模型一致：由服务端写入，组合创建等入口通过 save(user=request.user) 注入
+        read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
 class MedicationTakenRecordSerializer(serializers.ModelSerializer):
@@ -374,4 +375,3 @@ class MedicationTakenRecordSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "created_at", "updated_at")
-

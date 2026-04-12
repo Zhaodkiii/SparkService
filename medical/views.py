@@ -501,6 +501,7 @@ class MemberCompleteDataAPI(APIView):
 
 class _WorkflowBaseAPIView(APIView):
     permission_classes = [IsAuthenticated]
+    _NULLISH_DATETIME_TOKENS = {"", "无", "未提及", "未知", "none", "null", "n/a", "na", "-", "--"}
 
     def _bind_files(self, user, business_type, business_id, file_ids):
         if not file_ids:
@@ -515,6 +516,70 @@ class _WorkflowBaseAPIView(APIView):
             return None
         # 保留字段级结构，客户端可读化后统一拼接本地化前缀。
         return error_response(msg=serializer.errors, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+    @classmethod
+    def _normalize_nullable_datetime(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if trimmed.lower() in cls._NULLISH_DATETIME_TOKENS or trimmed in cls._NULLISH_DATETIME_TOKENS:
+                return None
+            return trimmed
+        return value
+
+    def _resolve_member_and_case(self, request, payload, default_case_title: str):
+        member_id = payload.get("member")
+        if not member_id:
+            return None, None, error_response(
+                msg={"member": [_("member is required")]},
+                code=-1,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            member = Member.objects.get(id=member_id, user=request.user, is_deleted=False)
+        except Member.DoesNotExist:
+            return None, None, error_response(
+                msg={"member": [_("invalid member")]},
+                code=-1,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        medical_case_id = payload.get("medical_case")
+        if medical_case_id:
+            try:
+                medical_case = MedicalCase.objects.get(
+                    id=medical_case_id,
+                    user=request.user,
+                    is_deleted=False,
+                )
+            except MedicalCase.DoesNotExist:
+                return None, None, error_response(
+                    msg={"medical_case": [_("invalid medical_case")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if medical_case.member_id != member.id:
+                return None, None, error_response(
+                    msg={"medical_case": [_("medical_case does not belong to member")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            return member, medical_case, None
+
+        # 兼容客户端传 medical_case = null：自动创建占位病例。
+        medical_case = MedicalCase.objects.create(
+            user=request.user,
+            member=member,
+            record_type="custom",
+            status=MedicalCase.Status.DRAFT,
+            title=default_case_title,
+            diagnosis_summary="",
+            extra={"source": "workflow_auto_case"},
+        )
+        return member, medical_case, None
 
     def _normalize_medication_payload(self, medication, batch, sort_order):
         """统一药品行字段（处方批次与用药工作流复用）；batch 为 ``PrescriptionBatch`` 实例。"""
@@ -623,9 +688,10 @@ class MedicalReportWorkflowSaveView(_WorkflowBaseAPIView):
         detail_rows = payload.pop("details", [])
 
         report_payload = {
+            "user": request.user.id,
             "member": payload.get("member"),
             "medical_record": payload.get("medical_case"),
-            "category": payload.get("report_type", "") or "medical_report",
+            "category": payload.get("category", "") or "medical_report",
             "sub_category": "",
             "item_name": payload.get("title", "") or "医疗报告",
             "performed_at": payload.get("date"),
@@ -810,6 +876,127 @@ class MedicationWorkflowSaveView(_WorkflowBaseAPIView):
         return success_response(serializer.data, msg="saved", code=0, status_code=status.HTTP_201_CREATED)
 
 
+class SymptomWorkflowCreateView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        member, medical_case, resolve_error = self._resolve_member_and_case(request, payload, default_case_title="症状记录")
+        if resolve_error is not None:
+            return resolve_error
+
+        symptom_payload = {
+            "member": member.id,
+            "medical_case": medical_case.id,
+            "name": payload.get("name"),
+            "code": payload.get("code", ""),
+            "severity": payload.get("severity", ""),
+            "started_at": self._normalize_nullable_datetime(payload.get("started_at")),
+            "duration_value": payload.get("duration_value"),
+            "duration_unit": payload.get("duration_unit", ""),
+            "body_part": payload.get("body_part", ""),
+            "notes": payload.get("notes", ""),
+            "extra": payload.get("extra", {}),
+        }
+        serializer = SymptomSerializer(data=symptom_payload, context={"request": request})
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
+        self._bind_files(request.user, "symptom", obj.id, file_ids)
+        return success_response(serializer.data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class VisitWorkflowCreateView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        member, medical_case, resolve_error = self._resolve_member_and_case(request, payload, default_case_title="就诊记录")
+        if resolve_error is not None:
+            return resolve_error
+
+        visit_payload = {
+            "member": member.id,
+            "medical_case": medical_case.id,
+            "visit_type": payload.get("visit_type", "") or "custom",
+            "visited_at": self._normalize_nullable_datetime(payload.get("visited_at")),
+            "department": payload.get("department", ""),
+            "doctor_name": payload.get("doctor_name", ""),
+            "visit_no": payload.get("visit_no", ""),
+            "notes": payload.get("notes", ""),
+            "extra": payload.get("extra", {}),
+        }
+        serializer = VisitSerializer(data=visit_payload, context={"request": request})
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
+        self._bind_files(request.user, "visit", obj.id, file_ids)
+        return success_response(serializer.data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class SurgeryWorkflowCreateView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        member, medical_case, resolve_error = self._resolve_member_and_case(request, payload, default_case_title="手术记录")
+        if resolve_error is not None:
+            return resolve_error
+
+        surgery_payload = {
+            "member": member.id,
+            "medical_case": medical_case.id,
+            "procedure_name": payload.get("procedure_name"),
+            "procedure_code": payload.get("procedure_code", ""),
+            "site": payload.get("site", ""),
+            "performed_at": self._normalize_nullable_datetime(payload.get("performed_at")),
+            "surgeon": payload.get("surgeon", ""),
+            "anesthesia_type": payload.get("anesthesia_type", ""),
+            "incision_level": payload.get("incision_level", ""),
+            "asa_class": payload.get("asa_class", ""),
+            "notes": payload.get("notes", ""),
+            "extra": payload.get("extra", {}),
+        }
+        serializer = SurgerySerializer(data=surgery_payload, context={"request": request})
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
+        self._bind_files(request.user, "surgery", obj.id, file_ids)
+        return success_response(serializer.data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class FollowUpWorkflowCreateView(_WorkflowBaseAPIView):
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        file_ids = payload.pop("file_ids", [])
+        member, medical_case, resolve_error = self._resolve_member_and_case(request, payload, default_case_title="随访记录")
+        if resolve_error is not None:
+            return resolve_error
+
+        follow_up_payload = {
+            "member": member.id,
+            "medical_case": medical_case.id,
+            "planned_at": self._normalize_nullable_datetime(payload.get("planned_at")),
+            "completed_at": self._normalize_nullable_datetime(payload.get("completed_at")),
+            "status": payload.get("status", "") or "initial",
+            "method": payload.get("method", ""),
+            "outcome": payload.get("outcome", ""),
+            "next_action": payload.get("next_action", ""),
+            "extra": payload.get("extra", {}),
+        }
+        serializer = FollowUpSerializer(data=follow_up_payload, context={"request": request})
+        validation_error = self._validate_or_error(serializer)
+        if validation_error is not None:
+            return validation_error
+        obj = serializer.save(user=request.user)
+        self._bind_files(request.user, "follow_up", obj.id, file_ids)
+        return success_response(serializer.data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
 class MedicalAttachmentBatchBindView(_WorkflowBaseAPIView):
     @transaction.atomic
     def patch(self, request):
@@ -889,7 +1076,8 @@ class CombinedMedicalCreateAPIView(APIView):
             # 无 id：创建成员
             ser_m = MemberSerializer(data=member_payload, context={"request": request})
             ser_m.is_valid(raise_exception=True)
-            member_obj = ser_m.save()
+            # user 在 Serializer 中为 read_only，须通过 save(user=…) 写入（见 DRF ModelSerializer.save）
+            member_obj = ser_m.save(user=request.user)
 
         member_id = member_obj.id
 
@@ -897,10 +1085,9 @@ class CombinedMedicalCreateAPIView(APIView):
         # (2) 处理病历 MedicalCase：必须
         # =========================================================
         case_payload["member"] = member_id
-        case_payload["user"] = request.user.id
         case_ser = MedicalCaseSerializer(data=case_payload, context={"request": request})
         case_ser.is_valid(raise_exception=True)
-        case_obj = case_ser.save()
+        case_obj = case_ser.save(user=request.user)
         case_id = case_obj.id
 
         # =========================================================
@@ -918,11 +1105,10 @@ class CombinedMedicalCreateAPIView(APIView):
             payload = dict(symptom_payload)
             payload["started_at"] = self._normalize_nullable_datetime(payload.get("started_at"))
             payload["member"] = member_id
-            payload["user"] = request.user.id
             payload["medical_case"] = case_id
             ser = SymptomSerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
-            obj = ser.save()
+            obj = ser.save(user=request.user)
             result["symptom_id"] = obj.id
 
         # ---------- visit（单个，可选）----------
@@ -931,11 +1117,10 @@ class CombinedMedicalCreateAPIView(APIView):
             payload = dict(visit_payload)
             payload["visited_at"] = self._normalize_nullable_datetime(payload.get("visited_at"))
             payload["member"] = member_id
-            payload["user"] = request.user.id
             payload["medical_case"] = case_id
             ser = VisitSerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
-            obj = ser.save()
+            obj = ser.save(user=request.user)
             result["visit_id"] = obj.id
 
         # ---------- surgery（单个，可选）----------
@@ -944,11 +1129,10 @@ class CombinedMedicalCreateAPIView(APIView):
             payload = dict(surgery_payload)
             payload["performed_at"] = self._normalize_nullable_datetime(payload.get("performed_at"))
             payload["member"] = member_id
-            payload["user"] = request.user.id
             payload["medical_case"] = case_id
             ser = SurgerySerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
-            obj = ser.save()
+            obj = ser.save(user=request.user)
             result["surgery_id"] = obj.id
 
         # ---------- follow_up（单个，可选）----------
@@ -958,11 +1142,10 @@ class CombinedMedicalCreateAPIView(APIView):
             payload["planned_at"] = self._normalize_nullable_datetime(payload.get("planned_at"))
             payload["completed_at"] = self._normalize_nullable_datetime(payload.get("completed_at"))
             payload["member"] = member_id
-            payload["user"] = request.user.id
             payload["medical_case"] = case_id
             ser = FollowUpSerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
-            obj = ser.save()
+            obj = ser.save(user=request.user)
             result["follow_up_id"] = obj.id
 
         # ---------- examination_reports（批量，可选）----------
@@ -974,7 +1157,6 @@ class CombinedMedicalCreateAPIView(APIView):
                 payload["performed_at"] = self._normalize_nullable_datetime(payload.get("performed_at"))
                 payload["reported_at"] = self._normalize_nullable_datetime(payload.get("reported_at"))
                 payload["member"] = member_id
-                payload["user"] = request.user.id
                 # ExaminationReport 模型使用 medical_record 字段名（不是 medical_case）
                 payload["medical_record"] = case_id
                 # details 单独处理
@@ -982,7 +1164,7 @@ class CombinedMedicalCreateAPIView(APIView):
 
                 ser = ExaminationReportSerializer(data=payload, context={"request": request})
                 ser.is_valid(raise_exception=True)
-                obj = ser.save()
+                obj = ser.save(user=request.user)
                 result["examination_report_ids"].append(obj.id)
 
                 # 创建明细
@@ -1006,14 +1188,13 @@ class CombinedMedicalCreateAPIView(APIView):
             for batch_data in batches_payload:
                 batch_payload = dict(batch_data or {})
                 batch_payload["member"] = member_id
-                batch_payload["user"] = request.user.id
                 batch_payload["medical_case"] = case_id
                 # medications 单独处理
                 medications = batch_payload.pop("medications", [])
 
                 batch_ser = PrescriptionBatchSerializer(data=batch_payload, context={"request": request})
                 batch_ser.is_valid(raise_exception=True)
-                batch_obj = batch_ser.save()
+                batch_obj = batch_ser.save(user=request.user)
                 batch_id = batch_obj.id
                 result["prescription_batch_ids"].append(batch_id)
 
@@ -1021,11 +1202,10 @@ class CombinedMedicalCreateAPIView(APIView):
                 for idx, med in enumerate(medications):
                     med_payload = dict(med or {})
                     med_payload["member"] = member_id
-                    med_payload["user"] = request.user.id
                     med_payload["batch"] = batch_id
                     med_ser = MedicationSerializer(data=med_payload, context={"request": request})
                     med_ser.is_valid(raise_exception=True)
-                    med_ser.save()
+                    med_ser.save(user=request.user)
 
         # ---------- source_file_ids（附件绑定，可选）----------
         source_file_ids = data.get("source_file_ids") or []
