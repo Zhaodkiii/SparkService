@@ -1,0 +1,17 @@
+INFO 2026-04-12 16:23:50,226 chat_sync.sync [request_id=A79ADA44-FA07-4C41-94E0-07B74C58BF93] chat push start request_id=A79ADA44-FA07-4C41-94E0-07B74C58BF93 user_id=1 count=1 content_type=application/json
+INFO 2026-04-12 16:23:50,278 chat_sync.sync [request_id=A79ADA44-FA07-4C41-94E0-07B74C58BF93] chat sync notified user_id=1 cursor=2026-04-12T16:23:50.247021+00:00 message_count=1
+INFO 2026-04-12 16:23:50,279 chat_sync.ws [request_id=-] chat ws connected user_id=1
+INFO 2026-04-12 16:23:50,283 chat_sync.sync [request_id=A79ADA44-FA07-4C41-94E0-07B74C58BF93] chat sync notified user_id=1 cursor=2026-04-12T16:23:50.247021+00:00 message_count=1
+INFO 2026-04-12 16:23:50,284 chat_sync.sync [request_id=A79ADA44-FA07-4C41-94E0-07B74C58BF93] chat push success request_id=A79ADA44-FA07-4C41-94E0-07B74C58BF93 user_id=1 accepted=1
+INFO 2026-04-12 16:23:53,442 chat_sync.sync [request_id=5D022CF4-08C9-46D1-9D6E-FB626FBD26A8] chat push start request_id=5D022CF4-08C9-46D1-9D6E-FB626FBD26A8 user_id=1 count=1 content_type=application/json
+INFO 2026-04-12 16:23:53,450 chat_sync.sync [request_id=5D022CF4-08C9-46D1-9D6E-FB626FBD26A8] chat sync notified user_id=1 cursor=2026-04-12T16:23:53.447800+00:00 message_count=1
+INFO 2026-04-12 16:23:53,454 chat_sync.sync [request_id=5D022CF4-08C9-46D1-9D6E-FB626FBD26A8] chat sync notified user_id=1 cursor=2026-04-12T16:23:53.447800+00:00 message_count=1
+INFO 2026-04-12 16:23:53,454 chat_sync.sync [request_id=5D022CF4-08C9-46D1-9D6E-FB626FBD26A8] chat push success request_id=5D022CF4-08C9-46D1-9D6E-FB626FBD26A8 user_id=1 accepted=1
+INFO 2026-04-12 16:24:00,079 chat_sync.ws [request_id=-] chat ws disconnected close_code=1000
+INFO 2026-04-12 16:24:01,140 chat_sync.ws [request_id=-] chat ws connected user_id=1
+INFO 2026-04-12 16:24:05,647 chat_sync.sync [request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC] chat push start request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC user_id=1 count=2 content_type=application/json
+INFO 2026-04-12 16:24:05,654 chat_sync.sync [request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC] chat sync notified user_id=1 cursor=2026-04-12T16:24:05.651834+00:00 message_count=1
+INFO 2026-04-12 16:24:05,660 chat_sync.sync [request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC] chat sync notified user_id=1 cursor=2026-04-12T16:24:05.658188+00:00 message_count=1
+INFO 2026-04-12 16:24:05,663 chat_sync.sync [request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC] chat sync notified user_id=1 cursor=2026-04-12T16:24:05.658188+00:00 message_count=2
+INFO 2026-04-12 16:24:05,663 chat_sync.sync [request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC] chat push success request_id=C838909D-C5D9-4E5E-9099-BC59304ED6DC user_id=1 accepted=2
+INFO 2026-04-12 16:25:56,733 chat_sync.ws [request_id=-] chat ws disconnected close_code=1000

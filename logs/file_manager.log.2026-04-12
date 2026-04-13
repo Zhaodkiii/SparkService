@@ -1,0 +1,59 @@
+WARNING 2026-04-12 12:36:51,140 file_manager.sts_utils [request_id=-] 阿里云 SDK 未安装，STS 功能将不可用
+INFO 2026-04-12 12:38:29,166 file_manager [request_id=FBD944E1-7E6E-4FD3-B3CB-4FC434C7003E] 更新文件业务绑定请求
+INFO 2026-04-12 12:38:29,171 file_manager [request_id=FBD944E1-7E6E-4FD3-B3CB-4FC434C7003E] 更新文件业务绑定成功
+INFO 2026-04-12 12:38:29,181 file_manager [request_id=4E7B11DE-E077-414E-B692-05A0654A4CC6] 更新文件业务绑定请求
+INFO 2026-04-12 12:38:29,184 file_manager [request_id=4E7B11DE-E077-414E-B692-05A0654A4CC6] 更新文件业务绑定成功
+INFO 2026-04-12 12:38:29,263 file_manager [request_id=0E2FB75A-918B-4C3E-9937-2AE7465317D2] 更新文件业务绑定请求
+INFO 2026-04-12 12:38:29,267 file_manager [request_id=0E2FB75A-918B-4C3E-9937-2AE7465317D2] 更新文件业务绑定成功
+INFO 2026-04-12 12:38:29,279 file_manager [request_id=F8FB7094-06BA-42BF-8937-686412E9A6C2] 更新文件业务绑定请求
+INFO 2026-04-12 12:38:29,283 file_manager [request_id=F8FB7094-06BA-42BF-8937-686412E9A6C2] 更新文件业务绑定成功
+INFO 2026-04-12 12:51:13,494 file_manager.oss_sts_views [request_id=8168F6EE-24B7-43A8-9ADF-6E8EAC30C582] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 12:51:23,879 file_manager.api_io [request_id=835E5AE7-FE56-446D-A3CE-F59617DE5A73] 文件登记入参
+INFO 2026-04-12 12:51:23,883 file_manager [request_id=835E5AE7-FE56-446D-A3CE-F59617DE5A73] 文件登记成功
+INFO 2026-04-12 12:51:45,247 file_manager.api_io [request_id=3E22C512-2274-479A-85A4-2DB9C6997B03] 文件登记入参
+INFO 2026-04-12 12:51:45,251 file_manager [request_id=3E22C512-2274-479A-85A4-2DB9C6997B03] 文件登记成功
+INFO 2026-04-12 14:57:46,807 file_manager.oss_sts_views [request_id=8E919284-B81D-4EC1-A5EE-E8435D21A92D] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 14:57:58,416 file_manager.api_io [request_id=DF798DC6-90F8-48AE-A343-9FB46914D37A] 文件登记入参
+INFO 2026-04-12 14:57:58,421 file_manager [request_id=DF798DC6-90F8-48AE-A343-9FB46914D37A] 文件登记成功
+INFO 2026-04-12 14:58:17,919 file_manager [request_id=B023E7EA-A6BC-42C1-B171-A5A155460287] 更新文件业务绑定请求
+INFO 2026-04-12 14:58:17,923 file_manager [request_id=B023E7EA-A6BC-42C1-B171-A5A155460287] 更新文件业务绑定成功
+INFO 2026-04-12 14:58:37,801 file_manager.api_io [request_id=880768AD-B7A8-4927-AD7B-B90F9E6CE05B] 文件登记入参
+INFO 2026-04-12 14:58:37,805 file_manager [request_id=880768AD-B7A8-4927-AD7B-B90F9E6CE05B] 文件登记成功
+INFO 2026-04-12 14:59:01,267 file_manager.api_io [request_id=A81F93CC-87D9-409F-8429-C40497F6E372] 文件登记入参
+INFO 2026-04-12 14:59:01,270 file_manager [request_id=A81F93CC-87D9-409F-8429-C40497F6E372] 文件登记成功
+INFO 2026-04-12 14:59:13,353 file_manager [request_id=E3D116C7-ADA1-463C-8A22-7ADCA66F2FC6] 更新文件业务绑定请求
+INFO 2026-04-12 14:59:13,358 file_manager [request_id=E3D116C7-ADA1-463C-8A22-7ADCA66F2FC6] 更新文件业务绑定成功
+INFO 2026-04-12 15:13:36,292 file_manager.oss_sts_views [request_id=10E68738-3E9F-44CA-87C4-C1EE06C47051] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 15:13:49,712 file_manager.api_io [request_id=E2F255FC-3AD1-4041-9975-C3B2E5769454] 文件登记入参
+INFO 2026-04-12 15:13:49,716 file_manager [request_id=E2F255FC-3AD1-4041-9975-C3B2E5769454] 文件登记成功
+INFO 2026-04-12 15:13:49,820 file_manager.api_io [request_id=7ED40274-A8FB-403B-9D68-6347D7540465] 文件登记入参
+INFO 2026-04-12 15:13:49,824 file_manager [request_id=7ED40274-A8FB-403B-9D68-6347D7540465] 文件登记成功
+INFO 2026-04-12 15:15:37,349 file_manager [request_id=FFBCC951-410E-4816-B1C5-F53C674B18AD] 更新文件业务绑定请求
+INFO 2026-04-12 15:15:37,351 file_manager [request_id=FFBCC951-410E-4816-B1C5-F53C674B18AD] 更新文件业务绑定成功
+INFO 2026-04-12 15:15:37,401 file_manager [request_id=7BAE30C0-3CB1-4C2D-91E2-50FB8460F282] 更新文件业务绑定请求
+INFO 2026-04-12 15:15:37,405 file_manager [request_id=7BAE30C0-3CB1-4C2D-91E2-50FB8460F282] 更新文件业务绑定成功
+INFO 2026-04-12 15:33:35,090 file_manager.oss_sts_views [request_id=47965616-82F5-4DB2-9816-BCD6BB6D1C76] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 15:33:49,703 file_manager.api_io [request_id=70CB445B-B574-4CC5-839D-BE30ABB73934] 文件登记入参
+INFO 2026-04-12 15:33:49,707 file_manager [request_id=70CB445B-B574-4CC5-839D-BE30ABB73934] 文件登记成功
+INFO 2026-04-12 15:37:33,354 file_manager [request_id=80653115-6EA5-4E61-BDD8-F120F3C272E2] 更新文件业务绑定请求
+INFO 2026-04-12 15:37:33,362 file_manager [request_id=80653115-6EA5-4E61-BDD8-F120F3C272E2] 更新文件业务绑定成功
+INFO 2026-04-12 15:42:09,339 file_manager.oss_sts_views [request_id=E942800C-0B5E-41E3-8FD2-B47A41A8C066] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 15:42:18,921 file_manager.api_io [request_id=A3F947D6-1700-485E-8625-E7A9E7BEBD26] 文件登记入参
+INFO 2026-04-12 15:42:18,925 file_manager [request_id=A3F947D6-1700-485E-8625-E7A9E7BEBD26] 文件登记成功
+INFO 2026-04-12 15:44:55,452 file_manager [request_id=2E6E4626-4A30-4273-B7B6-DC9777C752A0] 更新文件业务绑定请求
+INFO 2026-04-12 15:44:55,458 file_manager [request_id=2E6E4626-4A30-4273-B7B6-DC9777C752A0] 更新文件业务绑定成功
+INFO 2026-04-12 15:45:17,714 file_manager [request_id=24811AC1-1A54-471B-98C2-5FD449CD22AA] 更新文件业务绑定请求
+INFO 2026-04-12 15:45:17,716 file_manager [request_id=24811AC1-1A54-471B-98C2-5FD449CD22AA] 更新文件业务绑定成功
+INFO 2026-04-12 15:46:39,493 file_manager [request_id=D60646D6-0315-423F-843D-82FBBA76FCF4] 更新文件业务绑定请求
+INFO 2026-04-12 15:46:39,498 file_manager [request_id=D60646D6-0315-423F-843D-82FBBA76FCF4] 更新文件业务绑定成功
+INFO 2026-04-12 15:54:11,958 file_manager.oss_sts_views [request_id=DCC425FC-22EC-4D31-A85A-4860254DDAC9] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 15:54:25,069 file_manager.api_io [request_id=F711CE87-70DB-4228-A5A7-773E1EFBD037] 文件登记入参
+INFO 2026-04-12 15:54:25,075 file_manager [request_id=F711CE87-70DB-4228-A5A7-773E1EFBD037] 文件登记成功
+INFO 2026-04-12 15:57:12,117 file_manager [request_id=FFB273E6-F9D6-4AB1-9F60-16835551298C] 更新文件业务绑定请求
+INFO 2026-04-12 15:57:12,122 file_manager [request_id=FFB273E6-F9D6-4AB1-9F60-16835551298C] 更新文件业务绑定成功
+INFO 2026-04-12 16:01:22,283 file_manager.oss_sts_views [request_id=0200BDC2-1DD9-4D37-9FDC-75B2C8B34199] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 16:02:19,723 file_manager.oss_sts_views [request_id=D759C85E-6C9D-4DFD-BB02-F5ACB2A88E08] OSS STS 签发成功 user_id=1
+INFO 2026-04-12 16:02:53,998 file_manager.api_io [request_id=0A707AB7-66DE-4AF6-B538-9590EC5F11F8] 文件登记入参
+INFO 2026-04-12 16:02:54,001 file_manager [request_id=0A707AB7-66DE-4AF6-B538-9590EC5F11F8] 文件登记成功
+INFO 2026-04-12 16:08:37,401 file_manager.api_io [request_id=8C5211D5-9AF2-4E4E-9EF5-F1F66568D1A9] 文件登记入参
+INFO 2026-04-12 16:08:37,404 file_manager [request_id=8C5211D5-9AF2-4E4E-9EF5-F1F66568D1A9] 文件登记成功

@@ -322,6 +322,40 @@ class MedicationSerializer(serializers.ModelSerializer):
         allow_null=True,
         coerce_to_string=False,
     )
+    # 模型字段无 blank，但入参可与 generic_name 互填；最终在 validate 中统一。
+    drug_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+    def validate(self, attrs):
+        merged = dict(attrs)
+        if self.instance is not None:
+            for f in ("generic_name", "drug_name", "brand_name"):
+                if f not in merged:
+                    merged[f] = getattr(self.instance, f, "") or ""
+
+        gn = (merged.get("generic_name") or "").strip()
+        dn = (merged.get("drug_name") or "").strip()
+        raw = getattr(self, "initial_data", None) or {}
+        name_alias = (raw.get("name") or "").strip()
+
+        if not dn and gn:
+            attrs["drug_name"] = gn
+        elif dn and not gn:
+            attrs["generic_name"] = dn
+        elif not dn and not gn:
+            brand = (merged.get("brand_name") or "").strip() or (raw.get("brand_name") or "").strip()
+            fallback = name_alias or brand
+            if fallback:
+                attrs["drug_name"] = fallback
+                attrs["generic_name"] = fallback
+            else:
+                raise serializers.ValidationError(
+                    {
+                        "drug_name": [
+                            _("请补充药品信息：至少填写 drug_name（药品显示名）或 generic_name（通用名）。")
+                        ]
+                    }
+                )
+        return attrs
 
     class Meta:
         model = Medication
