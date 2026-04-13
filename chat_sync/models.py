@@ -14,6 +14,7 @@ class ChatThread(models.Model):
     title = models.CharField(max_length=255, default="New Chat")
     scenario = models.CharField(max_length=32, choices=Scenario.choices, default=Scenario.CHAT)
     is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     server_updated_at = models.DateTimeField(auto_now=True, db_index=True)

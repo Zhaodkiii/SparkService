@@ -14,7 +14,16 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField()
     server_updated_at = serializers.DateTimeField(required=False, allow_null=True)
     tombstone = serializers.BooleanField(required=False, default=False)
+    attachments = serializers.JSONField(required=False)
+    reasoning_content = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    reasoning_duration_ms = serializers.IntegerField(required=False, allow_null=True)
+    reasoning_expanded = serializers.BooleanField(required=False)
+    reasoning_visibility = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class ChatPushRequestSerializer(serializers.Serializer):
     messages = ChatRemoteMessageSerializer(many=True)
+
+
+class ChatThreadDeleteRequestSerializer(serializers.Serializer):
+    thread_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False)
