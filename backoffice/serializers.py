@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, TrialApplication
+from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 
 
@@ -25,6 +26,218 @@ class AdminUserSerializer(serializers.ModelSerializer):
 
 class AdminUserStatusSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
+
+
+class AdminDeviceSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.username", read_only=True)
+    user_email = serializers.CharField(source="user.email", read_only=True)
+
+    class Meta:
+        model = TrustedDevice
+        fields = (
+            "id",
+            "user",
+            "user_name",
+            "user_email",
+            "bundle_id",
+            "device_id",
+            "platform",
+            "system_version",
+            "device_model",
+            "device_name",
+            "verified",
+            "notifications_enabled",
+            "is_revoked",
+            "first_seen",
+            "last_seen",
+        )
+
+
+class AdminDeviceRevokeSerializer(serializers.Serializer):
+    is_revoked = serializers.BooleanField()
+
+
+class AdminDeactivationSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.username", read_only=True)
+    user_email = serializers.CharField(source="user.email", read_only=True)
+
+    class Meta:
+        model = AccountDeactivation
+        fields = (
+            "id",
+            "user",
+            "user_name",
+            "user_email",
+            "state",
+            "requested_at",
+            "scheduled_at",
+            "processed_at",
+            "completed_at",
+            "cancelled_at",
+            "failed_at",
+            "freeze_email",
+            "freeze_phone_number",
+            "error_message",
+            "request_id",
+            "created_at",
+        )
+
+
+class AdminDeactivationAuditSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccountDeactivationAudit
+        fields = (
+            "id",
+            "deactivation",
+            "action",
+            "request_id",
+            "details",
+            "created_at",
+        )
+
+
+class AdminNotificationSendSerializer(serializers.Serializer):
+    campaign_name = serializers.CharField(required=False, allow_blank=True, max_length=128, default="")
+    template_id = serializers.IntegerField(required=False, allow_null=True)
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    user_ids = serializers.ListField(child=serializers.IntegerField(), required=False, allow_empty=True)
+    title = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    body = serializers.CharField(required=False, allow_blank=True)
+    channels = serializers.ListField(
+        child=serializers.ChoiceField(choices=[NotificationMessage.Channel.APNS, NotificationMessage.Channel.EMAIL, NotificationMessage.Channel.SMS]),
+        allow_empty=False,
+    )
+    filters = serializers.JSONField(required=False)
+    payload = serializers.JSONField(required=False)
+    schedule_at = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        template_id = attrs.get("template_id")
+        title = (attrs.get("title") or "").strip()
+        body = (attrs.get("body") or "").strip()
+        user_id = attrs.get("user_id")
+        user_ids = attrs.get("user_ids") or []
+        filters = attrs.get("filters") or {}
+        if not template_id and not (title or body):
+            raise serializers.ValidationError("template_id 或 title/body 至少提供一组")
+        if not user_id and not user_ids and not filters:
+            raise serializers.ValidationError("请指定 user_id / user_ids / filters 至少一种目标")
+        return attrs
+
+
+class AdminNotificationUserQuerySerializer(serializers.Serializer):
+    q = serializers.CharField(required=False, allow_blank=True, default="")
+    page = serializers.IntegerField(required=False, min_value=1, default=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=20)
+    only_enabled = serializers.BooleanField(required=False, default=True)
+    has_email = serializers.BooleanField(required=False, allow_null=True)
+    has_sms = serializers.BooleanField(required=False, allow_null=True)
+    has_apns = serializers.BooleanField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False, allow_null=True)
+
+
+class AdminNotificationLogQuerySerializer(serializers.Serializer):
+    q = serializers.CharField(required=False, allow_blank=True, default="")
+    page = serializers.IntegerField(required=False, min_value=1, default=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=20)
+    status = serializers.ChoiceField(
+        required=False,
+        allow_blank=True,
+        choices=["", NotificationMessage.Status.SENT, NotificationMessage.Status.FAILED, NotificationMessage.Status.PARTIAL, NotificationMessage.Status.SKIPPED],
+        default="",
+    )
+
+
+class AdminNotificationMessageSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.username", read_only=True)
+    campaign_name = serializers.CharField(source="campaign.name", read_only=True)
+
+    class Meta:
+        model = NotificationMessage
+        fields = (
+            "id",
+            "campaign",
+            "campaign_name",
+            "user",
+            "user_name",
+            "channel",
+            "status",
+            "title",
+            "body",
+            "payload",
+            "delivery_details",
+            "target_count",
+            "success_count",
+            "failure_count",
+            "receiver_email",
+            "receiver_phone",
+            "apns_topic",
+            "provider_message_id",
+            "error_message",
+            "request_id",
+            "sent_at",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AdminNotificationTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationTemplate
+        fields = (
+            "id",
+            "name",
+            "description",
+            "title_template",
+            "body_template",
+            "payload_template",
+            "default_channels",
+            "is_active",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AdminNotificationCampaignSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source="created_by.username", read_only=True)
+    template_name = serializers.CharField(source="template.name", read_only=True)
+
+    class Meta:
+        model = NotificationCampaign
+        fields = (
+            "id",
+            "name",
+            "status",
+            "channels",
+            "title",
+            "body",
+            "payload",
+            "filters",
+            "target_user_ids",
+            "target_count",
+            "success_count",
+            "failure_count",
+            "template",
+            "template_name",
+            "created_by",
+            "created_by_name",
+            "task_id",
+            "request_id",
+            "scheduled_at",
+            "started_at",
+            "finished_at",
+            "error_message",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AdminNotificationTemplatePreviewSerializer(serializers.Serializer):
+    template_id = serializers.IntegerField(required=False, allow_null=True)
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    title = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    body = serializers.CharField(required=False, allow_blank=True)
+    payload = serializers.JSONField(required=False)
 
 
 class AdminAIScenarioSummarySerializer(serializers.Serializer):

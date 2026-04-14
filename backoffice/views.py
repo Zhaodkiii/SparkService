@@ -1,9 +1,16 @@
+import os
+import signal
+import socket
+import subprocess
+import sys
+import time
 from datetime import timedelta
+from pathlib import Path
 
 from django.contrib.auth import authenticate, get_user_model
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -12,7 +19,9 @@ from rest_framework.serializers import Serializer, CharField
 from rest_framework.views import APIView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from accounts.models import AccountDeactivation
+from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
+from accounts.services.notification_service import NotificationService
+from accounts.deactivation.tasks import process_deactivation_task
 from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, TrialApplication
 from ai_config.services import TrialService
 from chat_sync.models import ChatMessage, ChatThread
@@ -35,6 +44,17 @@ from backoffice.serializers import (
     AdminAIProviderKeyUpdateSerializer,
     AdminAIScenarioModelBindingSerializer,
     AdminAuditLogSerializer,
+    AdminDeactivationAuditSerializer,
+    AdminDeactivationSerializer,
+    AdminDeviceRevokeSerializer,
+    AdminDeviceSerializer,
+    AdminNotificationCampaignSerializer,
+    AdminNotificationLogQuerySerializer,
+    AdminNotificationMessageSerializer,
+    AdminNotificationSendSerializer,
+    AdminNotificationTemplatePreviewSerializer,
+    AdminNotificationTemplateSerializer,
+    AdminNotificationUserQuerySerializer,
     AdminPermissionSerializer,
     AdminRolePermissionAssignSerializer,
     AdminRoleSerializer,
@@ -47,6 +67,138 @@ from backoffice.serializers import (
 
 
 User = get_user_model()
+BASE_DIR = Path(__file__).resolve().parent.parent
+RUN_DIR = BASE_DIR / "run"
+LOG_DIR = BASE_DIR / "logs"
+
+
+def _read_pid(pid_file: Path) -> int | None:
+    if not pid_file.exists():
+        return None
+    try:
+        content = pid_file.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        return int(content)
+    except (ValueError, OSError):
+        return None
+
+
+def _is_pid_running(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _ensure_run_dirs() -> None:
+    RUN_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _start_process_if_needed(pid_filename: str, name: str, command: list[str]) -> dict:
+    _ensure_run_dirs()
+    pid_file = RUN_DIR / pid_filename
+    pid = _read_pid(pid_file)
+    if _is_pid_running(pid):
+        return {"name": name, "action": "already_running", "pid": pid}
+
+    if pid_file.exists() and not _is_pid_running(pid):
+        pid_file.unlink(missing_ok=True)
+
+    stdout_path = LOG_DIR / f"{name}.stdout.log"
+    stderr_path = LOG_DIR / f"{name}.stderr.log"
+    with stdout_path.open("ab") as out_f, stderr_path.open("ab") as err_f:
+        proc = subprocess.Popen(
+            command,
+            cwd=str(BASE_DIR),
+            stdout=out_f,
+            stderr=err_f,
+            start_new_session=True,
+        )
+
+    pid_file.write_text(str(proc.pid), encoding="utf-8")
+    return {"name": name, "action": "started", "pid": proc.pid}
+
+
+def _stop_process(pid_filename: str, name: str) -> dict:
+    pid_file = RUN_DIR / pid_filename
+    pid = _read_pid(pid_file)
+    if not pid:
+        pid_file.unlink(missing_ok=True)
+        return {"name": name, "action": "not_running"}
+
+    if not _is_pid_running(pid):
+        pid_file.unlink(missing_ok=True)
+        return {"name": name, "action": "stale_pid_cleaned", "pid": pid}
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pid_file.unlink(missing_ok=True)
+        return {"name": name, "action": "not_running", "pid": pid}
+
+    stopped = False
+    for _ in range(20):
+        if not _is_pid_running(pid):
+            stopped = True
+            break
+        time.sleep(0.2)
+
+    if not stopped:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            stopped = True
+        except OSError:
+            stopped = not _is_pid_running(pid)
+
+    pid_file.unlink(missing_ok=True)
+    return {"name": name, "action": "stopped" if stopped else "stop_requested", "pid": pid}
+
+
+def _celery_ping_status() -> dict:
+    timeout_seconds = 4
+    cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "inspect", "ping", "--timeout=2"]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        output = (proc.stdout or "").strip()
+        healthy = proc.returncode == 0 and "pong" in output.lower()
+        return {
+            "healthy": healthy,
+            "returncode": proc.returncode,
+            "output": output[:500],
+            "error": (proc.stderr or "").strip()[:500],
+        }
+    except Exception as exc:
+        return {"healthy": False, "returncode": -1, "output": "", "error": str(exc)[:500]}
+
+
+def _get_celery_runtime_status() -> dict:
+    worker_pid = _read_pid(RUN_DIR / "celery_worker.pid")
+    beat_pid = _read_pid(RUN_DIR / "celery_beat.pid")
+    worker_running = _is_pid_running(worker_pid)
+    beat_running = _is_pid_running(beat_pid)
+    ping = _celery_ping_status() if worker_running else {"healthy": False, "returncode": -1, "output": "", "error": "worker_not_running"}
+
+    return {
+        "host": socket.gethostname(),
+        "worker": {"pid": worker_pid, "running": worker_running},
+        "beat": {"pid": beat_pid, "running": beat_running},
+        "overall_running": worker_running and beat_running,
+        "ping": ping,
+        "run_dir": str(RUN_DIR),
+        "log_dir": str(LOG_DIR),
+    }
 
 
 class AdminLoginSerializer(Serializer):
@@ -190,6 +342,386 @@ class AdminUserStatusView(APIView):
             response_payload=payload,
         )
         return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminDeviceListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        queryset = TrustedDevice.objects.select_related("user").all().order_by("-last_seen", "-id")
+        query = (request.query_params.get("q") or "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(device_id__icontains=query)
+                | Q(bundle_id__icontains=query)
+                | Q(device_name__icontains=query)
+                | Q(user__username__icontains=query)
+                | Q(user__email__icontains=query)
+            )
+
+        user_id = (request.query_params.get("user_id") or "").strip()
+        if user_id.isdigit():
+            queryset = queryset.filter(user_id=int(user_id))
+
+        revoked = (request.query_params.get("is_revoked") or "").strip()
+        if revoked in {"true", "false"}:
+            queryset = queryset.filter(is_revoked=(revoked == "true"))
+
+        page = int(request.query_params.get("page", "1"))
+        page_size = min(int(request.query_params.get("page_size", "20")), 100)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        payload = {
+            "items": AdminDeviceSerializer(page_obj.object_list, many=True).data,
+            "pagination": {
+                "page": page_obj.number,
+                "page_size": page_size,
+                "total": paginator.count,
+                "total_pages": paginator.num_pages,
+            },
+        }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminDeviceRevokeView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:user:device:revoke"
+
+    def post(self, request, device_id: int):
+        target = get_object_or_404(TrustedDevice.objects.select_related("user"), pk=device_id)
+        serializer = AdminDeviceRevokeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target.is_revoked = serializer.validated_data["is_revoked"]
+        target.save(update_fields=["is_revoked", "last_seen"])
+        payload = AdminDeviceSerializer(target).data
+        write_audit_log(
+            request,
+            action="admin.user.device.revoke.update",
+            resource_type="trusted_device",
+            resource_id=str(target.id),
+            status_code=200,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminDeactivationListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        queryset = AccountDeactivation.objects.select_related("user").all().order_by("-requested_at", "-id")
+        query = (request.query_params.get("q") or "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(user__username__icontains=query)
+                | Q(user__email__icontains=query)
+                | Q(request_id__icontains=query)
+            )
+        state = (request.query_params.get("state") or "").strip()
+        if state:
+            queryset = queryset.filter(state=state)
+        page = int(request.query_params.get("page", "1"))
+        page_size = min(int(request.query_params.get("page_size", "20")), 100)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        payload = {
+            "items": AdminDeactivationSerializer(page_obj.object_list, many=True).data,
+            "pagination": {
+                "page": page_obj.number,
+                "page_size": page_size,
+                "total": paginator.count,
+                "total_pages": paginator.num_pages,
+            },
+        }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminDeactivationAuditListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request, deactivation_id: int):
+        row = get_object_or_404(AccountDeactivation, pk=deactivation_id)
+        audits = AccountDeactivationAudit.objects.filter(deactivation=row).order_by("-created_at", "-id")
+        payload = AdminDeactivationAuditSerializer(audits, many=True).data
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminDeactivationCancelView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:user:deactivation:cancel"
+
+    @transaction.atomic
+    def post(self, request, deactivation_id: int):
+        row = get_object_or_404(AccountDeactivation.objects.select_for_update(), pk=deactivation_id)
+        if row.state in {
+            AccountDeactivation.DeactivationState.DEACTIVATED,
+            AccountDeactivation.DeactivationState.CANCELLED,
+        }:
+            return success_response(
+                {"deactivation_id": row.id, "state": row.state, "detail": "already_terminal"},
+                msg="noop",
+                code=0,
+                status_code=status.HTTP_200_OK,
+            )
+        row.state = AccountDeactivation.DeactivationState.CANCELLED
+        row.cancelled_at = timezone.now()
+        row.save(update_fields=["state", "cancelled_at"])
+        AccountDeactivationAudit.objects.create(
+            deactivation=row,
+            action=AccountDeactivationAudit.AuditAction.CANCELLED,
+            request_id=(getattr(request, "request_id", "") or ""),
+            details={"by_admin_user_id": getattr(request.user, "id", None)},
+        )
+        payload = AdminDeactivationSerializer(row).data
+        write_audit_log(
+            request,
+            action="admin.user.deactivation.cancel",
+            resource_type="account_deactivation",
+            resource_id=str(row.id),
+            status_code=200,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminDeactivationRetryView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:user:deactivation:retry"
+
+    @transaction.atomic
+    def post(self, request, deactivation_id: int):
+        row = get_object_or_404(AccountDeactivation.objects.select_for_update(), pk=deactivation_id)
+        if row.state == AccountDeactivation.DeactivationState.CANCELLED:
+            return error_response(msg="cannot_retry_cancelled", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+        if row.state == AccountDeactivation.DeactivationState.DEACTIVATED:
+            return success_response(
+                {"deactivation_id": row.id, "state": row.state, "detail": "already_completed"},
+                msg="noop",
+                code=0,
+                status_code=status.HTTP_200_OK,
+            )
+
+        row.state = AccountDeactivation.DeactivationState.SCHEDULED
+        row.failed_at = None
+        row.error_message = ""
+        row.save(update_fields=["state", "failed_at", "error_message"])
+        process_deactivation_task.delay(row.id, getattr(request, "request_id", "") or "")
+        payload = AdminDeactivationSerializer(row).data
+        write_audit_log(
+            request,
+            action="admin.user.deactivation.retry",
+            resource_type="account_deactivation",
+            resource_id=str(row.id),
+            status_code=202,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="queued", code=0, status_code=status.HTTP_202_ACCEPTED)
+
+
+class AdminNotificationUserListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        query = AdminNotificationUserQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        result = NotificationService.list_notification_users(**query.validated_data)
+        return success_response(result, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminNotificationSendView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:notification:send"
+
+    def post(self, request):
+        serializer = AdminNotificationSendSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        campaign = NotificationService.create_campaign_and_enqueue(
+            campaign_name=data.get("campaign_name") or "",
+            channels=data["channels"],
+            title=data.get("title") or "",
+            body=data.get("body") or "",
+            payload=data.get("payload") or {},
+            user_id=data.get("user_id"),
+            user_ids=data.get("user_ids") or [],
+            filters=data.get("filters") or {},
+            template_id=data.get("template_id"),
+            schedule_at=data.get("schedule_at"),
+            created_by_id=getattr(request.user, "id", None),
+            request_id=(request.headers.get("X-Request-ID") or "").strip(),
+        )
+        payload = AdminNotificationCampaignSerializer(campaign).data
+        write_audit_log(
+            request,
+            action="admin.notification.campaign.create",
+            resource_type="notification_campaign",
+            resource_id=str(payload["id"]),
+            status_code=201,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="queued", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class AdminNotificationLogListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request, channel: str):
+        if channel not in {NotificationMessage.Channel.APNS, NotificationMessage.Channel.EMAIL, NotificationMessage.Channel.SMS}:
+            return error_response(msg="invalid_channel", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+
+        query_serializer = AdminNotificationLogQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        query = query_serializer.validated_data
+
+        queryset = NotificationMessage.objects.select_related("user").filter(channel=channel).order_by("-created_at", "-id")
+        search_q = (query.get("q") or "").strip()
+        if search_q:
+            queryset = queryset.filter(Q(user__username__icontains=search_q) | Q(user__email__icontains=search_q) | Q(title__icontains=search_q))
+        if query.get("status"):
+            queryset = queryset.filter(status=query["status"])
+
+        page = query["page"]
+        page_size = query["page_size"]
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        rows = AdminNotificationMessageSerializer(page_obj.object_list, many=True).data
+        payload = {
+            "items": rows,
+            "pagination": {
+                "page": page_obj.number,
+                "page_size": page_size,
+                "total": paginator.count,
+                "total_pages": paginator.num_pages,
+            },
+        }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminNotificationLogDetailView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request, log_id: int):
+        row = get_object_or_404(NotificationMessage.objects.select_related("user"), pk=log_id)
+        payload = AdminNotificationMessageSerializer(row).data
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminNotificationTemplateListCreateView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        rows = NotificationService.list_templates()
+        payload = AdminNotificationTemplateSerializer(rows, many=True).data
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = AdminNotificationTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        row = serializer.save()
+        payload = AdminNotificationTemplateSerializer(row).data
+        write_audit_log(
+            request,
+            action="admin.notification.template.create",
+            resource_type="notification_template",
+            resource_id=str(row.id),
+            status_code=201,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class AdminNotificationTemplateDetailView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def patch(self, request, template_id: int):
+        row = get_object_or_404(NotificationTemplate, pk=template_id)
+        serializer = AdminNotificationTemplateSerializer(row, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        payload = AdminNotificationTemplateSerializer(row).data
+        write_audit_log(
+            request,
+            action="admin.notification.template.update",
+            resource_type="notification_template",
+            resource_id=str(row.id),
+            status_code=200,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def delete(self, request, template_id: int):
+        row = get_object_or_404(NotificationTemplate, pk=template_id)
+        row.delete()
+        write_audit_log(
+            request,
+            action="admin.notification.template.delete",
+            resource_type="notification_template",
+            resource_id=str(template_id),
+            status_code=200,
+            response_payload={},
+        )
+        return success_response({}, msg="deleted", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminNotificationPreviewView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def post(self, request):
+        serializer = AdminNotificationTemplatePreviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user = request.user
+        user_id = data.get("user_id")
+        if user_id:
+            user = get_object_or_404(User, pk=user_id)
+
+        template = None
+        if data.get("template_id"):
+            template = get_object_or_404(NotificationTemplate, pk=data["template_id"])
+
+        title, body, payload = NotificationService.build_message_content(
+            user=user,
+            template=template,
+            title=data.get("title") or "",
+            body=data.get("body") or "",
+            payload=data.get("payload") or {},
+        )
+        result = {
+            "title": title,
+            "body": body,
+            "payload": payload,
+            "context": NotificationService.build_context_for_user(user),
+        }
+        return success_response(result, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminNotificationCampaignListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        queryset = NotificationCampaign.objects.select_related("created_by", "template").order_by("-created_at", "-id")
+        q = (request.query_params.get("q") or "").strip()
+        if q:
+            queryset = queryset.filter(Q(name__icontains=q) | Q(title__icontains=q))
+        status_filter = (request.query_params.get("status") or "").strip()
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        page = int(request.query_params.get("page", "1"))
+        page_size = min(int(request.query_params.get("page_size", "20")), 100)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        payload = {
+            "items": AdminNotificationCampaignSerializer(page_obj.object_list, many=True).data,
+            "pagination": {
+                "page": page_obj.number,
+                "page_size": page_size,
+                "total": paginator.count,
+                "total_pages": paginator.num_pages,
+            },
+        }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 SCENARIO_LABEL_ZH = {
@@ -500,29 +1032,140 @@ class AdminAsyncTaskDashboardView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        since_24h = timezone.now() - timedelta(hours=24)
-        recent = TaskResult.objects.filter(date_done__gte=since_24h)
-        status_counter = {}
-        for key in ["SUCCESS", "FAILURE", "PENDING", "STARTED", "RETRY", "REVOKED"]:
-            status_counter[key.lower()] = recent.filter(status=key).count()
+        window_hours = int(request.query_params.get("window_hours", "24") or "24")
+        window_hours = max(1, min(window_hours, 168))
+        limit = int(request.query_params.get("limit", "20") or "20")
+        limit = max(1, min(limit, 100))
+
+        since = timezone.now() - timedelta(hours=window_hours)
+        recent = TaskResult.objects.filter(date_done__gte=since)
+
+        aggregate = recent.aggregate(
+            total_recent=Count("id"),
+            success=Count("id", filter=Q(status="SUCCESS")),
+            failure=Count("id", filter=Q(status="FAILURE")),
+            pending=Count("id", filter=Q(status="PENDING")),
+            started=Count("id", filter=Q(status="STARTED")),
+            retry=Count("id", filter=Q(status="RETRY")),
+            revoked=Count("id", filter=Q(status="REVOKED")),
+        )
+        total_recent = int(aggregate.get("total_recent") or 0)
+        failed = int(aggregate.get("failure") or 0)
+        status_counter = {
+            "success": int(aggregate.get("success") or 0),
+            "failure": failed,
+            "pending": int(aggregate.get("pending") or 0),
+            "started": int(aggregate.get("started") or 0),
+            "retry": int(aggregate.get("retry") or 0),
+            "revoked": int(aggregate.get("revoked") or 0),
+        }
+
+        def _business_metrics(task_name_fragments: list[str]) -> dict:
+            condition = Q()
+            for fragment in task_name_fragments:
+                condition |= Q(task_name__icontains=fragment)
+            scoped = recent.filter(condition)
+            scoped_agg = scoped.aggregate(
+                total=Count("id"),
+                success=Count("id", filter=Q(status="SUCCESS")),
+                failure=Count("id", filter=Q(status="FAILURE")),
+                pending=Count("id", filter=Q(status="PENDING")),
+                started=Count("id", filter=Q(status="STARTED")),
+                retry=Count("id", filter=Q(status="RETRY")),
+            )
+            return {
+                "total": int(scoped_agg.get("total") or 0),
+                "success": int(scoped_agg.get("success") or 0),
+                "failure": int(scoped_agg.get("failure") or 0),
+                "running": int(scoped_agg.get("pending") or 0)
+                + int(scoped_agg.get("started") or 0)
+                + int(scoped_agg.get("retry") or 0),
+            }
+
+        notification_counter = _business_metrics(
+            ["send_notification_campaign_task", "notification_tasks.send_notification_campaign_task"]
+        )
+        deactivation_counter = _business_metrics(
+            ["process_deactivation_task", "deactivation.tasks.process_deactivation_task"]
+        )
 
         periodic_total = PeriodicTask.objects.count()
         periodic_enabled = PeriodicTask.objects.filter(enabled=True).count()
+        periodic_disabled = max(periodic_total - periodic_enabled, 0)
 
         latest_tasks = list(
             TaskResult.objects.order_by("-date_done")
-            .values("task_id", "task_name", "status", "date_done", "result", "traceback")[:20]
+            .values("task_id", "task_name", "status", "date_done", "result", "traceback")[:limit]
         )
+        for row in latest_tasks:
+            result_str = str(row.get("result") or "")
+            traceback_str = str(row.get("traceback") or "")
+            row["result_preview"] = (result_str[:120] + "...") if len(result_str) > 120 else result_str
+            row["has_traceback"] = bool(traceback_str)
+
+        failure_rate = round((failed / total_recent) * 100, 2) if total_recent > 0 else 0.0
+        running_like = status_counter["pending"] + status_counter["started"] + status_counter["retry"]
         payload = {
             "summary": {
-                "window_hours": 24,
-                "total_recent": recent.count(),
+                "window_hours": window_hours,
+                "total_recent": total_recent,
                 "status_counter": status_counter,
                 "periodic_total": periodic_total,
                 "periodic_enabled": periodic_enabled,
+                "periodic_disabled": periodic_disabled,
+                "failure_rate": failure_rate,
+                "running_like": running_like,
+                "business_counter": {
+                    "notification": notification_counter,
+                    "deactivation": deactivation_counter,
+                },
             },
             "recent_tasks": latest_tasks,
         }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAsyncTaskManagerStatusView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        payload = _get_celery_runtime_status()
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAsyncTaskManagerControlView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:tasks:manager:control"
+
+    def post(self, request, action: str):
+        action = (action or "").strip().lower()
+        if action not in {"start", "stop", "restart"}:
+            return error_response(msg="invalid_action", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+
+        celery_worker_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "worker", "--loglevel=INFO"]
+        celery_beat_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "beat", "--loglevel=INFO"]
+
+        operations: list[dict] = []
+        if action in {"stop", "restart"}:
+            operations.append(_stop_process("celery_beat.pid", "celery_beat"))
+            operations.append(_stop_process("celery_worker.pid", "celery_worker"))
+
+        if action in {"start", "restart"}:
+            operations.append(_start_process_if_needed("celery_worker.pid", "celery_worker", celery_worker_cmd))
+            operations.append(_start_process_if_needed("celery_beat.pid", "celery_beat", celery_beat_cmd))
+
+        payload = {
+            "action": action,
+            "operations": operations,
+            "status": _get_celery_runtime_status(),
+        }
+        write_audit_log(
+            request,
+            action=f"admin.tasks.manager.{action}",
+            resource_type="celery_runtime",
+            status_code=200,
+            response_payload=payload,
+        )
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 

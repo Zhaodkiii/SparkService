@@ -6,4 +6,4 @@ nested tasks modules here.
 """
 
 from accounts.deactivation.tasks import process_deactivation_task  # noqa: F401
-
+from accounts.notification_tasks import send_notification_campaign_task  # noqa: F401

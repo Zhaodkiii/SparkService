@@ -91,6 +91,23 @@ class LoginService:
         return User.objects.filter(username__iexact=identifier).first()
 
     @staticmethod
+    def _create_apple_user(*, subject: str, chosen_email: str, chosen_name: str):
+        User = get_user_model()
+        username_base = f"apple_{subject[:16]}"
+        username = username_base
+        suffix = 1
+        while User.objects.filter(username=username).exists():
+            suffix += 1
+            username = f"{username_base}_{suffix}"
+
+        user = User.objects.create(username=username, email=chosen_email, is_active=True)
+        user.set_unusable_password()
+        user.first_name = chosen_name
+        user.save(update_fields=["password", "first_name", "is_active"])
+        AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
+        return user
+
+    @staticmethod
     def authenticate_and_issue_tokens(
         *,
         identifier: str,
@@ -132,6 +149,20 @@ class LoginService:
                 },
             )
             raise APIError("Invalid credentials", code=40101, status_code=401)
+
+        if not user.is_active:
+            flow_logger.warning(
+                "密码登录鉴权失败：用户已停用",
+                extra={
+                    "action": "auth.password.authenticate",
+                    "outcome": "failed",
+                    "request_id": request_id,
+                    "provider": provider,
+                    "reason": "user_inactive",
+                    "user_id": user.id,
+                },
+            )
+            raise APIError("user_inactive", code=40103, status_code=401)
 
         # Ensure profile exists for phone-related flows.
         AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
@@ -245,9 +276,40 @@ class LoginService:
 
         if identity:
             user = identity.user
-            if email_from_token and user.email.lower() != email_from_token:
-                user.email = email_from_token
-                user.save(update_fields=["email"])
+            if user.is_active:
+                if email_from_token and user.email.lower() != email_from_token:
+                    user.email = email_from_token
+                    user.save(update_fields=["email"])
+            else:
+                # 命中已注销（inactive）账号：按“新注册”流程创建新用户并重绑 Apple identity。
+                flow_logger.info(
+                    "Apple identity 命中 inactive 用户，转新注册流程",
+                    extra={
+                        "action": "user.register",
+                        "request_id": request_id,
+                        "channel": "apple",
+                        "bundle_id": matched_audience,
+                        "old_user_id": user.id,
+                    },
+                )
+                user = LoginService._create_apple_user(
+                    subject=subject,
+                    chosen_email=chosen_email,
+                    chosen_name=chosen_name,
+                )
+                identity.user = user
+                identity.save(update_fields=["user", "updated_at"])
+                created_user = True
+                flow_logger.info(
+                    "Apple identity 解绑 inactive 旧账号并绑定新账号成功",
+                    extra={
+                        "action": "user.register",
+                        "request_id": request_id,
+                        "channel": "apple",
+                        "bundle_id": matched_audience,
+                        "user_id": user.id,
+                    },
+                )
         else:
             # 首次登录：创建用户并绑定 apple sub；唯一约束保证并发下幂等。
             flow_logger.info(
@@ -259,18 +321,11 @@ class LoginService:
                     "bundle_id": matched_audience,
                 },
             )
-            username_base = f"apple_{subject[:16]}"
-            username = username_base
-            suffix = 1
-            while User.objects.filter(username=username).exists():
-                suffix += 1
-                username = f"{username_base}_{suffix}"
-
-            user = User.objects.create(username=username, email=chosen_email)
-            user.set_unusable_password()
-            user.first_name = chosen_name
-            user.save(update_fields=["password", "first_name"])
-            AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
+            user = LoginService._create_apple_user(
+                subject=subject,
+                chosen_email=chosen_email,
+                chosen_name=chosen_name,
+            )
 
             # 并发首登下，唯一约束可能被并发请求同时命中；冲突时回退读取已创建记录。
             try:
@@ -347,6 +402,8 @@ class LoginService:
 
     @staticmethod
     def _issue_tokens(user) -> dict[str, Any]:
+        if not getattr(user, "is_active", False):
+            raise APIError("user_inactive", code=40103, status_code=401)
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
         expires_in = int(access["exp"] - time.time())

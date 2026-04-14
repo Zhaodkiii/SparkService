@@ -3,6 +3,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from datetime import timedelta
 
 from common.exceptions import APIError
 from accounts.models import (
@@ -18,7 +19,7 @@ flow_logger = logging.getLogger("accounts.flow")
 
 class DeactivationService:
     @staticmethod
-    def request_deactivation(*, user, request_id: str):
+    def request_deactivation(*, user, request_id: str, immediate_deactivation: bool = True, countdown_hours: int = 0):
         flow_logger.info(
             "account.deactivation.service.request.begin",
             extra={"action": "account.deactivation.service.request", "request_id": request_id, "user_id": user.id},
@@ -52,11 +53,12 @@ class DeactivationService:
             return {"deactivation_id": existing.id, "state": existing.state, "reused": True}
 
         now = timezone.now()
+        scheduled_at = now if immediate_deactivation else now + timedelta(hours=max(1, int(countdown_hours or 24)))
         obj = AccountDeactivation.objects.create(
             user=user,
             state=AccountDeactivation.DeactivationState.SCHEDULED,
             requested_at=now,
-            scheduled_at=now,
+            scheduled_at=scheduled_at,
             request_id=request_id or "",
         )
         flow_logger.info(
@@ -69,7 +71,14 @@ class DeactivationService:
                 "state": obj.state,
             },
         )
-        return {"deactivation_id": obj.id, "state": obj.state, "reused": False}
+        return {
+            "deactivation_id": obj.id,
+            "state": obj.state,
+            "scheduled_at": obj.scheduled_at,
+            "immediate_deactivation": immediate_deactivation,
+            "countdown_hours": 0 if immediate_deactivation else max(1, int(countdown_hours or 24)),
+            "reused": False,
+        }
 
     @staticmethod
     @transaction.atomic
@@ -269,3 +278,31 @@ class DeactivationService:
                 "error_message": (error_message or "")[:500],
             },
         )
+
+    @staticmethod
+    @transaction.atomic
+    def cancel_deactivation(*, deactivation_id: int, user_id: int, request_id: str, reason: str = ""):
+        obj = (
+            AccountDeactivation.objects.select_for_update()
+            .filter(id=deactivation_id, user_id=user_id)
+            .first()
+        )
+        if not obj:
+            raise APIError("deactivation not found", code=40402, status_code=404)
+
+        if obj.state in (
+            AccountDeactivation.DeactivationState.DEACTIVATED,
+            AccountDeactivation.DeactivationState.CANCELLED,
+        ):
+            return {"deactivation_id": obj.id, "state": obj.state, "noop": True}
+
+        obj.state = AccountDeactivation.DeactivationState.CANCELLED
+        obj.cancelled_at = timezone.now()
+        obj.save(update_fields=["state", "cancelled_at"])
+        AccountDeactivationAudit.objects.create(
+            deactivation=obj,
+            action=AccountDeactivationAudit.AuditAction.CANCELLED,
+            request_id=request_id or "",
+            details={"reason": reason or "", "by_user_id": user_id},
+        )
+        return {"deactivation_id": obj.id, "state": obj.state, "noop": False}

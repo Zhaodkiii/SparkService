@@ -1,5 +1,6 @@
 # Secrets
 .env
+apns_keys/
 
 # Uploaded/generated files
 media/

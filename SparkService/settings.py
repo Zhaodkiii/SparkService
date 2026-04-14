@@ -72,6 +72,20 @@ ALIYUN_OSS_REGION = (os.getenv("ALIYUN_OSS_REGION") or "").strip() or "cn-hangzh
 ALIYUN_OSS_ENDPOINT = (os.getenv("ALIYUN_OSS_ENDPOINT") or "").strip()
 ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600"))
 
+# Aliyun SMS（通知）
+ALIYUN_SMS_ACCESS_KEY_ID = (os.getenv("ALIYUN_SMS_ACCESS_KEY_ID") or "").strip()
+ALIYUN_SMS_ACCESS_KEY_SECRET = (os.getenv("ALIYUN_SMS_ACCESS_KEY_SECRET") or "").strip()
+ALIYUN_SMS_ENDPOINT = (os.getenv("ALIYUN_SMS_ENDPOINT") or "dysmsapi.aliyuncs.com").strip()
+ALIYUN_SMS_SIGN_NAME = (os.getenv("ALIYUN_SMS_SIGN_NAME") or "").strip()
+ALIYUN_SMS_NOTIFICATION_TEMPLATE_CODE = (os.getenv("ALIYUN_SMS_NOTIFICATION_TEMPLATE_CODE") or "").strip()
+
+# APNs（通知）
+APNS_AUTH_KEY_PATH = (os.getenv("APNS_AUTH_KEY_PATH") or "").strip()
+APNS_KEY_ID = (os.getenv("APNS_KEY_ID") or "").strip()
+APNS_TEAM_ID = (os.getenv("APNS_TEAM_ID") or "").strip()
+APNS_TOPIC = (os.getenv("APNS_TOPIC") or "").strip()
+APNS_USE_SANDBOX = (os.getenv("APNS_USE_SANDBOX") or "true").strip().lower() in ("1", "true", "yes", "y")
+
 # Application definition
 
 INSTALLED_APPS = [

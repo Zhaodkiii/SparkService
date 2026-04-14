@@ -66,10 +66,40 @@ const activeKey = computed(() => route.path);
 const openKeys = ref<string[]>([]);
 const tabs = reactive<TabItem[]>([{ key: '/dashboard', title: '仪表盘', closable: false }]);
 
-const fallbackMenus = [
+  const fallbackMenus = [
   { code: 'menu:dashboard', name: '仪表盘', path: '/dashboard', children: [] },
-  { code: 'menu:tasks', name: '异步任务看板', path: '/tasks', children: [] },
-  { code: 'menu:users', name: '用户管理', path: '/users', children: [] },
+  {
+    code: 'menu:tasks',
+    name: '异步任务',
+    path: '/tasks',
+    children: [
+      { code: 'menu:tasks:dashboard', name: '异步任务看板', path: '/tasks', children: [] },
+      { code: 'menu:tasks:manager', name: '异步任务管理', path: '/tasks/manager', children: [] },
+    ],
+  },
+  {
+    code: 'menu:users',
+    name: '用户管理',
+    path: '/users',
+    children: [
+      { code: 'menu:users:list', name: '用户管理', path: '/users', children: [] },
+      { code: 'menu:users:devices', name: '设备管理', path: '/users/devices', children: [] },
+      { code: 'menu:users:deactivations', name: '注销管理', path: '/users/deactivations', children: [] },
+    ],
+  },
+  {
+    code: 'menu:notifications',
+    name: '通知中心',
+    path: '/notifications',
+    children: [
+      { code: 'menu:notifications:users', name: '通知用户列表', path: '/notifications/users', children: [] },
+      { code: 'menu:notifications:templates', name: '通知模板', path: '/notifications/templates', children: [] },
+      { code: 'menu:notifications:campaigns', name: '发送活动', path: '/notifications/campaigns', children: [] },
+      { code: 'menu:notifications:apns', name: 'APNs发送记录', path: '/notifications/apns', children: [] },
+      { code: 'menu:notifications:sms', name: '短信发送记录', path: '/notifications/sms', children: [] },
+      { code: 'menu:notifications:email', name: '邮箱发送记录', path: '/notifications/email', children: [] },
+    ],
+  },
   {
     code: 'menu:ai',
     name: 'AI 场景配置',
@@ -111,6 +141,15 @@ watch(
     }
     if (path.startsWith('/ai-config/')) {
       openKeys.value = ['/ai-config'];
+    }
+    if (path.startsWith('/notifications/')) {
+      openKeys.value = ['/notifications'];
+    }
+    if (path === '/tasks' || path.startsWith('/tasks/')) {
+      openKeys.value = ['/tasks'];
+    }
+    if (path.startsWith('/users/')) {
+      openKeys.value = ['/users'];
     }
   },
   { immediate: true },
