@@ -18,12 +18,11 @@ from django.contrib import admin
 from django.conf import settings
 from django.urls import include, path
 from django.conf.urls.static import static
-from rest_framework_simplejwt.views import TokenObtainPairView
-from accounts.auth.views import TokenRefreshView
+from accounts.auth.views import TokenObtainUnifiedView, TokenRefreshView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/v1/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/v1/auth/token/', TokenObtainUnifiedView.as_view(), name='token_obtain_pair'),
     path('api/v1/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/v1/', include('accounts.urls')),
     path('api/v1/ai/', include('ai_config.urls')),

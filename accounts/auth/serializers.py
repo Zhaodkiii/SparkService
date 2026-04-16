@@ -11,7 +11,15 @@ class PasswordLoginSerializer(serializers.Serializer):
 
 
 class TokenRefreshSerializer(serializers.Serializer):
-    refresh = serializers.CharField(min_length=1, trim_whitespace=True)
+    refresh = serializers.CharField(min_length=1, trim_whitespace=True, required=False)
+    refresh_token = serializers.CharField(min_length=1, trim_whitespace=True, required=False)
+
+    def validate(self, attrs):
+        refresh_token = attrs.get("refresh_token") or attrs.get("refresh")
+        if not refresh_token:
+            raise serializers.ValidationError({"refresh_token": "This field is required."})
+        attrs["refresh_token"] = refresh_token
+        return attrs
 
 
 class AppleLoginSerializer(serializers.Serializer):

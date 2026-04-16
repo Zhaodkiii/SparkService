@@ -6,6 +6,8 @@ from accounts.deactivation.views import AccountDeactivationView
 from accounts.otp.views import (
     EmailOTPRequestView,
     EmailOTPVerifyView,
+    PhoneOTPRequestView,
+    PhoneOTPVerifyView,
 )
 
 urlpatterns = [
@@ -15,6 +17,8 @@ urlpatterns = [
     # OTP (email-first)
     path("otp/email/request/", EmailOTPRequestView.as_view(), name="email_otp_request"),
     path("otp/email/verify/", EmailOTPVerifyView.as_view(), name="email_otp_verify"),
+    path("otp/phone/request/", PhoneOTPRequestView.as_view(), name="phone_otp_request"),
+    path("otp/phone/verify/", PhoneOTPVerifyView.as_view(), name="phone_otp_verify"),
     # Trusted devices
     path("device/register/", DeviceRegisterView.as_view(), name="device_register"),
     # Deactivation (state machine + celery)

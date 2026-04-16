@@ -78,6 +78,16 @@ ALIYUN_SMS_ACCESS_KEY_SECRET = (os.getenv("ALIYUN_SMS_ACCESS_KEY_SECRET") or "")
 ALIYUN_SMS_ENDPOINT = (os.getenv("ALIYUN_SMS_ENDPOINT") or "dysmsapi.aliyuncs.com").strip()
 ALIYUN_SMS_SIGN_NAME = (os.getenv("ALIYUN_SMS_SIGN_NAME") or "").strip()
 ALIYUN_SMS_NOTIFICATION_TEMPLATE_CODE = (os.getenv("ALIYUN_SMS_NOTIFICATION_TEMPLATE_CODE") or "").strip()
+ALIYUN_SMS_OTP_TEMPLATE_CODE = (os.getenv("ALIYUN_SMS_OTP_TEMPLATE_CODE") or "").strip()
+
+# OTP（邮箱 / 手机号验证码）
+OTP_DEFAULT_REGION_CODE = (os.getenv("OTP_DEFAULT_REGION_CODE") or "86").strip()
+OTP_FIXED_WHITELIST_CODE = (os.getenv("OTP_FIXED_WHITELIST_CODE") or "989898").strip() or "989898"
+OTP_WHITELIST_PHONES = [
+    item.strip()
+    for item in (os.getenv("OTP_WHITELIST_PHONES") or "").split(",")
+    if item.strip()
+]
 
 # APNs（通知）
 APNS_AUTH_KEY_PATH = (os.getenv("APNS_AUTH_KEY_PATH") or "").strip()
