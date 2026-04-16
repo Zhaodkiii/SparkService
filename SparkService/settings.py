@@ -108,6 +108,7 @@ INSTALLED_APPS = [
     'ai_config',
     'chat_sync',
     'medical',
+    'task_system',
     'file_manager',
     'backoffice',
 ]
