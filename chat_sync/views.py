@@ -90,6 +90,19 @@ def _metadata_to_public_fields(metadata: dict) -> dict:
         "reasoning_visibility": metadata.get("reasoning_visibility"),
     }
 
+def _extract_image_delivery_mode_from_attachments(attachments: list) -> str | None:
+    for item in attachments:
+        if isinstance(item, dict) is False:
+            continue
+        if item.get("type") != "image_url":
+            continue
+        raw = item.get("imageDeliveryModeRaw")
+        if isinstance(raw, str):
+            trimmed = raw.strip()
+            if trimmed:
+                return trimmed
+    return None
+
 
 def _to_payload(message: ChatMessage) -> dict:
     metadata = message.metadata or {}
@@ -118,6 +131,7 @@ def _to_thread_payload(thread: ChatThread) -> dict:
         "thread_id": str(thread.id),
         "title": thread.title,
         "scenario": thread.scenario,
+        "image_delivery_mode": thread.image_delivery_mode,
         "patient_id": str(thread.patient_id) if thread.patient_id else None,
         "is_deleted": thread.is_deleted,
         "deleted_at": thread.deleted_at.isoformat() if thread.deleted_at else None,
@@ -182,6 +196,9 @@ class ChatSyncPushView(APIView):
                     "reasoning_expanded": payload.get("reasoning_expanded"),
                     "reasoning_visibility": payload.get("reasoning_visibility"),
                 }
+                attachment_mode = _extract_image_delivery_mode_from_attachments(metadata["attachments"])
+                if attachment_mode:
+                    thread.image_delivery_mode = attachment_mode
 
                 defaults = {
                     "thread": thread,
@@ -229,7 +246,15 @@ class ChatSyncPushView(APIView):
                     )
 
                 thread.updated_at = datetime.now(tz=timezone.utc)
-                thread.save(update_fields=["updated_at", "server_updated_at", "is_deleted", "deleted_at"])
+                thread.save(
+                    update_fields=[
+                        "updated_at",
+                        "server_updated_at",
+                        "is_deleted",
+                        "deleted_at",
+                        "image_delivery_mode",
+                    ]
+                )
                 result.append(_to_payload(message))
 
         logger.info(

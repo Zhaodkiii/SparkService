@@ -8,11 +8,22 @@ class ChatThread(models.Model):
     class Scenario(models.TextChoices):
         CHAT = "chat"
 
+    class ImageDeliveryMode(models.TextChoices):
+        DIRECT_MULTIMODAL = "directMultimodal"
+        LOCAL_OCR = "localOCR"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="chat_threads", on_delete=models.CASCADE)
     patient_id = models.UUIDField(null=True, blank=True, db_index=True)
     title = models.CharField(max_length=255, default="New Chat")
     scenario = models.CharField(max_length=32, choices=Scenario.choices, default=Scenario.CHAT)
+    image_delivery_mode = models.CharField(
+        max_length=32,
+        choices=ImageDeliveryMode.choices,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
