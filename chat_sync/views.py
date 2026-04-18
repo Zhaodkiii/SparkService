@@ -22,6 +22,11 @@ from common.response import success_response
 logger = logging.getLogger("chat_sync.sync")
 
 
+def _json_for_log(obj) -> str:
+    """将请求/响应体序列化为单行 JSON，便于检索；UUID、datetime 等用 default=str。"""
+    return json.dumps(obj, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
 def _encode_cursor(*, dt: datetime, tie_breaker: str) -> str:
     """
     统一游标编码（v2）：
@@ -94,7 +99,7 @@ def _extract_image_delivery_mode_from_attachments(attachments: list) -> str | No
     for item in attachments:
         if isinstance(item, dict) is False:
             continue
-        if item.get("type") != "image_url":
+        if item.get("type") not in ("image_url", "image"):
             continue
         raw = item.get("imageDeliveryModeRaw")
         if isinstance(raw, str):
@@ -150,6 +155,13 @@ class ChatSyncPushView(APIView):
         serializer.is_valid(raise_exception=True)
 
         messages_payload = serializer.validated_data["messages"]
+        logger.info(
+            "chat push payload request_id=%s user_id=%s content_type=%s body=%s",
+            request_id,
+            getattr(request.user, "id", "-"),
+            request.content_type,
+            _json_for_log(serializer.validated_data),
+        )
         logger.info(
             "chat push start request_id=%s user_id=%s count=%s content_type=%s",
             request_id,
@@ -349,6 +361,12 @@ class ChatSyncThreadDeleteView(APIView):
         serializer.is_valid(raise_exception=True)
 
         requested_ids = serializer.validated_data["thread_ids"]
+        logger.info(
+            "chat thread-delete payload request_id=%s user_id=%s body=%s",
+            request.headers.get("X-Request-ID", "-"),
+            request.user.id,
+            _json_for_log(serializer.validated_data),
+        )
         now = datetime.now(tz=timezone.utc)
 
         queryset = ChatThread.objects.filter(user=request.user, id__in=requested_ids)
