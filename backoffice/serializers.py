@@ -9,6 +9,15 @@ from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 User = get_user_model()
 
 
+def _normalize_ai_tool_scenarios(value):
+    """`ai_tool_scenarios` JSON 字段：仅允许字符串数组。"""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if x is not None and str(x).strip() != ""]
+    raise serializers.ValidationError("ai_tool_scenarios_must_be_string_array")
+
+
 class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -283,10 +292,16 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
             "position",
             "is_default",
             "is_active",
+            "system_provision",
+            "brief_description",
+            "ai_tool_scenarios",
             "updated_at",
             "created_at",
         )
         read_only_fields = ("id", "scenario", "updated_at", "created_at")
+
+    def validate_ai_tool_scenarios(self, value):
+        return _normalize_ai_tool_scenarios(value)
 
     def _resolve_provider(self, obj: AIScenarioModelBinding):
         return _resolve_provider_for_catalog_model(obj.model)
@@ -369,6 +384,7 @@ class AdminAIModelCatalogSerializer(serializers.ModelSerializer):
             "price_tier",
             "supports_text",
             "reasoning_controllable",
+            "icon",
             "source",
             "is_active",
             "updated_at",
@@ -408,6 +424,7 @@ class AdminAIModelCatalogCreateSerializer(serializers.ModelSerializer):
             "price_tier",
             "supports_text",
             "reasoning_controllable",
+            "icon",
             "source",
             "is_active",
         )
@@ -446,6 +463,7 @@ class AdminAIModelCatalogUpdateSerializer(serializers.ModelSerializer):
             "price_tier",
             "supports_text",
             "reasoning_controllable",
+            "icon",
             "source",
             "is_active",
         )

@@ -100,3 +100,9 @@ class TrialService:
             trial.status = TrialApplication.Status.EXPIRED
             trial.save(update_fields=["status", "updated_at"])
         return trial
+
+    @staticmethod
+    def is_pro_user(*, user) -> bool:
+        trial = getattr(user, "trial_application", None)
+        trial = TrialService.ensure_status_fresh(trial=trial)
+        return bool(trial and trial.is_active_trial())

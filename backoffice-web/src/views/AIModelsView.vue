@@ -12,6 +12,7 @@
   >
     <a-table-column title="模型名称" data-index="name" :width="160" fixed="left" />
     <a-table-column title="显示名称" data-index="display_name" :width="140" />
+    <a-table-column title="图标" data-index="icon" :width="120" :ellipsis="true" />
     <a-table-column title="厂商名称" data-index="company" :width="100" />
     <a-table-column title="价格档位" key="price_tier" :width="96">
       <template #default="{ record }">{{ priceTierLabel(record.price_tier) }}</template>
@@ -61,6 +62,9 @@
       </a-form-item>
       <a-form-item v-else label="模型名称（不可改）"><a-input v-model:value="form.name" disabled /></a-form-item>
       <a-form-item label="显示名称"><a-input v-model:value="form.display_name" /></a-form-item>
+      <a-form-item label="图标（SF Symbol）" extra="留空则客户端使用默认 cpu / 智能体图标">
+        <a-input v-model:value="form.icon" placeholder="例如 cpu 或 person.crop.circle" allow-clear />
+      </a-form-item>
       <a-form-item
         label="厂商信息"
         extra="从已激活且启用中的 API 厂商中选择；保存为厂商代码（company），用于后端匹配请求端点。"
@@ -198,6 +202,7 @@ function openCreate() {
     price_tier: 0,
     supports_text: true,
     reasoning_controllable: false,
+    icon: '',
     source: 'custom',
     is_active: true,
   });
@@ -241,6 +246,7 @@ async function submit() {
         price_tier: form.price_tier,
         supports_text: form.supports_text,
         reasoning_controllable: form.reasoning_controllable,
+        icon: form.icon,
         source: form.source,
         is_active: form.is_active,
       });
@@ -266,6 +272,7 @@ async function submit() {
         price_tier: form.price_tier,
         supports_text: form.supports_text,
         reasoning_controllable: form.reasoning_controllable,
+        icon: form.icon,
         source: form.source,
         is_active: form.is_active,
       });

@@ -67,6 +67,15 @@
         <a-input-number v-model:value="form.position" :step="1" style="width: 100%" />
       </a-form-item>
       <a-form-item label="激活"><a-switch v-model:checked="form.is_active" /></a-form-item>
+      <a-form-item label="系统说明（systemProvision）" extra="下发到客户端；若试用策略行有配置则策略优先">
+        <a-textarea v-model:value="form.system_provision" :rows="3" allow-clear placeholder="可选" />
+      </a-form-item>
+      <a-form-item label="简介（briefDescription）" extra="下发到客户端；若试用策略行有配置则策略优先">
+        <a-textarea v-model:value="form.brief_description" :rows="2" allow-clear placeholder="可选" />
+      </a-form-item>
+      <a-form-item label="工具场景（aiToolScenarios）" extra='JSON 字符串数组，例如 ["router"]'>
+        <a-textarea v-model:value="form.ai_tool_scenarios_json" :rows="2" allow-clear placeholder='[]' />
+      </a-form-item>
     </a-form>
   </a-modal>
 </template>
@@ -100,6 +109,22 @@ const modalOpen = ref(false);
 const isCreate = ref(false);
 
 const form = reactive<Record<string, unknown>>({});
+
+function parseAiToolScenariosJson(raw: unknown): string[] | null {
+  const s = String(raw ?? '').trim();
+  if (!s) {
+    return [];
+  }
+  try {
+    const v = JSON.parse(s) as unknown;
+    if (!Array.isArray(v)) {
+      return null;
+    }
+    return v.map((x) => String(x).trim()).filter((x) => x.length > 0);
+  } catch {
+    return null;
+  }
+}
 
 const canCreate = computed(() => auth.hasPermission('button:ai:scenario:create'));
 const canUpdate = computed(() => auth.hasPermission('button:ai:scenario:update'));
@@ -160,6 +185,9 @@ function openCreate() {
     max_tokens: 2048,
     position: (bindings.value.map((x) => x.position).reduce((a, b) => Math.max(a, b), 0) || 0) + 1,
     is_active: true,
+    system_provision: '',
+    brief_description: '',
+    ai_tool_scenarios_json: '[]',
   });
   modalOpen.value = true;
 }
@@ -175,6 +203,9 @@ function openEdit(row: AIScenarioModelBinding) {
     max_tokens: row.max_tokens,
     position: row.position,
     is_active: row.is_active,
+    system_provision: row.system_provision ?? '',
+    brief_description: row.brief_description ?? '',
+    ai_tool_scenarios_json: JSON.stringify(row.ai_tool_scenarios ?? [], null, 0),
   });
   modalOpen.value = true;
 }
@@ -214,6 +245,11 @@ async function submit() {
       message.warning('请选择模型');
       return;
     }
+    const tools = parseAiToolScenariosJson(form.ai_tool_scenarios_json);
+    if (tools === null) {
+      message.warning('工具场景须为 JSON 数组，例如 [] 或 ["router"]');
+      return;
+    }
     if (isCreate.value) {
       await createScenarioBinding(scenarioKey.value, {
         model: form.model,
@@ -223,6 +259,9 @@ async function submit() {
         max_tokens: form.max_tokens,
         position: form.position,
         is_active: form.is_active,
+        system_provision: form.system_provision,
+        brief_description: form.brief_description,
+        ai_tool_scenarios: tools,
       });
       message.success('已添加');
     } else {
@@ -233,6 +272,9 @@ async function submit() {
         max_tokens: form.max_tokens,
         position: form.position,
         is_active: form.is_active,
+        system_provision: form.system_provision,
+        brief_description: form.brief_description,
+        ai_tool_scenarios: tools,
       });
       message.success('已更新');
     }

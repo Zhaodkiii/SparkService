@@ -7,15 +7,9 @@ from urllib import error as urllib_error
 import json
 
 from ai_config.defaults import (
-    DEFAULT_API_KEYS,
-    DEFAULT_MODELS,
     DEFAULT_SCENARIOS,
-    DEFAULT_SEARCH_KEYS,
-    DEFAULT_TOOL_KEYS,
-    DEFAULT_USER_INFO,
 )
 from ai_config.models import (
-    AIBootstrapProfile,
     AIModelCatalog,
     AIProviderKeyConfig,
     AIScenarioModelBinding,
@@ -27,259 +21,201 @@ from ai_config.services import TrialService
 from common.response import success_response
 
 
+def _bootstrap_json_string_list(value) -> list:
+    """Bootstrap 下发给 iOS 的字符串数组：仅接受 JSON 列表，其它类型视为空。"""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if x is not None and str(x).strip() != ""]
+    return []
+
+
+def _bootstrap_trial_denial_message_and_status(trial: TrialApplication | None) -> tuple[str, str]:
+    """非 Pro 时返回给客户端的说明文案与 trial_status。"""
+    if trial is None:
+        return "当前账号无试用记录，暂无 Pro 场景配置；请先在应用内申请试用。", TrialApplication.Status.NONE
+    status = trial.status
+    if status == TrialApplication.Status.ACTIVE and trial.is_active_trial():
+        return "", status
+    if status == TrialApplication.Status.EXPIRED:
+        return "试用期已结束，无法拉取 Pro 场景配置；请续费或重新申请。", status
+    if status == TrialApplication.Status.PENDING:
+        return "试用申请审核中，暂无法使用 Pro 场景配置。", status
+    if status == TrialApplication.Status.REJECTED:
+        return "试用申请未通过，暂无 Pro 场景配置。", status
+    if status == TrialApplication.Status.NONE:
+        return "尚未开通 Pro 试用，暂无场景配置；请发起试用申请。", status
+    return "当前账号不在有效 Pro 使用期内，暂无场景配置。", status
+
+
+def _active_trial_policy_item_by_scenario_model() -> dict[tuple[str, int], TrialModelPolicyItem]:
+    """当前启用的试用策略下，按 (scenario, model_id) 索引的策略行（用于覆盖绑定行上的展示字段）。"""
+    policy_id = (
+        TrialModelPolicy.objects.filter(is_active=True)
+        .order_by("-updated_at")
+        .values_list("pk", flat=True)
+        .first()
+    )
+    if policy_id is None:
+        return {}
+    items = TrialModelPolicyItem.objects.filter(policy_id=policy_id, is_active=True).only(
+        "scenario",
+        "model_id",
+        "system_provision",
+        "brief_description",
+        "ai_tool_scenarios",
+    )
+    return {(it.scenario, it.model_id): it for it in items}
+
+
 class AIBootstrapConfigView(APIView):
+    """
+    AI 配置 bootstrap 接口（仅返回场景模型配置）。
+
+    改造后职责：
+    - 只返回 `scenarios`（各场景下的 `models[]`），其他数据不再返回
+    - 非 Pro 用户：返回空场景集合（客户端将回退到本地 bundle）
+    - Pro 用户：返回完整的场景模型配置（含 endpoint、api_key 等）
+    - 所有 Pro 模型标记 `source: "pro"`
+    """
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # 判断是否为 Pro 用户
+        is_pro = TrialService.is_pro_user(user=request.user)
+
+        if not is_pro:
+            trial_row = TrialApplication.objects.filter(user=request.user).first()
+            trial_row = TrialService.ensure_status_fresh(trial=trial_row)
+            trial_message, trial_status = _bootstrap_trial_denial_message_and_status(trial_row)
+            revision = timezone.now().isoformat()
+            payload = {
+                "revision": revision,
+                "scenarios": {},
+                "trial_status": trial_status,
+                "trial_message": trial_message,
+            }
+            return success_response(payload, msg=trial_message, code=0)
+
+        # Pro 用户：构建完整的场景模型配置
         api_provider_rows = list(
             AIProviderKeyConfig.objects.filter(kind=AIProviderKeyConfig.Kind.API, is_active=True).order_by(
                 "-is_using", "position", "company", "name"
             )
         )
-        model_rows = list(AIModelCatalog.objects.filter(is_active=True).order_by("position", "name"))
         provider_by_company = self._build_provider_index(api_provider_rows)
-        model_company_by_name = {row.name: row.company for row in model_rows}
 
-        scenarios = self._build_scenarios(
-            provider_by_company=provider_by_company,
-            model_company_by_name=model_company_by_name,
-        )
-        api_keys = self._build_provider_keys(AIProviderKeyConfig.Kind.API, DEFAULT_API_KEYS, payload_key="api")
-        search_keys = self._build_provider_keys(AIProviderKeyConfig.Kind.SEARCH, DEFAULT_SEARCH_KEYS, payload_key="search")
-        tool_keys = self._build_provider_keys(AIProviderKeyConfig.Kind.TOOL, DEFAULT_TOOL_KEYS, payload_key="tool")
-        models = self._build_models(model_rows=model_rows)
-        user_info = self._build_user_info()
-        trial = self._build_trial_state(request.user)
-        trial_model_policy = self._build_trial_model_policy(
-            provider_by_company=provider_by_company,
-            model_company_by_name=model_company_by_name,
-        )
+        scenarios = self._build_pro_scenarios(provider_by_company=provider_by_company)
 
-        revision = self._resolve_revision()
+        revision = self._resolve_pro_revision()
         payload = {
             "revision": revision,
             "scenarios": scenarios,
-            "api_keys": api_keys,
-            "search_keys": search_keys,
-            "tool_keys": tool_keys,
-            "all_models": models,
-            "user_info": user_info,
-            "trial": trial,
-            "trial_model_policy": trial_model_policy,
         }
         return success_response(payload, msg="ok", code=0)
 
-    def _build_scenarios(self, provider_by_company, model_company_by_name):
-        """Each scenario key maps to ``default_model`` + ``models[]`` (multi-model bindings)."""
+    def _build_pro_scenarios(self, provider_by_company):
+        """
+        构建 Pro 用户的场景模型配置。
+
+        返回格式与客户端 `AIScenarioRemoteBundle` 对齐：
+        - `default_model`: 默认模型名
+        - `models`: 模型列表，每个模型包含完整的 `AIScenarioRemoteModelRow` 字段
+        - 所有模型标记 `source: "pro"`
+        """
         payload = {}
+        trial_overlay = _active_trial_policy_item_by_scenario_model()
+
         for scenario_key in DEFAULT_SCENARIOS.keys():
             bindings = (
                 AIScenarioModelBinding.objects.select_related("model")
                 .filter(scenario=scenario_key, is_active=True)
                 .order_by("position", "id")
             )
-            fallback = DEFAULT_SCENARIOS.get(scenario_key) or {}
+
             if not bindings.exists():
-                merged = self._merge_provider_for_model(
-                    model_name=str(fallback.get("model", "") or ""),
-                    fallback_endpoint=str(fallback.get("endpoint", "") or ""),
-                    fallback_api_key=str(fallback.get("api_key", "") or ""),
-                    provider_by_company=provider_by_company,
-                    model_company_by_name=model_company_by_name,
-                )
-                model_name = str(fallback.get("model", "") or "")
-                if not model_name:
-                    payload[scenario_key] = {
-                        "default_model": "",
-                        "models": [],
-                    }
-                    continue
+                # 无绑定时返回空 bundle
                 payload[scenario_key] = {
-                    "default_model": model_name,
-                    "models": [
-                        {
-                            "model": model_name,
-                            "is_default": True,
-                            "identity": "model",
-                            "temperature": float(fallback.get("temperature", 0.2)),
-                            "max_tokens": int(fallback.get("max_tokens", 2048)),
-                            "endpoint": merged["endpoint"],
-                            "api_key": merged["api_key"],
-                            "provider_company": merged["provider_company"],
-                            "provider_name": merged["provider_name"],
-                        }
-                    ],
+                    "default_model": "",
+                    "models": [],
                 }
                 continue
 
             models_list = []
             default_model = None
+
             for row in bindings:
-                merged = self._merge_provider_for_model(
-                    model_name=row.model.name,
-                    fallback_endpoint=str(fallback.get("endpoint", "") or ""),
-                    fallback_api_key=str(fallback.get("api_key", "") or ""),
-                    provider_by_company=provider_by_company,
-                    model_company_by_name=model_company_by_name,
-                )
+                model = row.model
+                provider = self._resolve_provider_for_model(model.company, provider_by_company)
+
                 if row.is_default:
-                    default_model = row.model.name
-                models_list.append(
-                    {
-                        "model": row.model.name,
-                        "is_default": bool(row.is_default),
-                        "identity": row.identity,
-                        "temperature": row.temperature,
-                        "max_tokens": row.max_tokens,
-                        "endpoint": merged["endpoint"],
-                        "api_key": merged["api_key"],
-                        "provider_company": merged["provider_company"],
-                        "provider_name": merged["provider_name"],
-                    }
-                )
-            if default_model is None and models_list:
-                default_model = models_list[0]["model"]
-                for item in models_list:
-                    item["is_default"] = item["model"] == default_model
-            payload[scenario_key] = {"default_model": default_model or "", "models": models_list}
-        return payload
+                    default_model = model.name
 
-    def _build_provider_keys(self, kind, default_payload, payload_key: str):
-        rows = AIProviderKeyConfig.objects.filter(kind=kind, is_active=True).order_by("position", "company", "name")
-        if rows.exists() is False:
-            return default_payload
+                policy_item = trial_overlay.get((scenario_key, model.pk))
+                provision_src = policy_item if policy_item is not None else row
 
-        result = []
-        for row in rows:
-            item = {
-                "name": row.name,
-                "company": row.company,
-                "key": row.key,
-                "request_url": row.request_url,
-                "is_hidden": row.is_hidden,
-                "help": row.help,
-                "privacy_policy_url": row.privacy_policy_url,
-                "source": row.source,
-            }
-            if payload_key == "search":
-                item["is_using"] = row.is_using
-                item["search_class"] = row.capability_class or "web"
-            if payload_key == "tool":
-                item["is_using"] = row.is_using
-                item["tool_class"] = row.capability_class or "native"
-            result.append(item)
-        return result
-
-    def _build_models(self, model_rows=None):
-        rows = model_rows if model_rows is not None else list(
-            AIModelCatalog.objects.filter(is_active=True).order_by("position", "name")
-        )
-        if not rows:
-            return DEFAULT_MODELS
-
-        return [
-            {
-                "name": row.name,
-                "display_name": row.display_name,
-                "position": row.position,
-                "company": row.company,
-                "is_hidden": row.is_hidden,
-                "supports_search": row.supports_search,
-                "supports_multimodal": row.supports_multimodal,
-                "supports_reasoning": row.supports_reasoning,
-                "supports_tool_use": row.supports_tool_use,
-                "supports_voice_gen": row.supports_voice_gen,
-                "supports_image_gen": row.supports_image_gen,
-                "price_tier": row.price_tier,
-                "supports_text": row.supports_text,
-                "reasoning_controllable": row.reasoning_controllable,
-                "source": row.source,
-            }
-            for row in rows
-        ]
-
-    def _build_user_info(self):
-        profile = AIBootstrapProfile.objects.order_by("-updated_at").first()
-        if profile is None:
-            return DEFAULT_USER_INFO
-        return {
-            "choose_embedding_model": profile.choose_embedding_model,
-            "optimization_text_model": profile.optimization_text_model,
-            "optimization_visual_model": profile.optimization_visual_model,
-            "text_to_speech_model": profile.text_to_speech_model,
-            "use_knowledge": profile.use_knowledge,
-            "knowledge_count": profile.knowledge_count,
-            "knowledge_similarity": profile.knowledge_similarity,
-            "use_search": profile.use_search,
-            "bilingual_search": profile.bilingual_search,
-            "search_count": profile.search_count,
-            "use_map": profile.use_map,
-            "use_calendar": profile.use_calendar,
-            "use_weather": profile.use_weather,
-            "use_canvas": profile.use_canvas,
-            "use_code": profile.use_code,
-        }
-
-    def _build_trial_state(self, user):
-        trial = TrialApplication.objects.filter(user=user).first()
-        trial = TrialService.ensure_status_fresh(trial=trial)
-
-        if trial is None:
-            return {
-                "status": TrialApplication.Status.NONE,
-                "is_active": False,
-                "grant_source": TrialApplication.GrantSource.AUTO,
-                "started_at": None,
-                "expires_at": None,
-                "remaining_seconds": 0,
-            }
-
-        now = timezone.now()
-        remaining_seconds = 0
-        if trial.expires_at:
-            remaining_seconds = max(int((trial.expires_at - now).total_seconds()), 0)
-        return {
-            "status": trial.status,
-            "is_active": trial.is_active_trial(),
-            "grant_source": trial.grant_source,
-            "started_at": trial.started_at.isoformat() if trial.started_at else None,
-            "expires_at": trial.expires_at.isoformat() if trial.expires_at else None,
-            "remaining_seconds": remaining_seconds,
-        }
-
-    def _build_trial_model_policy(self, provider_by_company, model_company_by_name):
-        policy = TrialModelPolicy.objects.filter(is_active=True).order_by("-updated_at").first()
-        if policy is None:
-            return []
-
-        rows = (
-            TrialModelPolicyItem.objects.select_related("model").filter(policy=policy, is_active=True).order_by("position", "scenario")
-        )
-        result = []
-        for row in rows:
-            fallback = DEFAULT_SCENARIOS.get(row.scenario) or {}
-            merged = self._merge_provider_for_model(
-                model_name=row.model.name,
-                fallback_endpoint=str(fallback.get("endpoint", "") or ""),
-                fallback_api_key=str(fallback.get("api_key", "") or ""),
-                provider_by_company=provider_by_company,
-                model_company_by_name=model_company_by_name,
-            )
-            result.append(
-                {
-                    "scenario": row.scenario,
-                    "model": row.model.name,
-                    "is_default": bool(row.is_default),
+                # 构建符合 AIScenarioRemoteModelRow 格式的模型数据
+                # 字段名需与 iOS `AIScenarioRemoteModelRow.CodingKeys` 一致：
+                # - 多数能力字段为 snake_case（见 Swift 显式 rawValue）
+                # - `systemProvision` / `briefDescription` / `aiScenarios` / `aiToolScenarios` 无 rawValue，JSON 须为 camelCase
+                # - systemProvision / briefDescription / aiToolScenarios：优先当前启用试用策略的 TrialModelPolicyItem，否则 AIScenarioModelBinding
+                model_data = {
+                    "name": model.name,
+                    "display_name": model.display_name,
                     "identity": row.identity,
-                    "endpoint": merged["endpoint"],
-                    "api_key": merged["api_key"],
+                    "company": model.company,
+                    "endpoint": provider["endpoint"] if provider else "",
+                    "api_key": provider["api_key"] if provider else "",
+                    "supports_search": model.supports_search,
+                    "supports_multimodal": model.supports_multimodal,
+                    "supports_reasoning": model.supports_reasoning,
+                    "supports_tool_use": model.supports_tool_use,
+                    "supports_voice_gen": model.supports_voice_gen,
+                    "supports_image_gen": model.supports_image_gen,
+                    "supports_text": model.supports_text,
+                    "supports_deep_reasoning": model.supports_reasoning,
+                    "reasoning_controllable": model.reasoning_controllable,
+                    "price_tier": model.price_tier,
+                    "systemProvision": provision_src.system_provision or "",
+                    "icon": model.icon or "",
+                    "briefDescription": provision_src.brief_description or "",
+                    "source": "pro",  # Pro 专属模型标记
+                    "aiScenarios": [scenario_key],
+                    "aiToolScenarios": _bootstrap_json_string_list(provision_src.ai_tool_scenarios),
+                    "is_default": bool(row.is_default),
                     "temperature": row.temperature,
                     "max_tokens": row.max_tokens,
-                    "provider_company": merged["provider_company"],
-                    "provider_name": merged["provider_name"],
                 }
-            )
-        return result
+                models_list.append(model_data)
+
+            # 如果没有默认模型，取第一个
+            if default_model is None and models_list:
+                default_model = models_list[0]["name"]
+                models_list[0]["is_default"] = True
+
+            payload[scenario_key] = {
+                "default_model": default_model or "",
+                "models": models_list,
+            }
+
+        return payload
+
+    def _resolve_provider_for_model(self, company: str, provider_by_company: dict):
+        """根据模型所属厂商解析 provider 配置（endpoint 和 api_key）。"""
+        normalized_company = str(company or "").strip().upper()
+        if not normalized_company:
+            return None
+
+        provider = provider_by_company.get(normalized_company)
+        if provider is None:
+            return None
+
+        return {
+            "endpoint": provider.request_url or "",
+            "api_key": provider.key or "",
+        }
+
 
     def _build_provider_index(self, provider_rows):
         # 每个厂商只选一个“当前生效 provider”（优先 is_using，再按 position）。
@@ -292,38 +228,12 @@ class AIBootstrapConfigView(APIView):
                 provider_by_company[normalized_company] = row
         return provider_by_company
 
-    def _merge_provider_for_model(
-        self,
-        model_name: str,
-        fallback_endpoint: str,
-        fallback_api_key: str,
-        provider_by_company,
-        model_company_by_name,
-    ):
-        company = str(model_company_by_name.get(model_name, "") or "").strip().upper()
-        provider = provider_by_company.get(company)
-        if provider is None:
-            return {
-                "endpoint": fallback_endpoint,
-                "api_key": fallback_api_key or "",
-                "provider_company": company or "",
-                "provider_name": "",
-            }
-        return {
-            "endpoint": provider.request_url or fallback_endpoint,
-            "api_key": provider.key or fallback_api_key or "",
-            "provider_company": provider.company,
-            "provider_name": provider.name,
-        }
-
-    def _resolve_revision(self):
+    def _resolve_pro_revision(self):
+        """Pro 配置版本号：基于场景模型绑定和 Provider 配置的更新时间。"""
         points = [
             AIScenarioModelBinding.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             AIProviderKeyConfig.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             AIModelCatalog.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
-            AIBootstrapProfile.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
-            TrialApplication.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
-            TrialModelPolicy.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             TrialModelPolicyItem.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
         ]
         points = [point for point in points if point is not None]

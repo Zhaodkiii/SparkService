@@ -136,6 +136,10 @@ def _to_thread_payload(thread: ChatThread) -> dict:
         "thread_id": str(thread.id),
         "title": thread.title,
         "scenario": thread.scenario,
+        "current_model_name": thread.current_model_name or None,
+        "temperature": thread.temperature,
+        "max_tokens": thread.max_tokens,
+        "role_prompt": thread.role_prompt,
         "image_delivery_mode": thread.image_delivery_mode,
         "patient_id": str(thread.patient_id) if thread.patient_id else None,
         "is_deleted": thread.is_deleted,
@@ -182,6 +186,10 @@ class ChatSyncPushView(APIView):
                         "user": request.user,
                         "title": "New Chat",
                         "scenario": ChatThread.Scenario.CHAT,
+                        "current_model_name": (payload.get("thread_current_model_name") or "").strip(),
+                        "temperature": payload.get("thread_temperature") if payload.get("thread_temperature") is not None else 0.6,
+                        "max_tokens": payload.get("thread_max_tokens") if payload.get("thread_max_tokens") is not None else 4096,
+                        "role_prompt": payload.get("thread_role_prompt") or "",
                     },
                 )
                 if thread.user_id != request.user.id:
@@ -211,6 +219,15 @@ class ChatSyncPushView(APIView):
                 attachment_mode = _extract_image_delivery_mode_from_attachments(metadata["attachments"])
                 if attachment_mode:
                     thread.image_delivery_mode = attachment_mode
+                thread_model_name = (payload.get("thread_current_model_name") or "").strip()
+                if thread_model_name:
+                    thread.current_model_name = thread_model_name
+                if payload.get("thread_temperature") is not None:
+                    thread.temperature = float(payload["thread_temperature"])
+                if payload.get("thread_max_tokens") is not None:
+                    thread.max_tokens = int(payload["thread_max_tokens"])
+                if payload.get("thread_role_prompt") is not None:
+                    thread.role_prompt = payload.get("thread_role_prompt") or ""
 
                 defaults = {
                     "thread": thread,
@@ -265,6 +282,10 @@ class ChatSyncPushView(APIView):
                         "is_deleted",
                         "deleted_at",
                         "image_delivery_mode",
+                        "current_model_name",
+                        "temperature",
+                        "max_tokens",
+                        "role_prompt",
                     ]
                 )
                 result.append(_to_payload(message))

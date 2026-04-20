@@ -23,6 +23,9 @@ export interface AIScenarioModelBinding {
   position: number;
   is_default: boolean;
   is_active: boolean;
+  system_provision?: string;
+  brief_description?: string;
+  ai_tool_scenarios?: string[];
 }
 
 export function fetchAIScenarioSummaries() {
@@ -78,6 +81,8 @@ export interface AIModelCatalog {
   price_tier: number;
   supports_text: boolean;
   reasoning_controllable: boolean;
+  /** SF Symbol 等，下发到客户端模型行 icon */
+  icon?: string;
   source: string;
   is_active: boolean;
 }

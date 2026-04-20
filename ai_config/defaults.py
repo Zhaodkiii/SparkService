@@ -1,12 +1,12 @@
 _DEFAULT_CHAT = {
-    "endpoint": "https://api.sparkclient.local/v1/chat/completions",
-    "model": "spark-chat-default",
+    "endpoint": "",
+    "model": "",
     "temperature": 0.2,
     "max_tokens": 4096,
 }
 _DEFAULT_EMBED = {
-    "endpoint": "https://api.sparkclient.local/v1/embeddings",
-    "model": "spark-embedding-default",
+    "endpoint": "",
+    "model": "",
     "temperature": 0.0,
     "max_tokens": 2048,
 }
@@ -21,8 +21,8 @@ DEFAULT_SCENARIOS = {
     "prescription_extraction": {},
     "medication_extraction": {},
     "optimization_text": {
-        "endpoint": "https://api.sparkclient.local/v1/chat/completions",
-        "model": "spark-chat-default",
+        "endpoint": "",
+        "model": "",
         "temperature": 0.0,
         "max_tokens": 4096,
     },
@@ -33,35 +33,7 @@ DEFAULT_SCENARIOS = {
     "report_interpretation": dict(_DEFAULT_CHAT),
 }
 
-DEFAULT_API_KEYS = [
-    {
-        "name": "Spark Default",
-        "company": "SPARK",
-        "key": "",
-        "request_url": "https://api.sparkclient.local/v1/chat/completions",
-        "is_hidden": False,
-        "help": "Spark first-party endpoint",
-        "source": "system",
-    },
-    {
-        "name": "Spark Embedding",
-        "company": "SPARK",
-        "key": "",
-        "request_url": "https://api.sparkclient.local/v1/embeddings",
-        "is_hidden": False,
-        "help": "Spark first-party embedding endpoint",
-        "source": "system",
-    },
-    {
-        "name": "OpenAI",
-        "company": "OPENAI",
-        "key": "",
-        "request_url": "https://api.openai.com/v1/chat/completions",
-        "is_hidden": True,
-        "help": "OpenAI compatible endpoint",
-        "source": "system",
-    },
-]
+DEFAULT_API_KEYS = []
 
 DEFAULT_SEARCH_KEYS = [
     {
@@ -109,65 +81,13 @@ DEFAULT_TOOL_KEYS = [
     },
 ]
 
-DEFAULT_MODELS = [
-    {
-        "name": "spark-chat-default",
-        "display_name": "Spark Chat Default",
-        "position": 0,
-        "company": "SPARK",
-        "is_hidden": False,
-        "supports_search": True,
-        "supports_multimodal": True,
-        "supports_reasoning": True,
-        "supports_tool_use": True,
-        "supports_voice_gen": False,
-        "supports_image_gen": False,
-        "price_tier": 0,
-        "supports_text": True,
-        "reasoning_controllable": False,
-        "source": "system",
-    },
-    {
-        "name": "spark-embedding-default",
-        "display_name": "Spark Embedding Default",
-        "position": 10,
-        "company": "SPARK",
-        "is_hidden": False,
-        "supports_search": False,
-        "supports_multimodal": False,
-        "supports_reasoning": False,
-        "supports_tool_use": False,
-        "supports_voice_gen": False,
-        "supports_image_gen": False,
-        "price_tier": 0,
-        "supports_text": True,
-        "reasoning_controllable": False,
-        "source": "system",
-    },
-    {
-        "name": "spark-tts-default",
-        "display_name": "Spark TTS Default",
-        "position": 20,
-        "company": "SPARK",
-        "is_hidden": False,
-        "supports_search": False,
-        "supports_multimodal": False,
-        "supports_reasoning": False,
-        "supports_tool_use": False,
-        "supports_voice_gen": True,
-        "supports_image_gen": False,
-        "price_tier": 0,
-        "supports_text": True,
-        "reasoning_controllable": False,
-        "source": "system",
-    },
-]
+DEFAULT_MODELS = []
 
 DEFAULT_USER_INFO = {
-    "choose_embedding_model": "spark-embedding-default",
-    "optimization_text_model": "spark-chat-default",
-    "optimization_visual_model": "spark-chat-default",
-    "text_to_speech_model": "spark-tts-default",
+    "choose_embedding_model": "",
+    "optimization_text_model": "",
+    "optimization_visual_model": "",
+    "text_to_speech_model": "",
     "use_knowledge": True,
     "knowledge_count": 5,
     "knowledge_similarity": 0.75,

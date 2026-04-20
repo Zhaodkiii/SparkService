@@ -380,6 +380,7 @@ class LoginService:
         result = LoginService._issue_tokens(user)
         result["email"] = user.email or chosen_email
         result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
+        result["is_pro"] = TrialService.is_pro_user(user=user)
         result["is_new_user"] = created_user
         DeviceLinkingService.try_attach_user_to_trusted_device(
             user=user,
@@ -413,4 +414,5 @@ class LoginService:
             "refresh_token": str(refresh),
             "expires_in": expires_in,
             "token_type": "Bearer",
+            "is_pro": TrialService.is_pro_user(user=user),
         }

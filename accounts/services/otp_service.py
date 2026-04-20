@@ -335,6 +335,7 @@ class OTPService:
             "expires_in": expires_in,
             "token_type": "Bearer",
             "otp_id": otp.otp_id,
+            "is_pro": TrialService.is_pro_user(user=user),
         }
 
     @staticmethod
@@ -456,6 +457,7 @@ class OTPService:
             "user_id": user.id,
             "phone_number": normalized_phone,
             "display_name": PhoneNumberService.masked_display(normalized_phone),
+            "is_pro": TrialService.is_pro_user(user=user),
             "is_new_user": created_user,
             "access_token": str(access),
             "refresh_token": str(refresh),
