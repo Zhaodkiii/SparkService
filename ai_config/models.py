@@ -7,6 +7,8 @@ class ScenarioKey(models.TextChoices):
     """与客户端及 bootstrap `scenarios` 键名一致的固定场景枚举。"""
 
     CHAT = "chat"
+    EMBEDDING = "embedding"
+    VOICE = "voice"
     MEDICAL_STRUCTURED_EXTRACTION = "medical_structured_extraction"
     MEDICAL_DOCUMENT_TYPE_RECOGNITION = "medical_document_type_recognition"
     MEDICAL_CASE_EXTRACTION = "medical_case_extraction"

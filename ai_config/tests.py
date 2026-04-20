@@ -7,6 +7,8 @@ from ai_config.models import TrialApplication
 class AIBootstrapConfigViewTests(APITestCase):
     EXPECTED_SCENARIOS = {
         "chat",
+        "embedding",
+        "voice",
         "medical_structured_extraction",
         "medical_document_type_recognition",
         "medical_case_extraction",

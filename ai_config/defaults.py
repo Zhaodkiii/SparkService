@@ -13,6 +13,8 @@ _DEFAULT_EMBED = {
 
 DEFAULT_SCENARIOS = {
     "chat": dict(_DEFAULT_CHAT),
+    "embedding": dict(_DEFAULT_EMBED),
+    "voice": dict(_DEFAULT_CHAT),
     "medical_structured_extraction": {},
     "medical_document_type_recognition": {},
     "medical_case_extraction": {},

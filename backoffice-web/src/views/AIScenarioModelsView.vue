@@ -137,6 +137,15 @@ const identityOptions = [
 function scenarioLabel(key: string) {
   const map: Record<string, string> = {
     chat: '对话',
+    embedding: '向量模型',
+    voice: '语音模型',
+    medical_structured_extraction: '医疗文档结构化抽取',
+    medical_document_type_recognition: '医疗文档类型识别',
+    medical_case_extraction: '病例结构化抽取',
+    health_exam_extraction: '体检报告结构化抽取',
+    medical_report_extraction: '医疗报告结构化抽取',
+    prescription_extraction: '处方结构化抽取',
+    medication_extraction: '用药结构化抽取',
     optimization_text: '文本优化模型',
     optimization_visual: '视觉优化模型',
     context_folding: '上下文折叠',

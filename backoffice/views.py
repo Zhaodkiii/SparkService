@@ -726,6 +726,8 @@ class AdminNotificationCampaignListView(APIView):
 
 SCENARIO_LABEL_ZH = {
     "chat": "对话",
+    "embedding": "向量模型",
+    "voice": "语音模型",
     "medical_structured_extraction": "医疗文档结构化抽取",
     "medical_document_type_recognition": "医疗文档类型识别",
     "medical_case_extraction": "病例结构化抽取",
@@ -747,7 +749,7 @@ def _scenario_key_valid(scenario_key: str) -> bool:
 
 
 class AdminAIScenarioSummaryListView(APIView):
-    """Fixed seven scenarios: aggregate counts and default model per scenario."""
+    """Aggregate counts and default model for each configured scenario."""
 
     permission_classes = [AdminOnlyPermission]
 
