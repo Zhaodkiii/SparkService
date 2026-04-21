@@ -138,7 +138,9 @@ def _to_thread_payload(thread: ChatThread) -> dict:
         "scenario": thread.scenario,
         "current_model_name": thread.current_model_name or None,
         "temperature": thread.temperature,
+        "top_p": thread.top_p,
         "max_tokens": thread.max_tokens,
+        "max_messages": thread.max_messages,
         "role_prompt": thread.role_prompt,
         "image_delivery_mode": thread.image_delivery_mode,
         "patient_id": str(thread.patient_id) if thread.patient_id else None,
@@ -188,7 +190,9 @@ class ChatSyncPushView(APIView):
                         "scenario": ChatThread.Scenario.CHAT,
                         "current_model_name": (payload.get("thread_current_model_name") or "").strip(),
                         "temperature": payload.get("thread_temperature") if payload.get("thread_temperature") is not None else 0.6,
+                        "top_p": payload.get("thread_top_p") if payload.get("thread_top_p") is not None else 1.0,
                         "max_tokens": payload.get("thread_max_tokens") if payload.get("thread_max_tokens") is not None else 4096,
+                        "max_messages": payload.get("thread_max_messages") if payload.get("thread_max_messages") is not None else 20,
                         "role_prompt": payload.get("thread_role_prompt") or "",
                     },
                 )
@@ -224,8 +228,12 @@ class ChatSyncPushView(APIView):
                     thread.current_model_name = thread_model_name
                 if payload.get("thread_temperature") is not None:
                     thread.temperature = float(payload["thread_temperature"])
+                if payload.get("thread_top_p") is not None:
+                    thread.top_p = float(payload["thread_top_p"])
                 if payload.get("thread_max_tokens") is not None:
                     thread.max_tokens = int(payload["thread_max_tokens"])
+                if payload.get("thread_max_messages") is not None:
+                    thread.max_messages = max(int(payload["thread_max_messages"]), 1)
                 if payload.get("thread_role_prompt") is not None:
                     thread.role_prompt = payload.get("thread_role_prompt") or ""
 
@@ -284,7 +292,9 @@ class ChatSyncPushView(APIView):
                         "image_delivery_mode",
                         "current_model_name",
                         "temperature",
+                        "top_p",
                         "max_tokens",
+                        "max_messages",
                         "role_prompt",
                     ]
                 )
