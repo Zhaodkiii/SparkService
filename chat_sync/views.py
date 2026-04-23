@@ -15,6 +15,7 @@ from chat_sync.models import ChatMessage, ChatThread
 from chat_sync.serializers import (
     ChatPushRequestSerializer,
     ChatThreadDeleteRequestSerializer,
+    ChatThreadPushRequestSerializer,
 )
 from common.exceptions import APIError
 from common.response import success_response
@@ -144,6 +145,7 @@ def _to_thread_payload(thread: ChatThread) -> dict:
         "role_prompt": thread.role_prompt,
         "image_delivery_mode": thread.image_delivery_mode,
         "patient_id": str(thread.patient_id) if thread.patient_id else None,
+        "member_id": thread.member_id,
         "is_deleted": thread.is_deleted,
         "deleted_at": thread.deleted_at.isoformat() if thread.deleted_at else None,
         "updated_at": thread.updated_at.isoformat(),
@@ -339,6 +341,86 @@ class ChatSyncThreadHeadView(APIView):
             msg="ok",
             code=0,
         )
+
+
+class ChatSyncThreadPushView(APIView):
+    """客户端上送会话级元数据：模型参数、图片送达方式、成员档案绑定等。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChatThreadPushRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        threads_payload = serializer.validated_data["threads"]
+        if not threads_payload:
+            return success_response({"threads": []}, msg="ok", code=0)
+
+        result = []
+        with transaction.atomic():
+            for payload in threads_payload:
+                thread, _ = ChatThread.objects.get_or_create(
+                    id=payload["thread_id"],
+                    defaults={
+                        "user": request.user,
+                        "title": payload.get("title") or "New Chat",
+                        "scenario": payload.get("scenario") or ChatThread.Scenario.CHAT,
+                    },
+                )
+                if thread.user_id != request.user.id:
+                    raise APIError(
+                        msg="thread_id_conflict",
+                        code=40901,
+                        status_code=409,
+                        details={"thread_id": str(payload["thread_id"])},
+                    )
+
+                thread.title = payload.get("title") or thread.title or "New Chat"
+                thread.scenario = payload.get("scenario") or ChatThread.Scenario.CHAT
+                thread.patient_id = payload.get("patient_id")
+                thread.member_id = payload.get("member_id")
+                thread.is_deleted = payload.get("is_deleted", False)
+                thread.deleted_at = payload.get("deleted_at")
+                thread.image_delivery_mode = payload.get("image_delivery_mode") or None
+                thread.current_model_name = (payload.get("current_model_name") or "").strip()
+                if payload.get("temperature") is not None:
+                    thread.temperature = float(payload["temperature"])
+                if payload.get("top_p") is not None:
+                    thread.top_p = float(payload["top_p"])
+                if payload.get("max_tokens") is not None:
+                    thread.max_tokens = int(payload["max_tokens"])
+                if payload.get("max_messages") is not None:
+                    thread.max_messages = max(int(payload["max_messages"]), 1)
+                if payload.get("role_prompt") is not None:
+                    thread.role_prompt = payload.get("role_prompt") or ""
+                thread.updated_at = datetime.now(tz=timezone.utc)
+                thread.save(
+                    update_fields=[
+                        "title",
+                        "scenario",
+                        "patient_id",
+                        "member_id",
+                        "is_deleted",
+                        "deleted_at",
+                        "image_delivery_mode",
+                        "current_model_name",
+                        "temperature",
+                        "top_p",
+                        "max_tokens",
+                        "max_messages",
+                        "role_prompt",
+                        "updated_at",
+                        "server_updated_at",
+                    ]
+                )
+                result.append(_to_thread_payload(thread))
+
+        logger.info(
+            "chat thread-push success request_id=%s user_id=%s accepted=%s",
+            request.headers.get("X-Request-ID", "-"),
+            request.user.id,
+            len(result),
+        )
+        return success_response({"threads": result}, msg="ok", code=0)
 
 
 class ChatSyncThreadPullView(APIView):

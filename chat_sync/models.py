@@ -15,6 +15,7 @@ class ChatThread(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="chat_threads", on_delete=models.CASCADE)
     patient_id = models.UUIDField(null=True, blank=True, db_index=True)
+    member_id = models.IntegerField(null=True, blank=True, db_index=True)
     title = models.CharField(max_length=255, default="New Chat")
     scenario = models.CharField(max_length=32, choices=Scenario.choices, default=Scenario.CHAT)
     current_model_name = models.CharField(max_length=128, blank=True, default="")
