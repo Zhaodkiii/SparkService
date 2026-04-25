@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, TrialApplication
+from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, IdentityKind, ScenarioKey, TrialApplication
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 
@@ -328,6 +328,11 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"model": "provider_not_configured_for_model_company"})
         scenario = self.context.get("scenario") or (self.instance.scenario if self.instance else None)
         if scenario and self.instance is None:
+            # Catch duplicate (scenario, model, identity) before hitting DB UniqueConstraint.
+            # `scenario` is read_only so DRF skips auto UniqueTogetherValidator.
+            identity = attrs.get("identity", IdentityKind.MODEL)
+            if AIScenarioModelBinding.objects.filter(scenario=scenario, model=model_obj, identity=identity).exists():
+                raise serializers.ValidationError({"model": "model_already_bound_to_this_scenario_with_same_identity"})
             if not AIScenarioModelBinding.objects.filter(scenario=scenario).exists():
                 attrs.setdefault("is_default", True)
         return attrs

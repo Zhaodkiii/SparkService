@@ -27,6 +27,7 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=ChatMessage.Role.choices)
     kind = serializers.ChoiceField(choices=ChatMessage.Kind.choices)
     content = serializers.CharField(allow_blank=True)
+    model_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     client_message_id = serializers.UUIDField()
     server_message_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     delivery_state = serializers.ChoiceField(choices=ChatMessage.DeliveryState.choices)

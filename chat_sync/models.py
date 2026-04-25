@@ -69,6 +69,7 @@ class ChatMessage(models.Model):
     role = models.CharField(max_length=16, choices=Role.choices)
     kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.TEXT)
     content = models.TextField(blank=True, default="")
+    model_name = models.CharField(max_length=128, blank=True, default="")
     client_message_id = models.UUIDField(db_index=True)
     server_message_id = models.CharField(max_length=64, db_index=True)
     delivery_state = models.CharField(max_length=16, choices=DeliveryState.choices, default=DeliveryState.SENT)

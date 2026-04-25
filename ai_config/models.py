@@ -53,7 +53,7 @@ class AIScenarioModelBinding(models.Model):
         ordering = ["scenario", "position", "model__name"]
         db_table_comment = "场景模型绑定：Pro bootstrap 场景列表来源"
         constraints = [
-            models.UniqueConstraint(fields=["scenario", "model"], name="uniq_scenario_model_binding"),
+            models.UniqueConstraint(fields=["scenario", "model", "identity"], name="uniq_scenario_model_identity_binding"),
         ]
 
     def save(self, *args, **kwargs):

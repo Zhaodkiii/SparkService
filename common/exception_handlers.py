@@ -1,8 +1,12 @@
+import logging
+
 from common.exceptions import APIError
 
 from rest_framework import status as drf_status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
+
+logger = logging.getLogger("django.request")
 
 
 def api_exception_handler(exc, context):
@@ -25,6 +29,16 @@ def api_exception_handler(exc, context):
             status=exc.status_code,
         )
 
+    # Unexpected exception: log full traceback so it appears in app logs.
+    path = getattr(request, "path", "unknown")
+    method = getattr(request, "method", "unknown")
+    logger.exception(
+        "Unhandled exception [request_id=%s] %s %s",
+        request_id,
+        method,
+        path,
+        exc_info=exc,
+    )
     return Response(
         {"code": -1, "msg": "Internal Server Error", "data": error_data},
         status=drf_status.HTTP_500_INTERNAL_SERVER_ERROR,
