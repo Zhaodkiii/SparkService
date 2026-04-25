@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, IdentityKind, ScenarioKey, TrialApplication
+from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, IdentityKind, ScenarioKey, SmallTask, TrialApplication
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 
@@ -16,6 +16,14 @@ def _normalize_ai_tool_scenarios(value):
     if isinstance(value, list):
         return [str(x).strip() for x in value if x is not None and str(x).strip() != ""]
     raise serializers.ValidationError("ai_tool_scenarios_must_be_string_array")
+
+
+def _normalize_string_list(value, field_name: str):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if x is not None and str(x).strip() != ""]
+    raise serializers.ValidationError(f"{field_name}_must_be_string_array")
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
@@ -295,6 +303,7 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
             "system_provision",
             "brief_description",
             "ai_tool_scenarios",
+            "related_task_codes",
             "updated_at",
             "created_at",
         )
@@ -302,6 +311,9 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
 
     def validate_ai_tool_scenarios(self, value):
         return _normalize_ai_tool_scenarios(value)
+
+    def validate_related_task_codes(self, value):
+        return _normalize_string_list(value, "related_task_codes")
 
     def _resolve_provider(self, obj: AIScenarioModelBinding):
         return _resolve_provider_for_catalog_model(obj.model)
@@ -390,6 +402,7 @@ class AdminAIModelCatalogSerializer(serializers.ModelSerializer):
             "supports_text",
             "reasoning_controllable",
             "icon",
+            "related_task_codes",
             "source",
             "is_active",
             "updated_at",
@@ -430,12 +443,16 @@ class AdminAIModelCatalogCreateSerializer(serializers.ModelSerializer):
             "supports_text",
             "reasoning_controllable",
             "icon",
+            "related_task_codes",
             "source",
             "is_active",
         )
 
     def validate_price_tier(self, value):
         return _validate_price_tier(value)
+
+    def validate_related_task_codes(self, value):
+        return _normalize_string_list(value, "related_task_codes")
 
 
 class AdminAIModelCatalogUpdateSerializer(serializers.ModelSerializer):
@@ -469,12 +486,41 @@ class AdminAIModelCatalogUpdateSerializer(serializers.ModelSerializer):
             "supports_text",
             "reasoning_controllable",
             "icon",
+            "related_task_codes",
             "source",
             "is_active",
         )
 
     def validate_price_tier(self, value):
         return _validate_price_tier(value)
+
+    def validate_related_task_codes(self, value):
+        return _normalize_string_list(value, "related_task_codes")
+
+
+class AdminSmallTaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SmallTask
+        fields = (
+            "id",
+            "name",
+            "code",
+            "brief",
+            "prompt",
+            "icon",
+            "tool_list",
+            "source",
+            "is_deleted",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate_tool_list(self, value):
+        return _normalize_string_list(value, "tool_list")
+
+    def validate_source(self, value):
+        return value or SmallTask.Source.SERVICE
 
 
 class AdminAIProviderKeySerializer(serializers.ModelSerializer):

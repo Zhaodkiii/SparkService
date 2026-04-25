@@ -107,6 +107,7 @@ const tabs = reactive<TabItem[]>([{ key: '/dashboard', title: '仪表盘', closa
     children: [
       { code: 'menu:ai:scenario', name: 'AI 场景配置', path: '/ai-config/scenarios', children: [] },
       { code: 'menu:ai:models', name: '模型目录', path: '/ai-config/models', children: [] },
+      { code: 'menu:ai:small_tasks', name: 'AI 小任务', path: '/ai-config/small-tasks', children: [] },
       { code: 'menu:ai:provider', name: 'Provider 配置', path: '/ai-config/providers', children: [] },
       { code: 'menu:ai:trial', name: '试用期', path: '/ai-config/trials', children: [] },
     ],

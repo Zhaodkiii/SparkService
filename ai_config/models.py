@@ -46,6 +46,7 @@ class AIScenarioModelBinding(models.Model):
     system_provision = models.TextField(blank=True, default="", db_comment="场景绑定systemProvision_bootstrap优先试用策略行覆盖")
     brief_description = models.TextField(blank=True, default="", db_comment="场景绑定briefDescription_bootstrap优先试用策略行覆盖")
     ai_tool_scenarios = models.JSONField(default=list, blank=True, db_comment="场景绑定aiToolScenarios_JSON_bootstrap优先试用策略行覆盖")
+    related_task_codes = models.JSONField(default=list, blank=True, db_comment="场景绑定关联小任务唯一编码列表")
     updated_at = models.DateTimeField(auto_now=True, db_comment="更新时间")
     created_at = models.DateTimeField(auto_now_add=True, db_comment="创建时间")
 
@@ -132,6 +133,7 @@ class AIModelCatalog(models.Model):
     supports_text = models.BooleanField(default=True, db_comment="支持文本")
     reasoning_controllable = models.BooleanField(default=False, db_comment="推理可控")
     icon = models.CharField(max_length=128, blank=True, default="", db_comment="图标SF符号或标识")
+    related_task_codes = models.JSONField(default=list, blank=True, db_comment="关联小任务唯一编码列表")
     source = models.CharField(max_length=16, choices=Source.choices, default=Source.SYSTEM, db_comment="来源system或custom")
     is_active = models.BooleanField(default=True, db_index=True, db_comment="是否启用")
     updated_at = models.DateTimeField(auto_now=True, db_comment="更新时间")
@@ -149,6 +151,40 @@ class AIModelCatalog(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class SmallTask(models.Model):
+    """AI 小任务配置；客户端可按 code 与模型关联。"""
+
+    class Source(models.TextChoices):
+        LOCAL = "Local", "本地任务"
+        SERVICE = "Service", "服务任务"
+
+    id = models.AutoField(primary_key=True, verbose_name="小任务ID")
+    name = models.CharField(max_length=100, verbose_name="小任务名称")
+    code = models.CharField(max_length=50, unique=True, blank=True, verbose_name="唯一编码", help_text="格式：Local_数字 或 Service_数字")
+    brief = models.CharField(max_length=255, blank=True, default="", verbose_name="小任务简介")
+    prompt = models.TextField(verbose_name="任务设定/Prompt")
+    icon = models.CharField(max_length=100, blank=True, default="", verbose_name="图标")
+    tool_list = models.JSONField(default=list, blank=True, verbose_name="调用工具列表")
+    source = models.CharField(max_length=10, choices=Source.choices, verbose_name="任务来源")
+    is_deleted = models.BooleanField(default=False, db_index=True, verbose_name="软删除状态")
+    created_at = models.DateTimeField(default=timezone.now, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        ordering = ["source", "id"]
+        db_table_comment = "AI小任务配置：本地/服务任务定义，按code与模型关联"
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            super().save(*args, **kwargs)
+            self.code = f"{self.source}_{self.pk}"
+            return super().save(update_fields=["code", "updated_at"])
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.code}:{self.name}"
 
 
 class AIBootstrapProfile(models.Model):
@@ -257,6 +293,7 @@ class TrialModelPolicyItem(models.Model):
     system_provision = models.TextField(blank=True, default="", db_comment="试用策略行systemProvision_bootstrap覆盖场景绑定")
     brief_description = models.TextField(blank=True, default="", db_comment="试用策略行briefDescription_bootstrap覆盖场景绑定")
     ai_tool_scenarios = models.JSONField(default=list, blank=True, db_comment="试用策略行aiToolScenarios_JSON_bootstrap覆盖场景绑定")
+    related_task_codes = models.JSONField(default=list, blank=True, db_comment="试用策略行关联小任务唯一编码列表")
     created_at = models.DateTimeField(auto_now_add=True, db_comment="创建时间")
     updated_at = models.DateTimeField(auto_now=True, db_comment="更新时间")
 

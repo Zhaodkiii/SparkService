@@ -85,6 +85,16 @@
       <a-form-item label="来源">
         <a-select v-model:value="form.source" :options="sourceOptions" style="width: 100%" />
       </a-form-item>
+      <a-form-item label="关联小任务">
+        <a-select
+          v-model:value="form.related_task_codes"
+          mode="multiple"
+          allow-clear
+          show-search
+          :options="smallTaskOptions"
+          style="width: 100%"
+        />
+      </a-form-item>
       <a-form-item label="排序"><a-input-number v-model:value="form.position" style="width: 100%" /></a-form-item>
       <a-form-item label="文本"><a-switch v-model:checked="form.supports_text" /></a-form-item>
       <a-form-item label="视觉"><a-switch v-model:checked="form.supports_multimodal" /></a-form-item>
@@ -107,15 +117,18 @@ import {
   createAIModelCatalog,
   fetchAIModelCatalog,
   fetchAIProviders,
+  fetchSmallTasks,
   updateAIModelCatalog,
   type AIModelCatalog,
   type AIProvider,
+  type SmallTask,
 } from '../api/modules/ai';
 import { useAuthStore } from '../stores/auth';
 
 const auth = useAuthStore();
 const rows = ref<AIModelCatalog[]>([]);
 const providers = ref<AIProvider[]>([]);
+const smallTasks = ref<SmallTask[]>([]);
 const modalOpen = ref(false);
 const saving = ref(false);
 const isCreate = ref(false);
@@ -136,6 +149,13 @@ const priceTierOptions = [
   { value: 2, label: '2 · 标准' },
   { value: 3, label: '3 · 高级' },
 ];
+
+const smallTaskOptions = computed(() =>
+  smallTasks.value.map((task) => ({
+    value: task.code,
+    label: `${task.name}（${task.code}）`,
+  })),
+);
 
 function priceTierLabel(tier: number | undefined) {
   const m: Record<number, string> = {
@@ -179,9 +199,10 @@ function filterVendorCompanyOption(input: string, option: { label?: string }) {
 }
 
 async function load() {
-  const [catalog, pv] = await Promise.all([fetchAIModelCatalog(), fetchAIProviders('api')]);
+  const [catalog, pv, tasks] = await Promise.all([fetchAIModelCatalog(), fetchAIProviders('api'), fetchSmallTasks()]);
   rows.value = catalog;
   providers.value = pv;
+  smallTasks.value = tasks;
 }
 
 function openCreate() {
@@ -203,6 +224,7 @@ function openCreate() {
     supports_text: true,
     reasoning_controllable: false,
     icon: '',
+    related_task_codes: [],
     source: 'custom',
     is_active: true,
   });
@@ -247,6 +269,7 @@ async function submit() {
         supports_text: form.supports_text,
         reasoning_controllable: form.reasoning_controllable,
         icon: form.icon,
+        related_task_codes: form.related_task_codes,
         source: form.source,
         is_active: form.is_active,
       });
@@ -273,6 +296,7 @@ async function submit() {
         supports_text: form.supports_text,
         reasoning_controllable: form.reasoning_controllable,
         icon: form.icon,
+        related_task_codes: form.related_task_codes,
         source: form.source,
         is_active: form.is_active,
       });

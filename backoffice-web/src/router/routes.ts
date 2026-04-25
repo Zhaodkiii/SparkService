@@ -32,6 +32,7 @@ export const constantRoutes: RouteRecordRaw[] = [
       },
       { path: '/ai-config/scenarios', name: 'AIScenarios', component: () => import('../views/AIScenariosView.vue'), meta: { title: 'AI场景配置' } },
       { path: '/ai-config/models', name: 'AIModels', component: () => import('../views/AIModelsView.vue'), meta: { title: '模型目录' } },
+      { path: '/ai-config/small-tasks', name: 'AISmallTasks', component: () => import('../views/AISmallTasksView.vue'), meta: { title: 'AI小任务' } },
       { path: '/ai-config/providers', name: 'AIProviders', component: () => import('../views/AIProvidersView.vue'), meta: { title: 'Provider配置' } },
       { path: '/ai-config/trials', name: 'AITrials', component: () => import('../views/AITrialsView.vue'), meta: { title: '试用期' } },
       { path: '/rbac', name: 'RBAC', component: () => import('../views/RBACView.vue'), meta: { title: '权限管理' } },

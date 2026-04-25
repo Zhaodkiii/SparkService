@@ -22,7 +22,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from accounts.services.notification_service import NotificationService
 from accounts.deactivation.tasks import process_deactivation_task
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, TrialApplication
+from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, SmallTask, TrialApplication
 from ai_config.services import TrialService
 from chat_sync.models import ChatMessage, ChatThread
 from common.permissions import AdminCodePermission, AdminOnlyPermission
@@ -43,6 +43,7 @@ from backoffice.serializers import (
     AdminAIProviderKeySerializer,
     AdminAIProviderKeyUpdateSerializer,
     AdminAIScenarioModelBindingSerializer,
+    AdminSmallTaskSerializer,
     AdminAuditLogSerializer,
     AdminDeactivationAuditSerializer,
     AdminDeactivationSerializer,
@@ -899,6 +900,70 @@ class AdminAIModelCatalogDetailView(APIView):
             response_payload=payload,
         )
         return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminSmallTaskListCreateView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        rows = SmallTask.objects.filter(is_deleted=False).order_by("source", "id")
+        payload = AdminSmallTaskSerializer(rows, many=True).data
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+    def post(self, request):
+        permission_codes = get_user_permission_codes(request.user.id)
+        if not request.user.is_superuser and "button:ai:small_task:create" not in permission_codes:
+            return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
+        data = request.data.copy()
+        data.setdefault("source", SmallTask.Source.SERVICE)
+        serializer = AdminSmallTaskSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        row = serializer.save()
+        payload = AdminSmallTaskSerializer(row).data
+        write_audit_log(
+            request,
+            action="admin.ai.small_task.create",
+            resource_type="ai_small_task",
+            resource_id=str(row.id),
+            status_code=201,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class AdminSmallTaskDetailView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:ai:small_task:update"
+
+    def patch(self, request, task_id: int):
+        row = get_object_or_404(SmallTask, pk=task_id, is_deleted=False)
+        serializer = AdminSmallTaskSerializer(row, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        payload = AdminSmallTaskSerializer(row).data
+        write_audit_log(
+            request,
+            action="admin.ai.small_task.update",
+            resource_type="ai_small_task",
+            resource_id=str(row.id),
+            status_code=200,
+            response_payload=payload,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def delete(self, request, task_id: int):
+        row = get_object_or_404(SmallTask, pk=task_id, is_deleted=False)
+        row.is_deleted = True
+        row.save(update_fields=["is_deleted", "updated_at"])
+        write_audit_log(
+            request,
+            action="admin.ai.small_task.delete",
+            resource_type="ai_small_task",
+            resource_id=str(task_id),
+            status_code=200,
+            response_payload={},
+        )
+        return success_response({}, msg="deleted", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminAIProviderKeyListView(APIView):

@@ -26,6 +26,7 @@ export interface AIScenarioModelBinding {
   system_provision?: string;
   brief_description?: string;
   ai_tool_scenarios?: string[];
+  related_task_codes?: string[];
 }
 
 export function fetchAIScenarioSummaries() {
@@ -83,6 +84,7 @@ export interface AIModelCatalog {
   reasoning_controllable: boolean;
   /** SF Symbol 等，下发到客户端模型行 icon */
   icon?: string;
+  related_task_codes?: string[];
   source: string;
   is_active: boolean;
 }
@@ -97,6 +99,34 @@ export function createAIModelCatalog(payload: Record<string, unknown>) {
 
 export function updateAIModelCatalog(id: number, payload: Record<string, unknown>) {
   return http.patch(`/api/admin/v1/ai/models/${id}/`, payload);
+}
+
+export interface SmallTask {
+  id: number;
+  name: string;
+  code: string;
+  brief: string;
+  prompt: string;
+  icon: string;
+  tool_list: string[];
+  source: string;
+  is_deleted: boolean;
+}
+
+export function fetchSmallTasks() {
+  return http.get<unknown, SmallTask[]>('/api/admin/v1/ai/small-tasks/');
+}
+
+export function createSmallTask(payload: Record<string, unknown>) {
+  return http.post('/api/admin/v1/ai/small-tasks/', payload);
+}
+
+export function updateSmallTask(id: number, payload: Record<string, unknown>) {
+  return http.patch(`/api/admin/v1/ai/small-tasks/${id}/`, payload);
+}
+
+export function deleteSmallTask(id: number) {
+  return http.delete(`/api/admin/v1/ai/small-tasks/${id}/`);
 }
 
 export function fetchAIProviders(kind = '') {

@@ -5,6 +5,7 @@ from ai_config.models import (
     AIModelCatalog,
     AIProviderKeyConfig,
     AIScenarioModelBinding,
+    SmallTask,
     TrialApplication,
     TrialModelPolicy,
     TrialModelPolicyItem,
@@ -17,6 +18,13 @@ class AIScenarioModelBindingAdmin(admin.ModelAdmin):
     list_filter = ("scenario", "is_active", "is_default")
     search_fields = ("scenario", "model__name", "model__display_name")
     ordering = ("scenario", "position")
+
+
+@admin.register(SmallTask)
+class SmallTaskAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "source", "is_deleted", "updated_at")
+    list_filter = ("source", "is_deleted")
+    search_fields = ("code", "name", "brief")
 
 
 @admin.register(AIProviderKeyConfig)

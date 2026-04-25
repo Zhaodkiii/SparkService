@@ -13,6 +13,7 @@ from ai_config.models import (
     AIModelCatalog,
     AIProviderKeyConfig,
     AIScenarioModelBinding,
+    SmallTask,
     TrialApplication,
     TrialModelPolicy,
     TrialModelPolicyItem,
@@ -64,8 +65,22 @@ def _active_trial_policy_item_by_scenario_model() -> dict[tuple[str, int], Trial
         "system_provision",
         "brief_description",
         "ai_tool_scenarios",
+        "related_task_codes",
     )
     return {(it.scenario, it.model_id): it for it in items}
+
+
+def _bootstrap_small_task_payload(task: SmallTask) -> dict:
+    return {
+        "id": task.id,
+        "name": task.name,
+        "code": task.code,
+        "brief": task.brief or "",
+        "prompt": task.prompt or "",
+        "icon": task.icon or "",
+        "tool_list": _bootstrap_json_string_list(task.tool_list),
+        "source": task.source,
+    }
 
 
 class AIBootstrapConfigView(APIView):
@@ -93,6 +108,7 @@ class AIBootstrapConfigView(APIView):
             payload = {
                 "revision": revision,
                 "scenarios": {},
+                "smallTasks": [],
                 "trial_status": trial_status,
                 "trial_message": trial_message,
             }
@@ -106,12 +122,14 @@ class AIBootstrapConfigView(APIView):
         )
         provider_by_company = self._build_provider_index(api_provider_rows)
 
-        scenarios = self._build_pro_scenarios(provider_by_company=provider_by_company)
+        scenarios, related_task_codes = self._build_pro_scenarios(provider_by_company=provider_by_company)
+        small_tasks = self._build_related_small_tasks(related_task_codes)
 
         revision = self._resolve_pro_revision()
         payload = {
             "revision": revision,
             "scenarios": scenarios,
+            "smallTasks": small_tasks,
         }
         return success_response(payload, msg="ok", code=0)
 
@@ -125,6 +143,7 @@ class AIBootstrapConfigView(APIView):
         - 所有模型标记 `source: "pro"`
         """
         payload = {}
+        related_task_codes = set()
         trial_overlay = _active_trial_policy_item_by_scenario_model()
 
         for scenario_key in DEFAULT_SCENARIOS.keys():
@@ -154,6 +173,10 @@ class AIBootstrapConfigView(APIView):
 
                 policy_item = trial_overlay.get((scenario_key, model.pk))
                 provision_src = policy_item if policy_item is not None else row
+                task_codes = _bootstrap_json_string_list(getattr(provision_src, "related_task_codes", []))
+                if not task_codes:
+                    task_codes = _bootstrap_json_string_list(model.related_task_codes)
+                related_task_codes.update(task_codes)
 
                 # 构建符合 AIScenarioRemoteModelRow 格式的模型数据
                 # 字段名需与 iOS `AIScenarioRemoteModelRow.CodingKeys` 一致：
@@ -183,6 +206,7 @@ class AIBootstrapConfigView(APIView):
                     "source": "pro",  # Pro 专属模型标记
                     "aiScenarios": [scenario_key],
                     "aiToolScenarios": _bootstrap_json_string_list(provision_src.ai_tool_scenarios),
+                    "relatedTaskCodes": task_codes,
                     "is_default": bool(row.is_default),
                     "temperature": row.temperature,
                     "max_tokens": row.max_tokens,
@@ -199,7 +223,20 @@ class AIBootstrapConfigView(APIView):
                 "models": models_list,
             }
 
-        return payload
+        return payload, related_task_codes
+
+    def _build_related_small_tasks(self, related_task_codes: set[str]) -> list[dict]:
+        # if not related_task_codes:
+        #     return []
+        rows = (
+            SmallTask.objects.filter(
+                source=SmallTask.Source.SERVICE,
+                is_deleted=False,
+                # code__in=related_task_codes,
+            )
+            .order_by("id")
+        )
+        return [_bootstrap_small_task_payload(row) for row in rows]
 
     def _resolve_provider_for_model(self, company: str, provider_by_company: dict):
         """根据模型所属厂商解析 provider 配置（endpoint 和 api_key）。"""
@@ -235,6 +272,7 @@ class AIBootstrapConfigView(APIView):
             AIProviderKeyConfig.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             AIModelCatalog.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
             TrialModelPolicyItem.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
+            SmallTask.objects.order_by("-updated_at").values_list("updated_at", flat=True).first(),
         ]
         points = [point for point in points if point is not None]
         if not points:

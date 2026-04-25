@@ -76,6 +76,16 @@
       <a-form-item label="工具场景（aiToolScenarios）" extra='JSON 字符串数组，例如 ["router"]'>
         <a-textarea v-model:value="form.ai_tool_scenarios_json" :rows="2" allow-clear placeholder='[]' />
       </a-form-item>
+      <a-form-item label="关联小任务">
+        <a-select
+          v-model:value="form.related_task_codes"
+          mode="multiple"
+          allow-clear
+          show-search
+          :options="smallTaskOptions"
+          style="width: 100%"
+        />
+      </a-form-item>
     </a-form>
   </a-modal>
 </template>
@@ -88,10 +98,12 @@ import {
   createScenarioBinding,
   deleteScenarioBinding,
   fetchAIModelCatalog,
+  fetchSmallTasks,
   fetchScenarioBindings,
   updateScenarioBinding,
   type AIScenarioModelBinding,
   type AIModelCatalog,
+  type SmallTask,
 } from '../api/modules/ai';
 import { useAuthStore } from '../stores/auth';
 
@@ -103,6 +115,7 @@ const scenarioKey = computed(() => String(route.params.scenarioKey || ''));
 
 const bindings = ref<AIScenarioModelBinding[]>([]);
 const catalogRows = ref<AIModelCatalog[]>([]);
+const smallTasks = ref<SmallTask[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const modalOpen = ref(false);
@@ -165,6 +178,13 @@ const modelSelectOptions = computed(() =>
     })),
 );
 
+const smallTaskOptions = computed(() =>
+  smallTasks.value.map((task) => ({
+    value: task.code,
+    label: `${task.name}（${task.code}）`,
+  })),
+);
+
 function filterModelOption(input: string, option: { label?: string }) {
   return (option.label || '').toLowerCase().includes(input.trim().toLowerCase());
 }
@@ -175,9 +195,10 @@ async function load() {
   }
   loading.value = true;
   try {
-    const [b, cat] = await Promise.all([fetchScenarioBindings(scenarioKey.value), fetchAIModelCatalog()]);
+    const [b, cat, tasks] = await Promise.all([fetchScenarioBindings(scenarioKey.value), fetchAIModelCatalog(), fetchSmallTasks()]);
     bindings.value = b;
     catalogRows.value = cat;
+    smallTasks.value = tasks;
   } finally {
     loading.value = false;
   }
@@ -197,6 +218,7 @@ function openCreate() {
     system_provision: '',
     brief_description: '',
     ai_tool_scenarios_json: '[]',
+    related_task_codes: [],
   });
   modalOpen.value = true;
 }
@@ -215,6 +237,7 @@ function openEdit(row: AIScenarioModelBinding) {
     system_provision: row.system_provision ?? '',
     brief_description: row.brief_description ?? '',
     ai_tool_scenarios_json: JSON.stringify(row.ai_tool_scenarios ?? [], null, 0),
+    related_task_codes: row.related_task_codes ?? [],
   });
   modalOpen.value = true;
 }
@@ -271,6 +294,7 @@ async function submit() {
         system_provision: form.system_provision,
         brief_description: form.brief_description,
         ai_tool_scenarios: tools,
+        related_task_codes: form.related_task_codes,
       });
       message.success('已添加');
     } else {
@@ -284,6 +308,7 @@ async function submit() {
         system_provision: form.system_provision,
         brief_description: form.brief_description,
         ai_tool_scenarios: tools,
+        related_task_codes: form.related_task_codes,
       });
       message.success('已更新');
     }
