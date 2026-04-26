@@ -43,6 +43,14 @@ class ChatThread(models.Model):
             models.UniqueConstraint(fields=["user", "id"], name="uniq_chat_thread_user_thread"),
         ]
 
+    @property
+    def system_prompt(self) -> str:
+        return self.role_prompt or ""
+
+    @system_prompt.setter
+    def system_prompt(self, value: str | None) -> None:
+        self.role_prompt = value or ""
+
 
 class ChatMessage(models.Model):
     class Role(models.TextChoices):

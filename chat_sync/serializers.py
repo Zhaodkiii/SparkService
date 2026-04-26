@@ -20,6 +20,7 @@ class ChatRemoteThreadSerializer(serializers.Serializer):
     max_tokens = serializers.IntegerField(required=False, allow_null=True)
     max_messages = serializers.IntegerField(required=False, allow_null=True)
     role_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    system_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class ChatRemoteMessageSerializer(serializers.Serializer):
@@ -40,6 +41,7 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     thread_max_tokens = serializers.IntegerField(required=False, allow_null=True)
     thread_max_messages = serializers.IntegerField(required=False, allow_null=True)
     thread_role_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    thread_system_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     attachments = serializers.JSONField(required=False)
     reasoning_content = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     reasoning_duration_ms = serializers.IntegerField(required=False, allow_null=True)

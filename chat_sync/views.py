@@ -144,6 +144,7 @@ def _to_thread_payload(thread: ChatThread) -> dict:
         "max_tokens": thread.max_tokens,
         "max_messages": thread.max_messages,
         "role_prompt": thread.role_prompt,
+        "system_prompt": thread.system_prompt,
         "image_delivery_mode": thread.image_delivery_mode,
         "patient_id": str(thread.patient_id) if thread.patient_id else None,
         "member_id": thread.member_id,
@@ -196,7 +197,7 @@ class ChatSyncPushView(APIView):
                         "top_p": payload.get("thread_top_p") if payload.get("thread_top_p") is not None else 1.0,
                         "max_tokens": payload.get("thread_max_tokens") if payload.get("thread_max_tokens") is not None else 4096,
                         "max_messages": payload.get("thread_max_messages") if payload.get("thread_max_messages") is not None else 20,
-                        "role_prompt": payload.get("thread_role_prompt") or "",
+                        "role_prompt": payload.get("thread_system_prompt") if payload.get("thread_system_prompt") is not None else (payload.get("thread_role_prompt") or ""),
                     },
                 )
                 if thread.user_id != request.user.id:
@@ -237,8 +238,10 @@ class ChatSyncPushView(APIView):
                     thread.max_tokens = int(payload["thread_max_tokens"])
                 if payload.get("thread_max_messages") is not None:
                     thread.max_messages = max(int(payload["thread_max_messages"]), 1)
-                if payload.get("thread_role_prompt") is not None:
-                    thread.role_prompt = payload.get("thread_role_prompt") or ""
+                thread_system_prompt = payload.get("thread_system_prompt")
+                thread_role_prompt = payload.get("thread_role_prompt")
+                if thread_system_prompt is not None or thread_role_prompt is not None:
+                    thread.system_prompt = thread_system_prompt if thread_system_prompt is not None else thread_role_prompt
 
                 defaults = {
                     "thread": thread,
@@ -394,8 +397,10 @@ class ChatSyncThreadPushView(APIView):
                     thread.max_tokens = int(payload["max_tokens"])
                 if payload.get("max_messages") is not None:
                     thread.max_messages = max(int(payload["max_messages"]), 1)
-                if payload.get("role_prompt") is not None:
-                    thread.role_prompt = payload.get("role_prompt") or ""
+                system_prompt = payload.get("system_prompt")
+                role_prompt = payload.get("role_prompt")
+                if system_prompt is not None or role_prompt is not None:
+                    thread.system_prompt = system_prompt if system_prompt is not None else role_prompt
                 thread.updated_at = datetime.now(tz=timezone.utc)
                 thread.save(
                     update_fields=[
