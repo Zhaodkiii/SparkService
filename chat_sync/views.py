@@ -90,6 +90,7 @@ def _normalize_cursor(cursor: str | None) -> datetime | None:
 def _metadata_to_public_fields(metadata: dict) -> dict:
     return {
         "attachments": metadata.get("attachments") or [],
+        "blocks": metadata.get("blocks") or [],
         "reasoning_content": metadata.get("reasoning_content"),
         "reasoning_duration_ms": metadata.get("reasoning_duration_ms"),
         "reasoning_expanded": metadata.get("reasoning_expanded"),
@@ -126,6 +127,7 @@ def _to_payload(message: ChatMessage) -> dict:
         "server_updated_at": message.server_updated_at.isoformat(),
         "tombstone": message.tombstone,
         "attachments": public_fields["attachments"],
+        "blocks": public_fields["blocks"],
         "reasoning_content": public_fields["reasoning_content"],
         "reasoning_duration_ms": public_fields["reasoning_duration_ms"],
         "reasoning_expanded": public_fields["reasoning_expanded"],
@@ -219,6 +221,7 @@ class ChatSyncPushView(APIView):
 
                 metadata = {
                     "attachments": payload.get("attachments") or [],
+                    "blocks": payload.get("blocks") or [],
                     "reasoning_content": payload.get("reasoning_content"),
                     "reasoning_duration_ms": payload.get("reasoning_duration_ms"),
                     "reasoning_expanded": payload.get("reasoning_expanded"),

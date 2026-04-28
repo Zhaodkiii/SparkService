@@ -43,6 +43,7 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     thread_role_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     thread_system_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     attachments = serializers.JSONField(required=False)
+    blocks = serializers.JSONField(required=False)
     reasoning_content = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     reasoning_duration_ms = serializers.IntegerField(required=False, allow_null=True)
     reasoning_expanded = serializers.BooleanField(required=False)

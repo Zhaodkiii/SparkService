@@ -1,0 +1,101 @@
+INFO 2026-04-27 02:08:50,369 file_manager.oss_sts_views [request_id=7CFC6791-20F2-49F9-B77C-00F0B72DB383] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 02:10:00,365 file_manager.oss_sts_views [request_id=B739337B-8553-4525-AE92-3FDF953C6C67] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 02:31:39,435 file_manager.oss_sts_views [request_id=CA75E0F9-6AD9-4345-BBED-8AF6E99D4606] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 02:38:26,779 file_manager.oss_sts_views [request_id=8A69BDA7-3846-4A2B-99BC-6BBF9A18F3BA] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 02:48:42,504 file_manager.oss_sts_views [request_id=1586A2BD-DFE8-4DE1-9F48-477D7732493E] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 02:48:58,595 file_manager.oss_sts_views [request_id=5765BC0F-CF43-419F-9E70-AE3BD4C83E92] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 02:58:47,650 file_manager.oss_sts_views [request_id=8D4E461A-9916-496C-8EDB-856221AF06B1] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 04:08:38,812 file_manager.oss_sts_views [request_id=14184A80-A559-497A-BC9C-D84E05452C69] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 04:12:12,494 file_manager.oss_sts_views [request_id=DEAB6615-69FE-4D12-939A-441BC14DD183] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 04:23:30,932 file_manager.oss_sts_views [request_id=948461C1-348E-4A57-8C92-820646641CB9] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 04:31:21,127 file_manager.oss_sts_views [request_id=3EA5F731-E5EB-420E-8D1E-89A650F43443] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 05:00:02,930 file_manager.oss_sts_views [request_id=3BA0086B-73C7-47FB-8F0A-A9DD3697E76E] OSS STS 签发成功 user_id=6
+ERROR 2026-04-27 05:15:18,381 file_manager.sts_utils [request_id=D68BAF85-B84D-4942-992F-C64B1A24C880] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-04-27 05:15:18,384 file_manager.oss_sts_views [request_id=D68BAF85-B84D-4942-992F-C64B1A24C880] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-04-27 05:15:23,456 file_manager.sts_utils [request_id=BEE5B924-1DE2-41B8-B34C-43F628DA0CF4] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-04-27 05:15:23,459 file_manager.oss_sts_views [request_id=BEE5B924-1DE2-41B8-B34C-43F628DA0CF4] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-04-27 05:15:29,278 file_manager.sts_utils [request_id=2B2749AE-DB44-4BA6-84CD-09D8370633A6] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-04-27 05:15:29,280 file_manager.oss_sts_views [request_id=2B2749AE-DB44-4BA6-84CD-09D8370633A6] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+INFO 2026-04-27 05:23:08,495 file_manager.oss_sts_views [request_id=B904C959-FAAF-42DB-B6C2-6D650E155A85] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 05:44:24,310 file_manager.oss_sts_views [request_id=FA6E66F2-05F7-42E0-BC9C-C43F922B2394] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:00:29,715 file_manager.oss_sts_views [request_id=ABF4E813-C3DD-451E-A308-D5ACDF3404E5] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:08:49,168 file_manager.oss_sts_views [request_id=F8C75FCB-1AA5-4F82-82BD-E0C2C99E2CAE] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:16:11,616 file_manager.oss_sts_views [request_id=909D783C-E8C4-4D6C-A454-86D0ECE6B42B] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:20:26,184 file_manager.oss_sts_views [request_id=BA2EBEF2-1BDA-4199-BCD3-D9160D80BE37] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:30:03,463 file_manager.oss_sts_views [request_id=6A683E0A-365A-4A54-8279-7109BC77E97D] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:36:06,278 file_manager.oss_sts_views [request_id=AE4D6D39-ACDC-49BF-A6FF-8917E2060BDD] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 06:52:40,717 file_manager.oss_sts_views [request_id=7EA8F104-8DA2-4B2C-9350-E7B63ACA5D58] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 07:09:14,330 file_manager.oss_sts_views [request_id=67E7070C-C8CD-4637-99B8-26ABB61A5CFE] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 07:28:23,014 file_manager.oss_sts_views [request_id=7CAA375E-B8B7-4A22-BB61-A562C52B8749] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 07:39:55,000 file_manager.oss_sts_views [request_id=06DF1E4F-DBCF-4650-A8BA-D0E9CDA1DAD4] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 07:42:15,309 file_manager.oss_sts_views [request_id=ADC77CD4-CFB9-4E3E-BE3C-0AC7AC8E3B36] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 07:46:13,355 file_manager.oss_sts_views [request_id=43099714-0AF3-4871-B9A0-40F94A91F404] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 07:48:07,655 file_manager.oss_sts_views [request_id=5C7C5B95-BCA0-40A6-A766-4A15DD3C145F] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 12:02:07,597 file_manager.oss_sts_views [request_id=E1258570-0534-499C-BC6E-3965CC20A588] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 12:26:58,666 file_manager.oss_sts_views [request_id=88F7D212-466E-4C25-B2B2-492FC8402332] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 12:52:17,444 file_manager.oss_sts_views [request_id=206CB94C-37B0-46DD-936B-F79588DF4923] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 14:47:10,053 file_manager.oss_sts_views [request_id=5148467A-CA1B-4D97-987E-BE4B324F4873] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 14:57:41,299 file_manager.oss_sts_views [request_id=08D46D7A-5F89-45EA-BBC2-925D88BD5E65] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:00:30,122 file_manager.oss_sts_views [request_id=2140E103-A9DD-431A-AE53-9400DB1F1418] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:08:49,256 file_manager.oss_sts_views [request_id=DE3EE13C-7D72-46F4-97AB-1C4A0E6E2528] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:14:32,843 file_manager.oss_sts_views [request_id=571F97DB-BA17-4AF0-9FC8-E1B493403C81] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:18:32,463 file_manager.oss_sts_views [request_id=7D1F6624-D160-40B7-B806-C1846E9156F1] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:31:26,753 file_manager.oss_sts_views [request_id=4F4FED38-3B3E-4AE6-B603-ABF200E08709] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:33:08,645 file_manager.oss_sts_views [request_id=79F263E6-8A45-4170-984F-89E3CC7C3C49] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:36:49,980 file_manager.oss_sts_views [request_id=9AA5458E-D82E-4E87-953F-A708FCA69061] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:50:56,746 file_manager.oss_sts_views [request_id=D449FB2D-0763-4566-B275-D812CC948700] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 15:55:58,067 file_manager.oss_sts_views [request_id=FA7EF972-E448-41DC-A18C-CF1824610807] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:01:33,501 file_manager.oss_sts_views [request_id=F61B574C-4DB0-43B0-9C8D-C31F25D75DCC] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:05:42,497 file_manager.oss_sts_views [request_id=EA3139D8-958C-43C8-B75F-8875AE2AC541] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:16:17,997 file_manager.oss_sts_views [request_id=A35696A4-B1D2-455A-91B1-98CD8549E5E0] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:18:50,946 file_manager.oss_sts_views [request_id=8A5E17AD-F5E2-4523-8C24-B7D7F0D2EFC1] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:19:44,218 file_manager.oss_sts_views [request_id=85102721-23D7-4ABC-95D7-4180CF91F635] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:24:35,597 file_manager.oss_sts_views [request_id=9B8801CE-FE24-4D87-AC7E-3A8F966D1C8B] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:30:11,962 file_manager.oss_sts_views [request_id=1A249C10-C6FB-4C33-ADD9-2618FD300D86] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 16:33:49,193 file_manager.oss_sts_views [request_id=DA12575F-8D1F-433B-B6A1-5DA7B3BBAE4D] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:23:55,903 file_manager.oss_sts_views [request_id=BC6AED68-386F-444B-8EBB-A1DD231B3A7C] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:26:59,438 file_manager.oss_sts_views [request_id=BEE7A031-9A37-4A77-9CD1-710F596D37CB] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:40:37,322 file_manager.oss_sts_views [request_id=787C8EA4-9A40-4A66-B0CD-18E6057ADDF8] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:42:36,272 file_manager.oss_sts_views [request_id=A4294FE7-8B99-46F0-94D1-937A8F29C738] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:46:18,541 file_manager.oss_sts_views [request_id=B91B485C-3C3C-4B53-9DC9-469D546C9599] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:48:47,561 file_manager.oss_sts_views [request_id=0A7AFFD8-2F8F-4B27-8105-EF2F04EDA3F4] OSS STS 签发成功 user_id=6
+INFO 2026-04-27 17:51:37,481 file_manager.oss_sts_views [request_id=A7A2BEEF-A77B-4F22-8525-86D8456F95D8] OSS STS 签发成功 user_id=6
