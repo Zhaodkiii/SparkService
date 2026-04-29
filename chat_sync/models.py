@@ -58,12 +58,6 @@ class ChatMessage(models.Model):
         USER = "user"
         ASSISTANT = "assistant"
 
-    class Kind(models.TextChoices):
-        TEXT = "text"
-        TOOL = "tool"
-        CARD = "card"
-        SYSTEM = "system"
-
     class DeliveryState(models.TextChoices):
         PENDING = "pending"
         SENDING = "sending"
@@ -75,8 +69,6 @@ class ChatMessage(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="chat_messages", on_delete=models.CASCADE)
     thread = models.ForeignKey(ChatThread, related_name="messages", on_delete=models.CASCADE)
     role = models.CharField(max_length=16, choices=Role.choices)
-    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.TEXT)
-    content = models.TextField(blank=True, default="")
     model_name = models.CharField(max_length=128, blank=True, default="")
     client_message_id = models.UUIDField(db_index=True)
     server_message_id = models.CharField(max_length=64, db_index=True)

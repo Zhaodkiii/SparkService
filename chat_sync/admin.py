@@ -12,6 +12,6 @@ class ChatThreadAdmin(admin.ModelAdmin):
 
 @admin.register(ChatMessage)
 class ChatMessageAdmin(admin.ModelAdmin):
-    list_display = ("id", "thread", "user", "role", "kind", "delivery_state", "server_updated_at")
-    list_filter = ("role", "kind", "delivery_state", "tombstone")
+    list_display = ("id", "thread", "user", "role", "delivery_state", "server_updated_at")
+    list_filter = ("role", "delivery_state", "tombstone")
     search_fields = ("server_message_id", "client_message_id")

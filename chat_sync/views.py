@@ -117,8 +117,6 @@ def _to_payload(message: ChatMessage) -> dict:
     return {
         "thread_id": str(message.thread_id),
         "role": message.role,
-        "kind": message.kind,
-        "content": message.content,
         "model_name": message.model_name or None,
         "client_message_id": str(message.client_message_id),
         "server_message_id": message.server_message_id,
@@ -250,8 +248,6 @@ class ChatSyncPushView(APIView):
                     "thread": thread,
                     "user": request.user,
                     "role": payload["role"],
-                    "kind": payload["kind"],
-                    "content": payload["content"],
                     "model_name": (payload.get("model_name") or "").strip(),
                     "server_message_id": server_message_id,
                     "delivery_state": _normalize_delivery_state(payload["delivery_state"]),
@@ -269,8 +265,6 @@ class ChatSyncPushView(APIView):
                 if not created:
                     message.thread = thread
                     message.role = payload["role"]
-                    message.kind = payload["kind"]
-                    message.content = payload["content"]
                     message.model_name = (payload.get("model_name") or "").strip()
                     if payload.get("server_message_id"):
                         message.server_message_id = payload["server_message_id"]
@@ -282,8 +276,6 @@ class ChatSyncPushView(APIView):
                         update_fields=[
                             "thread",
                             "role",
-                            "kind",
-                            "content",
                             "model_name",
                             "server_message_id",
                             "delivery_state",

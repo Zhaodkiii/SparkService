@@ -26,8 +26,6 @@ class ChatRemoteThreadSerializer(serializers.Serializer):
 class ChatRemoteMessageSerializer(serializers.Serializer):
     thread_id = serializers.UUIDField()
     role = serializers.ChoiceField(choices=ChatMessage.Role.choices)
-    kind = serializers.ChoiceField(choices=ChatMessage.Kind.choices)
-    content = serializers.CharField(allow_blank=True)
     model_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     client_message_id = serializers.UUIDField()
     server_message_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -43,7 +41,7 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     thread_role_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     thread_system_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     attachments = serializers.JSONField(required=False)
-    blocks = serializers.JSONField(required=False)
+    blocks = serializers.JSONField(required=True)
     reasoning_content = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     reasoning_duration_ms = serializers.IntegerField(required=False, allow_null=True)
     reasoning_expanded = serializers.BooleanField(required=False)
