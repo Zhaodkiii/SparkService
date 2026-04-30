@@ -22,7 +22,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from accounts.services.notification_service import NotificationService
 from accounts.deactivation.tasks import process_deactivation_task
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, SmallTask, TrialApplication
+from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, SmallTask, SparkToolName, TrialApplication
 from ai_config.services import TrialService
 from chat_sync.models import ChatMessage, ChatThread
 from common.permissions import AdminCodePermission, AdminOnlyPermission
@@ -771,6 +771,14 @@ class AdminAIScenarioSummaryListView(APIView):
                 }
             )
         return success_response(rows_out, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAIToolOptionsView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        payload = [{"value": item.value, "label": item.label} for item in SparkToolName]
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminAIScenarioBindingListCreateView(APIView):

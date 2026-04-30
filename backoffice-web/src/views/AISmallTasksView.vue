@@ -33,8 +33,29 @@
       <a-form-item label="图标"><a-input v-model:value="form.icon" allow-clear placeholder="sparkles" /></a-form-item>
       <a-form-item label="简介"><a-textarea v-model:value="form.brief" :rows="2" allow-clear /></a-form-item>
       <a-form-item label="Prompt"><a-textarea v-model:value="form.prompt" :rows="5" allow-clear /></a-form-item>
-      <a-form-item label="工具列表" extra='JSON 字符串数组，例如 ["search"]'>
-        <a-textarea v-model:value="form.tool_list_json" :rows="2" allow-clear placeholder="[]" />
+      <a-form-item label="追加当前日期">
+        <a-switch
+          :checked="containsCurrentDateKeyword(String(form.prompt ?? ''))"
+          @update:checked="
+            (checked: boolean) => {
+              form.prompt = setCurrentDateKeyword(String(form.prompt ?? ''), checked);
+            }
+          "
+        />
+      </a-form-item>
+      <a-form-item label="工具列表">
+        <a-select
+          v-model:value="form.tool_list"
+          mode="multiple"
+          allow-clear
+          show-search
+          :options="toolOptions"
+          style="width: 100%"
+        />
+        <a-space size="small" style="margin-top: 8px">
+          <a-button size="small" type="link" @click="selectAllTools">全选</a-button>
+          <a-button size="small" type="link" @click="clearTools">清空</a-button>
+        </a-space>
       </a-form-item>
     </a-form>
   </a-modal>
@@ -43,7 +64,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { Modal, message } from 'ant-design-vue';
-import { createSmallTask, deleteSmallTask, fetchSmallTasks, updateSmallTask, type SmallTask } from '../api/modules/ai';
+import {
+  createSmallTask,
+  deleteSmallTask,
+  fetchAIToolOptions,
+  fetchSmallTasks,
+  updateSmallTask,
+  type AIToolOption,
+  type SmallTask,
+} from '../api/modules/ai';
+import { AI_PROMPT_KEYWORDS } from '../constants/aiPromptKeywords';
 import { useAuthStore } from '../stores/auth';
 
 const auth = useAuthStore();
@@ -52,6 +82,7 @@ const modalOpen = ref(false);
 const saving = ref(false);
 const isCreate = ref(false);
 const form = reactive<Record<string, unknown>>({});
+const toolOptions = ref<AIToolOption[]>([]);
 
 const canCreate = computed(() => auth.hasPermission('button:ai:small_task:create'));
 const canUpdate = computed(() => auth.hasPermission('button:ai:small_task:update'));
@@ -60,21 +91,38 @@ const sourceOptions = [
   { value: 'Service', label: '服务任务' },
   { value: 'Local', label: '本地任务' },
 ];
+function normalizeStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => String(x).trim()).filter(Boolean);
+}
 
-function parseStringArray(raw: unknown): string[] | null {
-  const s = String(raw ?? '').trim();
-  if (!s) return [];
-  try {
-    const v = JSON.parse(s) as unknown;
-    if (!Array.isArray(v)) return null;
-    return v.map((x) => String(x).trim()).filter(Boolean);
-  } catch {
-    return null;
+function containsCurrentDateKeyword(prompt: string): boolean {
+  return prompt.includes(AI_PROMPT_KEYWORDS.currentDate);
+}
+
+function setCurrentDateKeyword(prompt: string, enabled: boolean): string {
+  const lines = prompt
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== AI_PROMPT_KEYWORDS.currentDate);
+  if (enabled) {
+    lines.push(AI_PROMPT_KEYWORDS.currentDate);
   }
+  return lines.join('\n');
+}
+
+function selectAllTools() {
+  form.tool_list = toolOptions.value.map((item) => item.value);
+}
+
+function clearTools() {
+  form.tool_list = [];
 }
 
 async function load() {
-  rows.value = await fetchSmallTasks();
+  const [tasks, tools] = await Promise.all([fetchSmallTasks(), fetchAIToolOptions()]);
+  rows.value = tasks;
+  toolOptions.value = tools;
 }
 
 function openCreate() {
@@ -87,7 +135,7 @@ function openCreate() {
     brief: '',
     prompt: '',
     icon: '',
-    tool_list_json: '[]',
+    tool_list: [],
   });
   modalOpen.value = true;
 }
@@ -102,7 +150,7 @@ function openEdit(row: SmallTask) {
     brief: row.brief,
     prompt: row.prompt,
     icon: row.icon,
-    tool_list_json: JSON.stringify(row.tool_list ?? []),
+    tool_list: row.tool_list ?? [],
   });
   modalOpen.value = true;
 }
@@ -119,11 +167,7 @@ function confirmDelete(row: SmallTask) {
 }
 
 async function submit() {
-  const tools = parseStringArray(form.tool_list_json);
-  if (tools === null) {
-    message.warning('工具列表须为 JSON 数组');
-    return;
-  }
+  const tools = normalizeStringArray(form.tool_list);
   const name = String(form.name ?? '').trim();
   const prompt = String(form.prompt ?? '').trim();
   if (!name || !prompt) {

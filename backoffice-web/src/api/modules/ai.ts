@@ -113,8 +113,17 @@ export interface SmallTask {
   is_deleted: boolean;
 }
 
+export interface AIToolOption {
+  value: string;
+  label: string;
+}
+
 export function fetchSmallTasks() {
   return http.get<unknown, SmallTask[]>('/api/admin/v1/ai/small-tasks/');
+}
+
+export function fetchAIToolOptions() {
+  return http.get<unknown, AIToolOption[]>('/api/admin/v1/ai/tool-options/');
 }
 
 export function createSmallTask(payload: Record<string, unknown>) {

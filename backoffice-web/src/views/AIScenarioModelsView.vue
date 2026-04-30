@@ -73,8 +73,19 @@
       <a-form-item label="简介（briefDescription）" extra="下发到客户端；若试用策略行有配置则策略优先">
         <a-textarea v-model:value="form.brief_description" :rows="2" allow-clear placeholder="可选" />
       </a-form-item>
-      <a-form-item label="工具场景（aiToolScenarios）" extra='JSON 字符串数组，例如 ["router"]'>
-        <a-textarea v-model:value="form.ai_tool_scenarios_json" :rows="2" allow-clear placeholder='[]' />
+      <a-form-item label="工具场景（aiToolScenarios）">
+        <a-select
+          v-model:value="form.ai_tool_scenarios"
+          mode="multiple"
+          allow-clear
+          show-search
+          :options="toolOptions"
+          style="width: 100%"
+        />
+        <a-space size="small" style="margin-top: 8px">
+          <a-button size="small" type="link" @click="selectAllToolScenarios">全选</a-button>
+          <a-button size="small" type="link" @click="clearToolScenarios">清空</a-button>
+        </a-space>
       </a-form-item>
       <a-form-item label="关联小任务">
         <a-select
@@ -85,6 +96,10 @@
           :options="smallTaskOptions"
           style="width: 100%"
         />
+        <a-space size="small" style="margin-top: 8px">
+          <a-button size="small" type="link" @click="selectAllRelatedTaskCodes">全选</a-button>
+          <a-button size="small" type="link" @click="clearRelatedTaskCodes">清空</a-button>
+        </a-space>
       </a-form-item>
     </a-form>
   </a-modal>
@@ -97,10 +112,12 @@ import { Modal, message } from 'ant-design-vue';
 import {
   createScenarioBinding,
   deleteScenarioBinding,
+  fetchAIToolOptions,
   fetchAIModelCatalog,
   fetchSmallTasks,
   fetchScenarioBindings,
   updateScenarioBinding,
+  type AIToolOption,
   type AIScenarioModelBinding,
   type AIModelCatalog,
   type SmallTask,
@@ -116,6 +133,7 @@ const scenarioKey = computed(() => String(route.params.scenarioKey || ''));
 const bindings = ref<AIScenarioModelBinding[]>([]);
 const catalogRows = ref<AIModelCatalog[]>([]);
 const smallTasks = ref<SmallTask[]>([]);
+const toolOptions = ref<AIToolOption[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const modalOpen = ref(false);
@@ -123,20 +141,9 @@ const isCreate = ref(false);
 
 const form = reactive<Record<string, unknown>>({});
 
-function parseAiToolScenariosJson(raw: unknown): string[] | null {
-  const s = String(raw ?? '').trim();
-  if (!s) {
-    return [];
-  }
-  try {
-    const v = JSON.parse(s) as unknown;
-    if (!Array.isArray(v)) {
-      return null;
-    }
-    return v.map((x) => String(x).trim()).filter((x) => x.length > 0);
-  } catch {
-    return null;
-  }
+function normalizeStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => String(x).trim()).filter((x) => x.length > 0);
 }
 
 const canCreate = computed(() => auth.hasPermission('button:ai:scenario:create'));
@@ -189,16 +196,38 @@ function filterModelOption(input: string, option: { label?: string }) {
   return (option.label || '').toLowerCase().includes(input.trim().toLowerCase());
 }
 
+function selectAllToolScenarios() {
+  form.ai_tool_scenarios = toolOptions.value.map((item) => item.value);
+}
+
+function clearToolScenarios() {
+  form.ai_tool_scenarios = [];
+}
+
+function selectAllRelatedTaskCodes() {
+  form.related_task_codes = smallTaskOptions.value.map((item) => item.value);
+}
+
+function clearRelatedTaskCodes() {
+  form.related_task_codes = [];
+}
+
 async function load() {
   if (!scenarioKey.value) {
     return;
   }
   loading.value = true;
   try {
-    const [b, cat, tasks] = await Promise.all([fetchScenarioBindings(scenarioKey.value), fetchAIModelCatalog(), fetchSmallTasks()]);
+    const [b, cat, tasks, tools] = await Promise.all([
+      fetchScenarioBindings(scenarioKey.value),
+      fetchAIModelCatalog(),
+      fetchSmallTasks(),
+      fetchAIToolOptions(),
+    ]);
     bindings.value = b;
     catalogRows.value = cat;
     smallTasks.value = tasks;
+    toolOptions.value = tools;
   } finally {
     loading.value = false;
   }
@@ -217,7 +246,7 @@ function openCreate() {
     is_active: true,
     system_provision: '',
     brief_description: '',
-    ai_tool_scenarios_json: '[]',
+    ai_tool_scenarios: [],
     related_task_codes: [],
   });
   modalOpen.value = true;
@@ -236,7 +265,7 @@ function openEdit(row: AIScenarioModelBinding) {
     is_active: row.is_active,
     system_provision: row.system_provision ?? '',
     brief_description: row.brief_description ?? '',
-    ai_tool_scenarios_json: JSON.stringify(row.ai_tool_scenarios ?? [], null, 0),
+    ai_tool_scenarios: row.ai_tool_scenarios ?? [],
     related_task_codes: row.related_task_codes ?? [],
   });
   modalOpen.value = true;
@@ -277,11 +306,7 @@ async function submit() {
       message.warning('请选择模型');
       return;
     }
-    const tools = parseAiToolScenariosJson(form.ai_tool_scenarios_json);
-    if (tools === null) {
-      message.warning('工具场景须为 JSON 数组，例如 [] 或 ["router"]');
-      return;
-    }
+    const tools = normalizeStringArray(form.ai_tool_scenarios);
     if (isCreate.value) {
       await createScenarioBinding(scenarioKey.value, {
         model: form.model,
