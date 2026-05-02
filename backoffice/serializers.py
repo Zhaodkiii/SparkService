@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, IdentityKind, ScenarioKey, SmallTask, TrialApplication
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
+from app_version.serializers import AppVersionConfigSerializer, VersionCheckLogSerializer
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 
 

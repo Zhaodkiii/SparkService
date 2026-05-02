@@ -24,6 +24,8 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/notifications/apns', name: 'NotificationAPNs', component: () => import('../views/NotificationAPNsView.vue'), meta: { title: 'APNs发送记录', channel: 'apns' } },
       { path: '/notifications/sms', name: 'NotificationSMS', component: () => import('../views/NotificationSMSView.vue'), meta: { title: '短信发送记录', channel: 'sms' } },
       { path: '/notifications/email', name: 'NotificationEmail', component: () => import('../views/NotificationEmailView.vue'), meta: { title: '邮箱发送记录', channel: 'email' } },
+      { path: '/version/configs', name: 'VersionConfigs', component: () => import('../views/VersionConfigsView.vue'), meta: { title: '版本配置' } },
+      { path: '/version/logs', name: 'VersionLogs', component: () => import('../views/VersionLogsView.vue'), meta: { title: '检查日志' } },
       {
         path: '/ai-config/scenarios/:scenarioKey',
         name: 'AIScenarioModels',

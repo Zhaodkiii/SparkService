@@ -1,9 +1,0 @@
-INFO 2026-04-24 09:16:02,378 file_manager.oss_sts_views [request_id=703C6C18-56CF-44E7-933F-CB593AB506A3] OSS STS 签发成功 user_id=6
-INFO 2026-04-24 09:28:20,419 file_manager.oss_sts_views [request_id=D10D9981-EA61-4354-A503-430BCC7A81F4] OSS STS 签发成功 user_id=6
-{"ts": "2026-04-24T09:28:24.808322+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 64208, "thread": "MainThread"}
-INFO 2026-04-24 09:37:07,706 file_manager.oss_sts_views [request_id=2516281E-DAD0-44D1-951B-2B9A1B1017D9] OSS STS 签发成功 user_id=6
-INFO 2026-04-24 09:45:11,744 file_manager.oss_sts_views [request_id=25FAD9B2-296D-4933-855A-D55639F76858] OSS STS 签发成功 user_id=6
-INFO 2026-04-24 09:49:15,421 file_manager.oss_sts_views [request_id=AA5D2849-121F-4EE9-8766-59B3C7E7ED8B] OSS STS 签发成功 user_id=6
-INFO 2026-04-24 10:58:02,993 file_manager.oss_sts_views [request_id=07BA7E5E-8484-4281-9358-16475FF9B993] OSS STS 签发成功 user_id=6
-INFO 2026-04-24 11:08:22,984 file_manager.oss_sts_views [request_id=FE7D6285-F90B-48E0-9146-11C92DA56D16] OSS STS 签发成功 user_id=6
-INFO 2026-04-24 11:08:47,104 file_manager.oss_sts_views [request_id=67FA7078-EAF3-45F5-8AA8-83B157354FB5] OSS STS 签发成功 user_id=6

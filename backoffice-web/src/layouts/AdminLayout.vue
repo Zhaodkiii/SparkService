@@ -101,6 +101,15 @@ const tabs = reactive<TabItem[]>([{ key: '/dashboard', title: '仪表盘', closa
     ],
   },
   {
+    code: 'menu:version',
+    name: '版本控制',
+    path: '/version',
+    children: [
+      { code: 'menu:version:configs', name: '版本配置', path: '/version/configs', children: [] },
+      { code: 'menu:version:logs', name: '检查日志', path: '/version/logs', children: [] },
+    ],
+  },
+  {
     code: 'menu:ai',
     name: 'AI 场景配置',
     path: '/ai-config',
@@ -146,6 +155,9 @@ watch(
     if (path.startsWith('/notifications/')) {
       openKeys.value = ['/notifications'];
     }
+    if (path.startsWith('/version/')) {
+      openKeys.value = ['/version'];
+    }
     if (path === '/tasks' || path.startsWith('/tasks/')) {
       openKeys.value = ['/tasks'];
     }
@@ -159,6 +171,10 @@ watch(
 function onMenuClick(info: { key: string }) {
   if (info.key === '/ai-config') {
     router.push('/ai-config/scenarios');
+    return;
+  }
+  if (info.key === '/version') {
+    router.push('/version/configs');
     return;
   }
   router.push(info.key);

@@ -31,6 +31,7 @@ urlpatterns = [
     path('api/v1/tasks/', include('task_system.urls')),
     path('api/v1/files/', include('file_manager.urls')),
     path('api/v1/oss/', include('file_manager.oss_urls')),
+    path('api/v1/version/', include('app_version.urls')),
     path('api/admin/v1/', include('backoffice.urls')),
 ]
 

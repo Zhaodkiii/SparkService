@@ -120,6 +120,7 @@ INSTALLED_APPS = [
     'medical',
     'task_system',
     'file_manager',
+    'app_version',
     'backoffice',
 ]
 

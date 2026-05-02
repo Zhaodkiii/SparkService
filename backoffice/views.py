@@ -24,6 +24,7 @@ from accounts.services.notification_service import NotificationService
 from accounts.deactivation.tasks import process_deactivation_task
 from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, SmallTask, SparkToolName, TrialApplication
 from ai_config.services import TrialService
+from app_version.models import AppVersionConfig, VersionCheckLog
 from chat_sync.models import ChatMessage, ChatThread
 from common.permissions import AdminCodePermission, AdminOnlyPermission
 from common.response import error_response, success_response
@@ -64,6 +65,8 @@ from backoffice.serializers import (
     AdminUserRoleAssignSerializer,
     AdminUserSerializer,
     AdminUserStatusSerializer,
+    AppVersionConfigSerializer,
+    VersionCheckLogSerializer,
 )
 
 
@@ -723,6 +726,117 @@ class AdminNotificationCampaignListView(APIView):
             },
         }
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAppVersionConfigListCreateView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        queryset = AppVersionConfig.objects.select_related("created_by").all()
+        platform = (request.query_params.get("platform") or "").strip()
+        channel = (request.query_params.get("channel") or "").strip()
+        bundle_id = (request.query_params.get("bundle_id") or "").strip()
+        is_active = request.query_params.get("is_active")
+        if platform:
+            queryset = queryset.filter(platform=platform)
+        if channel:
+            queryset = queryset.filter(channel=channel)
+        if bundle_id:
+            queryset = queryset.filter(bundle_id__icontains=bundle_id)
+        if is_active in {"true", "false"}:
+            queryset = queryset.filter(is_active=(is_active == "true"))
+        page = int(request.query_params.get("page", "1"))
+        page_size = min(int(request.query_params.get("page_size", "20")), 100)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        return success_response(
+            {
+                "items": AppVersionConfigSerializer(page_obj.object_list, many=True).data,
+                "pagination": {
+                    "page": page_obj.number,
+                    "page_size": page_size,
+                    "total": paginator.count,
+                    "total_pages": paginator.num_pages,
+                },
+            },
+            msg="success",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        if not request.user.is_superuser and "button:version:config:create" not in get_user_permission_codes(request.user.id):
+            return error_response(msg="permission_denied", code=40303, status_code=status.HTTP_403_FORBIDDEN)
+        serializer = AppVersionConfigSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj = serializer.save(created_by=request.user)
+        write_audit_log(request, action="version.config.create", resource_type="app_version_config", resource_id=str(obj.id), status_code=201)
+        return success_response(AppVersionConfigSerializer(obj).data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+
+class AdminAppVersionConfigDetailView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:version:config:update"
+
+    def patch(self, request, config_id: int):
+        obj = get_object_or_404(AppVersionConfig, pk=config_id)
+        serializer = AppVersionConfigSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        obj = serializer.save()
+        write_audit_log(request, action="version.config.update", resource_type="app_version_config", resource_id=str(obj.id), status_code=200)
+        return success_response(AppVersionConfigSerializer(obj).data, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def delete(self, request, config_id: int):
+        obj = get_object_or_404(AppVersionConfig, pk=config_id)
+        obj.is_active = False
+        obj.save(update_fields=["is_active", "updated_at"])
+        write_audit_log(request, action="version.config.disable", resource_type="app_version_config", resource_id=str(obj.id), status_code=200)
+        return success_response({"success": True}, msg="disabled", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminVersionCheckLogListView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        queryset = VersionCheckLog.objects.select_related("user", "config").all()
+        q = (request.query_params.get("q") or "").strip()
+        platform = (request.query_params.get("platform") or "").strip()
+        bundle_id = (request.query_params.get("bundle_id") or "").strip()
+        has_update = request.query_params.get("has_update")
+        force_update = request.query_params.get("force_update")
+        if q:
+            queryset = queryset.filter(
+                Q(device_id__icontains=q)
+                | Q(current_version__icontains=q)
+                | Q(latest_version__icontains=q)
+                | Q(request_id__icontains=q)
+            )
+        if platform:
+            queryset = queryset.filter(platform=platform)
+        if bundle_id:
+            queryset = queryset.filter(bundle_id__icontains=bundle_id)
+        if has_update in {"true", "false"}:
+            queryset = queryset.filter(has_update=(has_update == "true"))
+        if force_update in {"true", "false"}:
+            queryset = queryset.filter(force_update=(force_update == "true"))
+        page = int(request.query_params.get("page", "1"))
+        page_size = min(int(request.query_params.get("page_size", "20")), 100)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        return success_response(
+            {
+                "items": VersionCheckLogSerializer(page_obj.object_list, many=True).data,
+                "pagination": {
+                    "page": page_obj.number,
+                    "page_size": page_size,
+                    "total": paginator.count,
+                    "total_pages": paginator.num_pages,
+                },
+            },
+            msg="success",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
 
 
 SCENARIO_LABEL_ZH = {
