@@ -1,0 +1,50 @@
+INFO 2026-05-03 14:04:54,862 file_manager.oss_sts_views [request_id=BB4C7EB9-C881-4319-80C9-D266D2740D89] OSS STS 签发成功 user_id=5
+INFO 2026-05-03 14:05:25,141 file_manager.oss_sts_views [request_id=F4865BD4-AB2F-4DD9-9470-9390ED43217A] OSS STS 签发成功 user_id=5
+INFO 2026-05-03 14:13:24,629 file_manager.oss_sts_views [request_id=A6550082-67B1-4E1C-AC01-31A1883B530F] OSS STS 签发成功 user_id=5
+INFO 2026-05-03 14:13:50,050 file_manager.oss_sts_views [request_id=42280FE9-6559-4CDA-A9A2-FB5975F1958F] OSS STS 签发成功 user_id=5
+INFO 2026-05-03 14:15:57,876 file_manager.oss_sts_views [request_id=4C211815-53BC-4230-B8C5-08CE99089A53] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:16:29,757 file_manager.oss_sts_views [request_id=6E39A816-7058-4799-95E5-F7E486B10CFD] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:21:52,507 file_manager.oss_sts_views [request_id=93CBB652-4B21-4C20-BFC9-FD2A6D580352] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:22:04,987 file_manager.oss_sts_views [request_id=4036119A-EDB0-48EE-86A5-1CC71D89BE25] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:22:28,750 file_manager.oss_sts_views [request_id=1823A91B-EAED-4549-8494-8F8ACC8C5BCC] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:22:59,899 file_manager.oss_sts_views [request_id=66A310FF-8A11-48F5-94D1-E80E8C75A80A] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:23:34,384 file_manager.oss_sts_views [request_id=C1CF269D-E8BF-41FE-963D-6C7E9EBE8961] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:24:00,219 file_manager.oss_sts_views [request_id=CC05E427-3F09-4BB4-9824-8750508D2C79] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:24:13,140 file_manager.oss_sts_views [request_id=B4FE5659-186D-4142-9460-425EA7016E78] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:24:31,014 file_manager.oss_sts_views [request_id=F3851D68-943D-4539-B211-AF523EEE5539] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 14:29:20,149 file_manager.oss_sts_views [request_id=AD5EC25C-96DB-4930-A98F-4BEE6650FDA7] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:01:07,327 file_manager.oss_sts_views [request_id=BF6BE083-34A3-45B6-8241-F51CD5A39D28] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:01:17,121 file_manager.oss_sts_views [request_id=EED490BE-4E41-43B4-9906-0BA5CD7434D8] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:01:23,318 file_manager.oss_sts_views [request_id=CCAB4619-8C19-4526-8141-2B905FD28058] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:03:37,324 file_manager.oss_sts_views [request_id=036C1009-6F61-4E45-A687-9BF5F322851D] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:03:41,593 file_manager.oss_sts_views [request_id=0FB64392-E9FF-421E-B371-FD889A418BD7] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:05:27,903 file_manager.oss_sts_views [request_id=BDB30EC6-50BB-4B45-A52B-180092854CF2] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:06:26,005 file_manager.oss_sts_views [request_id=12693296-D605-4374-A7E7-D4182A90F152] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:07:07,772 file_manager.oss_sts_views [request_id=077B2C7E-7664-4093-8891-A9467908153E] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:07:41,424 file_manager.oss_sts_views [request_id=E15DE58D-B21A-4DE5-9455-D3F163581EEA] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:11:47,738 file_manager.oss_sts_views [request_id=2745FD47-758C-4557-A514-547A016D786B] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:12:24,805 file_manager.oss_sts_views [request_id=570E8B45-5AEF-4C2A-8018-98F7A28E605A] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:12:33,521 file_manager.oss_sts_views [request_id=8D5C850C-80D1-4A54-8E5F-3BF8DF1CFE3B] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:12:55,146 file_manager.oss_sts_views [request_id=049F1337-7407-44BC-A6FC-DD4DABE63847] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:14:41,275 file_manager.oss_sts_views [request_id=5EA3EC43-7C5C-4BD3-8345-E3C88EC2A960] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:22:50,025 file_manager.oss_sts_views [request_id=DD94C47C-BDB3-430C-B8E9-77F4E3A6CD23] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:23:02,484 file_manager.oss_sts_views [request_id=7838DA63-0EE3-4E99-8931-834C731E77EB] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:23:18,046 file_manager.oss_sts_views [request_id=5E5598A0-14EE-4BD7-B924-53EF7B00D833] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:24:08,947 file_manager.oss_sts_views [request_id=9A322D51-CE11-464F-96DF-D469C754A977] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:32:07,220 file_manager.oss_sts_views [request_id=43A97050-3073-4BE8-8EEA-8212064CAE2A] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:37:17,700 file_manager.api_io [request_id=24BA099F-6A24-4B2E-B13A-567353EEEAB5] 文件登记入参
+INFO 2026-05-03 15:37:17,716 file_manager [request_id=24BA099F-6A24-4B2E-B13A-567353EEEAB5] 文件登记成功
+INFO 2026-05-03 15:48:44,656 file_manager.oss_sts_views [request_id=5995048B-9A30-468E-90FF-255F8F845C0C] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:49:06,151 file_manager.api_io [request_id=C296C3D7-0DCB-480E-B3EA-B51245B191EE] 文件登记入参
+INFO 2026-05-03 15:49:06,154 file_manager [request_id=C296C3D7-0DCB-480E-B3EA-B51245B191EE] 文件登记成功
+INFO 2026-05-03 15:51:41,362 file_manager.oss_sts_views [request_id=F05BE73E-F0E6-4038-BF7F-4C53A67B4013] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:52:55,825 file_manager.oss_sts_views [request_id=CF91A0F7-68AB-4ED0-BC57-ACB3852D523C] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:53:53,773 file_manager.oss_sts_views [request_id=B0751EC6-3C12-492E-9B92-E29B7A885A1A] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 15:57:40,746 file_manager.oss_sts_views [request_id=0993F7AA-551E-4CE7-92C8-967752AA440D] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 16:02:54,908 file_manager.oss_sts_views [request_id=D15C8867-09E6-4AE7-92B1-BF9088B5F897] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 23:26:05,379 file_manager.oss_sts_views [request_id=44329287-CEC8-4507-A898-8CCE1E563D9F] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 23:30:10,752 file_manager.oss_sts_views [request_id=174F400F-D251-4159-8E91-90928F97A3B3] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 23:34:13,287 file_manager.oss_sts_views [request_id=7B8AED18-902B-4317-8707-70F2045FE8D0] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 23:40:30,222 file_manager.oss_sts_views [request_id=FA5B4611-807B-4B8E-BAC5-0B3AF4AB4271] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 23:52:26,431 file_manager.oss_sts_views [request_id=994C95AB-2046-4AB2-B476-577694A34EE2] OSS STS 签发成功 user_id=7
+INFO 2026-05-03 23:57:39,948 file_manager.oss_sts_views [request_id=BA7CEBAB-C739-4C11-BB0D-4381A625EF2A] OSS STS 签发成功 user_id=7
