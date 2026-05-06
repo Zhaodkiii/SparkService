@@ -14,6 +14,7 @@ from datetime import timedelta
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 # Use PyMySQL as the MySQLdb driver for Django's mysql backend.
@@ -284,6 +285,29 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"))
+CELERY_TASK_ROUTES = {
+    "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
+    "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
+    "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
+    "accounts.deactivation.tasks.deactivation_health_check_task": {"queue": "monitoring"},
+}
+CELERY_BEAT_SCHEDULE = {
+    "process-due-account-deactivations": {
+        "task": "accounts.deactivation.tasks.schedule_deactivation_processing_task",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "deactivation"},
+    },
+    "cleanup-expired-deactivation-backups": {
+        "task": "accounts.deactivation.tasks.cleanup_deactivation_backups_task",
+        "schedule": crontab(hour=2, minute=0),
+        "options": {"queue": "cleanup"},
+    },
+    "account-deactivation-health-check": {
+        "task": "accounts.deactivation.tasks.deactivation_health_check_task",
+        "schedule": crontab(minute="*/30"),
+        "options": {"queue": "monitoring"},
+    },
+}
 
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 DJANGO_CELERY_BEAT_TZ_AWARE = True

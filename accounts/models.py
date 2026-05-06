@@ -265,10 +265,11 @@ class AccountDeactivation(models.Model):
     class DeactivationState(models.TextChoices):
         REQUESTED = "requested"
         SCHEDULED = "scheduled"
-        FROZEN = "frozen"
+        DATA_BACKED_UP = "data_backed_up"
         ANONYMIZED = "anonymized"
-        CLEANED_UP = "cleaned_up"
-        DEACTIVATED = "deactivated"
+        RELATED_DATA_DELETED = "related_data_deleted"
+        ACCOUNT_DISABLED = "account_disabled"
+        COMPLETED = "completed"
         CANCELLED = "cancelled"
         FAILED = "failed"
 
@@ -286,6 +287,14 @@ class AccountDeactivation(models.Model):
     freeze_email = models.EmailField(blank=True, default="")
     freeze_phone_number = models.CharField(max_length=32, blank=True, default="")
 
+    reason = models.CharField(max_length=256, blank=True, default="")
+    data_retention_days = models.PositiveIntegerField(default=30)
+    anonymize_personal_data = models.BooleanField(default=True)
+    delete_related_data = models.BooleanField(default=True)
+    backup_uri = models.CharField(max_length=1024, blank=True, default="")
+    backup_checksum = models.CharField(max_length=128, blank=True, default="")
+    backup_expires_at = models.DateTimeField(null=True, blank=True)
+
     error_message = models.TextField(blank=True, default="")
     request_id = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -293,10 +302,12 @@ class AccountDeactivation(models.Model):
 
 class AccountDeactivationAudit(models.Model):
     class AuditAction(models.TextChoices):
-        FREEZE_IDENTIFIERS = "freeze_identifiers"
-        ANONYMIZE = "anonymize"
-        CLEANUP_OTPS = "cleanup_otps"
-        DEACTIVATE_USER = "deactivate_user"
+        REQUESTED = "requested"
+        DATA_BACKUP = "data_backup"
+        DATA_ANONYMIZE = "data_anonymize"
+        RELATED_DATA_DELETE = "related_data_delete"
+        ACCOUNT_DEACTIVATE = "account_deactivate"
+        COMPLETED = "completed"
         CANCELLED = "cancelled"
         FAILED = "failed"
 

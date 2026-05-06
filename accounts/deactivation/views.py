@@ -24,17 +24,18 @@ class AccountDeactivationView(APIView):
         )
         deactivation_id = request.query_params.get("deactivation_id")
         if not deactivation_id:
-            flow_logger.warning(
-                "account.deactivation.status.failed",
-                extra={"action": "account.deactivation.status", "request_id": request_id, "reason": "missing_deactivation_id"},
+            obj = (
+                AccountDeactivation.objects.filter(user_id=request.user.id)
+                .order_by("-requested_at", "-id")
+                .first()
             )
-            return success_response(data=None, msg="missing deactivation_id", code=0, status_code=status.HTTP_200_OK)
+        else:
+            obj = AccountDeactivation.objects.filter(id=deactivation_id, user_id=request.user.id).first()
 
-        obj = AccountDeactivation.objects.filter(id=deactivation_id, user_id=request.user.id).first()
         if not obj:
             flow_logger.warning(
                 "account.deactivation.status.not_found",
-                extra={"action": "account.deactivation.status", "request_id": request_id, "deactivation_id": deactivation_id},
+                extra={"action": "account.deactivation.status", "request_id": request_id, "deactivation_id": deactivation_id or ""},
             )
             return success_response(data=None, msg="not found", code=0, status_code=status.HTTP_200_OK)
 
@@ -48,12 +49,7 @@ class AccountDeactivationView(APIView):
                 "user_id": request.user.id,
             },
         )
-        return success_response(
-            {"deactivation_id": obj.id, "state": obj.state, "scheduled_at": obj.scheduled_at, "completed_at": obj.completed_at},
-            msg="deactivation_status",
-            code=0,
-            status_code=status.HTTP_200_OK,
-        )
+        return success_response(DeactivationService.build_status_payload(obj, request_id=request_id), msg="deactivation_status", code=0, status_code=status.HTTP_200_OK)
 
     def post(self, request):
         request_id = getattr(request, "request_id", "") or ""
@@ -76,8 +72,12 @@ class AccountDeactivationView(APIView):
         result = DeactivationService.request_deactivation(
             user=request.user,
             request_id=request_id,
+            reason=serializer.validated_data.get("reason", ""),
             immediate_deactivation=immediate_deactivation,
             countdown_hours=countdown_hours,
+            data_retention_days=serializer.validated_data.get("data_retention_days", 30),
+            anonymize_personal_data=serializer.validated_data.get("anonymize_personal_data", True),
+            delete_related_data=serializer.validated_data.get("delete_related_data", True),
         )
 
         if not result.get("reused", False):

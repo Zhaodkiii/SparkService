@@ -458,7 +458,7 @@ class AdminDeactivationCancelView(APIView):
     def post(self, request, deactivation_id: int):
         row = get_object_or_404(AccountDeactivation.objects.select_for_update(), pk=deactivation_id)
         if row.state in {
-            AccountDeactivation.DeactivationState.DEACTIVATED,
+            AccountDeactivation.DeactivationState.COMPLETED,
             AccountDeactivation.DeactivationState.CANCELLED,
         }:
             return success_response(
@@ -497,7 +497,7 @@ class AdminDeactivationRetryView(APIView):
         row = get_object_or_404(AccountDeactivation.objects.select_for_update(), pk=deactivation_id)
         if row.state == AccountDeactivation.DeactivationState.CANCELLED:
             return error_response(msg="cannot_retry_cancelled", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-        if row.state == AccountDeactivation.DeactivationState.DEACTIVATED:
+        if row.state == AccountDeactivation.DeactivationState.COMPLETED:
             return success_response(
                 {"deactivation_id": row.id, "state": row.state, "detail": "already_completed"},
                 msg="noop",

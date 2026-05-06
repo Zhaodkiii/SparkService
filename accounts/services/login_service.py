@@ -12,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from common.exceptions import APIError
 from accounts.models import AccountProfile, LoginAudit, SocialIdentity
 from accounts.services.apple_identity_service import AppleIdentityService
+from accounts.services.deactivation_service import DeactivationService
 from accounts.services.device_linking_service import DeviceLinkingService
 from ai_config.services import TrialService
 
@@ -166,6 +167,7 @@ class LoginService:
 
         # Ensure profile exists for phone-related flows.
         AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
+        cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
         LoginService._try_grant_auto_trial(user=user, request_id=request_id)
 
         LoginAudit.objects.create(
@@ -197,6 +199,7 @@ class LoginService:
                 "user_id": user.id,
             },
         )
+        tokens["deactivation_cancelled"] = cancel_result
         return tokens
 
     @staticmethod
@@ -376,12 +379,14 @@ class LoginService:
         )
 
         LoginService._try_grant_auto_trial(user=user, request_id=request_id)
+        cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
 
         result = LoginService._issue_tokens(user)
         result["email"] = user.email or chosen_email
         result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
         result["is_pro"] = TrialService.is_pro_user(user=user)
         result["is_new_user"] = created_user
+        result["deactivation_cancelled"] = cancel_result
         DeviceLinkingService.try_attach_user_to_trusted_device(
             user=user,
             device_id=device_id,
