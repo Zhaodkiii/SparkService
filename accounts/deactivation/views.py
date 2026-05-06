@@ -63,6 +63,13 @@ class AccountDeactivationView(APIView):
         )
         serializer = AccountDeactivationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        verification = serializer.validated_data.get("verification")
+        if verification:
+            DeactivationService.verify_deactivation_proof(
+                user=request.user,
+                verification=verification,
+                request_id=request_id,
+            )
         immediate_deactivation = serializer.validated_data.get("immediate_deactivation", True)
         countdown_hours = serializer.validated_data.get("countdown_hours", 0)
 

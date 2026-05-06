@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from datetime import timedelta
@@ -11,13 +12,93 @@ from accounts.models import (
     AccountDeactivationAudit,
     EmailOTP,
     PhoneOTP,
+    SocialIdentity,
 )
+from accounts.services.apple_identity_service import AppleIdentityService
+from accounts.services.otp_service import OTPService
+from accounts.services.phone_number_service import PhoneNumberService
 
 logger = logging.getLogger(__name__)
 flow_logger = logging.getLogger("accounts.flow")
 
 
 class DeactivationService:
+    @staticmethod
+    @transaction.atomic
+    def verify_deactivation_proof(*, user, verification: dict | None, request_id: str):
+        if not verification:
+            raise APIError("verification required", code=40061, status_code=400)
+
+        verification_type = (verification.get("type") or "").strip().lower()
+        now = timezone.now()
+
+        if verification_type == "apple":
+            identity_token = (verification.get("identity_token") or "").strip()
+            user_identifier = (verification.get("user_identifier") or "").strip()
+            allowed_bundle_ids = getattr(settings, "APPLE_ALLOWED_BUNDLE_IDS", [])
+            if not allowed_bundle_ids:
+                raise APIError("apple bundle audience not configured", code=40062, status_code=400)
+            payload, matched_audience = AppleIdentityService.verify_identity_token(
+                identity_token,
+                audiences=allowed_bundle_ids,
+            )
+            subject = (payload.get("sub") or "").strip()
+            if not subject or subject != user_identifier:
+                raise APIError("apple subject mismatch", code=40161, status_code=401)
+            linked = SocialIdentity.objects.filter(
+                user=user,
+                provider=SocialIdentity.Provider.APPLE,
+                provider_uid=subject,
+                bundle_id=matched_audience,
+            ).exists()
+            if not linked:
+                raise APIError("apple identity not linked to current user", code=40162, status_code=401)
+            return {"type": "apple", "bundle_id": matched_audience}
+
+        if verification_type == "email":
+            email = (user.email or "").strip().lower()
+            otp_id = (verification.get("otp_id") or "").strip()
+            code = (verification.get("code") or "").strip()
+            otp = EmailOTP.objects.select_for_update().filter(otp_id=otp_id, email=email).first()
+            if not otp:
+                raise APIError("OTP not found", code=40461, status_code=404)
+            DeactivationService._verify_otp_row(otp=otp, code=code, now=now, invalid_code=40063)
+            return {"type": "email", "otp_id": otp_id}
+
+        if verification_type == "phone":
+            profile = getattr(user, "profile", None)
+            phone_number = getattr(profile, "phone_number", "") if profile else ""
+            normalized_phone = PhoneNumberService.normalize_e164(phone_number)
+            otp_id = (verification.get("otp_id") or "").strip()
+            code = (verification.get("code") or "").strip()
+            otp = PhoneOTP.objects.select_for_update().filter(otp_id=otp_id, phone_number=normalized_phone).first()
+            if not otp:
+                raise APIError("OTP not found", code=40462, status_code=404)
+            DeactivationService._verify_otp_row(otp=otp, code=code, now=now, invalid_code=40064)
+            return {"type": "phone", "otp_id": otp_id}
+
+        raise APIError("unsupported verification type", code=40065, status_code=400)
+
+    @staticmethod
+    def _verify_otp_row(*, otp, code: str, now, invalid_code: int):
+        if otp.used_at is not None:
+            raise APIError("OTP already used", code=40066, status_code=400)
+        if otp.expires_at <= now:
+            raise APIError("OTP expired", code=40067, status_code=400)
+        if otp.locked_until and otp.locked_until > now:
+            raise APIError("OTP temporarily locked", code=42361, status_code=423)
+
+        expected_hash = OTPService._hash_code(code)
+        if expected_hash != otp.code_hash:
+            otp.attempts += 1
+            if otp.attempts >= OTPService.MAX_ATTEMPTS:
+                otp.locked_until = now + timedelta(minutes=OTPService.LOCKOUT_MINUTES)
+            otp.save(update_fields=["attempts", "locked_until"])
+            raise APIError("Invalid OTP", code=invalid_code, status_code=400)
+
+        otp.used_at = now
+        otp.save(update_fields=["used_at"])
+
     @staticmethod
     def request_deactivation(*, user, request_id: str, immediate_deactivation: bool = True, countdown_hours: int = 0):
         flow_logger.info(
