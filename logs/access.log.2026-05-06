@@ -1,0 +1,351 @@
+INFO 2026-05-06 04:14:42,467 accounts.flow [request_id=-] account.deactivation.service.process.begin
+INFO 2026-05-06 04:14:42,565 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:14:42,575 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:14:42,589 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:14:42,594 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:14:42,596 accounts.flow [request_id=-] account.deactivation.service.process.success
+INFO 2026-05-06 04:16:56,972 accounts.flow [request_id=-] account.deactivation.service.process.begin
+INFO 2026-05-06 04:16:56,982 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:16:56,991 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:16:56,995 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:16:57,000 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:16:57,001 accounts.flow [request_id=-] account.deactivation.service.process.success
+INFO 2026-05-06 04:35:50,106 accounts.flow [request_id=-] account.deactivation.service.process.begin
+INFO 2026-05-06 04:35:50,114 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:35:50,117 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:35:50,119 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:35:50,121 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:35:50,123 accounts.flow [request_id=-] account.deactivation.service.process.success
+INFO 2026-05-06 04:48:51,892 accounts.flow [request_id=-] account.deactivation.service.process.begin
+INFO 2026-05-06 04:48:51,898 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:48:51,902 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:48:51,906 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:48:51,908 accounts.flow [request_id=-] account.deactivation.service.process.step
+INFO 2026-05-06 04:48:51,909 accounts.flow [request_id=-] account.deactivation.service.process.success
+INFO 2026-05-06 07:41:06,546 accounts.flow [request_id=1BB3BDB2-6437-475B-96E9-F21B66823453] 刷新访问令牌开始
+INFO 2026-05-06 07:41:06,589 accounts.request [request_id=D3482545-CB88-44BC-9DE0-376AF2843E42] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=69 bytes=284
+INFO 2026-05-06 07:41:06,592 accounts.request [request_id=1BB3BDB2-6437-475B-96E9-F21B66823453] HTTP 请求摘要: POST /api/v1/auth/token/refresh/ status=200 duration_ms=76 bytes=538
+INFO 2026-05-06 07:41:06,661 accounts.request [request_id=EDC6D2FD-93BC-46EB-9300-39F125AA04E9] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=16 bytes=150
+INFO 2026-05-06 07:41:06,741 accounts.request [request_id=712B292D-8273-49B9-8CBE-E113FA083582] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=55 bytes=16067
+INFO 2026-05-06 07:41:06,794 accounts.request [request_id=B2921CB5-3659-4720-A522-D724FFCF80D2] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=20 bytes=325
+INFO 2026-05-06 07:41:07,239 accounts.request [request_id=499AC1B8-4C21-42A1-BDBD-C0BE2B7ED8DB] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=421 bytes=1158
+INFO 2026-05-06 07:41:07,266 accounts.request [request_id=C6D9623A-8AB5-4115-9B94-FF3FFD212437] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=6 bytes=150
+INFO 2026-05-06 07:41:07,285 accounts.request [request_id=A18E76F9-263A-449D-9696-80D44F9BF1BB] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=7 bytes=0
+INFO 2026-05-06 07:41:07,323 accounts.request [request_id=809F16E9-F1E0-4613-B542-0E0A1662A8DF] HTTP 请求摘要: GET /api/v1/medical/members/33/complete-data/ status=200 duration_ms=29 bytes=529
+INFO 2026-05-06 07:41:07,353 accounts.request [request_id=F28B862D-F521-43AA-926F-25439A823415] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=6 bytes=109
+INFO 2026-05-06 07:41:07,708 accounts.request [request_id=6098AE44-0F43-4EE8-98C6-7A39856B0945] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=18 bytes=284
+INFO 2026-05-06 07:41:07,710 accounts.request [request_id=FD836E6B-D848-446E-96BE-CF2925EFA059] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=13 bytes=150
+INFO 2026-05-06 07:41:07,741 accounts.request [request_id=C7E5A06D-5DF9-433E-96FD-BBD639B26202] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=10 bytes=150
+INFO 2026-05-06 07:41:12,896 accounts.request [request_id=B43193E5-BD2F-406F-B670-4656A2E73ED7] HTTP 请求摘要: GET /api/v1/ai/chat/sync/pull/ status=200 duration_ms=17 bytes=75
+INFO 2026-05-06 07:41:17,771 accounts.request [request_id=EBD09024-66BE-49F6-8871-0234E14AE5CB] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=8 bytes=0
+INFO 2026-05-06 07:50:52,645 accounts.request [request_id=7874beaa-f22c-44cc-b07f-6d9aab586a59] HTTP 请求摘要: POST /api/admin/v1/auth/login/ status=200 duration_ms=213 bytes=706
+INFO 2026-05-06 07:50:52,715 accounts.request [request_id=d767b7fb-b14b-46df-b904-2d663a52f951] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=59 bytes=3757
+INFO 2026-05-06 07:50:52,973 accounts.request [request_id=5cef7a09-c3c5-49f1-836a-2d85b779cc0c] HTTP 请求摘要: GET /api/admin/v1/dashboard/overview/ status=200 duration_ms=28 bytes=229
+INFO 2026-05-06 07:50:55,947 accounts.request [request_id=798ade92-7410-4280-a53e-c55b1ffe93af] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=200 duration_ms=22 bytes=4688
+INFO 2026-05-06 07:51:00,851 accounts.request [request_id=cd67c91a-9bea-48a9-8e81-6d3ca831773c] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/9/audits/ status=200 duration_ms=24 bytes=774
+{"ts": "2026-05-06T07:59:19.534087+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 46646, "thread": "MainThread", "user_id": 1, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T07:59:19.692471+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 46646, "thread": "MainThread", "user_id": 2, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T07:59:19.693895+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 188, "pid": 46646, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 2}
+{"ts": "2026-05-06T07:59:19.842509+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 46646, "thread": "MainThread", "user_id": 3, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T07:59:19.844408+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 188, "pid": 46646, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 3}
+{"ts": "2026-05-06T07:59:49.175406+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 47728, "thread": "MainThread", "user_id": 1, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T07:59:49.331860+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 47728, "thread": "MainThread", "user_id": 2, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T07:59:49.333370+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 188, "pid": 47728, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 2}
+{"ts": "2026-05-06T07:59:49.484434+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 47728, "thread": "MainThread", "user_id": 3, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T07:59:49.486378+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 188, "pid": 47728, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 3}
+{"ts": "2026-05-06T07:59:49.528447+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.success", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 229, "pid": 47728, "thread": "MainThread", "action": "account.deactivation.service.process", "deactivation_id": 3, "state": "completed"}
+INFO 2026-05-06 08:00:32,107 accounts.request [request_id=e1da41bc-498b-4d56-a9e2-2ce5b6d8a143] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=39 bytes=3757
+ERROR 2026-05-06 08:00:32,357 accounts.request [request_id=1363207c-ea7e-4c0f-9402-3ed623622fa0] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=500 duration_ms=18 bytes=102
+INFO 2026-05-06 08:00:33,420 accounts.request [request_id=e2c71234-e752-4f9a-8aef-131089dcc431] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=31 bytes=3757
+ERROR 2026-05-06 08:00:33,551 accounts.request [request_id=ec2dda8b-8e7d-4c1d-9a78-57f134f588bf] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=500 duration_ms=5 bytes=102
+INFO 2026-05-06 08:00:34,166 accounts.request [request_id=ca93847e-1e13-4cad-ba37-b57b8055c765] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=75 bytes=3757
+ERROR 2026-05-06 08:00:34,318 accounts.request [request_id=3a7ac973-d813-4fc8-8e64-2615d03ae126] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=500 duration_ms=11 bytes=102
+INFO 2026-05-06 08:00:34,505 accounts.request [request_id=07006e95-4cdd-489c-b239-86bcde8aea5c] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=37 bytes=3757
+ERROR 2026-05-06 08:00:34,586 accounts.request [request_id=77da229f-76e1-4cfe-b423-f2119a4a9fa9] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=500 duration_ms=6 bytes=102
+INFO 2026-05-06 08:00:35,456 accounts.request [request_id=3d855139-9021-4b40-8248-a7b592604268] HTTP 请求摘要: GET /api/admin/v1/users/devices/ status=200 duration_ms=6 bytes=955
+ERROR 2026-05-06 08:00:35,875 accounts.request [request_id=5356c8d4-7c93-491e-a328-079efccc748f] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=500 duration_ms=11 bytes=102
+{"ts": "2026-05-06T08:01:11.454399+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 50969, "thread": "MainThread", "user_id": 1, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T08:01:11.609633+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 50969, "thread": "MainThread", "user_id": 2, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T08:01:11.611511+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 192, "pid": 50969, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 2}
+{"ts": "2026-05-06T08:01:11.763384+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 50969, "thread": "MainThread", "user_id": 3, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T08:01:11.765401+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 192, "pid": 50969, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 3}
+{"ts": "2026-05-06T08:01:11.805558+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.success", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 233, "pid": 50969, "thread": "MainThread", "action": "account.deactivation.service.process", "deactivation_id": 3, "state": "completed"}
+{"ts": "2026-05-06T08:02:01.570675+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 53649, "thread": "MainThread", "user_id": 1, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T08:02:01.729937+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 53649, "thread": "MainThread", "user_id": 2, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T08:02:01.731776+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 188, "pid": 53649, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 2}
+{"ts": "2026-05-06T08:02:01.881266+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.request.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "request_deactivation", "line": 137, "pid": 53649, "thread": "MainThread", "user_id": 3, "action": "account.deactivation.service.request"}
+{"ts": "2026-05-06T08:02:01.883163+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.begin", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 188, "pid": 53649, "thread": "MainThread", "task_id": "", "action": "account.deactivation.service.process", "deactivation_id": 3}
+{"ts": "2026-05-06T08:02:01.922833+00:00", "level": "INFO", "logger": "accounts.flow", "message": "account.deactivation.service.process.success", "request_id": "-", "module_name": "deactivation_service", "file": "deactivation_service.py", "function": "process_deactivation", "line": 229, "pid": 53649, "thread": "MainThread", "action": "account.deactivation.service.process", "deactivation_id": 3, "state": "completed"}
+INFO 2026-05-06 08:03:47,169 accounts.request [request_id=09e60aaf-afdb-4259-9b70-c0e05a0fd06e] HTTP 请求摘要: GET /api/admin/v1/users/devices/ status=200 duration_ms=10 bytes=955
+INFO 2026-05-06 08:03:47,785 accounts.request [request_id=8f08ea55-ead8-4cf7-b75a-9888ce341f12] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=200 duration_ms=16 bytes=4670
+INFO 2026-05-06 08:03:50,354 accounts.request [request_id=162e6447-1404-4801-98ec-50094304de56] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/9/audits/ status=200 duration_ms=15 bytes=782
+INFO 2026-05-06 08:03:55,660 accounts.request [request_id=b082fdd4-197d-45e2-9e2d-27c3bc4dc0d4] HTTP 请求摘要: POST /api/admin/v1/users/deactivations/9/retry/ status=200 duration_ms=4 bytes=101
+INFO 2026-05-06 08:03:55,695 accounts.request [request_id=7feac6b0-39f3-4aa9-8862-d53c1315dbee] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=200 duration_ms=6 bytes=4670
+INFO 2026-05-06 08:03:57,350 accounts.request [request_id=3a65c0c4-f730-4bca-a2ae-46d550ee81da] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/9/audits/ status=200 duration_ms=13 bytes=782
+INFO 2026-05-06 08:04:05,752 accounts.request [request_id=328563f1-aaec-42a1-8db3-52905c1e78be] HTTP 请求摘要: GET /api/admin/v1/users/devices/ status=200 duration_ms=10 bytes=955
+INFO 2026-05-06 08:04:08,047 accounts.request [request_id=24274246-653c-4cf4-ae43-cebd7a792471] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=5 bytes=2260
+INFO 2026-05-06 08:04:14,791 accounts.request [request_id=8A2CC79F-DAC0-45C6-8D83-F1C1C74ECED3] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=12 bytes=109
+INFO 2026-05-06 08:04:30,017 accounts.request [request_id=6E5D012F-70A3-43A0-8C9B-F6895788A470] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=15 bytes=640
+WARNING 2026-05-06 08:04:37,915 accounts.request [request_id=C983229A-0381-4F9A-B4F2-F440D4801977] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=400 duration_ms=43 bytes=198
+INFO 2026-05-06 08:05:09,514 accounts.request [request_id=8F83FFF1-06EB-4863-B674-1477340E2489] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=11 bytes=640
+INFO 2026-05-06 08:05:09,821 accounts.request [request_id=849B72E4-3B80-4AE2-8909-71E009DEA105] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=9 bytes=639
+INFO 2026-05-06 08:05:27,018 accounts.request [request_id=36A1FDFD-B076-4E75-BA54-E29305B408D2] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=85 bytes=196
+INFO 2026-05-06 08:05:27,084 accounts.request [request_id=6577EAF9-B659-4997-B242-E6FDB018C4F9] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=13 bytes=622
+INFO 2026-05-06 08:05:27,104 accounts.request [request_id=86B2597F-59A2-47C2-99D3-DC38E51F702C] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=10 bytes=621
+INFO 2026-05-06 08:05:31,743 accounts.request [request_id=858687A4-0F75-4DDE-A97C-32830F36B296] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=11 bytes=325
+INFO 2026-05-06 08:05:31,838 accounts.request [request_id=DA6E9CAC-4D2D-4A92-A013-4FD409B892BB] HTTP 请求摘要: GET /api/v1/medical/members/33/complete-data/ status=200 duration_ms=49 bytes=8330
+INFO 2026-05-06 08:05:37,697 accounts.request [request_id=2B66B8AC-7DF3-4D82-BF1E-6CF53486574E] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=15 bytes=645
+INFO 2026-05-06 08:06:14,130 accounts.request [request_id=03b8a825-5f05-4362-9546-618cf3fdb1ce] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=45 bytes=3757
+INFO 2026-05-06 08:06:14,293 accounts.request [request_id=9a7d5d9d-a197-4d43-b293-5f67b350a853] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=10 bytes=2260
+INFO 2026-05-06 08:06:14,915 accounts.request [request_id=49a97266-dbcd-4d83-abec-852108fcc139] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=37 bytes=3757
+INFO 2026-05-06 08:06:15,019 accounts.request [request_id=34a99b55-3343-4ecf-b75f-da49f7086717] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=6 bytes=2260
+INFO 2026-05-06 08:06:16,971 accounts.request [request_id=389fd1d2-ac93-4c5f-bff3-0f24d867d4d8] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=39 bytes=3757
+INFO 2026-05-06 08:06:17,042 accounts.request [request_id=95a3a603-77f6-4872-bda5-cc3732f5ee0d] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=6 bytes=2260
+INFO 2026-05-06 08:06:25,821 accounts.request [request_id=762c51b6-9636-4929-9c77-675aadc7aba2] HTTP 请求摘要: GET /api/admin/v1/version/configs/ status=200 duration_ms=8 bytes=712
+INFO 2026-05-06 08:06:27,141 accounts.request [request_id=9b14442a-415a-4a24-bc4e-5c93b8c3bf85] HTTP 请求摘要: GET /api/admin/v1/version/logs/ status=200 duration_ms=17 bytes=9813
+INFO 2026-05-06 08:06:29,821 accounts.request [request_id=6d1349eb-e728-4064-9654-254fb6fb7b62] HTTP 请求摘要: GET /api/admin/v1/tasks/dashboard/ status=200 duration_ms=16 bytes=434
+INFO 2026-05-06 08:06:33,905 accounts.request [request_id=4eab93b2-fffd-4a57-86e2-7e42152883b6] HTTP 请求摘要: GET /api/admin/v1/tasks/manager/status/ status=200 duration_ms=2483 bytes=416
+INFO 2026-05-06 08:06:38,619 accounts.request [request_id=b12d226b-427e-40c3-a65c-9ef09c898454] HTTP 请求摘要: POST /api/admin/v1/tasks/manager/stop/ status=200 duration_ms=3890 bytes=520
+INFO 2026-05-06 08:06:41,886 accounts.request [request_id=fabd9206-e2bb-4065-bd08-9acdeaf558f0] HTTP 请求摘要: POST /api/admin/v1/tasks/manager/start/ status=200 duration_ms=2375 bytes=548
+INFO 2026-05-06 08:06:47,987 accounts.request [request_id=631af270-3cd8-4459-bf8b-2f18d6d8c894] HTTP 请求摘要: GET /api/admin/v1/version/configs/ status=200 duration_ms=12 bytes=712
+INFO 2026-05-06 08:06:51,047 accounts.request [request_id=a893f402-1e76-437e-b2a6-81f68c336d71] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=200 duration_ms=8 bytes=4670
+INFO 2026-05-06 08:07:07,950 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] account.deactivation.request.begin
+INFO 2026-05-06 08:07:07,951 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] Apple 身份令牌校验开始
+INFO 2026-05-06 08:07:07,951 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] 从 Apple 获取 JWKS 公钥列表开始
+INFO 2026-05-06 08:07:08,835 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] 从 Apple 获取 JWKS 公钥列表成功
+INFO 2026-05-06 08:07:08,840 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] Apple 身份令牌校验成功
+INFO 2026-05-06 08:07:08,843 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] account.deactivation.service.request.begin
+INFO 2026-05-06 08:07:08,916 accounts.flow [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] account.deactivation.task.enqueued
+INFO 2026-05-06 08:07:08,916 accounts.request [request_id=59C9ECF1-C2D3-4D5E-8B45-4122A691F776] HTTP 请求摘要: POST /api/v1/deactivation/ status=202 duration_ms=973 bytes=201
+INFO 2026-05-06 08:07:08,924 accounts.flow [request_id=-] account.deactivation.service.process.begin
+INFO 2026-05-06 08:07:08,989 accounts.flow [request_id=-] account.deactivation.service.process.success
+INFO 2026-05-06 08:07:12,734 accounts.request [request_id=e615450b-3e4d-4e3c-9c0f-c29a15d17fcf] HTTP 请求摘要: GET /api/admin/v1/tasks/dashboard/ status=200 duration_ms=20 bytes=434
+INFO 2026-05-06 08:07:16,482 accounts.request [request_id=6667dcd1-58a2-4500-b647-5d9b877c297e] HTTP 请求摘要: GET /api/admin/v1/tasks/dashboard/ status=200 duration_ms=16 bytes=434
+INFO 2026-05-06 08:07:20,874 accounts.request [request_id=fb1a1c26-ec9f-4f52-8391-2022d42c5a3f] HTTP 请求摘要: GET /api/admin/v1/tasks/manager/status/ status=200 duration_ms=2506 bytes=416
+INFO 2026-05-06 08:07:23,264 accounts.request [request_id=c229c92f-a92a-40eb-9b6a-3896464870ad] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=200 duration_ms=7 bytes=5195
+INFO 2026-05-06 08:07:32,539 accounts.request [request_id=c2d9ad29-945a-475f-8ac7-b76779d525c7] HTTP 请求摘要: GET /api/admin/v1/users/devices/ status=200 duration_ms=8 bytes=973
+INFO 2026-05-06 08:07:35,108 accounts.request [request_id=8ca9122d-e5cc-4410-8192-ad5d8b301ae7] HTTP 请求摘要: GET /api/admin/v1/version/configs/ status=200 duration_ms=7 bytes=712
+INFO 2026-05-06 08:07:38,022 accounts.request [request_id=7f1d60e4-28d6-45d0-ad1c-d9fcce56d437] HTTP 请求摘要: GET /api/admin/v1/users/devices/ status=200 duration_ms=7 bytes=973
+INFO 2026-05-06 08:07:38,586 accounts.request [request_id=b8d65c9b-6c4f-4d10-a9fe-2e84226ad557] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=7 bytes=2286
+INFO 2026-05-06 08:07:48,668 accounts.request [request_id=b005cae3-5a4a-4e5b-817f-ced450438861] HTTP 请求摘要: GET /api/admin/v1/dashboard/overview/ status=200 duration_ms=23 bytes=229
+INFO 2026-05-06 08:07:50,119 accounts.request [request_id=b897fbc3-372c-4839-8edf-e12bc3201e1a] HTTP 请求摘要: GET /api/admin/v1/audit/logs/ status=200 duration_ms=23 bytes=19523
+INFO 2026-05-06 08:07:51,533 accounts.request [request_id=d5f04ce7-5451-4442-892f-7b5b4478e1ee] HTTP 请求摘要: GET /api/admin/v1/rbac/roles/ status=200 duration_ms=8 bytes=217
+INFO 2026-05-06 08:07:51,553 accounts.request [request_id=49beee9a-a7bf-4305-97f7-24dce046999c] HTTP 请求摘要: GET /api/admin/v1/rbac/permissions/ status=200 duration_ms=9 bytes=11934
+INFO 2026-05-06 08:07:54,176 accounts.request [request_id=11821119-eef9-45e2-8a0e-dc7960b7ac50] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/apns/ status=200 duration_ms=17 bytes=9333
+INFO 2026-05-06 08:07:56,996 accounts.request [request_id=8ad7b656-d0da-4c80-ad39-2568b16fee55] HTTP 请求摘要: GET /api/admin/v1/notifications/campaigns/ status=200 duration_ms=19 bytes=4005
+INFO 2026-05-06 08:07:57,624 accounts.request [request_id=350fca0c-09c9-4977-a485-43de2650154e] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/email/ status=200 duration_ms=6 bytes=1162
+INFO 2026-05-06 08:08:03,618 accounts.request [request_id=643c5ca0-8395-4f25-8c45-425070ab97e0] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/sms/ status=200 duration_ms=9 bytes=111
+INFO 2026-05-06 08:08:04,965 accounts.request [request_id=79f36824-af57-44bc-bee1-af40244bff63] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/email/ status=200 duration_ms=7 bytes=1162
+INFO 2026-05-06 08:08:05,712 accounts.request [request_id=d263576a-3ade-4e11-a5e8-1563e16e5ae5] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/sms/ status=200 duration_ms=6 bytes=111
+INFO 2026-05-06 08:08:06,968 accounts.request [request_id=aa2b084c-7a7f-4e62-b065-95b6946edd3b] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/email/ status=200 duration_ms=8 bytes=1162
+INFO 2026-05-06 08:08:07,484 accounts.request [request_id=67263974-3915-4dd8-8066-ff73d7ce6a0c] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/sms/ status=200 duration_ms=6 bytes=111
+INFO 2026-05-06 08:08:08,520 accounts.request [request_id=5fa091d7-cd36-4f28-88e3-6be744bf657e] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/email/ status=200 duration_ms=8 bytes=1162
+INFO 2026-05-06 08:08:09,554 accounts.request [request_id=ea230d1c-feae-441b-aae5-d7ffdf54da97] HTTP 请求摘要: GET /api/admin/v1/notifications/logs/detail/5/ status=200 duration_ms=11 bytes=562
+INFO 2026-05-06 08:08:12,306 accounts.request [request_id=1e11cf30-bf0c-4c15-9acc-f1182a20bf04] HTTP 请求摘要: GET /api/admin/v1/notifications/templates/ status=200 duration_ms=4 bytes=289
+INFO 2026-05-06 08:08:13,597 accounts.request [request_id=9961d5a3-629f-4abe-b07c-ab1ebbf70884] HTTP 请求摘要: GET /api/admin/v1/notifications/templates/ status=200 duration_ms=12 bytes=289
+INFO 2026-05-06 08:08:13,607 accounts.request [request_id=28a50ee2-815e-4165-851e-b5f112f4b0db] HTTP 请求摘要: GET /api/admin/v1/notifications/users/ status=200 duration_ms=19 bytes=388
+INFO 2026-05-06 08:08:31,439 accounts.request [request_id=3b54f1e4-261d-4c60-883f-e4d326b1307c] HTTP 请求摘要: GET /api/admin/v1/users/deactivations/ status=200 duration_ms=21 bytes=5195
+INFO 2026-05-06 08:08:36,890 accounts.request [request_id=dbc39498-d680-4055-968d-a578cf43cfd2] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=16 bytes=2286
+INFO 2026-05-06 08:08:38,741 accounts.request [request_id=89821ff2-9c02-479c-9078-d789ceb2dee5] HTTP 请求摘要: GET /api/admin/v1/users/devices/ status=200 duration_ms=9 bytes=973
+INFO 2026-05-06 08:08:40,453 accounts.request [request_id=9729dcfc-3721-4b07-b58a-96efa1b3e893] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=8 bytes=2286
+INFO 2026-05-06 08:08:53,275 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 登录接口请求开始
+INFO 2026-05-06 08:08:53,278 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 登录鉴权开始
+INFO 2026-05-06 08:08:53,279 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 身份令牌校验开始
+INFO 2026-05-06 08:08:53,279 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] 从 Apple 获取 JWKS 公钥列表开始
+INFO 2026-05-06 08:08:53,279 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] 从缓存命中 Apple JWKS 公钥列表
+INFO 2026-05-06 08:08:53,280 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 身份令牌校验成功
+INFO 2026-05-06 08:08:53,283 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 渠道用户首次注册开始
+INFO 2026-05-06 08:08:53,291 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 渠道用户首次注册成功
+WARNING 2026-05-06 08:08:53,304 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] device.attach.conflict_existing_user
+INFO 2026-05-06 08:08:53,304 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 登录鉴权成功并签发令牌
+INFO 2026-05-06 08:08:53,305 accounts.flow [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] Apple 登录成功
+INFO 2026-05-06 08:08:53,306 accounts.request [request_id=C4E9E29D-093E-4B0D-B26C-65DF421AD918] HTTP 请求摘要: POST /api/v1/auth/apple/login/ status=200 duration_ms=33 bytes=751
+INFO 2026-05-06 08:08:53,577 accounts.request [request_id=A7816FB8-88EC-4152-B757-572BA9F5FADD] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=30 bytes=16067
+INFO 2026-05-06 08:08:53,607 accounts.request [request_id=77E77813-72CD-4CB8-B4FF-32431F8C552F] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=6 bytes=36
+INFO 2026-05-06 08:08:54,015 accounts.request [request_id=C65297B8-23E9-426A-A3CC-EBD16FB51866] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=388 bytes=1158
+INFO 2026-05-06 08:08:54,075 accounts.request [request_id=E3F37EC4-156A-487F-B619-0FFB309130C8] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 08:08:54,105 accounts.request [request_id=6153A57F-324E-4294-8C93-A52A230AB341] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=6 bytes=0
+INFO 2026-05-06 08:08:54,124 accounts.request [request_id=65549FFB-8175-497D-BF29-012701300904] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=6 bytes=109
+INFO 2026-05-06 08:09:05,011 accounts.request [request_id=2EAA32BE-F5C5-4CF7-BAD0-E26939F644F9] HTTP 请求摘要: POST /api/v1/medical/resources/ status=201 duration_ms=13 bytes=323
+INFO 2026-05-06 08:09:05,058 accounts.request [request_id=C776D2F6-5FD8-4C7B-945B-CE6DEC6C66A2] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=11 bytes=325
+INFO 2026-05-06 08:09:05,117 accounts.request [request_id=1D50760A-11A6-497F-8E3B-872151039EBD] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=25 bytes=529
+INFO 2026-05-06 08:09:15,832 accounts.request [request_id=5ECDA360-A48C-4EE4-AC87-63DF48556E74] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=12 bytes=284
+INFO 2026-05-06 08:09:15,839 accounts.request [request_id=FD556447-9DC1-4514-B41D-75946577205F] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 08:09:15,864 accounts.request [request_id=81DBC58A-D6D7-49A0-836A-D393B93A2FDE] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=8 bytes=150
+INFO 2026-05-06 08:09:19,461 accounts.request [request_id=afaf4f78-ba60-403e-bbdf-84ba8b415be7] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=200 duration_ms=32 bytes=3757
+INFO 2026-05-06 08:09:19,632 accounts.request [request_id=d81846ba-10c9-49d6-a794-454a8b6e73df] HTTP 请求摘要: GET /api/admin/v1/users/ status=200 duration_ms=24 bytes=2477
+WARNING 2026-05-06 08:49:56,471 accounts.request [request_id=6d0e12af-ddd1-4b85-9bb5-54ead4563f6f] HTTP 请求摘要: GET /api/admin/v1/auth/profile/ status=401 duration_ms=4 bytes=251
+INFO 2026-05-06 08:49:56,592 accounts.flow [request_id=26511df8-dcaa-4dad-8d6c-cc0864c6472a] 刷新访问令牌开始
+INFO 2026-05-06 08:49:56,612 accounts.request [request_id=26511df8-dcaa-4dad-8d6c-cc0864c6472a] HTTP 请求摘要: POST /api/v1/auth/token/refresh/ status=200 duration_ms=21 bytes=535
+INFO 2026-05-06 09:50:09,238 accounts.flow [request_id=7568CBEE-B02D-47F0-8CF1-4EF8C58D0ECF] 刷新访问令牌开始
+INFO 2026-05-06 09:50:09,252 accounts.request [request_id=45704E82-F116-4C29-98A6-2F52247C91B4] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=24 bytes=284
+INFO 2026-05-06 09:50:09,254 accounts.request [request_id=7568CBEE-B02D-47F0-8CF1-4EF8C58D0ECF] HTTP 请求摘要: POST /api/v1/auth/token/refresh/ status=200 duration_ms=24 bytes=538
+INFO 2026-05-06 09:50:09,374 accounts.request [request_id=E8C55492-A4CA-4722-982A-34F017CB7CB9] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 09:50:09,468 accounts.request [request_id=C0918F6F-825C-47E1-91FB-69207149653F] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=64 bytes=16067
+INFO 2026-05-06 09:50:09,585 accounts.request [request_id=E2ABB5D1-668D-40F2-9938-A4244AA1340B] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=26 bytes=325
+INFO 2026-05-06 09:50:11,372 accounts.request [request_id=4F31ACAF-FF64-45F3-B95F-8FC9E47F2D9A] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=1657 bytes=1158
+INFO 2026-05-06 09:50:11,429 accounts.request [request_id=3F8A3338-027B-404B-BAA9-3CA6737FBA97] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=15 bytes=150
+INFO 2026-05-06 09:50:11,456 accounts.request [request_id=AC06A88F-9F5B-4951-84FB-45E2C900C0EB] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=11 bytes=0
+INFO 2026-05-06 09:50:11,523 accounts.request [request_id=CD01724E-4979-4ECA-BC9E-66EB935A2E0D] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=48 bytes=529
+INFO 2026-05-06 09:50:11,562 accounts.request [request_id=AEA553C7-F689-4CD4-B72B-5478C7B6DF37] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=8 bytes=109
+INFO 2026-05-06 09:50:11,909 accounts.request [request_id=1650444C-5B79-4B09-A289-7C97ADE729DC] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=18 bytes=150
+INFO 2026-05-06 09:50:11,911 accounts.request [request_id=FB30B376-44B2-4173-BCEC-3CD0008B4B41] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=20 bytes=284
+INFO 2026-05-06 09:50:11,928 accounts.request [request_id=A392679F-20E0-4762-9366-5ADA5240A567] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=10 bytes=150
+INFO 2026-05-06 09:50:33,214 accounts.request [request_id=AE8BAEF8-4C24-449E-B319-D1573E305C6B] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=24 bytes=640
+INFO 2026-05-06 09:50:33,727 accounts.request [request_id=F4AA45AB-CC86-49F6-984B-BB4DD4BED835] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=13 bytes=640
+INFO 2026-05-06 09:50:51,692 accounts.request [request_id=10E7628E-8C2A-4B77-80F6-42EC1F4DD2A7] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=52 bytes=145
+INFO 2026-05-06 09:50:51,742 accounts.request [request_id=B6536364-A67F-4F73-85DF-51256943FAEA] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=9 bytes=622
+INFO 2026-05-06 09:50:51,757 accounts.request [request_id=7D9D7504-157C-46F0-A99A-534056790249] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=7 bytes=622
+INFO 2026-05-06 09:50:54,931 accounts.request [request_id=39AA1835-729C-4A35-B7E8-BC0F6B9F4B8E] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=8 bytes=0
+INFO 2026-05-06 09:50:54,986 accounts.request [request_id=CE42984F-4995-4721-B174-951E81C00BC0] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=40 bytes=5588
+INFO 2026-05-06 09:51:31,575 accounts.request [request_id=EB6A0EBC-7733-4E8E-8967-0660F5FA0517] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=11 bytes=640
+INFO 2026-05-06 09:51:31,735 accounts.request [request_id=54E938A4-EA31-4074-90A4-C6E957F8BA2C] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=13 bytes=638
+INFO 2026-05-06 09:51:44,896 accounts.request [request_id=FCD71282-9F7C-4E5A-B431-90A947C1C340] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=21 bytes=85
+INFO 2026-05-06 09:51:44,927 accounts.request [request_id=D1836C23-0F15-4ADE-BDCA-312745188D41] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=12 bytes=622
+INFO 2026-05-06 09:51:45,058 accounts.request [request_id=31A3C3E5-A61E-4F62-9602-B0C6CE7C284B] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=23 bytes=620
+INFO 2026-05-06 09:51:49,561 accounts.request [request_id=75783C09-7DFC-4610-A682-E498A4C2350E] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=9 bytes=85
+INFO 2026-05-06 09:51:49,588 accounts.request [request_id=6DCB0867-2FD3-4729-BAA7-3DFA2076A63A] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=7 bytes=622
+INFO 2026-05-06 09:51:49,601 accounts.request [request_id=C9250EC5-6A3F-493B-93E1-316ADD65829A] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=5 bytes=620
+INFO 2026-05-06 09:51:50,281 accounts.request [request_id=DFECAF75-EC37-4C3C-94C8-FE6628E49A7A] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=20 bytes=85
+INFO 2026-05-06 09:51:50,339 accounts.request [request_id=9D7D77D7-B5DF-4FAA-9283-720DF8973D0A] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=13 bytes=622
+INFO 2026-05-06 09:51:50,361 accounts.request [request_id=322528CB-593D-4971-AFC0-44F6D805A2B5] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=13 bytes=620
+INFO 2026-05-06 09:51:50,795 accounts.request [request_id=4CC7D016-220C-49AA-9C35-34FF82A18D49] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=12 bytes=85
+INFO 2026-05-06 09:51:50,932 accounts.request [request_id=6C959992-5961-4C21-BF8D-56143749E788] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=10 bytes=622
+INFO 2026-05-06 09:51:51,094 accounts.request [request_id=1F736289-B5B2-4023-96A3-3145E1408D86] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=22 bytes=620
+INFO 2026-05-06 09:51:51,501 accounts.request [request_id=45F7C53D-94BB-420C-8D80-F2093D512E49] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=15 bytes=85
+INFO 2026-05-06 09:51:51,664 accounts.request [request_id=1090912A-BB27-4A4C-AB07-ADCFAC9129A0] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=8 bytes=622
+INFO 2026-05-06 09:51:51,684 accounts.request [request_id=3BE71705-86D5-410B-AA81-9E1CF270DF00] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=6 bytes=620
+INFO 2026-05-06 09:51:51,842 accounts.request [request_id=877CF7A0-960F-4216-A9F5-52E7B15C5FEC] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=9 bytes=85
+INFO 2026-05-06 09:51:51,957 accounts.request [request_id=085613CB-1BF4-406B-A901-E6554B332C68] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=21 bytes=622
+INFO 2026-05-06 09:51:51,982 accounts.request [request_id=73116B2C-14D0-429E-9E4B-6D6A9AC5DCEF] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=9 bytes=620
+INFO 2026-05-06 09:51:59,782 accounts.request [request_id=92D69BE4-D874-4258-934C-B606A9AF3568] HTTP 请求摘要: POST /api/v1/medical/combined-create/ status=201 duration_ms=19 bytes=85
+INFO 2026-05-06 09:51:59,818 accounts.request [request_id=96AB9842-141A-4D90-A4C8-73C57E13A845] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=12 bytes=622
+INFO 2026-05-06 09:51:59,837 accounts.request [request_id=42C22226-3FF4-4B7D-9F66-27B2FF89AB34] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=8 bytes=620
+INFO 2026-05-06 09:52:04,503 accounts.request [request_id=13575074-6720-47CA-872D-4AE91D83FDDD] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=9 bytes=0
+INFO 2026-05-06 09:52:04,573 accounts.request [request_id=D04B2B56-97BA-4593-A97A-083C32050863] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=54 bytes=8984
+INFO 2026-05-06 09:52:07,920 accounts.request [request_id=3A4996E4-1F32-44F8-876B-65E8943A3477] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=8 bytes=0
+INFO 2026-05-06 09:52:07,953 accounts.request [request_id=5F15EB76-6A35-4F8E-A427-1679989EB7E3] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=21 bytes=0
+INFO 2026-05-06 10:00:00,793 accounts.flow [request_id=CEAE608A-1685-4C82-A6F2-0D6CE7FF4527] 刷新访问令牌开始
+WARNING 2026-05-06 10:00:00,939 accounts.flow [request_id=CEAE608A-1685-4C82-A6F2-0D6CE7FF4527] 刷新访问令牌失败
+WARNING 2026-05-06 10:00:00,942 accounts.request [request_id=CEAE608A-1685-4C82-A6F2-0D6CE7FF4527] HTTP 请求摘要: POST /api/v1/auth/token/refresh/ status=401 duration_ms=189 bytes=99
+INFO 2026-05-06 10:00:00,967 accounts.request [request_id=3A0BBC53-790D-42E5-AFB0-4A7C0CFE4785] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=203 bytes=284
+INFO 2026-05-06 10:00:00,995 accounts.request [request_id=8BA4F7C1-6147-4366-ADBF-41106C3AF708] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=21 bytes=150
+INFO 2026-05-06 10:00:01,218 accounts.request [request_id=95549844-ADDD-48B9-912A-6DDD77561074] HTTP 请求摘要: POST /api/v1/version/action/ status=200 duration_ms=33 bytes=50
+INFO 2026-05-06 10:00:01,563 accounts.request [request_id=D0B0E6CC-3824-441C-A994-680A8D4C5531] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=45 bytes=150
+INFO 2026-05-06 10:00:02,610 accounts.request [request_id=3FBCAADC-F23D-4359-B421-54CD81E7E674] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=21 bytes=284
+INFO 2026-05-06 10:00:02,640 accounts.request [request_id=4F95CC53-EB19-4D7A-A67A-40DB4C1F4C26] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=15 bytes=150
+INFO 2026-05-06 10:00:02,642 accounts.request [request_id=5C077626-B8AD-4F44-A943-9607C642C6CD] HTTP 请求摘要: POST /api/v1/version/action/ status=200 duration_ms=12 bytes=50
+INFO 2026-05-06 10:00:02,706 accounts.request [request_id=A9B80238-FC9C-48D0-9EBC-BBCC2A74A555] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=13 bytes=150
+INFO 2026-05-06 10:19:22,642 accounts.request [request_id=7B3A2BBD-1D74-4CB6-8F3C-759A2E61BB44] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=63 bytes=150
+INFO 2026-05-06 10:19:23,130 accounts.request [request_id=5D874ED0-2D35-4A0C-95DB-358E2F652865] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=109 bytes=16067
+INFO 2026-05-06 10:19:23,207 accounts.request [request_id=31F3BBFF-C535-44BC-ACA4-97EFA130ECA7] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=45 bytes=325
+INFO 2026-05-06 10:19:23,583 accounts.request [request_id=BD5DF411-E0E9-4BD7-BE13-6ACFA0E66CCC] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=354 bytes=1158
+INFO 2026-05-06 10:19:23,622 accounts.request [request_id=3F5AD347-0BAC-4297-A346-FDAAC476CAE5] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=15 bytes=150
+INFO 2026-05-06 10:19:23,647 accounts.request [request_id=480B5DCF-57FB-4259-8F47-A4CA8D3BA4C2] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=7 bytes=0
+INFO 2026-05-06 10:19:23,709 accounts.request [request_id=23C55447-0723-4C69-82D5-B09C8A991CBD] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=52 bytes=0
+INFO 2026-05-06 10:19:23,768 accounts.request [request_id=6B389EF7-7647-4FCF-ACE8-DDA25461C7EE] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=26 bytes=109
+INFO 2026-05-06 10:19:24,752 accounts.request [request_id=BDF561CC-D639-4BDF-B70C-A020868115E8] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=20 bytes=284
+INFO 2026-05-06 10:19:24,754 accounts.request [request_id=499A2FAE-25C9-46EF-B25F-1AADF2D004DC] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=15 bytes=150
+INFO 2026-05-06 10:19:24,913 accounts.request [request_id=783A3AE6-9BD5-4256-B07C-981783F211CD] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=12 bytes=150
+INFO 2026-05-06 10:23:10,301 accounts.flow [request_id=21E19264-BC1B-48EF-A61E-076E284057AD] 刷新访问令牌开始
+INFO 2026-05-06 10:23:10,355 accounts.request [request_id=21E19264-BC1B-48EF-A61E-076E284057AD] HTTP 请求摘要: POST /api/v1/auth/token/refresh/ status=200 duration_ms=61 bytes=538
+INFO 2026-05-06 10:23:10,788 accounts.request [request_id=C543564B-033C-472F-9BAB-44B32A2026E4] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=20 bytes=150
+INFO 2026-05-06 10:23:10,859 accounts.request [request_id=2D2B2190-2938-4FEB-A3A4-210F12B42556] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=56 bytes=16067
+INFO 2026-05-06 10:23:10,903 accounts.request [request_id=8763BB7F-8178-4417-90F2-35F4953F4560] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=11 bytes=325
+INFO 2026-05-06 10:23:11,167 accounts.request [request_id=35389C90-86EC-4418-B8E8-56CFB9A7086A] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=244 bytes=1158
+INFO 2026-05-06 10:23:11,196 accounts.request [request_id=7C76DDBF-8CF1-4E8D-977F-0CD779067B08] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=7 bytes=150
+INFO 2026-05-06 10:23:11,214 accounts.request [request_id=61149013-88AB-4DE4-97E2-566E22E18CA2] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=4 bytes=0
+INFO 2026-05-06 10:23:11,253 accounts.request [request_id=8F5C2FA3-167E-4FC5-B1E3-54DAB727A0D7] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=29 bytes=8984
+INFO 2026-05-06 10:23:11,295 accounts.request [request_id=03DD45BC-A55A-495E-83F5-97A293BB9AAD] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=6 bytes=109
+INFO 2026-05-06 10:23:11,952 accounts.request [request_id=4AEEF062-60BD-448D-9C9F-64B964B4218E] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=16 bytes=284
+INFO 2026-05-06 10:23:11,962 accounts.request [request_id=28752D00-C9A9-4A0F-8844-B60550818FE2] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=13 bytes=150
+INFO 2026-05-06 10:23:11,990 accounts.request [request_id=B5EC8DA0-1E51-4C9C-9A2C-04DC56528F24] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=16 bytes=150
+INFO 2026-05-06 10:27:34,712 accounts.request [request_id=EC20888D-DFC1-4E17-B704-87548F5F886F] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=31 bytes=150
+INFO 2026-05-06 10:27:35,969 accounts.request [request_id=C9F73B9D-CE66-402D-AD70-157D00AA5AB7] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=62 bytes=16067
+INFO 2026-05-06 10:27:36,021 accounts.request [request_id=EF9C419C-B73B-4A47-8399-64CE492019F4] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=13 bytes=325
+INFO 2026-05-06 10:27:36,279 accounts.request [request_id=0F90E2CE-F929-4DA2-95BE-F7808D723B87] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=234 bytes=1158
+INFO 2026-05-06 10:27:36,311 accounts.request [request_id=2E635522-B1C2-4B43-8B3C-3FF70A8444BF] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=7 bytes=150
+INFO 2026-05-06 10:27:36,329 accounts.request [request_id=37230302-C414-4416-85E9-03B4D8B46B08] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=6 bytes=0
+INFO 2026-05-06 10:27:36,356 accounts.request [request_id=AD11A3F5-CB5D-4B19-82C6-45FC0C9C87D4] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=18 bytes=0
+INFO 2026-05-06 10:27:36,389 accounts.request [request_id=790B9C1E-0947-4EC2-8934-D305A52D40A7] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=5 bytes=109
+INFO 2026-05-06 10:27:37,050 accounts.request [request_id=CCCC8B1C-7723-4858-92C1-8B01A253CBB2] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=16 bytes=284
+INFO 2026-05-06 10:27:37,058 accounts.request [request_id=6E7B09CB-4666-48EE-8E45-8A67920602F6] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=10 bytes=150
+INFO 2026-05-06 10:27:37,087 accounts.request [request_id=BDA7FCC3-A6B6-4B70-A114-7FEC0256610D] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 10:32:03,692 accounts.request [request_id=3CFCC762-D94E-418E-AD68-A31D4D84C97C] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=31 bytes=150
+INFO 2026-05-06 10:32:04,200 accounts.request [request_id=2D60BDB0-05AB-479C-8C91-51A47A73A9D7] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=47 bytes=16067
+INFO 2026-05-06 10:32:04,246 accounts.request [request_id=3E0165CE-F931-41B1-8661-C90832E4FCF8] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=9 bytes=325
+INFO 2026-05-06 10:32:04,506 accounts.request [request_id=E1E5538B-D92C-478F-A259-B304A5D9B177] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=239 bytes=1158
+INFO 2026-05-06 10:32:04,541 accounts.request [request_id=3BEAFA69-9323-439D-A55F-6B2C744E5C2E] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=10 bytes=150
+INFO 2026-05-06 10:32:04,560 accounts.request [request_id=3E97A211-31CE-4B52-AFFF-2EB43175D8DF] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=7 bytes=0
+INFO 2026-05-06 10:32:04,610 accounts.request [request_id=7B7A2A49-F416-4C9F-A434-2C3267575225] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=33 bytes=0
+INFO 2026-05-06 10:32:04,647 accounts.request [request_id=D88957F8-C5FE-423A-A86B-7D3593926FB8] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=8 bytes=109
+INFO 2026-05-06 10:32:05,216 accounts.request [request_id=F97C2DE4-B98D-493B-A12D-7F6E082CED52] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=9 bytes=284
+INFO 2026-05-06 10:32:05,228 accounts.request [request_id=B3496F7C-E65F-4892-B821-D889666E5FE1] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=8 bytes=150
+INFO 2026-05-06 10:32:05,251 accounts.request [request_id=050A39C9-BBEB-44E0-9A6D-8247BED56310] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=8 bytes=150
+INFO 2026-05-06 10:33:58,483 accounts.request [request_id=C37743EA-592B-4F1A-BC83-27AE4F03EFA4] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=32 bytes=150
+INFO 2026-05-06 10:33:59,294 accounts.request [request_id=DDBE77A2-0C44-49BC-9DD7-E92173DA7F66] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=60 bytes=16067
+INFO 2026-05-06 10:33:59,336 accounts.request [request_id=49C87CDC-453B-4BDF-B61D-7563252BB0EB] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=7 bytes=0
+INFO 2026-05-06 10:33:59,623 accounts.request [request_id=97A5E703-7ED3-4789-A846-34C08F148C84] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=272 bytes=1158
+INFO 2026-05-06 10:33:59,656 accounts.request [request_id=F5298302-EE74-473A-9EDF-6C33F7AC6D9B] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 10:33:59,674 accounts.request [request_id=DD8A0E6F-EC37-4EB7-9534-350AA11C4A01] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=5 bytes=0
+INFO 2026-05-06 10:33:59,705 accounts.request [request_id=941F4658-F3AB-4F4F-885C-A29946D74B49] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=22 bytes=0
+INFO 2026-05-06 10:33:59,742 accounts.request [request_id=94591A5E-897B-4140-8037-2DB47F79E918] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=7 bytes=109
+INFO 2026-05-06 10:34:00,433 accounts.request [request_id=5AF51061-66DD-4C4E-8B20-9ECED5FA73B9] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=12 bytes=284
+INFO 2026-05-06 10:34:00,443 accounts.request [request_id=A02700BE-0154-4AC5-973B-F1485BCCF86B] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=10 bytes=150
+INFO 2026-05-06 10:34:00,471 accounts.request [request_id=E2E5FBF2-4EA2-4038-9DAE-1DB7E3D25190] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=12 bytes=150
+INFO 2026-05-06 10:35:28,955 accounts.request [request_id=0E9674FE-5865-4859-924A-314D9A64BD6B] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=20 bytes=556
+INFO 2026-05-06 10:35:47,331 accounts.request [request_id=3D4C2309-88B3-496E-ABD7-2B74FAF5CF2E] HTTP 请求摘要: POST /api/v1/medical/workflows/health-exams/save/ status=201 duration_ms=123 bytes=31815
+INFO 2026-05-06 10:35:47,441 accounts.request [request_id=30D505E5-30B4-4FD7-BD44-41B68B4D2E06] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=26 bytes=544
+INFO 2026-05-06 10:35:54,850 accounts.request [request_id=13A7446B-37A9-4D56-8F19-FC6A846C92FA] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=9 bytes=325
+INFO 2026-05-06 10:35:54,966 accounts.request [request_id=A23E5487-0778-4F96-8668-FF665A316E1F] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=77 bytes=11905
+INFO 2026-05-06 10:35:56,128 accounts.request [request_id=74E878D7-8EF9-48F4-8B48-FE0620761123] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=22 bytes=6397
+INFO 2026-05-06 10:45:42,517 accounts.request [request_id=B0932180-0E21-4798-80B6-40A4BDA1398E] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=39 bytes=150
+INFO 2026-05-06 10:45:42,584 accounts.request [request_id=BA6B40DA-0EF9-4726-817A-D722673F1FDD] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=40 bytes=16067
+INFO 2026-05-06 10:45:42,621 accounts.request [request_id=AB102A0E-BA1A-473E-B2DC-291E5F8AD948] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=9 bytes=325
+INFO 2026-05-06 10:45:42,907 accounts.request [request_id=4479BC1E-46F0-49E8-B39E-D853F4596E52] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=267 bytes=1158
+INFO 2026-05-06 10:45:42,935 accounts.request [request_id=15A55F0B-B299-4284-AE65-D4A4C3B1F8B1] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 10:45:42,953 accounts.request [request_id=01F863C5-8B7B-45CA-9DE0-D93E018C2929] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=5 bytes=0
+INFO 2026-05-06 10:45:42,986 accounts.request [request_id=318E71F1-567E-4B67-B33E-9A79F96B41B6] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=23 bytes=0
+INFO 2026-05-06 10:45:43,036 accounts.request [request_id=5AD46485-DB10-49F7-ABD2-26FB767D4796] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=10 bytes=109
+INFO 2026-05-06 10:45:43,745 accounts.request [request_id=0315984E-9FC6-4D51-8BAE-36C5D57C2C15] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=20 bytes=284
+INFO 2026-05-06 10:45:43,747 accounts.request [request_id=146B4813-F2A4-4164-958F-000F19436690] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=10 bytes=150
+INFO 2026-05-06 10:45:43,784 accounts.request [request_id=FC6A2E84-093E-445B-84CC-605E8F346927] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=13 bytes=150
+INFO 2026-05-06 10:45:53,861 accounts.request [request_id=2C4DFE58-4353-494D-8010-FE7BF058A8A5] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=28 bytes=6397
+INFO 2026-05-06 11:01:36,443 accounts.flow [request_id=46181BC6-27F6-41C8-976D-EA925A7FEA5B] 刷新访问令牌开始
+INFO 2026-05-06 11:01:36,470 accounts.request [request_id=46181BC6-27F6-41C8-976D-EA925A7FEA5B] HTTP 请求摘要: POST /api/v1/auth/token/refresh/ status=200 duration_ms=29 bytes=538
+INFO 2026-05-06 11:01:36,972 accounts.request [request_id=2D83F867-5649-4B4C-BD86-D28B302D68AA] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=12 bytes=150
+INFO 2026-05-06 11:01:37,045 accounts.request [request_id=6D042269-CB6D-47B8-B60B-64171D9B7607] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=46 bytes=16067
+INFO 2026-05-06 11:01:37,092 accounts.request [request_id=1A67F314-5D62-4374-9016-AC02E73046D1] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=11 bytes=325
+INFO 2026-05-06 11:01:37,382 accounts.request [request_id=BE526BEA-F57F-46D8-B4EB-8226FD242434] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=265 bytes=1158
+INFO 2026-05-06 11:01:37,406 accounts.request [request_id=1A82CF8C-EF00-4E8D-9C9A-22B53C116F61] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=7 bytes=150
+INFO 2026-05-06 11:01:37,425 accounts.request [request_id=E1411A30-3D0F-4E0F-8861-FB5C848EA02D] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=5 bytes=0
+INFO 2026-05-06 11:01:37,472 accounts.request [request_id=A6A4E8F6-877A-4222-9EC3-40ADAC6EA288] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=39 bytes=11905
+INFO 2026-05-06 11:01:37,516 accounts.request [request_id=279849AE-F66B-41D2-AE15-2CF658373561] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=7 bytes=109
+INFO 2026-05-06 11:01:38,234 accounts.request [request_id=9D724224-1E6B-41FC-98AC-23ADF2E004A9] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=17 bytes=284
+INFO 2026-05-06 11:01:38,243 accounts.request [request_id=91D3188D-A7BA-4CD0-BFDF-719EA98F43AE] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=13 bytes=150
+INFO 2026-05-06 11:01:38,276 accounts.request [request_id=06BAE692-51B4-4A8B-BE7A-A7A1DD7299D5] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=12 bytes=150
+INFO 2026-05-06 11:01:42,597 accounts.request [request_id=BCE75CB1-AEBC-4E34-9A54-81977435C72F] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=23 bytes=6397
+INFO 2026-05-06 11:01:56,826 accounts.request [request_id=C6395152-BE18-4FBA-BD89-4BBCFF04AABE] HTTP 请求摘要: DELETE /api/v1/medical/resources/13/ status=200 duration_ms=23 bytes=43
+INFO 2026-05-06 11:01:58,463 accounts.request [request_id=B7C273EC-0C49-4CD5-8573-AC417C3AFFC9] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=9 bytes=0
+INFO 2026-05-06 11:01:58,548 accounts.request [request_id=A19B04A1-A71E-4981-8511-243CFF44F97B] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=64 bytes=8984
+INFO 2026-05-06 11:02:16,144 accounts.request [request_id=C7BE5FB8-08D6-4812-BEFA-61F1A4CB841B] HTTP 请求摘要: POST /api/v1/files/register/ status=201 duration_ms=38 bytes=556
+INFO 2026-05-06 11:02:40,970 accounts.request [request_id=83624552-D8EE-4947-9A8B-7EA4909FCD88] HTTP 请求摘要: POST /api/v1/medical/workflows/health-exams/save/ status=201 duration_ms=61 bytes=31273
+INFO 2026-05-06 11:02:41,061 accounts.request [request_id=22CDE60C-2B9F-44AB-94C7-6D41832BF9E6] HTTP 请求摘要: PATCH /api/v1/files/business/update/ status=200 duration_ms=15 bytes=544
+INFO 2026-05-06 11:02:49,432 accounts.request [request_id=00878C07-DC90-4917-A789-DD8E7DE1202B] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=13 bytes=0
+INFO 2026-05-06 11:02:49,524 accounts.request [request_id=24781D39-BE41-4127-924E-0466301BB362] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=200 duration_ms=74 bytes=11906
+INFO 2026-05-06 11:02:50,883 accounts.request [request_id=0E7FB536-F3D5-438B-AA27-A202E4F6C19F] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=17 bytes=5854
+INFO 2026-05-06 11:10:10,473 accounts.request [request_id=B4214CFA-692B-4D3D-8DD6-F6CB2028DBC1] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=19 bytes=109
+INFO 2026-05-06 11:11:42,022 accounts.request [request_id=34B3B194-8767-4F84-AE72-1229CCB2267F] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=26 bytes=150
+INFO 2026-05-06 11:11:42,329 accounts.request [request_id=0357814A-C3FF-4B89-9B93-012AAE748D77] HTTP 请求摘要: GET /api/v1/ai/config/bootstrap/ status=200 duration_ms=24 bytes=16067
+INFO 2026-05-06 11:11:42,375 accounts.request [request_id=BAAD79CC-6BE5-49CD-B03F-60132760D23E] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=6 bytes=325
+INFO 2026-05-06 11:11:42,732 accounts.request [request_id=84BF2FE8-A01B-4430-8D27-888F0403A9B1] HTTP 请求摘要: GET /api/v1/oss/sts/credentials/ status=200 duration_ms=337 bytes=1158
+INFO 2026-05-06 11:11:42,766 accounts.request [request_id=369A10C3-0070-48A8-8377-F88368E9DEDE] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=8 bytes=150
+INFO 2026-05-06 11:11:42,784 accounts.request [request_id=B69B53C8-BC5D-4D83-A7A4-368C937263A2] HTTP 请求摘要: GET /api/v1/medical/resources/ status=304 duration_ms=5 bytes=0
+INFO 2026-05-06 11:11:42,816 accounts.request [request_id=FE58C845-41EE-4B09-AB75-BB4379A3B970] HTTP 请求摘要: GET /api/v1/medical/members/34/complete-data/ status=304 duration_ms=22 bytes=0
+INFO 2026-05-06 11:11:42,858 accounts.request [request_id=D90E95C2-5111-4835-96CE-88DE1D02EB60] HTTP 请求摘要: GET /api/v1/tasks/sync/ status=200 duration_ms=9 bytes=109
+INFO 2026-05-06 11:11:43,537 accounts.request [request_id=61C55CF7-9CAB-4BAC-8714-2DEB1FF3217E] HTTP 请求摘要: GET /api/v1/version/check/ status=200 duration_ms=11 bytes=284
+INFO 2026-05-06 11:11:43,543 accounts.request [request_id=F87B9612-D3CF-4BA2-8CE5-AB3D4A4E4852] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=9 bytes=150
+INFO 2026-05-06 11:11:43,577 accounts.request [request_id=BF6B6237-C08B-4297-8E81-050B40A4EEAF] HTTP 请求摘要: POST /api/v1/device/register/ status=200 duration_ms=12 bytes=150
+INFO 2026-05-06 11:11:47,444 accounts.request [request_id=2F4182E0-B65C-476F-A124-CF1911547896] HTTP 请求摘要: POST /api/v1/ai/chat/sync/thread-push/ status=200 duration_ms=29 bytes=752
+INFO 2026-05-06 11:11:47,861 accounts.request [request_id=6C6E0A29-4816-40AF-AD18-19B6A6385177] HTTP 请求摘要: GET /api/v1/ai/chat/sync/pull/ status=200 duration_ms=17 bytes=75
+INFO 2026-05-06 11:11:51,958 accounts.request [request_id=252710AC-6BA3-497D-B516-ABE2073A7646] HTTP 请求摘要: GET /api/v1/medical/resources/ status=200 duration_ms=20 bytes=5854

@@ -80,6 +80,8 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
             "title",
             "hospital_name",
             "age_at_visit",
+            "severity",
+            "case_status",
             "diagnosis_summary",
             "extra",
             "created_at",

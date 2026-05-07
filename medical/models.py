@@ -93,6 +93,8 @@ class MedicalCase(MedicalBaseModel):
     title = models.CharField(max_length=255, blank=True, default="")
     hospital_name = models.CharField(max_length=255, blank=True, default="", db_index=True)
     age_at_visit = models.PositiveSmallIntegerField(null=True, blank=True)
+    severity = models.CharField(max_length=32, null=True, blank=True)
+    case_status = models.CharField(max_length=64, null=True, blank=True)
     diagnosis_summary = models.TextField(blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)
 
