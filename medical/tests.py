@@ -542,6 +542,104 @@ class MedicalAPITests(APITestCase):
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.json()["data"]["medical_record"], case_id)
 
+    def test_unified_patch_links_examination_report_to_medical_case(self):
+        member_resp = self.client.post(
+            f"{UNIFIED_BASE}?kind=members",
+            {"name": "检查关联", "gender": "male", "relationship": "self"},
+            format="json",
+        )
+        member_id = member_resp.json()["data"]["id"]
+        case_resp = self.client.post(
+            f"{UNIFIED_BASE}?kind=cases",
+            {"member": member_id, "title": "关联目标病例"},
+            format="json",
+        )
+        case_id = case_resp.json()["data"]["id"]
+        report_resp = self.client.post(
+            f"{UNIFIED_BASE}?kind=examination-reports",
+            {
+                "member": member_id,
+                "item_name": "血常规",
+                "source": ExaminationReport.Source.MANUAL,
+                "status": ExaminationReport.Status.DRAFT,
+            },
+            format="json",
+        )
+        report_id = report_resp.json()["data"]["id"]
+
+        patch_resp = self.client.patch(
+            f"{UNIFIED_BASE}{report_id}/?kind=examination-reports",
+            {"medical_record": case_id},
+            format="json",
+        )
+        self.assertEqual(patch_resp.status_code, 200)
+        self.assertEqual(patch_resp.json()["data"]["medical_record"], case_id)
+
+    def test_unified_patch_rejects_examination_report_cross_member_case(self):
+        member_a = self.client.post(
+            f"{UNIFIED_BASE}?kind=members",
+            {"name": "报告成员", "gender": "male", "relationship": "self"},
+            format="json",
+        ).json()["data"]["id"]
+        member_b = self.client.post(
+            f"{UNIFIED_BASE}?kind=members",
+            {"name": "病例成员", "gender": "female", "relationship": "parent"},
+            format="json",
+        ).json()["data"]["id"]
+        case_id = self.client.post(
+            f"{UNIFIED_BASE}?kind=cases",
+            {"member": member_b, "title": "不应关联"},
+            format="json",
+        ).json()["data"]["id"]
+        report_id = self.client.post(
+            f"{UNIFIED_BASE}?kind=examination-reports",
+            {
+                "member": member_a,
+                "item_name": "CT",
+                "source": ExaminationReport.Source.MANUAL,
+                "status": ExaminationReport.Status.DRAFT,
+            },
+            format="json",
+        ).json()["data"]["id"]
+
+        patch_resp = self.client.patch(
+            f"{UNIFIED_BASE}{report_id}/?kind=examination-reports",
+            {"medical_record": case_id},
+            format="json",
+        )
+        self.assertEqual(patch_resp.status_code, 400)
+        self.assertIn("medical_record", str(patch_resp.json()))
+
+    def test_unified_patch_links_prescription_batch_to_medical_case(self):
+        member_id = self.client.post(
+            f"{UNIFIED_BASE}?kind=members",
+            {"name": "处方关联", "gender": "female", "relationship": "self"},
+            format="json",
+        ).json()["data"]["id"]
+        case_id = self.client.post(
+            f"{UNIFIED_BASE}?kind=cases",
+            {"member": member_id, "title": "处方目标病例"},
+            format="json",
+        ).json()["data"]["id"]
+        batch_id = self.client.post(
+            f"{UNIFIED_BASE}?kind=prescription-batches",
+            {
+                "member": member_id,
+                "prescriber_name": "Dr.Link",
+                "institution_name": "Spark Hospital",
+                "status": "active",
+            },
+            format="json",
+        ).json()["data"]["id"]
+
+        patch_resp = self.client.patch(
+            f"{UNIFIED_BASE}{batch_id}/?kind=prescription-batches",
+            {"medical_case": case_id},
+            format="json",
+        )
+        self.assertEqual(patch_resp.status_code, 200)
+        self.assertEqual(patch_resp.json()["data"]["medical_case"], case_id)
+
     def test_unified_prescription_batches_filter_by_medical_case_id(self):
         member_resp = self.client.post(
             "/api/v1/medical/members/",

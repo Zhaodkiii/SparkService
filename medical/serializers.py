@@ -182,6 +182,28 @@ class FollowUpSerializer(serializers.ModelSerializer):
 
 
 class ExaminationReportSerializer(serializers.ModelSerializer):
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and value.user_id != request.user.id:
+            raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
+    def validate(self, attrs):
+        merged = dict(attrs)
+        instance = self.instance
+        member = merged.get("member") or (getattr(instance, "member", None) if instance is not None else None)
+        medical_record = merged.get("medical_record") if "medical_record" in merged else (
+            getattr(instance, "medical_record", None) if instance is not None else None
+        )
+        request = self.context.get("request")
+
+        if medical_record is not None:
+            if request and not request.user.is_staff and medical_record.user_id != request.user.id:
+                raise serializers.ValidationError({"medical_record": [_("medical_record does not belong to current user")]})
+            if member is not None and medical_record.member_id != member.id:
+                raise serializers.ValidationError({"medical_record": [_("medical_record.member mismatch with report.member")]})
+        return attrs
+
     class Meta:
         model = ExaminationReport
         fields = (
@@ -292,6 +314,28 @@ class PrescriptionBatchSerializer(serializers.ModelSerializer):
         if not normalized or normalized not in allowed:
             return PrescriptionBatch.Status.ACTIVE
         return normalized
+
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and value.user_id != request.user.id:
+            raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
+    def validate(self, attrs):
+        merged = dict(attrs)
+        instance = self.instance
+        member = merged.get("member") or (getattr(instance, "member", None) if instance is not None else None)
+        medical_case = merged.get("medical_case") if "medical_case" in merged else (
+            getattr(instance, "medical_case", None) if instance is not None else None
+        )
+        request = self.context.get("request")
+
+        if medical_case is not None:
+            if request and not request.user.is_staff and medical_case.user_id != request.user.id:
+                raise serializers.ValidationError({"medical_case": [_("medical_case does not belong to current user")]})
+            if member is not None and medical_case.member_id != member.id:
+                raise serializers.ValidationError({"medical_case": [_("medical_case.member mismatch with batch.member")]})
+        return attrs
 
     class Meta:
         model = PrescriptionBatch
