@@ -8,11 +8,12 @@ from medical.models import (
     FollowUp,
     HealthExamReport,
     MedExamDetail,
-    Medication,
-    MedicationTakenRecord,
+    MedicineBox,
+    MedicationPlan,
+    MedicationRecord,
     MedicalCase,
     Member,
-    PrescriptionBatch,
+    Prescription,
     Surgery,
     Symptom,
     Visit,
@@ -293,28 +294,66 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
         return value
 
 
-class PrescriptionBatchSerializer(serializers.ModelSerializer):
-    # 容错处理：允许客户端不传/传空/传错，统一在 validate_status 回落到 ACTIVE。
-    status = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+class MedicineBoxSerializer(serializers.ModelSerializer):
+    total_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    remaining_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
 
-    def validate_batch_no(self, value):
-        if value == "":
-            return None
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and value.user_id != request.user.id:
+            raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
-    def validate_status(self, value):
-        normalized = (value or "").strip().lower()
-        allowed = {
-            PrescriptionBatch.Status.ACTIVE,
-            PrescriptionBatch.Status.AUDITED,
-            PrescriptionBatch.Status.REJECTED,
-            PrescriptionBatch.Status.COMPLETED,
-            PrescriptionBatch.Status.CANCELLED,
-        }
-        if not normalized or normalized not in allowed:
-            return PrescriptionBatch.Status.ACTIVE
-        return normalized
+    def validate(self, attrs):
+        merged = dict(attrs)
+        if self.instance is not None:
+            for field in ("total_quantity", "remaining_quantity"):
+                if field not in merged:
+                    merged[field] = getattr(self.instance, field)
+        if merged.get("remaining_quantity") is not None and merged.get("total_quantity") is not None:
+            if merged["remaining_quantity"] > merged["total_quantity"]:
+                raise serializers.ValidationError({"remaining_quantity": [_("remaining_quantity cannot exceed total_quantity")]})
+        if "generic_name" in attrs and isinstance(attrs["generic_name"], str):
+            attrs["generic_name"] = attrs["generic_name"].strip()
+        generic = attrs.get("generic_name")
+        if generic is None and self.instance is not None:
+            generic = self.instance.generic_name
+        if not (generic or "").strip():
+            raise serializers.ValidationError({"generic_name": [_("generic name is required")]})
+        if "medicine_type" in attrs:
+            mt = attrs["medicine_type"]
+            if mt is None or (isinstance(mt, str) and not mt.strip()):
+                attrs["medicine_type"] = None
+            elif isinstance(mt, str):
+                attrs["medicine_type"] = mt.strip()
+        return attrs
 
+    class Meta:
+        model = MedicineBox
+        fields = (
+            "id",
+            "user",
+            "member",
+            "drug_name",
+            "medicine_type",
+            "generic_name",
+            "brand_name",
+            "dosage_form",
+            "strength",
+            "total_quantity",
+            "remaining_quantity",
+            "unit",
+            "expire_date",
+            "production_batch",
+            "notes",
+            "extra",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "user", "created_at", "updated_at")
+
+
+class PrescriptionSerializer(serializers.ModelSerializer):
     def validate_member(self, value):
         request = self.context.get("request")
         if request and not request.user.is_staff and value.user_id != request.user.id:
@@ -329,16 +368,15 @@ class PrescriptionBatchSerializer(serializers.ModelSerializer):
             getattr(instance, "medical_case", None) if instance is not None else None
         )
         request = self.context.get("request")
-
         if medical_case is not None:
             if request and not request.user.is_staff and medical_case.user_id != request.user.id:
                 raise serializers.ValidationError({"medical_case": [_("medical_case does not belong to current user")]})
             if member is not None and medical_case.member_id != member.id:
-                raise serializers.ValidationError({"medical_case": [_("medical_case.member mismatch with batch.member")]})
+                raise serializers.ValidationError({"medical_case": [_("medical_case.member mismatch with prescription.member")]})
         return attrs
 
     class Meta:
-        model = PrescriptionBatch
+        model = Prescription
         fields = (
             "id",
             "user",
@@ -348,10 +386,8 @@ class PrescriptionBatchSerializer(serializers.ModelSerializer):
             "institution_name",
             "prescribed_at",
             "diagnosis",
-            "batch_no",
+            "prescription_no",
             "status",
-            "auditor_name",
-            "audited_at",
             "extra",
             "created_at",
             "updated_at",
@@ -359,8 +395,7 @@ class PrescriptionBatchSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
-class MedicationSerializer(serializers.ModelSerializer):
-    # JSON numbers for iOS Codable (Double); DRF default coerces Decimal to string.
+class MedicationPlanSerializer(serializers.ModelSerializer):
     dose_value = serializers.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -368,90 +403,114 @@ class MedicationSerializer(serializers.ModelSerializer):
         allow_null=True,
         coerce_to_string=False,
     )
-    # 模型字段无 blank，但入参可与 generic_name 互填；最终在 validate 中统一。
-    drug_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and value.user_id != request.user.id:
+            raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
 
     def validate(self, attrs):
         merged = dict(attrs)
-        if self.instance is not None:
-            for f in ("generic_name", "drug_name", "brand_name"):
-                if f not in merged:
-                    merged[f] = getattr(self.instance, f, "") or ""
+        instance = self.instance
+        member = merged.get("member") or (getattr(instance, "member", None) if instance is not None else None)
+        medicine_box = merged.get("medicine_box") if "medicine_box" in merged else (
+            getattr(instance, "medicine_box", None) if instance is not None else None
+        )
+        prescription = merged.get("prescription") if "prescription" in merged else (
+            getattr(instance, "prescription", None) if instance is not None else None
+        )
+        medical_case = merged.get("medical_case") if "medical_case" in merged else (
+            getattr(instance, "medical_case", None) if instance is not None else None
+        )
+        start_date = merged.get("start_date") or (getattr(instance, "start_date", None) if instance is not None else None)
+        end_date = merged.get("end_date") if "end_date" in merged else (
+            getattr(instance, "end_date", None) if instance is not None else None
+        )
+        request = self.context.get("request")
 
-        gn = (merged.get("generic_name") or "").strip()
-        dn = (merged.get("drug_name") or "").strip()
-        raw = getattr(self, "initial_data", None) or {}
-        name_alias = (raw.get("name") or "").strip()
+        def check_owner(obj, field_name):
+            if obj is None:
+                return
+            if request and not request.user.is_staff and obj.user_id != request.user.id:
+                raise serializers.ValidationError({field_name: [_("object does not belong to current user")]})
+            if member is not None and getattr(obj, "member_id", None) != member.id:
+                raise serializers.ValidationError({field_name: [_("object.member mismatch with plan.member")]})
 
-        if not dn and gn:
-            attrs["drug_name"] = gn
-        elif dn and not gn:
-            attrs["generic_name"] = dn
-        elif not dn and not gn:
-            brand = (merged.get("brand_name") or "").strip() or (raw.get("brand_name") or "").strip()
-            fallback = name_alias or brand
-            if fallback:
-                attrs["drug_name"] = fallback
-                attrs["generic_name"] = fallback
-            else:
-                raise serializers.ValidationError(
-                    {
-                        "drug_name": [
-                            _("请补充药品信息：至少填写 drug_name（药品显示名）或 generic_name（通用名）。")
-                        ]
-                    }
-                )
+        check_owner(medicine_box, "medicine_box")
+        check_owner(prescription, "prescription")
+        check_owner(medical_case, "medical_case")
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": [_("end_date cannot be earlier than start_date")]})
         return attrs
 
     class Meta:
-        model = Medication
+        model = MedicationPlan
         fields = (
             "id",
             "user",
             "member",
-            "batch",
-            "generic_name",
-            "brand_name",
+            "medical_case",
+            "medicine_box",
+            "prescription",
             "drug_name",
-            "dosage_form",
-            "strength",
-            "route",
             "dose_per_time",
             "dose_value",
             "dose_unit",
-            "frequency_code",
-            "period",
-            "times_per_period",
             "frequency_text",
+            "frequency_code",
+            "reminder_times",
+            "start_date",
+            "end_date",
             "duration_days",
             "instructions",
             "reminder_enabled",
-            "reminder_times",
-            "sort_order",
+            "status",
             "extra",
             "created_at",
             "updated_at",
         )
-        # user 与其它医疗模型一致：由服务端写入，组合创建等入口通过 save(user=request.user) 注入
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
-class MedicationTakenRecordSerializer(serializers.ModelSerializer):
+class MedicationRecordSerializer(serializers.ModelSerializer):
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff and value.user_id != request.user.id:
+            raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
+    def validate(self, attrs):
+        merged = dict(attrs)
+        instance = self.instance
+        member = merged.get("member") or (getattr(instance, "member", None) if instance is not None else None)
+        plan = merged.get("plan") if "plan" in merged else (getattr(instance, "plan", None) if instance is not None else None)
+        request = self.context.get("request")
+
+        if plan is not None:
+            if request and not request.user.is_staff and plan.user_id != request.user.id:
+                raise serializers.ValidationError({"plan": [_("plan does not belong to current user")]})
+            if member is not None and plan.member_id != member.id:
+                raise serializers.ValidationError({"plan": [_("plan.member mismatch with record.member")]})
+        return attrs
+
     class Meta:
-        model = MedicationTakenRecord
+        model = MedicationRecord
         fields = (
             "id",
+            "user",
             "member",
-            "medication",
+            "plan",
             "scheduled_at",
             "taken_at",
             "status",
-            "dose_sequence",
+            "planned_dose",
             "actual_dose",
+            "dose_sequence",
             "timezone",
             "notes",
             "extra",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at")

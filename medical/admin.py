@@ -4,13 +4,14 @@ from medical.models import (
     ExaminationReport,
     FollowUp,
     HealthExamReport,
-    Medication,
-    MedicationTakenRecord,
+    MedicineBox,
+    MedicationPlan,
+    MedicationRecord,
     MedExamDetail,
     MedicalCase,
     ModelChangeLog,
     Member,
-    PrescriptionBatch,
+    Prescription,
     Surgery,
     Symptom,
     Visit,
@@ -80,25 +81,32 @@ class MedExamDetailAdmin(admin.ModelAdmin):
     search_fields = ("item_name", "item_code", "result_value", "diagnosis")
 
 
-@admin.register(PrescriptionBatch)
-class PrescriptionBatchAdmin(admin.ModelAdmin):
-    list_display = ("id", "member", "batch_no", "status", "prescribed_at", "institution_name", "is_deleted")
+@admin.register(MedicineBox)
+class MedicineBoxAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "drug_name", "medicine_type", "remaining_quantity", "total_quantity", "unit", "expire_date", "is_deleted")
+    list_filter = ("medicine_type", "unit", "expire_date", "is_deleted")
+    search_fields = ("drug_name", "generic_name", "brand_name", "production_batch", "notes")
+
+
+@admin.register(Prescription)
+class PrescriptionAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "medical_case", "prescription_no", "status", "prescribed_at", "institution_name", "is_deleted")
     list_filter = ("status", "is_deleted")
-    search_fields = ("batch_no", "prescriber_name", "institution_name", "diagnosis")
+    search_fields = ("prescription_no", "prescriber_name", "institution_name", "diagnosis")
 
 
-@admin.register(Medication)
-class MedicationAdmin(admin.ModelAdmin):
-    list_display = ("id", "member", "batch", "drug_name", "frequency_text", "reminder_enabled", "is_deleted")
-    list_filter = ("reminder_enabled", "is_deleted")
-    search_fields = ("drug_name", "generic_name", "brand_name", "frequency_code")
+@admin.register(MedicationPlan)
+class MedicationPlanAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "medical_case", "drug_name", "status", "start_date", "end_date", "reminder_enabled", "is_deleted")
+    list_filter = ("status", "reminder_enabled", "is_deleted")
+    search_fields = ("drug_name", "frequency_text", "instructions")
 
 
-@admin.register(MedicationTakenRecord)
-class MedicationTakenRecordAdmin(admin.ModelAdmin):
-    list_display = ("id", "member", "medication", "scheduled_at", "status", "dose_sequence", "is_deleted")
+@admin.register(MedicationRecord)
+class MedicationRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "plan", "scheduled_at", "taken_at", "status", "dose_sequence", "is_deleted")
     list_filter = ("status", "timezone", "is_deleted")
-    search_fields = ("actual_dose", "notes")
+    search_fields = ("planned_dose", "actual_dose", "notes")
 
 
 @admin.register(ModelChangeLog)
@@ -106,4 +114,3 @@ class ModelChangeLogAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "member", "entity", "entity_id", "action", "from_status", "to_status", "created_at")
     list_filter = ("entity", "action", "created_at")
     search_fields = ("entity", "trace_id", "operator")
-

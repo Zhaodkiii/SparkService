@@ -28,9 +28,10 @@ MEDICAL_UNIFIED_ALLOWED_QUERY_PARAMS: dict[str, frozenset[str]] = {
     "health-exam-reports": frozenset({"member_id"}),
     "examination-reports": frozenset({"member_id"}),
     "med-exam-details": frozenset({"member_id", "business_type", "business_id"}),
-    "prescription-batches": frozenset({"member_id", "medical_case_id"}),
-    "medications": frozenset({"member_id", "batch_id"}),
-    "medication-taken-records": frozenset({"member_id", "medication_id"}),
+    "medicine-boxes": frozenset({"member_id", "medicine_type", "expire_before", "low_stock"}),
+    "prescriptions": frozenset({"member_id", "medical_case_id", "status"}),
+    "medication-plans": frozenset({"member_id", "medical_case_id", "medicine_box_id", "prescription_id", "status"}),
+    "medication-records": frozenset({"member_id", "plan_id", "status", "scheduled_from", "scheduled_to"}),
 }
 
 
@@ -49,9 +50,10 @@ def _register_unified_resources() -> None:
         "health-exam-reports": medical_views.HealthExamReportViewSet,
         "examination-reports": medical_views.ExaminationReportViewSet,
         "med-exam-details": medical_views.MedExamDetailViewSet,
-        "prescription-batches": medical_views.PrescriptionBatchViewSet,
-        "medications": medical_views.MedicationViewSet,
-        "medication-taken-records": medical_views.MedicationTakenRecordViewSet,
+        "medicine-boxes": medical_views.MedicineBoxViewSet,
+        "prescriptions": medical_views.PrescriptionViewSet,
+        "medication-plans": medical_views.MedicationPlanViewSet,
+        "medication-records": medical_views.MedicationRecordViewSet,
     }
 
 

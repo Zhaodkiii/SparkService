@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from django.db import transaction
 from django.db.models import Prefetch, Q
@@ -15,13 +16,14 @@ from medical.models import (
     ExaminationReport,
     FollowUp,
     HealthExamReport,
-    Medication,
-    MedicationTakenRecord,
+    MedicineBox,
+    MedicationPlan,
+    MedicationRecord,
     MedExamDetail,
     MedicalCase,
     ModelChangeLog,
     Member,
-    PrescriptionBatch,
+    Prescription,
     Surgery,
     Symptom,
     Visit,
@@ -30,12 +32,13 @@ from medical.serializers import (
     ExaminationReportSerializer,
     FollowUpSerializer,
     HealthExamReportSerializer,
-    MedicationSerializer,
-    MedicationTakenRecordSerializer,
+    MedicineBoxSerializer,
+    MedicationPlanSerializer,
+    MedicationRecordSerializer,
     MedExamDetailSerializer,
     MedicalCaseSerializer,
     MemberSerializer,
-    PrescriptionBatchSerializer,
+    PrescriptionSerializer,
     SurgerySerializer,
     SymptomSerializer,
     VisitSerializer,
@@ -260,49 +263,128 @@ class MedExamDetailViewSet(WrappedModelViewSet):
         instance.save(update_fields=["is_deleted", "updated_at"])
 
 
-class PrescriptionBatchViewSet(WrappedModelViewSet):
-    queryset = PrescriptionBatch.objects.select_related("member", "medical_case").all()
-    serializer_class = PrescriptionBatchSerializer
+class MedicineBoxViewSet(WrappedModelViewSet):
+    queryset = MedicineBox.objects.select_related("member").all()
+    serializer_class = MedicineBoxSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        member_id = self.request.query_params.get("member_id")
+        medicine_type = self.request.query_params.get("medicine_type")
+        expire_before = self.request.query_params.get("expire_before")
+        low_stock = self.request.query_params.get("low_stock")
+        if member_id:
+            queryset = queryset.filter(member_id=member_id)
+        if medicine_type:
+            queryset = queryset.filter(medicine_type=medicine_type)
+        if expire_before:
+            queryset = queryset.filter(expire_date__lte=expire_before)
+        if low_stock in {"1", "true", "True", "yes"}:
+            queryset = queryset.filter(remaining_quantity__lte=0)
+        return queryset
+
+
+class PrescriptionViewSet(WrappedModelViewSet):
+    queryset = Prescription.objects.select_related("member", "medical_case").all()
+    serializer_class = PrescriptionSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
         medical_case_id = self.request.query_params.get("medical_case_id")
+        status_value = self.request.query_params.get("status")
         if member_id:
             queryset = queryset.filter(member_id=member_id)
         if medical_case_id:
             queryset = queryset.filter(medical_case_id=medical_case_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
         return queryset
 
 
-class MedicationViewSet(WrappedModelViewSet):
-    queryset = Medication.objects.select_related("member", "batch").all()
-    serializer_class = MedicationSerializer
+class MedicationPlanViewSet(WrappedModelViewSet):
+    queryset = MedicationPlan.objects.select_related("member", "medical_case", "medicine_box", "prescription").all()
+    serializer_class = MedicationPlanSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
-        batch_id = self.request.query_params.get("batch_id")
+        medical_case_id = self.request.query_params.get("medical_case_id")
+        medicine_box_id = self.request.query_params.get("medicine_box_id")
+        prescription_id = self.request.query_params.get("prescription_id")
+        status_value = self.request.query_params.get("status")
         if member_id:
             queryset = queryset.filter(member_id=member_id)
-        if batch_id:
-            queryset = queryset.filter(batch_id=batch_id)
+        if medical_case_id:
+            queryset = queryset.filter(medical_case_id=medical_case_id)
+        if medicine_box_id:
+            queryset = queryset.filter(medicine_box_id=medicine_box_id)
+        if prescription_id:
+            queryset = queryset.filter(prescription_id=prescription_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
         return queryset
 
 
-class MedicationTakenRecordViewSet(WrappedModelViewSet):
-    queryset = MedicationTakenRecord.objects.select_related("member", "medication").all()
-    serializer_class = MedicationTakenRecordSerializer
+class MedicationRecordViewSet(WrappedModelViewSet):
+    queryset = MedicationRecord.objects.select_related("member", "plan", "plan__medicine_box").all()
+    serializer_class = MedicationRecordSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
-        medication_id = self.request.query_params.get("medication_id")
+        plan_id = self.request.query_params.get("plan_id")
+        status_value = self.request.query_params.get("status")
+        scheduled_from = self.request.query_params.get("scheduled_from")
+        scheduled_to = self.request.query_params.get("scheduled_to")
         if member_id:
             queryset = queryset.filter(member_id=member_id)
-        if medication_id:
-            queryset = queryset.filter(medication_id=medication_id)
+        if plan_id:
+            queryset = queryset.filter(plan_id=plan_id)
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if scheduled_from:
+            queryset = queryset.filter(scheduled_at__gte=scheduled_from)
+        if scheduled_to:
+            queryset = queryset.filter(scheduled_at__lte=scheduled_to)
         return queryset
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            locked = (
+                MedicationRecord.objects.select_for_update()
+                .select_related("plan", "plan__medicine_box")
+                .get(pk=serializer.instance.pk, user=self.request.user, is_deleted=False)
+            )
+            previous_status = locked.status
+            serializer.instance = locked
+            obj = serializer.save()
+            if previous_status != MedicationRecord.Status.TAKEN and obj.status == MedicationRecord.Status.TAKEN:
+                self._consume_inventory(obj)
+                ModelChangeLog.objects.create(
+                    user=self.request.user,
+                    member=obj.member,
+                    entity="medication_record",
+                    entity_id=obj.id,
+                    action="taken",
+                    from_status=previous_status,
+                    to_status=obj.status,
+                    changed_fields={"inventory_consumed": True},
+                    trace_id=self.request.headers.get("X-Request-ID", ""),
+                    operator=str(self.request.user.id),
+                )
+
+    def _consume_inventory(self, record):
+        plan = record.plan
+        if plan.medicine_box_id is None or plan.dose_value is None:
+            return
+        box = MedicineBox.objects.select_for_update().get(pk=plan.medicine_box_id, user=record.user, is_deleted=False)
+        consumed = plan.dose_value
+        next_remaining = box.remaining_quantity - consumed
+        if next_remaining < 0:
+            next_remaining = 0
+        box.remaining_quantity = next_remaining
+        box.save(update_fields=["remaining_quantity", "updated_at"])
 
 
 class MemberCompleteDataAPI(APIView):
@@ -321,10 +403,6 @@ class MemberCompleteDataAPI(APIView):
             MedicalCase.objects.filter(user=request.user, is_deleted=False, member_id=member_id)
             .prefetch_related(
                 "symptoms",
-                Prefetch(
-                    "prescription_batches",
-                    queryset=PrescriptionBatch.objects.filter(is_deleted=False).prefetch_related("medications"),
-                ),
             )
             .order_by("-created_at")
         )
@@ -341,11 +419,34 @@ class MemberCompleteDataAPI(APIView):
             member_id=member_id,
         ).order_by("-performed_at", "-updated_at")
 
-        prescription_batches = (
-            PrescriptionBatch.objects.filter(user=request.user, is_deleted=False, member_id=member_id)
-            .prefetch_related("medications")
-            .order_by("-prescribed_at", "-updated_at")
-        )
+        medicine_boxes = MedicineBox.objects.filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("-updated_at", "-id")
+
+        prescriptions = Prescription.objects.filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("-prescribed_at", "-updated_at", "-id")
+
+        medication_plans = MedicationPlan.objects.select_related(
+            "medicine_box",
+            "prescription",
+        ).filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("-start_date", "-updated_at", "-id")
+
+        today = timezone.localdate()
+        today_medication_records = MedicationRecord.objects.select_related("plan").filter(
+            user=request.user,
+            is_deleted=False,
+            member_id=member_id,
+            scheduled_at__date=today,
+        ).order_by("scheduled_at", "dose_sequence", "id")
 
         symptoms = Symptom.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
             "-created_at", "-updated_at", "-id"
@@ -360,16 +461,16 @@ class MemberCompleteDataAPI(APIView):
             "-completed_at", "-updated_at", "-id"
         )
 
-        standalone_medications = Medication.objects.none()
-
         etag = self._build_complete_etag(
             request=request,
             member=member,
             medical_cases=medical_cases,
             health_exam_reports=health_exam_reports,
             examination_reports=examination_reports,
-            prescription_batches=prescription_batches,
-            standalone_medications=standalone_medications,
+            medicine_boxes=medicine_boxes,
+            prescriptions=prescriptions,
+            medication_plans=medication_plans,
+            today_medication_records=today_medication_records,
             symptoms=symptoms,
             visits=visits,
             surgeries=surgeries,
@@ -394,11 +495,6 @@ class MemberCompleteDataAPI(APIView):
         for c in medical_cases:
             symptom_names = [s.name for s in c.symptoms.all()]
             drug_names = []
-            for pb in c.prescription_batches.all():
-                for m in pb.medications.all():
-                    dn = (m.drug_name or m.generic_name or "").strip()
-                    if dn and dn not in drug_names:
-                        drug_names.append(dn)
             medical_cases_payload.append(
                 {
                     "id": c.id,
@@ -432,14 +528,19 @@ class MemberCompleteDataAPI(APIView):
             row["attachments"] = attachments_payload("examination_report", e.id)
             exam_payload.append(row)
 
-        batch_payload = []
-        for b in prescription_batches:
-            row = dict(PrescriptionBatchSerializer(b).data)
-            row["medications"] = MedicationSerializer(b.medications.all(), many=True).data
-            row["attachments"] = attachments_payload("prescription_batch", b.id)
-            batch_payload.append(row)
+        medicine_box_payload = MedicineBoxSerializer(medicine_boxes, many=True).data
+        prescription_payload = PrescriptionSerializer(prescriptions, many=True).data
+        medication_plan_payload = MedicationPlanSerializer(medication_plans, many=True).data
+        today_medication_record_payload = MedicationRecordSerializer(today_medication_records, many=True).data
 
-        standalone_payload = MedicationSerializer(standalone_medications, many=True).data
+        today_total = today_medication_records.count()
+        today_taken = today_medication_records.filter(status=MedicationRecord.Status.TAKEN).count()
+        today_skipped = today_medication_records.filter(status=MedicationRecord.Status.SKIPPED).count()
+        active_plan_count = medication_plans.filter(status=MedicationPlan.Status.ACTIVE).count()
+        low_stock_count = medicine_boxes.filter(remaining_quantity__lte=0).count()
+        expiring_before = today + timedelta(days=30)
+        expiring_soon_count = medicine_boxes.filter(expire_date__isnull=False, expire_date__lte=expiring_before).count()
+        adherence_rate = round((today_taken / today_total) * 100, 2) if today_total else 0
 
         symptoms_payload = SymptomSerializer(symptoms, many=True).data
         visits_payload = VisitSerializer(visits, many=True).data
@@ -452,8 +553,19 @@ class MemberCompleteDataAPI(APIView):
             "medical_cases": medical_cases_payload,
             "health_exam_reports": health_payload,
             "examination_reports": exam_payload,
-            "prescription_batches": batch_payload,
-            "standalone_medications": standalone_payload,
+            "medicine_boxes": medicine_box_payload,
+            "prescriptions": prescription_payload,
+            "medication_plans": medication_plan_payload,
+            "today_medication_records": today_medication_record_payload,
+            "medication_summary": {
+                "today_total": today_total,
+                "today_taken": today_taken,
+                "today_skipped": today_skipped,
+                "adherence_rate": adherence_rate,
+                "active_plan_count": active_plan_count,
+                "low_stock_count": low_stock_count,
+                "expiring_soon_count": expiring_soon_count,
+            },
             "symptoms": symptoms_payload,
             "visits": visits_payload,
             "surgeries": surgeries_payload,
@@ -470,8 +582,10 @@ class MemberCompleteDataAPI(APIView):
         medical_cases,
         health_exam_reports,
         examination_reports,
-        prescription_batches,
-        standalone_medications,
+        medicine_boxes,
+        prescriptions,
+        medication_plans,
+        today_medication_records,
         symptoms,
         visits,
         surgeries,
@@ -480,7 +594,6 @@ class MemberCompleteDataAPI(APIView):
         case_ids = [str(pk) for pk in medical_cases.values_list("id", flat=True)]
         hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
         er_ids = [str(pk) for pk in examination_reports.values_list("id", flat=True)]
-        pb_ids = [str(pk) for pk in prescription_batches.values_list("id", flat=True)]
 
         att_q = []
         if case_ids:
@@ -489,8 +602,6 @@ class MemberCompleteDataAPI(APIView):
             att_q.append(Q(business_type="health_exam_report", business_id__in=hex_ids))
         if er_ids:
             att_q.append(Q(business_type="examination_report", business_id__in=er_ids))
-        if pb_ids:
-            att_q.append(Q(business_type="prescription_batch", business_id__in=pb_ids))
 
         attachments_fingerprint = []
         if att_q:
@@ -511,8 +622,10 @@ class MemberCompleteDataAPI(APIView):
                 "medical_cases": list(medical_cases.values_list("id", "updated_at")),
                 "health_exam_reports": list(health_exam_reports.values_list("id", "updated_at")),
                 "examination_reports": list(examination_reports.values_list("id", "updated_at")),
-                "prescription_batches": list(prescription_batches.values_list("id", "updated_at")),
-                "standalone_medications": list(standalone_medications.values_list("id", "updated_at")),
+                "medicine_boxes": list(medicine_boxes.values_list("id", "updated_at")),
+                "prescriptions": list(prescriptions.values_list("id", "updated_at")),
+                "medication_plans": list(medication_plans.values_list("id", "updated_at")),
+                "today_medication_records": list(today_medication_records.values_list("id", "updated_at")),
                 "symptoms": list(symptoms.values_list("id", "updated_at")),
                 "visits": list(visits.values_list("id", "updated_at")),
                 "surgeries": list(surgeries.values_list("id", "updated_at")),
@@ -614,40 +727,6 @@ class _WorkflowBaseAPIView(APIView):
             extra={"source": "workflow_auto_case"},
         )
         return member, medical_case, None
-
-    def _normalize_medication_payload(self, medication, batch, sort_order):
-        """统一药品行字段（处方批次与用药工作流复用）；batch 为 ``PrescriptionBatch`` 实例。"""
-        row = dict(medication)
-        row["member"] = batch.member_id
-        row["batch"] = batch.id
-        row["sort_order"] = row.get("sort_order", sort_order)
-
-        # Aera 风格字段兼容映射
-        row["drug_name"] = row.get("drug_name") or row.get("name") or row.get("generic_name") or row.get("brand_name") or ""
-        row["generic_name"] = row.get("generic_name") or row.get("name") or row["drug_name"]
-        row["brand_name"] = row.get("brand_name", "")
-        row["strength"] = row.get("strength") or row.get("specification") or ""
-        row["dose_per_time"] = row.get("dose_per_time") or row.get("dosage") or ""
-        row["frequency_text"] = row.get("frequency_text") or row.get("frequency") or ""
-        row["instructions"] = row.get("instructions", "")
-        row["period"] = row.get("period", "")
-        row["route"] = row.get("route", "")
-        row["dosage_form"] = row.get("dosage_form", "")
-        row["dose_unit"] = row.get("dose_unit", "")
-        row["frequency_code"] = row.get("frequency_code", "")
-        row["reminder_enabled"] = row.get("reminder_enabled", False)
-        row["reminder_times"] = row.get("reminder_times", [])
-
-        if row.get("duration_days") in (None, ""):
-            duration = row.get("duration")
-            if isinstance(duration, int):
-                row["duration_days"] = duration
-            elif isinstance(duration, str):
-                digits = "".join(ch for ch in duration if ch.isdigit())
-                row["duration_days"] = int(digits) if digits else None
-
-        return row
-
 
 class MedicalCaseWorkflowSaveView(_WorkflowBaseAPIView):
     @transaction.atomic
@@ -781,133 +860,6 @@ class MedicalReportWorkflowSaveView(_WorkflowBaseAPIView):
             code=0,
             status_code=status.HTTP_201_CREATED,
         )
-
-
-class PrescriptionWorkflowSaveView(_WorkflowBaseAPIView):
-    @transaction.atomic
-    def post(self, request):
-        payload = request.data.copy()
-        file_ids = payload.pop("file_ids", [])
-        medications = payload.pop("medications", [])
-        serializer = PrescriptionBatchSerializer(data=payload)
-        validation_error = self._validate_or_error(serializer)
-        if validation_error is not None:
-            return validation_error
-        batch = serializer.save(user=request.user)
-
-        medication_results = []
-        for idx, medication in enumerate(medications):
-            row = self._normalize_medication_payload(medication, batch, idx)
-            item_serializer = MedicationSerializer(data=row)
-            validation_error = self._validate_or_error(item_serializer)
-            if validation_error is not None:
-                return validation_error
-            item = item_serializer.save(user=request.user)
-            medication_results.append(MedicationSerializer(item).data)
-
-        self._bind_files(request.user, "prescription_batch", batch.id, file_ids)
-        return success_response(
-            {"batch": PrescriptionBatchSerializer(batch).data, "medications": medication_results},
-            msg="saved",
-            code=0,
-            status_code=status.HTTP_201_CREATED,
-        )
-
-
-class MedicationWorkflowSaveView(_WorkflowBaseAPIView):
-    """用药工作流保存。
-
-    - **单条（兼容）**：请求体为单条 ``Medication`` 字段（须含 ``member``、``batch``）。
-    - **批量**：请求体含 ``medications`` 为非空数组时，先为 **首条或顶层** 指定的 ``member``
-      创建占位 ``PrescriptionBatch``，再逐条写入药品行；**成员 ID 以第一条药品上的 ``member`` 为准**，
-      若首条未带则使用顶层 ``member``。各行的 ``member`` 将统一覆盖为该值，避免串档。
-    """
-
-    @transaction.atomic
-    def post(self, request):
-        payload = request.data.copy()
-        file_ids = payload.pop("file_ids", [])
-        medications = payload.pop("medications", None)
-
-        if medications is not None:
-            if not isinstance(medications, list) or len(medications) == 0:
-                return error_response(
-                    msg={"medications": [_("medications must be a non-empty array")]},
-                    code=-1,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-
-            first = medications[0]
-            primary_member = None
-            if isinstance(first, dict):
-                primary_member = first.get("member")
-            if primary_member is None:
-                primary_member = payload.get("member")
-            if primary_member is None:
-                return error_response(
-                    msg={"member": [_("set member on first medication row or as top-level member")]},
-                    code=-1,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-
-            if not Member.objects.filter(id=primary_member, user=request.user, is_deleted=False).exists():
-                return error_response(
-                    msg={"member": [_("invalid member")]},
-                    code=-1,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-
-            batch_payload = {
-                "member": primary_member,
-                "diagnosis": "",
-                "prescriber_name": "",
-                "institution_name": "",
-                "extra": {"source": "medication_workflow_bulk"},
-            }
-            batch_serializer = PrescriptionBatchSerializer(data=batch_payload)
-            validation_error = self._validate_or_error(batch_serializer)
-            if validation_error is not None:
-                return validation_error
-            batch = batch_serializer.save(user=request.user)
-
-            medication_results = []
-            for idx, med in enumerate(medications):
-                if not isinstance(med, dict):
-                    return error_response(
-                        msg={"medications": [_("each item must be an object")]},
-                        code=-1,
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                    )
-                med = {**med, "member": primary_member}
-                row = self._normalize_medication_payload(med, batch, idx)
-                row["member"] = primary_member
-                item_serializer = MedicationSerializer(data=row)
-                validation_error = self._validate_or_error(item_serializer)
-                if validation_error is not None:
-                    return validation_error
-                item = item_serializer.save(user=request.user)
-                medication_results.append(MedicationSerializer(item).data)
-
-            self._bind_files(request.user, "prescription_batch", batch.id, file_ids)
-            first_id = medication_results[0]["id"] if medication_results else batch.id
-            return success_response(
-                {
-                    "id": first_id,
-                    "batch": PrescriptionBatchSerializer(batch).data,
-                    "medications": medication_results,
-                },
-                msg="saved",
-                code=0,
-                status_code=status.HTTP_201_CREATED,
-            )
-
-        serializer = MedicationSerializer(data=payload)
-        validation_error = self._validate_or_error(serializer)
-        if validation_error is not None:
-            return validation_error
-        obj = serializer.save(user=request.user)
-        self._bind_files(request.user, "medication", obj.id, file_ids)
-        return success_response(serializer.data, msg="saved", code=0, status_code=status.HTTP_201_CREATED)
 
 
 class SymptomWorkflowCreateView(_WorkflowBaseAPIView):
@@ -1057,7 +1009,7 @@ class CombinedMedicalCreateAPIView(APIView):
     流程：
     1) member: 若带 id → 校验存在与归属；否则创建；得到 member_id
     2) medical_case: 必传，使用 member_id 创建；得到 case_id
-    3) symptom/visit/surgery/follow-up/examination_reports/prescription_batches: 可选，有则使用 case_id 逐一创建
+    3) symptom/visit/surgery/follow-up/examination_reports: 可选，有则使用 case_id 逐一创建
     4) 返回统一结果（已创建对象的精简信息/主键）
 
     参考：HealthClient 的 SeverMedicalCreateAPI 和 ZhaodkDream 的 SeverMedicalCreateAPI
@@ -1125,7 +1077,7 @@ class CombinedMedicalCreateAPIView(APIView):
         case_id = case_obj.id
 
         # =========================================================
-        # (3) 可选创建：symptom/visit/surgery/follow-up/examination_reports/prescription_batches
+        # (3) 可选创建：symptom/visit/surgery/follow-up/examination_reports
         # =========================================================
         result = {
             "member_id": member_id,
@@ -1214,32 +1166,6 @@ class CombinedMedicalCreateAPIView(APIView):
                     detail_ser = MedExamDetailSerializer(data=detail_payload, context={"request": request})
                     detail_ser.is_valid(raise_exception=True)
                     detail_ser.save()
-
-        # ---------- prescription_batches（批量，可选）----------
-        batches_payload = data.get("prescription_batches") or []
-        if isinstance(batches_payload, list) and batches_payload:
-            result["prescription_batch_ids"] = []
-            for batch_data in batches_payload:
-                batch_payload = dict(batch_data or {})
-                batch_payload["member"] = member_id
-                batch_payload["medical_case"] = case_id
-                # medications 单独处理
-                medications = batch_payload.pop("medications", [])
-
-                batch_ser = PrescriptionBatchSerializer(data=batch_payload, context={"request": request})
-                batch_ser.is_valid(raise_exception=True)
-                batch_obj = batch_ser.save(user=request.user)
-                batch_id = batch_obj.id
-                result["prescription_batch_ids"].append(batch_id)
-
-                # 创建该批次下的用药记录
-                for idx, med in enumerate(medications):
-                    med_payload = dict(med or {})
-                    med_payload["member"] = member_id
-                    med_payload["batch"] = batch_id
-                    med_ser = MedicationSerializer(data=med_payload, context={"request": request})
-                    med_ser.is_valid(raise_exception=True)
-                    med_ser.save(user=request.user)
 
         # ---------- source_file_ids（附件绑定，可选）----------
         source_file_ids = data.get("source_file_ids") or []

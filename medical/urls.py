@@ -9,19 +9,18 @@ from medical.views import (
     FollowUpViewSet,
     HealthExamReportViewSet,
     HealthExamWorkflowSaveView,
+    MedicineBoxViewSet,
     MemberCompleteDataAPI,
     MedicalAttachmentBatchBindView,
-    MedicationTakenRecordViewSet,
-    MedicationWorkflowSaveView,
-    MedicationViewSet,
+    MedicationPlanViewSet,
+    MedicationRecordViewSet,
     MedExamDetailViewSet,
     MedicalCaseViewSet,
     MedicalCaseWorkflowSaveView,
     MedicalReportWorkflowSaveView,
     MemberViewSet,
-    PrescriptionWorkflowSaveView,
+    PrescriptionViewSet,
     SurgeryWorkflowCreateView,
-    PrescriptionBatchViewSet,
     SymptomWorkflowCreateView,
     SurgeryViewSet,
     SymptomViewSet,
@@ -39,9 +38,10 @@ router.register("follow-ups", FollowUpViewSet, basename="medical-follow-ups")
 router.register("health-exam-reports", HealthExamReportViewSet, basename="medical-health-exam-reports")
 router.register("examination-reports", ExaminationReportViewSet, basename="medical-examination-reports")
 router.register("med-exam-details", MedExamDetailViewSet, basename="medical-med-exam-details")
-router.register("prescription-batches", PrescriptionBatchViewSet, basename="medical-prescription-batches")
-router.register("medications", MedicationViewSet, basename="medical-medications")
-router.register("medication-taken-records", MedicationTakenRecordViewSet, basename="medical-medication-taken-records")
+router.register("medicine-boxes", MedicineBoxViewSet, basename="medical-medicine-boxes")
+router.register("prescriptions", PrescriptionViewSet, basename="medical-prescriptions")
+router.register("medication-plans", MedicationPlanViewSet, basename="medical-medication-plans")
+router.register("medication-records", MedicationRecordViewSet, basename="medical-medication-records")
 router.register("resources", UnifiedMedicalResourceViewSet, basename="medical-unified-resources")
 
 urlpatterns = [
@@ -54,8 +54,6 @@ urlpatterns = [
     path("workflows/visits/create/", VisitWorkflowCreateView.as_view(), name="medical-workflow-visit-create"),
     path("workflows/surgeries/create/", SurgeryWorkflowCreateView.as_view(), name="medical-workflow-surgery-create"),
     path("workflows/follow-ups/create/", FollowUpWorkflowCreateView.as_view(), name="medical-workflow-follow-up-create"),
-    path("workflows/prescriptions/save/", PrescriptionWorkflowSaveView.as_view(), name="medical-workflow-prescription-save"),
-    path("workflows/medications/save/", MedicationWorkflowSaveView.as_view(), name="medical-workflow-medication-save"),
     path("workflows/attachments/batch-bind/", MedicalAttachmentBatchBindView.as_view(), name="medical-workflow-attachment-batch-bind"),
     # 新增组合创建 API（一次性创建完整医疗记录）
     path("combined-create/", CombinedMedicalCreateAPIView.as_view(), name="medical-combined-create"),

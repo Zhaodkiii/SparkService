@@ -322,212 +322,273 @@ class MedExamDetail(models.Model):
         ]
 
 
-class PrescriptionBatch(MedicalBaseModel):
-    """处方批次模型（处方头）。
+class MedicineBox(MedicalBaseModel):
+    """药箱：用户/成员真实拥有的物理药品库存。"""
 
-    一次开具处方或一次用药方案对应一个批次，药品行由 ``Medication`` 表承载。
-    该层用于聚合医生/机构/诊断信息，并给提醒与依从性统计提供批次维度入口。
-    """
+    class MedicineType(models.TextChoices):
+        """预设药品分类（可与自定义文案共同存入 ``medicine_type`` 字段）。"""
 
-    class Status(models.TextChoices):
-        ACTIVE = "active"
-        AUDITED = "audited"
-        REJECTED = "rejected"
-        COMPLETED = "completed"
-        CANCELLED = "cancelled"
+        COLD_FEVER = "cold_fever", "感冒发烧"
+        GI_DIGESTION = "gi_digestion", "胃肠消化"
+        COUGH_THROAT = "cough_throat", "咳嗽咽痛"
+        SKIN_BONE = "skin_bone", "皮肤骨痛"
+        CHRONIC = "chronic", "慢病用药"
+        PEDIATRIC = "pediatric", "儿童用药"
+        UNCATEGORIZED = "uncategorized", "未分类"
 
     member = models.ForeignKey(
         Member,
-        related_name="prescription_batches",
+        related_name="medicine_boxes",
         on_delete=models.CASCADE,
         db_index=True,
-        db_comment="所属就诊人 ID",
+        db_comment="所属家庭成员 ID",
     )
-    medical_case = models.ForeignKey(
-        MedicalCase,
-        related_name="prescription_batches",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        db_index=True,
-        db_comment="可选来源病例 ID",
-    )
-    prescriber_name = models.CharField(
-        max_length=128, blank=True, default="", help_text=_("开方医生"), db_comment="开方医生姓名"
-    )
-    institution_name = models.CharField(
-        max_length=255, blank=True, default="", help_text=_("开方机构名称"), db_comment="机构名称"
-    )
-    prescribed_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        db_index=True,
-        help_text=_("开方/方案起始时间"),
-        db_comment="开方或方案开始时间",
-    )
-    diagnosis = models.TextField(blank=True, default="", help_text=_("诊断或适应症摘要"), db_comment="诊断摘要")
-    batch_no = models.CharField(
+    drug_name = models.CharField(max_length=255, blank=True, default="", db_comment="药品名称")
+    medicine_type = models.CharField(
         max_length=128,
         blank=True,
         null=True,
-        default=None,
-        help_text=_("业务批次号/处方号；不同病例可重复，未填时存库为 NULL"),
-        db_comment="业务批次号/处方号（非全局唯一）",
+        db_index=True,
+        db_comment="药品类型（预设编码、中文选项值或自定义文案，可空）",
     )
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
-    auditor_name = models.CharField(
-        max_length=128, blank=True, default="", help_text=_("审核人姓名"), db_comment="审核人姓名"
-    )
-    audited_at = models.DateTimeField(null=True, blank=True, help_text=_("审核时间"), db_comment="审核时间")
-    extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
-
-    class Meta:
-        db_table = "medical_prescription_batch"
-        db_table_comment = "处方批次：一次处方或用药方案的批次头信息。"
-        verbose_name = _("处方批次")
-        verbose_name_plural = _("处方批次")
-        ordering = ["-prescribed_at", "-updated_at", "-id"]
-        indexes = [
-            models.Index(fields=["user", "member", "is_deleted", "prescribed_at"]),
-            models.Index(fields=["medical_case"]),
-            models.Index(fields=["batch_no"]),
-        ]
-
-    def clean(self):
-        """约束批次的归属链路，避免跨用户/跨成员串数据。"""
-        if self.member_id and self.member.user_id != self.user_id:
-            raise ValidationError({"member": _("member does not belong to current user")})
-        if self.medical_case_id:
-            if self.medical_case.user_id != self.user_id:
-                raise ValidationError({"medical_case": _("medical_case does not belong to current user")})
-            if self.member_id and self.medical_case.member_id != self.member_id:
-                raise ValidationError({"medical_case": _("medical_case.member mismatch with batch.member")})
-
-    def save(self, *args, **kwargs):
-        if self.batch_no == "":
-            self.batch_no = None
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-
-class Medication(MedicalBaseModel):
-    """用药药品行模型。
-
-    一条记录表示批次下单个药品及其用法用量、提醒规则，供任务引擎拆解为服药计划。
-    """
-
-    member = models.ForeignKey(
-        Member, related_name="medications", on_delete=models.CASCADE, db_index=True, db_comment="所属就诊人 ID"
-    )
-    batch = models.ForeignKey(
-        PrescriptionBatch, related_name="medications", on_delete=models.CASCADE, db_index=True, db_comment="所属处方批次 ID"
-    )
-    generic_name = models.CharField(max_length=255, blank=True, default="", db_comment="通用名")
+    generic_name = models.CharField(max_length=255, db_comment="通用名")
     brand_name = models.CharField(max_length=255, blank=True, default="", db_comment="品牌名")
-    drug_name = models.CharField(max_length=255, db_comment="药品显示名")
     dosage_form = models.CharField(max_length=64, blank=True, default="", db_comment="剂型")
     strength = models.CharField(max_length=128, blank=True, default="", db_comment="规格")
-    route = models.CharField(max_length=64, blank=True, default="", db_comment="给药途径")
-    dose_per_time = models.CharField(max_length=64, blank=True, default="", db_comment="单次剂量文本")
-    dose_value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, db_comment="单次剂量数值")
-    dose_unit = models.CharField(max_length=32, blank=True, default="", db_comment="单次剂量单位")
-    frequency_code = models.CharField(max_length=64, blank=True, default="", db_comment="频次编码")
-    period = models.CharField(max_length=16, blank=True, default="", db_comment="频次周期")
-    times_per_period = models.PositiveSmallIntegerField(null=True, blank=True, db_comment="每周期次数")
-    frequency_text = models.CharField(max_length=255, blank=True, default="", db_comment="频次展示文案")
-    duration_days = models.PositiveIntegerField(null=True, blank=True, db_comment="疗程天数")
-    instructions = models.TextField(blank=True, default="", db_comment="用药说明")
-    reminder_enabled = models.BooleanField(default=True, db_comment="是否启用提醒")
-    reminder_times = models.JSONField(default=list, blank=True, db_comment="提醒时间点列表")
-    sort_order = models.PositiveIntegerField(default=0, db_comment="批次内排序")
-    extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
-
-    class Meta:
-        db_table = "medical_medication"
-        db_table_comment = "用药记录：处方批次下的药品行与提醒规则。"
-        verbose_name = _("用药记录")
-        verbose_name_plural = _("用药记录")
-        ordering = ["sort_order", "-updated_at", "-id"]
-        indexes = [
-            models.Index(fields=["batch", "sort_order"]),
-            models.Index(fields=["user", "member", "is_deleted", "created_at"]),
-        ]
-
-    def clean(self):
-        """校验批次与药品归属的一致性，防止跨成员/跨用户写入。"""
-        if self.member_id and self.member.user_id != self.user_id:
-            raise ValidationError({"member": _("member does not belong to current user")})
-        if self.batch_id:
-            if self.batch.user_id != self.user_id:
-                raise ValidationError({"batch": _("batch does not belong to current user")})
-            if self.member_id and self.batch.member_id != self.member_id:
-                raise ValidationError({"batch": _("batch.member mismatch with medication.member")})
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-
-class MedicationTakenRecord(MedicalBaseModel):
-    """服药打卡记录模型。
-
-    记录应服时间与实际打卡状态，提供依从性统计（日历、完成率、漏服率）的事实明细。
-    """
-
-    class Status(models.TextChoices):
-        SCHEDULED = "scheduled"
-        TAKEN = "taken"
-        SKIPPED = "skipped"
-        SNOOZED = "snoozed"
-
-    member = models.ForeignKey(
-        Member,
-        related_name="medication_taken_records",
-        on_delete=models.CASCADE,
-        db_index=True,
-        db_comment="所属就诊人 ID",
-    )
-    medication = models.ForeignKey(
-        Medication,
-        related_name="taken_records",
-        on_delete=models.CASCADE,
-        db_index=True,
-        db_comment="对应药品行 ID",
-    )
-    scheduled_at = models.DateTimeField(db_index=True, db_comment="计划服药时间")
-    taken_at = models.DateTimeField(null=True, blank=True, db_comment="实际服药时间")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED, db_index=True)
-    dose_sequence = models.PositiveSmallIntegerField(default=1, db_comment="当日第几次")
-    actual_dose = models.CharField(max_length=64, blank=True, default="", db_comment="实际服用剂量文本")
-    timezone = models.CharField(max_length=64, blank=True, default="UTC", db_index=True, db_comment="打卡时区")
+    total_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_comment="总数量")
+    remaining_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_comment="剩余数量")
+    unit = models.CharField(max_length=32, default="片", db_comment="单位（片/粒/袋）")
+    expire_date = models.DateField(null=True, blank=True, db_index=True, db_comment="有效期")
+    production_batch = models.CharField(max_length=128, blank=True, default="", db_comment="生产批号")
     notes = models.TextField(blank=True, default="", db_comment="备注")
     extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
 
     class Meta:
-        db_table = "medical_medication_taken_record"
-        db_table_comment = "服药打卡记录：单次应服/已服/漏服事实。"
-        verbose_name = _("服药打卡")
-        verbose_name_plural = _("服药打卡")
-        ordering = ["-scheduled_at", "-updated_at", "-id"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["medication", "scheduled_at", "dose_sequence"], name="uniq_medication_schedule_sequence"
-            )
-        ]
+        db_table = "medical_medicine_box"
+        db_table_comment = "药箱：用户/成员的物理药品库存管理。"
+        verbose_name = _("药箱")
+        verbose_name_plural = _("药箱")
+        ordering = ["-updated_at", "-id"]
         indexes = [
-            models.Index(fields=["medication", "scheduled_at", "status"]),
-            models.Index(fields=["user", "member", "scheduled_at", "status"]),
+            models.Index(fields=["user", "member", "is_deleted"]),
+            models.Index(fields=["user", "member", "medicine_type", "is_deleted"]),
+            models.Index(fields=["expire_date"]),
         ]
 
     def clean(self):
-        """校验打卡与药品/成员归属一致，避免跨账号串数据。"""
         if self.member_id and self.member.user_id != self.user_id:
             raise ValidationError({"member": _("member does not belong to current user")})
-        if self.medication_id:
-            if self.medication.user_id != self.user_id:
-                raise ValidationError({"medication": _("medication does not belong to current user")})
-            if self.member_id and self.medication.member_id != self.member_id:
-                raise ValidationError({"medication": _("medication.member mismatch with taken_record.member")})
+        if not (self.generic_name or "").strip():
+            raise ValidationError({"generic_name": _("generic name is required")})
+        if self.remaining_quantity > self.total_quantity:
+            raise ValidationError({"remaining_quantity": _("remaining_quantity cannot exceed total_quantity")})
+
+    def save(self, *args, **kwargs):
+        if self.medicine_type is not None:
+            stripped = self.medicine_type.strip()
+            self.medicine_type = stripped if stripped else None
+        self.generic_name = (self.generic_name or "").strip()
+        if self.generic_name and not (self.drug_name or "").strip():
+            self.drug_name = self.generic_name
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class Prescription(MedicalBaseModel):
+    """处方：作为服药计划来源，非强制。"""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "生效中"
+        COMPLETED = "completed", "已完成"
+        CANCELLED = "cancelled", "已取消"
+
+    member = models.ForeignKey(
+        Member,
+        related_name="prescriptions",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="就诊人 ID",
+    )
+    medical_case = models.ForeignKey(
+        MedicalCase,
+        related_name="prescriptions",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+        db_comment="关联病例 ID",
+    )
+    prescriber_name = models.CharField(max_length=128, blank=True, default="", db_comment="开方医生")
+    institution_name = models.CharField(max_length=255, blank=True, default="", db_comment="开方机构")
+    prescribed_at = models.DateTimeField(null=True, blank=True, db_index=True, db_comment="开方时间")
+    diagnosis = models.TextField(blank=True, default="", db_comment="诊断信息")
+    prescription_no = models.CharField(max_length=128, blank=True, null=True, db_comment="处方号")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
+
+    class Meta:
+        db_table = "medical_prescription"
+        db_table_comment = "处方信息：服药计划的可选来源。"
+        verbose_name = _("处方")
+        verbose_name_plural = _("处方")
+        ordering = ["-prescribed_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "member", "status", "is_deleted"]),
+            models.Index(fields=["medical_case", "status", "is_deleted"]),
+            models.Index(fields=["prescription_no"]),
+        ]
+
+    def clean(self):
+        if self.member_id and self.member.user_id != self.user_id:
+            raise ValidationError({"member": _("member does not belong to current user")})
+        if self.medical_case_id and self.medical_case.member_id != self.member_id:
+            raise ValidationError({"medical_case": _("medical_case does not belong to current member")})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class MedicationPlan(MedicalBaseModel):
+    """服药计划：定义独立的用药规则，可选关联药箱与处方。"""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "执行中"
+        PAUSED = "paused", "已暂停"
+        COMPLETED = "completed", "已完成"
+        CANCELLED = "cancelled", "已取消"
+
+    member = models.ForeignKey(
+        Member,
+        related_name="medication_plans",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="服药人 ID",
+    )
+    medical_case = models.ForeignKey(
+        MedicalCase,
+        related_name="medication_plans",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+        db_comment="关联病例 ID",
+    )
+    medicine_box = models.ForeignKey(
+        MedicineBox,
+        related_name="plans",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+        db_comment="关联药箱药品 ID",
+    )
+    prescription = models.ForeignKey(
+        Prescription,
+        related_name="plans",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+        db_comment="来源处方 ID",
+    )
+    drug_name = models.CharField(max_length=255, db_comment="药品名称（计划展示用）")
+    dose_per_time = models.CharField(max_length=64, db_comment="单次剂量文本")
+    dose_value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, db_comment="单次剂量数值")
+    dose_unit = models.CharField(max_length=32, default="片", db_comment="剂量单位")
+    frequency_text = models.CharField(max_length=255, db_comment="频次说明")
+    frequency_code = models.CharField(max_length=64, blank=True, default="", db_comment="频次编码")
+    reminder_times = models.JSONField(default=list, blank=True, db_comment='提醒时间点 [{"time":"08:00","dose":1}]')
+    start_date = models.DateField(db_index=True, db_comment="计划开始日期")
+    end_date = models.DateField(null=True, blank=True, db_index=True, db_comment="计划结束日期")
+    duration_days = models.PositiveIntegerField(null=True, blank=True, db_comment="疗程天数")
+    instructions = models.TextField(blank=True, default="", db_comment="用药说明")
+    reminder_enabled = models.BooleanField(default=True, db_comment="是否开启提醒")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
+
+    class Meta:
+        db_table = "medical_medication_plan"
+        db_table_comment = "服药计划：独立的用药规则定义。"
+        verbose_name = _("服药计划")
+        verbose_name_plural = _("服药计划")
+        ordering = ["-start_date", "-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "member", "status", "is_deleted"]),
+            models.Index(fields=["medical_case", "status", "is_deleted"]),
+            models.Index(fields=["medicine_box"]),
+            models.Index(fields=["prescription"]),
+        ]
+
+    def clean(self):
+        if self.member_id and self.member.user_id != self.user_id:
+            raise ValidationError({"member": _("member does not belong to current user")})
+        if self.medical_case_id and self.medical_case.member_id != self.member_id:
+            raise ValidationError({"medical_case": _("medical_case does not belong to current member")})
+        if self.medicine_box_id and self.medicine_box.member_id != self.member_id:
+            raise ValidationError({"medicine_box": _("medicine_box does not belong to current member")})
+        if self.prescription_id and self.prescription.member_id != self.member_id:
+            raise ValidationError({"prescription": _("prescription does not belong to current member")})
+        if self.end_date and self.start_date and self.end_date < self.start_date:
+            raise ValidationError({"end_date": _("end_date cannot be earlier than start_date")})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class MedicationRecord(MedicalBaseModel):
+    """服药记录：计划剂次的执行打卡事实表。"""
+
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "待服药"
+        TAKEN = "taken", "已服药"
+        SKIPPED = "skipped", "已漏服"
+        SNOOZED = "snoozed", "已稍后提醒"
+
+    member = models.ForeignKey(
+        Member,
+        related_name="medication_records",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="服药人 ID",
+    )
+    plan = models.ForeignKey(
+        MedicationPlan,
+        related_name="records",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="所属服药计划 ID",
+    )
+    scheduled_at = models.DateTimeField(db_index=True, db_comment="计划服药时间")
+    taken_at = models.DateTimeField(null=True, blank=True, db_index=True, db_comment="实际服药时间")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED, db_index=True)
+    planned_dose = models.CharField(max_length=64, db_comment="计划剂量")
+    actual_dose = models.CharField(max_length=64, blank=True, default="", db_comment="实际服用剂量")
+    dose_sequence = models.PositiveSmallIntegerField(default=1, db_comment="当日第几次服药")
+    timezone = models.CharField(max_length=64, default="UTC", db_index=True, db_comment="时区")
+    notes = models.TextField(blank=True, default="", db_comment="备注")
+    extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
+
+    class Meta:
+        db_table = "medical_medication_record"
+        db_table_comment = "服药记录：独立的服药执行打卡数据。"
+        verbose_name = _("服药记录")
+        verbose_name_plural = _("服药记录")
+        ordering = ["-scheduled_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["plan", "scheduled_at", "dose_sequence"], name="uniq_plan_schedule_sequence")
+        ]
+        indexes = [
+            models.Index(fields=["user", "member", "scheduled_at", "status"]),
+            models.Index(fields=["plan", "status"]),
+        ]
+
+    def clean(self):
+        if self.member_id and self.member.user_id != self.user_id:
+            raise ValidationError({"member": _("member does not belong to current user")})
+        if self.plan_id and self.plan.member_id != self.member_id:
+            raise ValidationError({"plan": _("plan does not belong to current member")})
 
     def save(self, *args, **kwargs):
         self.full_clean()
