@@ -343,23 +343,19 @@ class MedicineBox(MedicalBaseModel):
         db_index=True,
         db_comment="所属家庭成员 ID",
     )
-    drug_name = models.CharField(max_length=255, blank=True, default="", db_comment="药品名称")
-    medicine_type = models.CharField(
-        max_length=128,
-        blank=True,
-        null=True,
-        db_index=True,
-        db_comment="药品类型（预设编码、中文选项值或自定义文案，可空）",
-    )
-    generic_name = models.CharField(max_length=255, db_comment="通用名")
+    medicine_type = models.CharField(max_length=128, blank=True, null=True, db_index=True, db_comment="药品类型（预设编码、中文选项值或自定义文案，可空）")
+    medicine_name = models.CharField(max_length=255, db_comment="药品名称（合并原通用名与商品名）")
     brand_name = models.CharField(max_length=255, blank=True, default="", db_comment="品牌名")
     dosage_form = models.CharField(max_length=64, blank=True, default="", db_comment="剂型")
     strength = models.CharField(max_length=128, blank=True, default="", db_comment="规格")
-    total_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_comment="总数量")
-    remaining_quantity = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_comment="剩余数量")
-    unit = models.CharField(max_length=32, default="片", db_comment="单位（片/粒/袋）")
+    total_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        db_comment="总数量（服药扣减后同步减少，可空）",
+    )
     expire_date = models.DateField(null=True, blank=True, db_index=True, db_comment="有效期")
-    production_batch = models.CharField(max_length=128, blank=True, default="", db_comment="生产批号")
     notes = models.TextField(blank=True, default="", db_comment="备注")
     extra = models.JSONField(default=dict, blank=True, db_comment="扩展字段")
 
@@ -378,18 +374,14 @@ class MedicineBox(MedicalBaseModel):
     def clean(self):
         if self.member_id and self.member.user_id != self.user_id:
             raise ValidationError({"member": _("member does not belong to current user")})
-        if not (self.generic_name or "").strip():
-            raise ValidationError({"generic_name": _("generic name is required")})
-        if self.remaining_quantity > self.total_quantity:
-            raise ValidationError({"remaining_quantity": _("remaining_quantity cannot exceed total_quantity")})
+        if not (self.medicine_name or "").strip():
+            raise ValidationError({"medicine_name": _("medicine name is required")})
 
     def save(self, *args, **kwargs):
         if self.medicine_type is not None:
             stripped = self.medicine_type.strip()
             self.medicine_type = stripped if stripped else None
-        self.generic_name = (self.generic_name or "").strip()
-        if self.generic_name and not (self.drug_name or "").strip():
-            self.drug_name = self.generic_name
+        self.medicine_name = (self.medicine_name or "").strip()
         self.full_clean()
         super().save(*args, **kwargs)
 

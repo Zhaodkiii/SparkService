@@ -280,7 +280,7 @@ class MedicineBoxViewSet(WrappedModelViewSet):
         if expire_before:
             queryset = queryset.filter(expire_date__lte=expire_before)
         if low_stock in {"1", "true", "True", "yes"}:
-            queryset = queryset.filter(remaining_quantity__lte=0)
+            queryset = queryset.filter(total_quantity__lte=0)
         return queryset
 
 
@@ -379,12 +379,14 @@ class MedicationRecordViewSet(WrappedModelViewSet):
         if plan.medicine_box_id is None or plan.dose_value is None:
             return
         box = MedicineBox.objects.select_for_update().get(pk=plan.medicine_box_id, user=record.user, is_deleted=False)
+        if box.total_quantity is None:
+            return
         consumed = plan.dose_value
-        next_remaining = box.remaining_quantity - consumed
-        if next_remaining < 0:
-            next_remaining = 0
-        box.remaining_quantity = next_remaining
-        box.save(update_fields=["remaining_quantity", "updated_at"])
+        next_total = box.total_quantity - consumed
+        if next_total < 0:
+            next_total = 0
+        box.total_quantity = next_total
+        box.save(update_fields=["total_quantity", "updated_at"])
 
 
 class MemberCompleteDataAPI(APIView):
@@ -537,7 +539,7 @@ class MemberCompleteDataAPI(APIView):
         today_taken = today_medication_records.filter(status=MedicationRecord.Status.TAKEN).count()
         today_skipped = today_medication_records.filter(status=MedicationRecord.Status.SKIPPED).count()
         active_plan_count = medication_plans.filter(status=MedicationPlan.Status.ACTIVE).count()
-        low_stock_count = medicine_boxes.filter(remaining_quantity__lte=0).count()
+        low_stock_count = medicine_boxes.filter(total_quantity__lte=0).count()
         expiring_before = today + timedelta(days=30)
         expiring_soon_count = medicine_boxes.filter(expire_date__isnull=False, expire_date__lte=expiring_before).count()
         adherence_rate = round((today_taken / today_total) * 100, 2) if today_total else 0

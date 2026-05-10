@@ -83,9 +83,9 @@ class MedExamDetailAdmin(admin.ModelAdmin):
 
 @admin.register(MedicineBox)
 class MedicineBoxAdmin(admin.ModelAdmin):
-    list_display = ("id", "member", "drug_name", "medicine_type", "remaining_quantity", "total_quantity", "unit", "expire_date", "is_deleted")
-    list_filter = ("medicine_type", "unit", "expire_date", "is_deleted")
-    search_fields = ("drug_name", "generic_name", "brand_name", "production_batch", "notes")
+    list_display = ("id", "member", "medicine_name", "medicine_type", "total_quantity", "expire_date", "is_deleted")
+    list_filter = ("medicine_type", "expire_date", "is_deleted")
+    search_fields = ("medicine_name", "brand_name", "notes")
 
 
 @admin.register(Prescription)

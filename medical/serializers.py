@@ -295,8 +295,13 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
 
 
 class MedicineBoxSerializer(serializers.ModelSerializer):
-    total_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
-    remaining_quantity = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    total_quantity = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        coerce_to_string=False,
+        required=False,
+        allow_null=True,
+    )
 
     def validate_member(self, value):
         request = self.context.get("request")
@@ -305,21 +310,16 @@ class MedicineBoxSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        merged = dict(attrs)
-        if self.instance is not None:
-            for field in ("total_quantity", "remaining_quantity"):
-                if field not in merged:
-                    merged[field] = getattr(self.instance, field)
-        if merged.get("remaining_quantity") is not None and merged.get("total_quantity") is not None:
-            if merged["remaining_quantity"] > merged["total_quantity"]:
-                raise serializers.ValidationError({"remaining_quantity": [_("remaining_quantity cannot exceed total_quantity")]})
-        if "generic_name" in attrs and isinstance(attrs["generic_name"], str):
-            attrs["generic_name"] = attrs["generic_name"].strip()
-        generic = attrs.get("generic_name")
-        if generic is None and self.instance is not None:
-            generic = self.instance.generic_name
-        if not (generic or "").strip():
-            raise serializers.ValidationError({"generic_name": [_("generic name is required")]})
+        if "medicine_name" in attrs and isinstance(attrs["medicine_name"], str):
+            attrs["medicine_name"] = attrs["medicine_name"].strip()
+
+        name = attrs.get("medicine_name")
+        if name is None and self.instance is not None:
+            name = self.instance.medicine_name
+        if not (name or "").strip():
+            raise serializers.ValidationError({"medicine_name": [_("medicine name is required")]})
+        if "total_quantity" in attrs and attrs.get("total_quantity") == "":
+            attrs["total_quantity"] = None
         if "medicine_type" in attrs:
             mt = attrs["medicine_type"]
             if mt is None or (isinstance(mt, str) and not mt.strip()):
@@ -334,17 +334,13 @@ class MedicineBoxSerializer(serializers.ModelSerializer):
             "id",
             "user",
             "member",
-            "drug_name",
             "medicine_type",
-            "generic_name",
+            "medicine_name",
             "brand_name",
             "dosage_form",
             "strength",
             "total_quantity",
-            "remaining_quantity",
-            "unit",
             "expire_date",
-            "production_batch",
             "notes",
             "extra",
             "created_at",
