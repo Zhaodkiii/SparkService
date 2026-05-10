@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
+from file_manager.models import ManagedFile
+from file_manager.serializers import ManagedFileAttachmentOutSerializer
 
 from medical.models import (
     ExaminationReport,
@@ -295,6 +297,7 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
 
 
 class MedicineBoxSerializer(serializers.ModelSerializer):
+    attachments = serializers.SerializerMethodField()
     total_quantity = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -339,14 +342,29 @@ class MedicineBoxSerializer(serializers.ModelSerializer):
             "brand_name",
             "dosage_form",
             "strength",
+            "dose_unit",
             "total_quantity",
             "expire_date",
             "notes",
             "extra",
+            "attachments",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
+
+    def get_attachments(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return []
+        qs = ManagedFile.objects.filter(
+            user=user,
+            business_type="medicine_box",
+            business_id=str(obj.id),
+            is_deleted=False,
+        ).order_by("-created_at")
+        return ManagedFileAttachmentOutSerializer(qs, many=True).data
 
 
 class PrescriptionSerializer(serializers.ModelSerializer):
@@ -438,6 +456,42 @@ class MedicationPlanSerializer(serializers.ModelSerializer):
         check_owner(medical_case, "medical_case")
         if start_date and end_date and end_date < start_date:
             raise serializers.ValidationError({"end_date": [_("end_date cannot be earlier than start_date")]})
+
+        ftype = merged.get("frequency_type")
+        if ftype is None and instance is not None:
+            ftype = instance.frequency_type
+        if ftype is None:
+            ftype = MedicationPlan.FrequencyType.DAILY
+
+        every_n = merged.get("every_n_days") if "every_n_days" in merged else (
+            getattr(instance, "every_n_days", None) if instance is not None else None
+        )
+        weekdays = merged.get("weekly_weekdays") if "weekly_weekdays" in merged else (
+            getattr(instance, "weekly_weekdays", None) if instance is not None else None
+        )
+        if weekdays is None:
+            weekdays = []
+
+        if ftype == MedicationPlan.FrequencyType.EVERY_N_DAYS:
+            if every_n is None or every_n < 1:
+                raise serializers.ValidationError(
+                    {"every_n_days": [_("every_n_days is required and must be >= 1 when frequency_type is every_n_days")]}
+                )
+            if every_n > 365:
+                raise serializers.ValidationError(
+                    {"every_n_days": [_("every_n_days must be at most 365")]}
+                )
+        if ftype == MedicationPlan.FrequencyType.WEEKLY:
+            if not weekdays:
+                raise serializers.ValidationError(
+                    {"weekly_weekdays": [_("weekly_weekdays must be non-empty when frequency_type is weekly")]}
+                )
+            bad = [d for d in weekdays if not isinstance(d, int) or d < 1 or d > 7]
+            if bad:
+                raise serializers.ValidationError(
+                    {"weekly_weekdays": [_("weekday values must be integers 1–7 (Mon–Sun)")]},
+                )
+
         return attrs
 
     class Meta:
@@ -453,12 +507,13 @@ class MedicationPlanSerializer(serializers.ModelSerializer):
             "dose_per_time",
             "dose_value",
             "dose_unit",
+            "frequency_type",
+            "every_n_days",
+            "weekly_weekdays",
             "frequency_text",
-            "frequency_code",
             "reminder_times",
             "start_date",
             "end_date",
-            "duration_days",
             "instructions",
             "reminder_enabled",
             "status",

@@ -348,6 +348,7 @@ class MedicineBox(MedicalBaseModel):
     brand_name = models.CharField(max_length=255, blank=True, default="", db_comment="品牌名")
     dosage_form = models.CharField(max_length=64, blank=True, default="", db_comment="剂型")
     strength = models.CharField(max_length=128, blank=True, default="", db_comment="规格")
+    dose_unit = models.CharField(max_length=32, blank=True, default="", db_comment="剂量数值单位")
     total_quantity = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -382,6 +383,7 @@ class MedicineBox(MedicalBaseModel):
             stripped = self.medicine_type.strip()
             self.medicine_type = stripped if stripped else None
         self.medicine_name = (self.medicine_name or "").strip()
+        self.dose_unit = (self.dose_unit or "").strip()
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -444,6 +446,11 @@ class Prescription(MedicalBaseModel):
 class MedicationPlan(MedicalBaseModel):
     """服药计划：定义独立的用药规则，可选关联药箱与处方。"""
 
+    class FrequencyType(models.TextChoices):
+        DAILY = "daily", "每天"
+        EVERY_N_DAYS = "every_n_days", "每几天"
+        WEEKLY = "weekly", "每周指定星期"
+
     class Status(models.TextChoices):
         ACTIVE = "active", "执行中"
         PAUSED = "paused", "已暂停"
@@ -488,12 +495,26 @@ class MedicationPlan(MedicalBaseModel):
     dose_per_time = models.CharField(max_length=64, db_comment="单次剂量文本")
     dose_value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, db_comment="单次剂量数值")
     dose_unit = models.CharField(max_length=32, default="片", db_comment="剂量单位")
-    frequency_text = models.CharField(max_length=255, db_comment="频次说明")
-    frequency_code = models.CharField(max_length=64, blank=True, default="", db_comment="频次编码")
+    frequency_type = models.CharField(
+        max_length=20,
+        choices=FrequencyType.choices,
+        default=FrequencyType.DAILY,
+        db_comment="频次类型：每天/每几天/每周",
+    )
+    every_n_days = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        db_comment="间隔天数（仅每几天模式生效）",
+    )
+    weekly_weekdays = models.JSONField(
+        default=list,
+        blank=True,
+        db_comment="每周服药星期 [1,2,3,6,7]，1=周一…7=周日",
+    )
+    frequency_text = models.CharField(max_length=255, db_comment="频次说明文本（展示用，可自动生成或手改）")
     reminder_times = models.JSONField(default=list, blank=True, db_comment='提醒时间点 [{"time":"08:00","dose":1}]')
     start_date = models.DateField(db_index=True, db_comment="计划开始日期")
     end_date = models.DateField(null=True, blank=True, db_index=True, db_comment="计划结束日期")
-    duration_days = models.PositiveIntegerField(null=True, blank=True, db_comment="疗程天数")
     instructions = models.TextField(blank=True, default="", db_comment="用药说明")
     reminder_enabled = models.BooleanField(default=True, db_comment="是否开启提醒")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)

@@ -530,7 +530,7 @@ class MemberCompleteDataAPI(APIView):
             row["attachments"] = attachments_payload("examination_report", e.id)
             exam_payload.append(row)
 
-        medicine_box_payload = MedicineBoxSerializer(medicine_boxes, many=True).data
+        medicine_box_payload = MedicineBoxSerializer(medicine_boxes, many=True, context={"request": request}).data
         prescription_payload = PrescriptionSerializer(prescriptions, many=True).data
         medication_plan_payload = MedicationPlanSerializer(medication_plans, many=True).data
         today_medication_record_payload = MedicationRecordSerializer(today_medication_records, many=True).data
@@ -596,6 +596,7 @@ class MemberCompleteDataAPI(APIView):
         case_ids = [str(pk) for pk in medical_cases.values_list("id", flat=True)]
         hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
         er_ids = [str(pk) for pk in examination_reports.values_list("id", flat=True)]
+        medicine_box_ids = [str(pk) for pk in medicine_boxes.values_list("id", flat=True)]
 
         att_q = []
         if case_ids:
@@ -604,6 +605,8 @@ class MemberCompleteDataAPI(APIView):
             att_q.append(Q(business_type="health_exam_report", business_id__in=hex_ids))
         if er_ids:
             att_q.append(Q(business_type="examination_report", business_id__in=er_ids))
+        if medicine_box_ids:
+            att_q.append(Q(business_type="medicine_box", business_id__in=medicine_box_ids))
 
         attachments_fingerprint = []
         if att_q:
