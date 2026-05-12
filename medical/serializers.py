@@ -410,6 +410,7 @@ class PrescriptionSerializer(serializers.ModelSerializer):
 
 
 class MedicationPlanSerializer(serializers.ModelSerializer):
+    attachments = serializers.SerializerMethodField()
     dose_value = serializers.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -518,10 +519,24 @@ class MedicationPlanSerializer(serializers.ModelSerializer):
             "reminder_enabled",
             "status",
             "extra",
+            "attachments",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
+
+    def get_attachments(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return []
+        qs = ManagedFile.objects.filter(
+            user=user,
+            business_type="medication_plan",
+            business_id=str(obj.id),
+            is_deleted=False,
+        ).order_by("-created_at")
+        return ManagedFileAttachmentOutSerializer(qs, many=True).data
 
 
 class MedicationRecordSerializer(serializers.ModelSerializer):

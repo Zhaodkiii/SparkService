@@ -1,0 +1,123 @@
+ERROR 2026-05-11 00:41:48,059 file_manager.sts_utils [request_id=713ABBDC-AEA3-419F-97ED-04B41698A003] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Max retries exceeded with url: /?RoleArn=acs%3Aram%3A%3A1589159843550123%3Arole%2Fzhaodoss&RoleSessionName=spark-oss-1778460078.054026&DurationSeconds=3600&Policy=%7B%22Version%22%3A%20%221%22%2C%20%22Statement%22%3A%20%5B%7B%22Effect%22%3A%20%22Allow%22%2C%20%22Action%22%3A%20%5B%22oss%3APutObject%22%2C%20%22oss%3AGetObject%22%2C%20%22oss%3ADeleteObject%22%2C%20%22oss%3AListObjects%22%2C%20%22oss%3AListParts%22%2C%20%22oss%3AAbortMultipartUpload%22%2C%20%22oss%3AGetObjectMeta%22%5D%2C%20%22Resource%22%3A%20%5B%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%22%2C%20%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%2F%2A%22%5D%7D%5D%7D&Version=2015-04-01&Action=AssumeRole&Format=JSON&RegionId=cn-shanghai&Timestamp=2026-05-11T00%3A41%3A18Z&SignatureMethod=HMAC-SHA1&SignatureType=&SignatureVersion=1.0&SignatureNonce=6b1ade50e845c3c4c04125eb1d909bf9&AccessKeyId=LTAI5tKL7vYeKfDgDjbZzgfy&Signature=Q10owlgviJJb8OskYNSGbwsegkQ%3D (Caused by NewConnectionError('<aliyunsdkcore.vendored.requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x10b5ee960>: Failed to establish a new connection: [Errno 8] nodename nor servname provided, or not known'))
+ERROR 2026-05-11 00:41:48,063 file_manager.oss_sts_views [request_id=713ABBDC-AEA3-419F-97ED-04B41698A003] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Max retries exceeded with url: /?RoleArn=acs%3Aram%3A%3A1589159843550123%3Arole%2Fzhaodoss&RoleSessionName=spark-oss-1778460078.054026&DurationSeconds=3600&Policy=%7B%22Version%22%3A%20%221%22%2C%20%22Statement%22%3A%20%5B%7B%22Effect%22%3A%20%22Allow%22%2C%20%22Action%22%3A%20%5B%22oss%3APutObject%22%2C%20%22oss%3AGetObject%22%2C%20%22oss%3ADeleteObject%22%2C%20%22oss%3AListObjects%22%2C%20%22oss%3AListParts%22%2C%20%22oss%3AAbortMultipartUpload%22%2C%20%22oss%3AGetObjectMeta%22%5D%2C%20%22Resource%22%3A%20%5B%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%22%2C%20%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%2F%2A%22%5D%7D%5D%7D&Version=2015-04-01&Action=AssumeRole&Format=JSON&RegionId=cn-shanghai&Timestamp=2026-05-11T00%3A41%3A18Z&SignatureMethod=HMAC-SHA1&SignatureType=&SignatureVersion=1.0&SignatureNonce=6b1ade50e845c3c4c04125eb1d909bf9&AccessKeyId=LTAI5tKL7vYeKfDgDjbZzgfy&Signature=Q10owlgviJJb8OskYNSGbwsegkQ%3D (Caused by NewConnectionError('<aliyunsdkcore.vendored.requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x10b5ee960>: Failed to establish a new connection: [Errno 8] nodename nor servname provided, or not known'))
+INFO 2026-05-11 00:42:21,383 file_manager.oss_sts_views [request_id=DD0C498B-7822-4B72-A15B-2BE82FE73B4D] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 01:51:29,281 file_manager.oss_sts_views [request_id=52121B1E-2DDB-4D78-9065-E70E59640EE7] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 01:53:39,463 file_manager.oss_sts_views [request_id=1A3E94AC-19B9-4459-A105-44450E1CB002] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 03:47:46,201 file_manager.oss_sts_views [request_id=FDFB716D-CBB2-4CE7-8D50-6D04ACF091E6] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 03:48:34,120 file_manager.api_io [request_id=33E78554-C688-4524-BC08-F124FBBB5124] 文件登记入参
+INFO 2026-05-11 03:48:34,123 file_manager [request_id=33E78554-C688-4524-BC08-F124FBBB5124] 文件登记成功
+INFO 2026-05-11 03:48:40,236 file_manager [request_id=5BD76240-705E-40CC-854B-70B0044FD9C2] 更新文件业务绑定请求
+INFO 2026-05-11 03:48:40,239 file_manager [request_id=5BD76240-705E-40CC-854B-70B0044FD9C2] 更新文件业务绑定成功
+INFO 2026-05-11 03:48:43,502 file_manager [request_id=E2445D28-FAE8-4D50-A5F3-CD66FADFA4D4] 更新文件业务绑定请求
+INFO 2026-05-11 03:48:43,506 file_manager [request_id=E2445D28-FAE8-4D50-A5F3-CD66FADFA4D4] 更新文件业务绑定成功
+INFO 2026-05-11 03:51:31,127 file_manager.api_io [request_id=FA5D8F2E-2AFF-45D9-8AE6-8BFCE1D25E3F] 文件登记入参
+INFO 2026-05-11 03:51:31,131 file_manager [request_id=FA5D8F2E-2AFF-45D9-8AE6-8BFCE1D25E3F] 文件登记成功
+INFO 2026-05-11 03:51:31,473 file_manager.api_io [request_id=780C945C-6BBC-4C28-A684-6E5E066E9169] 文件登记入参
+INFO 2026-05-11 03:51:31,475 file_manager [request_id=780C945C-6BBC-4C28-A684-6E5E066E9169] 文件登记成功
+INFO 2026-05-11 04:02:49,856 file_manager.oss_sts_views [request_id=2186AAB9-4C30-4EE0-B419-B66EA46707CF] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:04:02,557 file_manager.oss_sts_views [request_id=72A6ADB6-DED7-45BF-B1DF-9C4A6EDBE6C6] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:07:13,088 file_manager.oss_sts_views [request_id=AD97D49B-0AEB-4503-82EF-199F4E6E4F51] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:13:54,380 file_manager.oss_sts_views [request_id=41616D9A-C966-423D-A06C-30A1DE86CC73] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:15:18,794 file_manager.oss_sts_views [request_id=10FB7A98-7BDB-449A-9E82-7BCB27FB70C3] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:16:09,646 file_manager.api_io [request_id=7F069F92-EA32-4A00-9F80-51F55E8E70E0] 文件登记入参
+INFO 2026-05-11 04:16:09,650 file_manager [request_id=7F069F92-EA32-4A00-9F80-51F55E8E70E0] 文件登记成功
+INFO 2026-05-11 04:16:17,293 file_manager [request_id=30780B99-CAE1-46C2-9B7E-0FD67F86C3FD] 更新文件业务绑定请求
+INFO 2026-05-11 04:16:17,298 file_manager [request_id=30780B99-CAE1-46C2-9B7E-0FD67F86C3FD] 更新文件业务绑定成功
+INFO 2026-05-11 04:40:37,725 file_manager.oss_sts_views [request_id=1480ADCF-B44C-40CA-A4AB-12B9D2038706] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:42:42,583 file_manager.api_io [request_id=F9D30B9B-86BB-4971-A02C-B7FA80687A9D] 文件登记入参
+INFO 2026-05-11 04:42:42,587 file_manager [request_id=F9D30B9B-86BB-4971-A02C-B7FA80687A9D] 文件登记成功
+INFO 2026-05-11 04:47:42,120 file_manager.oss_sts_views [request_id=19FB4370-7C34-4E37-BA4E-6A2780FCDBEF] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:47:56,238 file_manager.api_io [request_id=F78E83F1-F7B4-474A-B5DD-950175F4DDEB] 文件登记入参
+INFO 2026-05-11 04:47:56,242 file_manager [request_id=F78E83F1-F7B4-474A-B5DD-950175F4DDEB] 文件登记成功
+INFO 2026-05-11 04:48:19,210 file_manager.api_io [request_id=D7D1E883-95FB-4CA9-AD69-0AE550F9534F] 文件登记入参
+INFO 2026-05-11 04:48:19,215 file_manager [request_id=D7D1E883-95FB-4CA9-AD69-0AE550F9534F] 文件登记成功
+INFO 2026-05-11 04:48:24,257 file_manager [request_id=96F6A692-68A5-401F-B059-63E3BAE8106B] 更新文件业务绑定请求
+INFO 2026-05-11 04:48:24,260 file_manager [request_id=96F6A692-68A5-401F-B059-63E3BAE8106B] 更新文件业务绑定成功
+INFO 2026-05-11 04:53:44,822 file_manager.api_io [request_id=AA814E5F-E1E2-452B-9D2C-959228271651] 文件登记入参
+INFO 2026-05-11 04:53:44,832 file_manager [request_id=AA814E5F-E1E2-452B-9D2C-959228271651] 文件登记成功
+INFO 2026-05-11 04:54:06,299 file_manager [request_id=B30D6301-FAD3-4ED2-986A-636DB4E2C3E4] 更新文件业务绑定请求
+INFO 2026-05-11 04:54:06,304 file_manager [request_id=B30D6301-FAD3-4ED2-986A-636DB4E2C3E4] 更新文件业务绑定成功
+INFO 2026-05-11 04:55:11,637 file_manager.oss_sts_views [request_id=569B29B8-BC82-4273-9C9F-F9FB7F7284E1] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 04:56:53,686 file_manager.oss_sts_views [request_id=1E7E28FD-2C95-43DC-AB8C-5BD47FF579E6] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 05:28:29,526 file_manager.oss_sts_views [request_id=83C0C957-A29E-4094-99E5-A26350C5B82D] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 05:29:29,722 file_manager.api_io [request_id=A401A23D-D840-471E-83D5-E3A9C9A42237] 文件登记入参
+INFO 2026-05-11 05:29:29,727 file_manager [request_id=A401A23D-D840-471E-83D5-E3A9C9A42237] 文件登记成功
+INFO 2026-05-11 05:29:35,469 file_manager [request_id=9CAD735C-861F-4B53-8748-DB357D8AB365] 更新文件业务绑定请求
+INFO 2026-05-11 05:29:35,474 file_manager [request_id=9CAD735C-861F-4B53-8748-DB357D8AB365] 更新文件业务绑定成功
+INFO 2026-05-11 05:30:26,690 file_manager.api_io [request_id=647DE45A-B956-469E-8214-4B29441B30D8] 文件登记入参
+INFO 2026-05-11 05:30:26,693 file_manager [request_id=647DE45A-B956-469E-8214-4B29441B30D8] 文件登记成功
+INFO 2026-05-11 05:30:47,251 file_manager [request_id=186008B2-E79D-42A8-8A5E-7AC5772F53A7] 更新文件业务绑定请求
+INFO 2026-05-11 05:30:47,255 file_manager [request_id=186008B2-E79D-42A8-8A5E-7AC5772F53A7] 更新文件业务绑定成功
+INFO 2026-05-11 05:39:05,441 file_manager.oss_sts_views [request_id=A20E86D8-9AC8-4D02-AF27-439934A0E9A1] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 05:50:15,567 file_manager.oss_sts_views [request_id=56DC858C-2E16-4814-BD09-269AFC2CD14A] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 05:52:25,474 file_manager.api_io [request_id=343065F4-2E69-4A90-AF28-333103F092FB] 文件登记入参
+INFO 2026-05-11 05:52:25,478 file_manager [request_id=343065F4-2E69-4A90-AF28-333103F092FB] 文件登记成功
+INFO 2026-05-11 05:52:25,602 file_manager.api_io [request_id=CEAF47B7-114E-4131-9302-A0EAA6CE9D33] 文件登记入参
+INFO 2026-05-11 05:52:25,605 file_manager [request_id=CEAF47B7-114E-4131-9302-A0EAA6CE9D33] 文件登记成功
+INFO 2026-05-11 05:53:03,950 file_manager [request_id=9DDD6F22-E630-4ECC-B40E-046FC9B21B8A] 更新文件业务绑定请求
+INFO 2026-05-11 05:53:03,955 file_manager [request_id=9DDD6F22-E630-4ECC-B40E-046FC9B21B8A] 更新文件业务绑定成功
+INFO 2026-05-11 05:53:03,970 file_manager [request_id=FE26F1FF-98E4-4104-9F66-4528130F6B41] 更新文件业务绑定请求
+INFO 2026-05-11 05:53:03,974 file_manager [request_id=FE26F1FF-98E4-4104-9F66-4528130F6B41] 更新文件业务绑定成功
+INFO 2026-05-11 06:20:09,550 file_manager.oss_sts_views [request_id=21BBA471-236B-4A2E-B65A-FFC1D1F18CDA] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 07:43:14,974 file_manager.oss_sts_views [request_id=60D8A171-53DB-452C-B45E-E35926025DB6] OSS STS 签发成功 user_id=1
+ERROR 2026-05-11 13:44:35,406 file_manager.sts_utils [request_id=63E996F1-1442-4704-81CF-6278E01E06EA] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Max retries exceeded with url: /?RoleArn=acs%3Aram%3A%3A1589159843550123%3Arole%2Fzhaodoss&RoleSessionName=spark-oss-1778507045.400552&DurationSeconds=3600&Policy=%7B%22Version%22%3A%20%221%22%2C%20%22Statement%22%3A%20%5B%7B%22Effect%22%3A%20%22Allow%22%2C%20%22Action%22%3A%20%5B%22oss%3APutObject%22%2C%20%22oss%3AGetObject%22%2C%20%22oss%3ADeleteObject%22%2C%20%22oss%3AListObjects%22%2C%20%22oss%3AListParts%22%2C%20%22oss%3AAbortMultipartUpload%22%2C%20%22oss%3AGetObjectMeta%22%5D%2C%20%22Resource%22%3A%20%5B%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%22%2C%20%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%2F%2A%22%5D%7D%5D%7D&Version=2015-04-01&Action=AssumeRole&Format=JSON&RegionId=cn-shanghai&Timestamp=2026-05-11T13%3A44%3A05Z&SignatureMethod=HMAC-SHA1&SignatureType=&SignatureVersion=1.0&SignatureNonce=f4d8a16edb9211c9d86f61ce8dcf3f69&AccessKeyId=LTAI5tKL7vYeKfDgDjbZzgfy&Signature=3vUbrbrTr36%2F7BKxGenD%2BcKZ5dw%3D (Caused by NewConnectionError('<aliyunsdkcore.vendored.requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x106aaf770>: Failed to establish a new connection: [Errno 8] nodename nor servname provided, or not known'))
+ERROR 2026-05-11 13:44:35,411 file_manager.oss_sts_views [request_id=63E996F1-1442-4704-81CF-6278E01E06EA] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Max retries exceeded with url: /?RoleArn=acs%3Aram%3A%3A1589159843550123%3Arole%2Fzhaodoss&RoleSessionName=spark-oss-1778507045.400552&DurationSeconds=3600&Policy=%7B%22Version%22%3A%20%221%22%2C%20%22Statement%22%3A%20%5B%7B%22Effect%22%3A%20%22Allow%22%2C%20%22Action%22%3A%20%5B%22oss%3APutObject%22%2C%20%22oss%3AGetObject%22%2C%20%22oss%3ADeleteObject%22%2C%20%22oss%3AListObjects%22%2C%20%22oss%3AListParts%22%2C%20%22oss%3AAbortMultipartUpload%22%2C%20%22oss%3AGetObjectMeta%22%5D%2C%20%22Resource%22%3A%20%5B%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%22%2C%20%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%2F%2A%22%5D%7D%5D%7D&Version=2015-04-01&Action=AssumeRole&Format=JSON&RegionId=cn-shanghai&Timestamp=2026-05-11T13%3A44%3A05Z&SignatureMethod=HMAC-SHA1&SignatureType=&SignatureVersion=1.0&SignatureNonce=f4d8a16edb9211c9d86f61ce8dcf3f69&AccessKeyId=LTAI5tKL7vYeKfDgDjbZzgfy&Signature=3vUbrbrTr36%2F7BKxGenD%2BcKZ5dw%3D (Caused by NewConnectionError('<aliyunsdkcore.vendored.requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x106aaf770>: Failed to establish a new connection: [Errno 8] nodename nor servname provided, or not known'))
+ERROR 2026-05-11 13:44:57,549 file_manager.sts_utils [request_id=4E11A235-1612-4B96-941B-E9F883865EAE] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-05-11 13:44:57,551 file_manager.oss_sts_views [request_id=4E11A235-1612-4B96-941B-E9F883865EAE] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Read timed out. (read timeout=5)
+ERROR 2026-05-11 13:45:03,377 file_manager.sts_utils [request_id=9059D132-181B-4882-A433-0898E55DD336] 获取 STS 凭证失败
+Traceback (most recent call last):
+  File "/Users/hua/Downloads/Reference/SparkService/file_manager/sts_utils.py", line 107, in get_sts_credentials
+    response = client.do_action_with_exception(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 500, in do_action_with_exception
+    status, headers, body, exception = self._implementation_of_do_action(acs_request)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 335, in _implementation_of_do_action
+    return self._handle_retry_and_timeout(endpoint, request, signer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hua/Downloads/Reference/SparkService/.venv/lib/python3.12/site-packages/aliyunsdkcore/client.py", line 420, in _handle_retry_and_timeout
+    raise exception
+aliyunsdkcore.acs_exception.exceptions.ClientException: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Max retries exceeded with url: /?RoleArn=acs%3Aram%3A%3A1589159843550123%3Arole%2Fzhaodoss&RoleSessionName=spark-oss-1778507098.371389&DurationSeconds=3600&Policy=%7B%22Version%22%3A%20%221%22%2C%20%22Statement%22%3A%20%5B%7B%22Effect%22%3A%20%22Allow%22%2C%20%22Action%22%3A%20%5B%22oss%3APutObject%22%2C%20%22oss%3AGetObject%22%2C%20%22oss%3ADeleteObject%22%2C%20%22oss%3AListObjects%22%2C%20%22oss%3AListParts%22%2C%20%22oss%3AAbortMultipartUpload%22%2C%20%22oss%3AGetObjectMeta%22%5D%2C%20%22Resource%22%3A%20%5B%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%22%2C%20%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%2F%2A%22%5D%7D%5D%7D&Version=2015-04-01&Action=AssumeRole&Format=JSON&RegionId=cn-shanghai&Timestamp=2026-05-11T13%3A44%3A58Z&SignatureMethod=HMAC-SHA1&SignatureType=&SignatureVersion=1.0&SignatureNonce=14d465f81a0795d79ec9ee01954e958d&AccessKeyId=LTAI5tKL7vYeKfDgDjbZzgfy&Signature=2QVxa%2FCuIPf7cax9VCGs%2BWqOX%2F8%3D (Caused by ConnectTimeoutError(<aliyunsdkcore.vendored.requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x106caa180>, 'Connection to sts.cn-shanghai.aliyuncs.com timed out. (connect timeout=5)'))
+ERROR 2026-05-11 13:45:03,377 file_manager.oss_sts_views [request_id=9059D132-181B-4882-A433-0898E55DD336] OSS STS 失败: 获取 STS 凭证失败: SDK.HttpError HTTPSConnectionPool(host='sts.cn-shanghai.aliyuncs.com', port=443): Max retries exceeded with url: /?RoleArn=acs%3Aram%3A%3A1589159843550123%3Arole%2Fzhaodoss&RoleSessionName=spark-oss-1778507098.371389&DurationSeconds=3600&Policy=%7B%22Version%22%3A%20%221%22%2C%20%22Statement%22%3A%20%5B%7B%22Effect%22%3A%20%22Allow%22%2C%20%22Action%22%3A%20%5B%22oss%3APutObject%22%2C%20%22oss%3AGetObject%22%2C%20%22oss%3ADeleteObject%22%2C%20%22oss%3AListObjects%22%2C%20%22oss%3AListParts%22%2C%20%22oss%3AAbortMultipartUpload%22%2C%20%22oss%3AGetObjectMeta%22%5D%2C%20%22Resource%22%3A%20%5B%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%22%2C%20%22acs%3Aoss%3A%2A%3A%2A%3Azhaodkdream%2F%2A%22%5D%7D%5D%7D&Version=2015-04-01&Action=AssumeRole&Format=JSON&RegionId=cn-shanghai&Timestamp=2026-05-11T13%3A44%3A58Z&SignatureMethod=HMAC-SHA1&SignatureType=&SignatureVersion=1.0&SignatureNonce=14d465f81a0795d79ec9ee01954e958d&AccessKeyId=LTAI5tKL7vYeKfDgDjbZzgfy&Signature=2QVxa%2FCuIPf7cax9VCGs%2BWqOX%2F8%3D (Caused by ConnectTimeoutError(<aliyunsdkcore.vendored.requests.packages.urllib3.connection.VerifiedHTTPSConnection object at 0x106caa180>, 'Connection to sts.cn-shanghai.aliyuncs.com timed out. (connect timeout=5)'))
+INFO 2026-05-11 14:14:39,390 file_manager.oss_sts_views [request_id=DC3CD359-86B8-46D1-AD88-58B58757648F] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 14:14:43,769 file_manager.oss_sts_views [request_id=90B425D3-F2C6-48F4-961E-8A34ED2D628D] OSS STS 签发成功 user_id=1
+INFO 2026-05-11 23:52:10,214 file_manager.oss_sts_views [request_id=9D34EE68-0F84-404D-910F-E2FC6D78B924] OSS STS 签发成功 user_id=1

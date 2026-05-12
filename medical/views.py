@@ -325,6 +325,45 @@ class MedicationPlanViewSet(WrappedModelViewSet):
             queryset = queryset.filter(status=status_value)
         return queryset
 
+    def _build_collection_etag(self, queryset):
+        records = list(queryset.values_list("id", "updated_at"))
+        plan_ids = [str(plan_id) for plan_id, _ in records]
+        attachments = []
+        if plan_ids:
+            attachments = list(
+                ManagedFile.objects.filter(
+                    user=self.request.user,
+                    business_type="medication_plan",
+                    business_id__in=plan_ids,
+                    is_deleted=False,
+                ).values_list("id", "updated_at")
+            )
+        payload = {
+            "path": self.request.path,
+            "query": self.request.query_params.dict(),
+            "user_id": self.request.user.id,
+            "records": records,
+            "attachments": attachments,
+        }
+        return build_etag(payload)
+
+    def _build_object_etag(self, instance):
+        attachments = list(
+            ManagedFile.objects.filter(
+                user=self.request.user,
+                business_type="medication_plan",
+                business_id=str(instance.id),
+                is_deleted=False,
+            ).values_list("id", "updated_at")
+        )
+        payload = {
+            "id": instance.id,
+            "updated_at": instance.updated_at,
+            "user_id": self.request.user.id,
+            "attachments": attachments,
+        }
+        return build_etag(payload)
+
 
 class MedicationRecordViewSet(WrappedModelViewSet):
     queryset = MedicationRecord.objects.select_related("member", "plan", "plan__medicine_box").all()
@@ -532,7 +571,11 @@ class MemberCompleteDataAPI(APIView):
 
         medicine_box_payload = MedicineBoxSerializer(medicine_boxes, many=True, context={"request": request}).data
         prescription_payload = PrescriptionSerializer(prescriptions, many=True).data
-        medication_plan_payload = MedicationPlanSerializer(medication_plans, many=True).data
+        medication_plan_payload = MedicationPlanSerializer(
+            medication_plans,
+            many=True,
+            context={"request": request},
+        ).data
         today_medication_record_payload = MedicationRecordSerializer(today_medication_records, many=True).data
 
         today_total = today_medication_records.count()
@@ -597,6 +640,7 @@ class MemberCompleteDataAPI(APIView):
         hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
         er_ids = [str(pk) for pk in examination_reports.values_list("id", flat=True)]
         medicine_box_ids = [str(pk) for pk in medicine_boxes.values_list("id", flat=True)]
+        medication_plan_ids = [str(pk) for pk in medication_plans.values_list("id", flat=True)]
 
         att_q = []
         if case_ids:
@@ -607,6 +651,8 @@ class MemberCompleteDataAPI(APIView):
             att_q.append(Q(business_type="examination_report", business_id__in=er_ids))
         if medicine_box_ids:
             att_q.append(Q(business_type="medicine_box", business_id__in=medicine_box_ids))
+        if medication_plan_ids:
+            att_q.append(Q(business_type="medication_plan", business_id__in=medication_plan_ids))
 
         attachments_fingerprint = []
         if att_q:
