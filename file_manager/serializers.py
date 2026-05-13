@@ -103,3 +103,62 @@ class ManagedFileBusinessUpdateSerializer(serializers.Serializer):
             if raise_exception:
                 raise serializers.ValidationError(self.errors)
         return valid
+
+
+class HasAttachmentsMixin(serializers.Serializer):
+    """
+    给任意 ModelSerializer 快速加上 ``attachments`` 字段。
+
+    用法
+    ----
+    1. 子类设置 ``attachments_business_type``（推荐），或在 ``context`` 里传
+       ``"attachments_business_type"``；
+    2. 在 ``Meta.fields`` 里包含 ``"attachments"``；
+    3. 调用时确保 ``context["request"]`` 存在，附件按当前请求用户做隔离。
+
+    可选项
+    ------
+    - ``context["with_attachments"]=False`` 或构造时 ``with_attachments=False``
+      可以关闭附件查询（列表场景节省 N+1）。
+    - 子类可重载 ``_attachments_business_id`` 从对象里提取业务 ID（默认 ``obj.id``）。
+    - 未登录、缺失 business_type/business_id 时一律返回 ``[]``。
+    """
+
+    attachments = serializers.SerializerMethodField()
+
+    attachments_business_type: str = None
+
+    def __init__(self, *args, **kwargs):
+        self.with_attachments = kwargs.pop("with_attachments", None)
+        super().__init__(*args, **kwargs)
+
+    def _attachments_business_id(self, obj):
+        return getattr(obj, "id", None)
+
+    def get_attachments(self, obj):
+        enabled = self.with_attachments
+        if enabled is None:
+            enabled = self.context.get("with_attachments", True)
+        if not enabled:
+            return []
+
+        bt = self.attachments_business_type or self.context.get("attachments_business_type")
+        if not bt:
+            return []
+
+        bid = self._attachments_business_id(obj)
+        if not bid:
+            return []
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return []
+
+        qs = ManagedFile.objects.filter(
+            user=user,
+            business_type=bt,
+            business_id=str(bid),
+            is_deleted=False,
+        ).order_by("-created_at")
+        return ManagedFileAttachmentOutSerializer(qs, many=True).data

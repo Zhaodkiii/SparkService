@@ -2,8 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
-from file_manager.models import ManagedFile
-from file_manager.serializers import ManagedFileAttachmentOutSerializer
+from file_manager.serializers import HasAttachmentsMixin
 
 from medical.models import (
     ExaminationReport,
@@ -296,8 +295,9 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
         return value
 
 
-class MedicineBoxSerializer(serializers.ModelSerializer):
-    attachments = serializers.SerializerMethodField()
+class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
+    attachments_business_type = "medicine_box"
+
     total_quantity = serializers.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -353,21 +353,10 @@ class MedicineBoxSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
-    def get_attachments(self, obj):
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not getattr(user, "is_authenticated", False):
-            return []
-        qs = ManagedFile.objects.filter(
-            user=user,
-            business_type="medicine_box",
-            business_id=str(obj.id),
-            is_deleted=False,
-        ).order_by("-created_at")
-        return ManagedFileAttachmentOutSerializer(qs, many=True).data
 
+class PrescriptionSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
+    attachments_business_type = "prescription_batch"
 
-class PrescriptionSerializer(serializers.ModelSerializer):
     def validate_member(self, value):
         request = self.context.get("request")
         if request and not request.user.is_staff and value.user_id != request.user.id:
@@ -403,14 +392,16 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             "prescription_no",
             "status",
             "extra",
+            "attachments",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
-class MedicationPlanSerializer(serializers.ModelSerializer):
-    attachments = serializers.SerializerMethodField()
+class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
+    attachments_business_type = "medication_plan"
+
     dose_value = serializers.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -524,19 +515,6 @@ class MedicationPlanSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
-
-    def get_attachments(self, obj):
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not getattr(user, "is_authenticated", False):
-            return []
-        qs = ManagedFile.objects.filter(
-            user=user,
-            business_type="medication_plan",
-            business_id=str(obj.id),
-            is_deleted=False,
-        ).order_by("-created_at")
-        return ManagedFileAttachmentOutSerializer(qs, many=True).data
 
 
 class MedicationRecordSerializer(serializers.ModelSerializer):
