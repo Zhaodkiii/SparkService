@@ -8,7 +8,7 @@
   </a-card>
 
   <a-row :gutter="16">
-    <a-col :xs="24" :md="8">
+    <a-col :xs="24" :sm="12" :md="6">
       <a-card title="Worker">
         <a-space>
           <a-tag :color="status?.worker.running ? 'green' : 'red'">{{ status?.worker.running ? '运行中' : '未运行' }}</a-tag>
@@ -16,7 +16,7 @@
         </a-space>
       </a-card>
     </a-col>
-    <a-col :xs="24" :md="8">
+    <a-col :xs="24" :sm="12" :md="6">
       <a-card title="Beat">
         <a-space>
           <a-tag :color="status?.beat.running ? 'green' : 'red'">{{ status?.beat.running ? '运行中' : '未运行' }}</a-tag>
@@ -24,11 +24,19 @@
         </a-space>
       </a-card>
     </a-col>
-    <a-col :xs="24" :md="8">
+    <a-col :xs="24" :sm="12" :md="6">
       <a-card title="Ping">
         <a-space>
           <a-tag :color="status?.ping.healthy ? 'green' : 'orange'">{{ status?.ping.healthy ? '可通信' : '不可通信' }}</a-tag>
           <span>Host: {{ status?.host ?? '-' }}</span>
+        </a-space>
+      </a-card>
+    </a-col>
+    <a-col :xs="24" :sm="12" :md="6">
+      <a-card title="Redis (Broker)">
+        <a-space>
+          <a-tag :color="status?.redis?.healthy ? 'green' : 'orange'">{{ status?.redis?.healthy ? '可连接' : '不可连接' }}</a-tag>
+          <span>{{ status?.redis?.display ?? '-' }}</span>
         </a-space>
       </a-card>
     </a-col>
@@ -40,6 +48,21 @@
         <a-button type="primary" :disabled="!canControl" :loading="actionLoading === 'start'" @click="doControl('start')">启动 Celery</a-button>
         <a-button danger :disabled="!canControl" :loading="actionLoading === 'stop'" @click="doControl('stop')">停止 Celery</a-button>
         <a-button :disabled="!canControl" :loading="actionLoading === 'restart'" @click="doControl('restart')">重启 Celery</a-button>
+        <a-button
+          :disabled="!canControl || !status || !!status.redis?.healthy || !redisManageable"
+          :loading="actionLoading === 'start_redis'"
+          @click="doControl('start_redis')"
+        >
+          启动 Redis
+        </a-button>
+        <a-button
+          danger
+          :disabled="!canControl || !status || !status.redis?.healthy || !redisManageable"
+          :loading="actionLoading === 'stop_redis'"
+          @click="doControl('stop_redis')"
+        >
+          停止 Redis
+        </a-button>
       </a-space>
     </template>
 
@@ -59,6 +82,8 @@
       <a-descriptions-item label="log 目录">{{ status?.log_dir ?? '-' }}</a-descriptions-item>
       <a-descriptions-item label="ping 输出">{{ status?.ping.output || '-' }}</a-descriptions-item>
       <a-descriptions-item label="ping 错误">{{ status?.ping.error || '-' }}</a-descriptions-item>
+      <a-descriptions-item label="Redis (Broker)">{{ status?.redis?.display ?? '-' }}</a-descriptions-item>
+      <a-descriptions-item label="Redis 错误">{{ status?.redis?.error || '-' }}</a-descriptions-item>
     </a-descriptions>
 
     <a-divider />
@@ -79,10 +104,15 @@ import { message } from 'ant-design-vue';
 import { controlTaskManager, fetchTaskManagerStatus, type TaskManagerStatusResponse } from '../api/modules/tasks';
 import { useAuthStore } from '../stores/auth';
 
-type ActionType = 'start' | 'stop' | 'restart';
+type ActionType = 'start' | 'stop' | 'restart' | 'start_redis' | 'stop_redis';
 
 const auth = useAuthStore();
 const canControl = computed(() => auth.hasPermission('button:tasks:manager:control'));
+const redisManageable = computed(() => {
+  const r = status.value?.redis;
+  if (!r) return false;
+  return r.local_manageable === true || r.local_start_available === true;
+});
 const loading = ref(false);
 const actionLoading = ref<ActionType | ''>('');
 const status = ref<TaskManagerStatusResponse | null>(null);
@@ -120,7 +150,35 @@ async function doControl(action: ActionType) {
       pid: item.pid ? String(item.pid) : '-',
     }));
     operationRows.value = [...rows, ...operationRows.value].slice(0, 20);
-    message.success(`操作完成: ${action}`);
+    if (action === 'start_redis') {
+      const op = resp.operations.find((item) => item.name === 'redis');
+      const r = op?.action ?? '';
+      const ok = r === 'already_running' || r.startsWith('started_');
+      if (ok) {
+        if (r === 'already_running') {
+          message.info('Redis 已在运行');
+        } else {
+          message.success('Redis 已就绪');
+        }
+      } else {
+        message.warning(`Redis: ${r || '未知结果'}`);
+      }
+    } else if (action === 'stop_redis') {
+      const op = resp.operations.find((item) => item.name === 'redis');
+      const r = op?.action ?? '';
+      const ok = r === 'already_stopped' || r.startsWith('stopped');
+      if (ok) {
+        if (r === 'already_stopped') {
+          message.info('Redis 已处于停止状态');
+        } else {
+          message.success('Redis 已停止');
+        }
+      } else {
+        message.warning(`Redis: ${r || '未知结果'}`);
+      }
+    } else {
+      message.success(`操作完成: ${action}`);
+    }
   } finally {
     actionLoading.value = '';
   }

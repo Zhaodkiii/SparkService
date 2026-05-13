@@ -1,4 +1,6 @@
 import os
+import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -6,7 +8,9 @@ import sys
 import time
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.core.paginator import Paginator
 from django.db import transaction
@@ -187,12 +191,206 @@ def _celery_ping_status() -> dict:
         return {"healthy": False, "returncode": -1, "output": "", "error": str(exc)[:500]}
 
 
+def _redis_broker_display(broker_url: str) -> str:
+    try:
+        parsed = urlparse(broker_url)
+        if (parsed.scheme or "").lower() == "unix":
+            path = parsed.path or ""
+            return path[:120] if path else "unix"
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port if parsed.port is not None else 6379
+        db = (parsed.path or "/0").strip("/") or "0"
+        return f"{host}:{port}/{db}"
+    except Exception:
+        return "(unparsed)"
+
+
+def _celery_redis_status() -> dict:
+    raw = (getattr(settings, "CELERY_BROKER_URL", None) or "").strip()
+    if not raw:
+        return {"healthy": False, "display": "-", "error": "CELERY_BROKER_URL not configured"}
+
+    scheme = (urlparse(raw).scheme or "").lower()
+    if "redis" not in scheme and scheme != "unix":
+        return {
+            "healthy": False,
+            "display": _redis_broker_display(raw),
+            "error": f"broker scheme is not redis: {scheme or '(empty)'}",
+        }
+
+    try:
+        import redis as redis_lib
+
+        client = redis_lib.from_url(raw, socket_connect_timeout=2.0, socket_timeout=2.0)
+        client.ping()
+        return {"healthy": True, "display": _redis_broker_display(raw), "error": ""}
+    except Exception as exc:
+        return {"healthy": False, "display": _redis_broker_display(raw), "error": str(exc)[:500]}
+
+
+def _redis_start_command_from_settings() -> str:
+    return (os.getenv("REDIS_START_COMMAND") or getattr(settings, "REDIS_START_COMMAND", "") or "").strip()
+
+
+def _redis_stop_command_from_settings() -> str:
+    return (os.getenv("REDIS_STOP_COMMAND") or getattr(settings, "REDIS_STOP_COMMAND", "") or "").strip()
+
+
+def _redis_locally_manageable(broker_url: str) -> bool:
+    broker_url = (broker_url or "").strip()
+    if not broker_url:
+        return False
+    if _redis_start_command_from_settings() or _redis_stop_command_from_settings():
+        return True
+    parsed = urlparse(broker_url)
+    scheme = (parsed.scheme or "").lower()
+    if "redis" not in scheme:
+        return False
+    if scheme == "unix":
+        return False
+    if "+" in scheme:
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return True
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
+def _redis_broker_tcp_port(broker_url: str) -> int:
+    try:
+        parsed = urlparse(broker_url)
+        if parsed.port is not None:
+            return int(parsed.port)
+    except (TypeError, ValueError):
+        pass
+    return 6379
+
+
+def _run_subprocess_logged(cmd: list[str], timeout: int) -> tuple[int, str, str]:
+    proc = subprocess.run(
+        cmd,
+        cwd=str(BASE_DIR),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    out = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    return proc.returncode, out[:800], (proc.stderr or "").strip()[:400]
+
+
+def _try_start_local_redis() -> dict:
+    raw = (getattr(settings, "CELERY_BROKER_URL", None) or "").strip()
+    if not raw:
+        return {"name": "redis", "action": "skipped_no_broker_url"}
+
+    if not _redis_locally_manageable(raw):
+        return {"name": "redis", "action": "skipped_remote_or_unix_broker_set_redis_start_command"}
+
+    if _celery_redis_status()["healthy"]:
+        return {"name": "redis", "action": "already_running"}
+
+    custom = _redis_start_command_from_settings()
+    if custom:
+        try:
+            cmd = shlex.split(custom, posix=(os.name != "nt"))
+        except ValueError as exc:
+            return {"name": "redis", "action": f"invalid_redis_start_command:{exc}"[:200]}
+        rc, combined, _err = _run_subprocess_logged(cmd, timeout=45)
+        time.sleep(0.4)
+        if _celery_redis_status()["healthy"]:
+            return {"name": "redis", "action": "started_custom_command", "pid": None}
+        return {"name": "redis", "action": f"custom_command_failed_rc{rc}:{combined}"[:500]}
+
+    port = _redis_broker_tcp_port(raw)
+    redis_bin = shutil.which("redis-server")
+    if redis_bin:
+        cmd = [redis_bin, "--port", str(port), "--daemonize", "yes"]
+        rc, combined, _err = _run_subprocess_logged(cmd, timeout=15)
+        time.sleep(0.4)
+        if _celery_redis_status()["healthy"]:
+            return {"name": "redis", "action": "started_redis_server", "pid": None}
+
+    brew_hint = ""
+    if sys.platform == "darwin":
+        rc, combined, _err = _run_subprocess_logged(["brew", "services", "start", "redis"], timeout=30)
+        time.sleep(1.0)
+        if _celery_redis_status()["healthy"]:
+            return {"name": "redis", "action": "started_brew_services", "pid": None}
+        brew_hint = combined if (rc != 0 and combined) else f"rc={rc}"
+
+    if sys.platform == "linux":
+        for unit in ("redis-server", "redis"):
+            rc, combined, _err = _run_subprocess_logged(["systemctl", "start", unit], timeout=30)
+            time.sleep(0.6)
+            if _celery_redis_status()["healthy"]:
+                return {"name": "redis", "action": f"started_systemctl_{unit}", "pid": None}
+
+    last = "no_strategy_succeeded"
+    if sys.platform == "darwin" and brew_hint:
+        last = f"brew:{brew_hint[:400]}"
+    return {"name": "redis", "action": f"start_failed:{last}"[:500]}
+
+
+def _try_stop_local_redis() -> dict:
+    raw = (getattr(settings, "CELERY_BROKER_URL", None) or "").strip()
+    if not raw:
+        return {"name": "redis", "action": "skipped_no_broker_url"}
+
+    if not _redis_locally_manageable(raw):
+        return {"name": "redis", "action": "skipped_remote_or_unix_broker_set_redis_stop_command"}
+
+    if not _celery_redis_status()["healthy"]:
+        return {"name": "redis", "action": "already_stopped"}
+
+    custom = _redis_stop_command_from_settings()
+    if custom:
+        try:
+            cmd = shlex.split(custom, posix=(os.name != "nt"))
+        except ValueError as exc:
+            return {"name": "redis", "action": f"invalid_redis_stop_command:{exc}"[:200]}
+        rc, combined, _err = _run_subprocess_logged(cmd, timeout=45)
+        time.sleep(0.5)
+        if not _celery_redis_status()["healthy"]:
+            return {"name": "redis", "action": "stopped_custom_command", "pid": None}
+        return {"name": "redis", "action": f"custom_stop_failed_rc{rc}:{combined}"[:500]}
+
+    port = _redis_broker_tcp_port(raw)
+    cli = shutil.which("redis-cli")
+    if cli:
+        _run_subprocess_logged([cli, "-p", str(port), "shutdown"], timeout=15)
+        time.sleep(0.5)
+        if not _celery_redis_status()["healthy"]:
+            return {"name": "redis", "action": "stopped_redis_cli", "pid": None}
+
+    if sys.platform == "darwin":
+        _run_subprocess_logged(["brew", "services", "stop", "redis"], timeout=30)
+        time.sleep(0.8)
+        if not _celery_redis_status()["healthy"]:
+            return {"name": "redis", "action": "stopped_brew_services", "pid": None}
+
+    if sys.platform == "linux":
+        for unit in ("redis-server", "redis"):
+            _run_subprocess_logged(["systemctl", "stop", unit], timeout=30)
+            time.sleep(0.6)
+            if not _celery_redis_status()["healthy"]:
+                return {"name": "redis", "action": f"stopped_systemctl_{unit}", "pid": None}
+
+    if not _celery_redis_status()["healthy"]:
+        return {"name": "redis", "action": "stopped", "pid": None}
+
+    return {"name": "redis", "action": "stop_failed:still_reachable", "pid": None}
+
+
 def _get_celery_runtime_status() -> dict:
     worker_pid = _read_pid(RUN_DIR / "celery_worker.pid")
     beat_pid = _read_pid(RUN_DIR / "celery_beat.pid")
     worker_running = _is_pid_running(worker_pid)
     beat_running = _is_pid_running(beat_pid)
     ping = _celery_ping_status() if worker_running else {"healthy": False, "returncode": -1, "output": "", "error": "worker_not_running"}
+    redis_status = _celery_redis_status()
+    broker_url = (getattr(settings, "CELERY_BROKER_URL", None) or "").strip()
+    redis_status["local_manageable"] = _redis_locally_manageable(broker_url)
 
     return {
         "host": socket.gethostname(),
@@ -200,6 +398,7 @@ def _get_celery_runtime_status() -> dict:
         "beat": {"pid": beat_pid, "running": beat_running},
         "overall_running": worker_running and beat_running,
         "ping": ping,
+        "redis": redis_status,
         "run_dir": str(RUN_DIR),
         "log_dir": str(LOG_DIR),
     }
@@ -1328,8 +1527,40 @@ class AdminAsyncTaskManagerControlView(APIView):
 
     def post(self, request, action: str):
         action = (action or "").strip().lower()
-        if action not in {"start", "stop", "restart"}:
+        if action not in {"start", "stop", "restart", "start_redis", "stop_redis"}:
             return error_response(msg="invalid_action", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+
+        if action == "start_redis":
+            operations = [_try_start_local_redis()]
+            payload = {
+                "action": action,
+                "operations": operations,
+                "status": _get_celery_runtime_status(),
+            }
+            write_audit_log(
+                request,
+                action="admin.tasks.manager.start_redis",
+                resource_type="celery_runtime",
+                status_code=200,
+                response_payload=payload,
+            )
+            return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+        if action == "stop_redis":
+            operations = [_try_stop_local_redis()]
+            payload = {
+                "action": action,
+                "operations": operations,
+                "status": _get_celery_runtime_status(),
+            }
+            write_audit_log(
+                request,
+                action="admin.tasks.manager.stop_redis",
+                resource_type="celery_runtime",
+                status_code=200,
+                response_payload=payload,
+            )
+            return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
         celery_worker_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "worker", "--loglevel=INFO"]
         celery_beat_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "beat", "--loglevel=INFO"]

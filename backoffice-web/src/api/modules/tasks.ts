@@ -52,12 +52,20 @@ export interface TaskManagerStatusResponse {
     output: string;
     error: string;
   };
+  redis: {
+    healthy: boolean;
+    display: string;
+    error: string;
+    local_manageable?: boolean;
+    /** @deprecated 与 local_manageable 相同，兼容旧后端 */
+    local_start_available?: boolean;
+  };
   run_dir: string;
   log_dir: string;
 }
 
 export interface TaskManagerControlResponse {
-  action: 'start' | 'stop' | 'restart';
+  action: 'start' | 'stop' | 'restart' | 'start_redis' | 'stop_redis';
   operations: Array<{ name: string; action: string; pid?: number }>;
   status: TaskManagerStatusResponse;
 }
@@ -66,6 +74,6 @@ export function fetchTaskManagerStatus() {
   return http.get<unknown, TaskManagerStatusResponse>('/api/admin/v1/tasks/manager/status/');
 }
 
-export function controlTaskManager(action: 'start' | 'stop' | 'restart') {
+export function controlTaskManager(action: 'start' | 'stop' | 'restart' | 'start_redis' | 'stop_redis') {
   return http.post<unknown, TaskManagerControlResponse>(`/api/admin/v1/tasks/manager/${action}/`, {});
 }

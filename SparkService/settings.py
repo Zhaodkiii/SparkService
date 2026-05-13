@@ -277,6 +277,9 @@ CORS_ALLOWED_ORIGINS = [
 # Celery
 # -------------------------
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+# Backoffice 异步任务页 Redis 启停：自定义命令（如 docker start/stop myredis）；不设则按本机 redis-server / redis-cli / brew / systemctl 尝试
+REDIS_START_COMMAND = os.getenv("REDIS_START_COMMAND", "").strip()
+REDIS_STOP_COMMAND = os.getenv("REDIS_STOP_COMMAND", "").strip()
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"

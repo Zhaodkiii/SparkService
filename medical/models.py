@@ -30,10 +30,10 @@ class MedicalBaseModel(models.Model):
 
     # 关联用户：一个用户可拥有多个成员/医疗记录；删除用户时级联删除其医疗数据。
     user = models.ForeignKey(User, related_name="%(class)s_items", on_delete=models.CASCADE, db_index=True)
-    is_deleted = models.BooleanField(default=False, db_index=True)  # 软删除标记
-    deleted_at = models.DateTimeField(null=True, blank=True)  # 软删除时间
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    is_deleted = models.BooleanField(default=False, db_index=True, db_comment="是否删除")
+    deleted_at = models.DateTimeField(null=True, blank=True, db_comment="软删除时间")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_comment="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, db_index=True, db_comment="更新时间")
     objects = SoftDeleteManager()
     all_objects = models.Manager()
 
