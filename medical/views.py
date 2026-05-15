@@ -844,23 +844,23 @@ class _WorkflowBaseAPIView(APIView):
 
         for idx, raw_item in enumerate(items):
             item = dict(raw_item or {})
-            box_source = dict(self._value(item, "medicine_box", "medicineBox", default={}) or {})
+            box_source = dict(item.get("medicine_box") or {})
             medicine_name = (
-                self._value(box_source, "medicine_name", "medicineName")
-                or self._value(item, "medicine_name", "medicineName", "drug_name", "drugName", "generic_name", "genericName", "brand_name", "brandName")
+                box_source.get("medicine_name")
+                or item.get("drug_name")
                 or _("Unnamed medicine")
             )
 
             box_payload = {
                 "member": member.id,
-                "medicine_type": self._value(box_source, "medicine_type", "medicineType") or self._value(item, "medicine_type", "medicineType"),
+                "medicine_type": box_source.get("medicine_type"),
                 "medicine_name": medicine_name,
-                "brand_name": self._value(box_source, "brand_name", "brandName") or self._value(item, "brand_name", "brandName") or "",
-                "dosage_form": self._value(box_source, "dosage_form", "dosageForm") or self._value(item, "dosage_form", "dosageForm") or "",
-                "strength": self._value(box_source, "strength") or self._value(item, "strength") or "",
-                "dose_unit": self._value(box_source, "dose_unit", "doseUnit") or self._value(item, "dose_unit", "doseUnit") or "片",
-                "total_quantity": self._value(box_source, "total_quantity", "totalQuantity") or self._value(item, "total_quantity", "totalQuantity"),
-                "expire_date": self._value(box_source, "expire_date", "expireDate") or self._value(item, "expire_date", "expireDate"),
+                "brand_name": box_source.get("brand_name") or "",
+                "dosage_form": box_source.get("dosage_form") or "",
+                "strength": box_source.get("strength") or "",
+                "dose_unit": box_source.get("dose_unit") or item.get("dose_unit") or "片",
+                "total_quantity": box_source.get("total_quantity"),
+                "expire_date": box_source.get("expire_date"),
                 "notes": self._value(box_source, "notes") or "",
                 "extra": {**(box_source.get("extra") or {}), "source": "typed_upload"},
             }
@@ -870,13 +870,13 @@ class _WorkflowBaseAPIView(APIView):
                 return None, validation_error
             medicine_box = box_serializer.save(user=request.user)
 
-            dose_unit = self._value(item, "dose_unit", "doseUnit") or medicine_box.dose_unit or "片"
-            dose_per_time = self._value(item, "dose_per_time", "dosePerTime") or (
-                f"{self._value(item, 'dose_value', 'doseValue')} {dose_unit}".strip()
-                if self._value(item, "dose_value", "doseValue") else ""
+            dose_unit = item.get("dose_unit") or medicine_box.dose_unit or "片"
+            dose_per_time = item.get("dose_per_time") or (
+                f"{item.get('dose_value')} {dose_unit}".strip()
+                if item.get("dose_value") else ""
             ) or _("Follow medical advice")
-            start_date = self._value(item, "start_date", "startDate") or timezone.localdate().isoformat()
-            frequency_type = self._value(item, "frequency_type", "frequencyType") or MedicationPlan.FrequencyType.DAILY
+            start_date = item.get("start_date") or timezone.localdate().isoformat()
+            frequency_type = item.get("frequency_type") or MedicationPlan.FrequencyType.DAILY
             if frequency_type not in {choice[0] for choice in MedicationPlan.FrequencyType.choices}:
                 frequency_type = MedicationPlan.FrequencyType.DAILY
 
@@ -885,19 +885,19 @@ class _WorkflowBaseAPIView(APIView):
                 "medical_case": medical_case.id if medical_case else None,
                 "medicine_box": medicine_box.id,
                 "prescription": prescription.id if prescription else None,
-                "drug_name": self._value(item, "drug_name", "drugName") or medicine_name,
+                "drug_name": item.get("drug_name") or medicine_name,
                 "dose_per_time": dose_per_time,
-                "dose_value": self._value(item, "dose_value", "doseValue"),
+                "dose_value": item.get("dose_value"),
                 "dose_unit": dose_unit,
                 "frequency_type": frequency_type,
-                "every_n_days": self._value(item, "every_n_days", "everyNDays"),
-                "weekly_weekdays": self._value(item, "weekly_weekdays", "weeklyWeekdays", default=[]),
-                "frequency_text": self._value(item, "frequency_text", "frequencyText") or _("Follow medical advice"),
-                "reminder_times": self._value(item, "reminder_times", "reminderTimes", default=[]),
+                "every_n_days": item.get("every_n_days"),
+                "weekly_weekdays": item.get("weekly_weekdays") or [],
+                "frequency_text": item.get("frequency_text") or _("Follow medical advice"),
+                "reminder_times": item.get("reminder_times") or [],
                 "start_date": start_date,
-                "end_date": self._value(item, "end_date", "endDate"),
-                "instructions": self._value(item, "instructions", "route") or "",
-                "reminder_enabled": self._value(item, "reminder_enabled", "reminderEnabled", default=True),
+                "end_date": item.get("end_date"),
+                "instructions": item.get("instructions") or "",
+                "reminder_enabled": item.get("reminder_enabled", True),
                 "status": self._value(item, "status", default=MedicationPlan.Status.ACTIVE),
                 "extra": {**(item.get("extra") or {}), "source": "typed_upload", "sort_order": str(idx)},
             }
@@ -1235,7 +1235,7 @@ class MedicationPlanWorkflowSaveView(_WorkflowBaseAPIView):
         created, validation_error = self._create_medication_plan_bundle(
             request=request,
             member=member,
-            items=payload.get("items") or payload.get("medication_plans") or payload.get("medications") or [],
+            items=payload.get("items") or [],
             medical_case=medical_case,
             prescription=prescription,
             file_ids=file_ids,
@@ -1421,23 +1421,23 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
                     detail_ser.is_valid(raise_exception=True)
                     detail_ser.save()
 
-        # ---------- prescription_batches / medication_plans（批量，可选）----------
-        prescription_payloads = data.get("prescription_batches") or data.get("prescriptions") or []
+        # ---------- prescriptions / medication_plans（批量，可选）----------
+        prescription_payloads = data.get("prescriptions") or []
         if isinstance(prescription_payloads, list) and prescription_payloads:
             result["prescription_ids"] = []
             result["medicine_box_ids"] = []
             result["medication_plan_ids"] = []
             for prescription_payload in prescription_payloads:
                 payload = dict(prescription_payload or {})
-                items = payload.pop("medication_plans", None) or payload.pop("medications", []) or []
+                items = payload.get("medication_plans") or []
                 prescription_data = {
                     "member": member_id,
                     "medical_case": case_id,
-                    "prescriber_name": payload.get("prescriber_name") or payload.get("prescriberName", ""),
-                    "institution_name": payload.get("institution_name") or payload.get("institutionName", ""),
-                    "prescribed_at": self._normalize_nullable_datetime(payload.get("prescribed_at") or payload.get("prescribedAt")),
+                    "prescriber_name": payload.get("prescriber_name", ""),
+                    "institution_name": payload.get("institution_name", ""),
+                    "prescribed_at": self._normalize_nullable_datetime(payload.get("prescribed_at")),
                     "diagnosis": payload.get("diagnosis", ""),
-                    "prescription_no": payload.get("prescription_no") or payload.get("prescriptionNo") or payload.get("batch_no") or payload.get("batchNo"),
+                    "prescription_no": payload.get("prescription_no"),
                     "status": payload.get("status", Prescription.Status.ACTIVE),
                     "extra": {**(payload.get("extra") or {}), "source": "combined_create"},
                 }

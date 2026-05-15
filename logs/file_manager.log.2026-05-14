@@ -1,0 +1,20 @@
+INFO 2026-05-14 08:12:26,990 file_manager.oss_sts_views [request_id=50C59BF5-7C95-41DC-BF20-79ACEBCA5030] OSS STS 签发成功 user_id=1
+INFO 2026-05-14 08:12:42,751 file_manager.api_io [request_id=EC6F4FB3-8861-49E1-AD1A-94175A97C8A9] 文件登记入参
+INFO 2026-05-14 08:12:42,757 file_manager [request_id=EC6F4FB3-8861-49E1-AD1A-94175A97C8A9] 文件登记成功
+INFO 2026-05-14 08:12:47,975 file_manager [request_id=2FBB30C9-EDEF-49DC-A11D-687C821BAF12] 更新文件业务绑定请求
+INFO 2026-05-14 08:12:47,979 file_manager [request_id=2FBB30C9-EDEF-49DC-A11D-687C821BAF12] 更新文件业务绑定成功
+{"ts": "2026-05-14T08:23:16.737028+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 58657, "thread": "MainThread"}
+{"ts": "2026-05-14T08:23:56.296704+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 59473, "thread": "MainThread"}
+INFO 2026-05-14 08:24:17,503 file_manager [request_id=8D5F6B18-E2F6-48D2-9566-1F4ABE8C0FEA] 更新文件业务绑定请求
+INFO 2026-05-14 08:24:17,505 file_manager [request_id=8D5F6B18-E2F6-48D2-9566-1F4ABE8C0FEA] 更新文件业务绑定成功
+INFO 2026-05-14 08:25:03,243 file_manager.api_io [request_id=6EAEF889-6563-4610-97E2-1DDD9286EE63] 文件登记入参
+INFO 2026-05-14 08:25:03,246 file_manager [request_id=6EAEF889-6563-4610-97E2-1DDD9286EE63] 文件登记成功
+INFO 2026-05-14 08:25:06,099 file_manager [request_id=7EEF1FA6-B1F0-44A3-BF4A-BFDB146DB97C] 更新文件业务绑定请求
+INFO 2026-05-14 08:25:06,101 file_manager [request_id=7EEF1FA6-B1F0-44A3-BF4A-BFDB146DB97C] 更新文件业务绑定成功
+{"ts": "2026-05-14T08:52:51.827755+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 84169, "thread": "MainThread"}
+{"ts": "2026-05-14T09:00:01.481427+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 91452, "thread": "MainThread"}
+INFO 2026-05-14 09:01:00,481 file_manager.oss_sts_views [request_id=8AEC5A0F-C61D-41EF-BD20-C81E511CC8FD] OSS STS 签发成功 user_id=1
+INFO 2026-05-14 09:01:01,657 file_manager.api_io [request_id=CDC823FF-9958-42EF-98DA-25582FC2999C] 文件登记入参
+INFO 2026-05-14 09:01:01,660 file_manager [request_id=CDC823FF-9958-42EF-98DA-25582FC2999C] 文件登记成功
+INFO 2026-05-14 09:01:03,812 file_manager [request_id=791EBB1B-BB60-4E18-BBD7-C158A8020069] 更新文件业务绑定请求
+INFO 2026-05-14 09:01:03,814 file_manager [request_id=791EBB1B-BB60-4E18-BBD7-C158A8020069] 更新文件业务绑定成功
