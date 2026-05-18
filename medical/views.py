@@ -751,6 +751,17 @@ class _WorkflowBaseAPIView(APIView):
             business_id=str(business_id),
         )
 
+    @staticmethod
+    def _pop_file_ids(payload, *keys):
+        if not hasattr(payload, "pop"):
+            return []
+        file_ids = []
+        for key in keys or ("file_ids", "source_file_ids"):
+            value = payload.pop(key, [])
+            if isinstance(value, list):
+                file_ids.extend(value)
+        return list(dict.fromkeys(file_ids))
+
     def _validate_or_error(self, serializer):
         if serializer.is_valid():
             return None
@@ -844,6 +855,7 @@ class _WorkflowBaseAPIView(APIView):
 
         for idx, raw_item in enumerate(items):
             item = dict(raw_item or {})
+            item_file_ids = self._pop_file_ids(item, "file_ids", "source_file_ids")
             box_source = dict(item.get("medicine_box") or {})
             medicine_name = (
                 box_source.get("medicine_name")
@@ -906,10 +918,13 @@ class _WorkflowBaseAPIView(APIView):
             if validation_error is not None:
                 return None, validation_error
             plan = plan_serializer.save(user=request.user)
+            self._bind_files(request.user, "medication_plan", plan.id, item_file_ids)
             created.append({"medicine_box_id": medicine_box.id, "medication_plan_id": plan.id})
 
         if created and file_ids:
-            self._bind_files(request.user, "medicine_box", created[0]["medicine_box_id"], file_ids)
+            business_type = "prescription_batch" if prescription else "medication_plan"
+            business_id = prescription.id if prescription else created[0]["medication_plan_id"]
+            self._bind_files(request.user, business_type, business_id, file_ids)
         return created, None
 
 class MedicalCaseWorkflowSaveView(_WorkflowBaseAPIView):
@@ -1324,11 +1339,17 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
         # =========================================================
         # (2) 处理病历 MedicalCase：必须
         # =========================================================
+        case_payload = dict(case_payload)
+        case_file_ids = self._pop_file_ids(case_payload, "source_file_ids", "file_ids")
+        legacy_source_file_ids = data.get("source_file_ids") or []
+        if isinstance(legacy_source_file_ids, list):
+            case_file_ids = list(dict.fromkeys(case_file_ids + legacy_source_file_ids))
         case_payload["member"] = member_id
         case_ser = MedicalCaseSerializer(data=case_payload, context={"request": request})
         case_ser.is_valid(raise_exception=True)
         case_obj = case_ser.save(user=request.user)
         case_id = case_obj.id
+        self._bind_files(request.user, "medical_case", case_id, case_file_ids)
 
         # =========================================================
         # (3) 可选创建：symptom/visit/surgery/follow-up/examination_reports
@@ -1343,42 +1364,49 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
         symptom_payload = data.get("symptom")
         if symptom_payload:
             payload = dict(symptom_payload)
+            file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
             payload["started_at"] = self._normalize_nullable_datetime(payload.get("started_at"))
             payload["member"] = member_id
             payload["medical_case"] = case_id
             ser = SymptomSerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
             obj = ser.save(user=request.user)
+            self._bind_files(request.user, "symptom", obj.id, file_ids)
             result["symptom_id"] = obj.id
 
         # ---------- visit（单个，可选）----------
         visit_payload = data.get("visit")
         if visit_payload:
             payload = dict(visit_payload)
+            file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
             payload["visited_at"] = self._normalize_nullable_datetime(payload.get("visited_at"))
             payload["member"] = member_id
             payload["medical_case"] = case_id
             ser = VisitSerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
             obj = ser.save(user=request.user)
+            self._bind_files(request.user, "visit", obj.id, file_ids)
             result["visit_id"] = obj.id
 
         # ---------- surgery（单个，可选）----------
         surgery_payload = data.get("surgery")
         if surgery_payload:
             payload = dict(surgery_payload)
+            file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
             payload["performed_at"] = self._normalize_nullable_datetime(payload.get("performed_at"))
             payload["member"] = member_id
             payload["medical_case"] = case_id
             ser = SurgerySerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
             obj = ser.save(user=request.user)
+            self._bind_files(request.user, "surgery", obj.id, file_ids)
             result["surgery_id"] = obj.id
 
         # ---------- follow_up（单个，可选）----------
         follow_up_payload = data.get("follow_up")
         if follow_up_payload:
             payload = dict(follow_up_payload)
+            file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
             payload["planned_at"] = self._normalize_nullable_datetime(payload.get("planned_at"))
             payload["completed_at"] = self._normalize_nullable_datetime(payload.get("completed_at"))
             payload["member"] = member_id
@@ -1386,6 +1414,7 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
             ser = FollowUpSerializer(data=payload, context={"request": request})
             ser.is_valid(raise_exception=True)
             obj = ser.save(user=request.user)
+            self._bind_files(request.user, "follow_up", obj.id, file_ids)
             result["follow_up_id"] = obj.id
 
         # ---------- examination_reports（批量，可选）----------
@@ -1394,6 +1423,7 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
             result["examination_report_ids"] = []
             for rep in exam_reports_payload:
                 payload = dict(rep or {})
+                file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
                 payload["performed_at"] = self._normalize_nullable_datetime(payload.get("performed_at"))
                 payload["reported_at"] = self._normalize_nullable_datetime(payload.get("reported_at"))
                 payload["member"] = member_id
@@ -1405,6 +1435,7 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
                 ser = ExaminationReportSerializer(data=payload, context={"request": request})
                 ser.is_valid(raise_exception=True)
                 obj = ser.save(user=request.user)
+                self._bind_files(request.user, "examination_report", obj.id, file_ids)
                 result["examination_report_ids"].append(obj.id)
 
                 # 创建明细
@@ -1429,6 +1460,7 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
             result["medication_plan_ids"] = []
             for prescription_payload in prescription_payloads:
                 payload = dict(prescription_payload or {})
+                file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
                 items = payload.get("medication_plans") or []
                 prescription_data = {
                     "member": member_id,
@@ -1444,6 +1476,7 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
                 prescription_serializer = PrescriptionSerializer(data=prescription_data, context={"request": request})
                 prescription_serializer.is_valid(raise_exception=True)
                 prescription = prescription_serializer.save(user=request.user)
+                self._bind_files(request.user, "prescription_batch", prescription.id, file_ids)
                 result["prescription_ids"].append(prescription.id)
 
                 created, validation_error = self._create_medication_plan_bundle(
@@ -1459,18 +1492,5 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
                 for row in created or []:
                     result["medicine_box_ids"].append(row["medicine_box_id"])
                     result["medication_plan_ids"].append(row["medication_plan_id"])
-
-        # ---------- source_file_ids（附件绑定，可选）----------
-        source_file_ids = data.get("source_file_ids") or []
-        if isinstance(source_file_ids, list) and source_file_ids:
-            # 绑定文件到病历
-            for file_id in source_file_ids:
-                try:
-                    file_record = ManagedFile.objects.get(id=file_id, user=request.user)
-                    file_record.business_type = "medical_case"
-                    file_record.business_id = str(case_id)
-                    file_record.save(update_fields=["business_type", "business_id"])
-                except ManagedFile.DoesNotExist:
-                    pass  # 忽略不存在的文件
 
         return Response(result, status=status.HTTP_201_CREATED)
