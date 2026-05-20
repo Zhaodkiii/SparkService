@@ -41,15 +41,22 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     thread_role_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     thread_system_prompt = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     attachments = serializers.JSONField(required=False)
-    blocks = serializers.JSONField(required=True)
+    blocks = serializers.ListField(child=serializers.JSONField(), required=True)
     reasoning_content = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     reasoning_duration_ms = serializers.IntegerField(required=False, allow_null=True)
     reasoning_expanded = serializers.BooleanField(required=False)
     reasoning_visibility = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
+class ChatRemoteMessageBlockUpdateSerializer(serializers.Serializer):
+    thread_id = serializers.UUIDField()
+    client_message_id = serializers.UUIDField()
+    block = serializers.JSONField()
+
+
 class ChatPushRequestSerializer(serializers.Serializer):
-    messages = ChatRemoteMessageSerializer(many=True)
+    messages = ChatRemoteMessageSerializer(many=True, required=False, default=list)
+    block_updates = ChatRemoteMessageBlockUpdateSerializer(many=True, required=False, default=list)
 
 
 class ChatThreadPushRequestSerializer(serializers.Serializer):

@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from chat_sync.events import ChatSyncNotifier
-from chat_sync.models import ChatMessage, ChatThread
+from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from chat_sync.serializers import (
     ChatPushRequestSerializer,
     ChatThreadDeleteRequestSerializer,
@@ -87,16 +87,6 @@ def _normalize_cursor(cursor: str | None) -> datetime | None:
         return None
 
 
-def _metadata_to_public_fields(metadata: dict) -> dict:
-    return {
-        "attachments": metadata.get("attachments") or [],
-        "blocks": metadata.get("blocks") or [],
-        "reasoning_content": metadata.get("reasoning_content"),
-        "reasoning_duration_ms": metadata.get("reasoning_duration_ms"),
-        "reasoning_expanded": metadata.get("reasoning_expanded"),
-        "reasoning_visibility": metadata.get("reasoning_visibility"),
-    }
-
 def _extract_image_delivery_mode_from_attachments(attachments: list) -> str | None:
     for item in attachments:
         if isinstance(item, dict) is False:
@@ -113,7 +103,6 @@ def _extract_image_delivery_mode_from_attachments(attachments: list) -> str | No
 
 def _to_payload(message: ChatMessage) -> dict:
     metadata = message.metadata or {}
-    public_fields = _metadata_to_public_fields(metadata)
     return {
         "thread_id": str(message.thread_id),
         "role": message.role,
@@ -124,13 +113,125 @@ def _to_payload(message: ChatMessage) -> dict:
         "created_at": message.created_at.isoformat(),
         "server_updated_at": message.server_updated_at.isoformat(),
         "tombstone": message.tombstone,
-        "attachments": public_fields["attachments"],
-        "blocks": public_fields["blocks"],
-        "reasoning_content": public_fields["reasoning_content"],
-        "reasoning_duration_ms": public_fields["reasoning_duration_ms"],
-        "reasoning_expanded": public_fields["reasoning_expanded"],
-        "reasoning_visibility": public_fields["reasoning_visibility"],
+        "attachments": metadata.get("attachments") or [],
+        "blocks": [_block_to_payload(block) for block in message.blocks.all()],
+        "reasoning_content": metadata.get("reasoning_content"),
+        "reasoning_duration_ms": metadata.get("reasoning_duration_ms"),
+        "reasoning_expanded": metadata.get("reasoning_expanded"),
+        "reasoning_visibility": metadata.get("reasoning_visibility"),
     }
+
+
+def _block_to_payload(block: ChatMessageBlock) -> dict:
+    payload = dict(block.payload or {})
+    payload.setdefault("id", str(block.id))
+    payload.setdefault("kind", block.kind)
+    payload.setdefault("status", block.status)
+    payload.setdefault("revision", block.revision)
+    payload.setdefault("order_key", block.order_key)
+    payload.setdefault("tool_call_id", block.tool_call_id or None)
+    payload.setdefault("parent_tool_call_id", block.parent_tool_call_id or None)
+    payload.setdefault("parent_block_id", str(block.parent_block_id) if block.parent_block_id else None)
+    payload.setdefault("node_role", block.node_role)
+    payload.setdefault("anchor", block.anchor)
+    payload.setdefault("created_at", block.created_at.isoformat())
+    payload.setdefault("updated_at", block.updated_at.isoformat())
+    return payload
+
+
+def _block_value(raw: dict, snake: str, camel: str | None = None, default=None):
+    if snake in raw:
+        return raw.get(snake)
+    if camel is not None and camel in raw:
+        return raw.get(camel)
+    return default
+
+
+def _block_datetime(raw: dict, key: str, fallback: datetime) -> datetime:
+    value = _block_value(raw, key, _snake_to_camel(key))
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        parsed = parse_datetime(value)
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed
+    return fallback
+
+
+def _snake_to_camel(value: str) -> str:
+    head, *tail = value.split("_")
+    return head + "".join(part[:1].upper() + part[1:] for part in tail)
+
+
+def _upsert_message_blocks(*, user, thread: ChatThread, message: ChatMessage, blocks: list[dict], delete_missing: bool = True) -> None:
+    incoming_ids = set()
+    for raw in blocks:
+        block_id = _block_value(raw, "id")
+        if block_id is None:
+            continue
+        incoming_ids.add(block_id)
+        local_revision = int(_block_value(raw, "revision", default=0) or 0)
+        existing = ChatMessageBlock.objects.filter(user=user, id=block_id).first()
+        if existing is not None and existing.revision > local_revision:
+            continue
+        incoming_status = _block_value(raw, "status", default=ChatMessageBlock.Status.READY) or ChatMessageBlock.Status.READY
+        if existing is not None and existing.status == ChatMessageBlock.Status.READY and incoming_status == ChatMessageBlock.Status.PENDING:
+            continue
+        payload = dict(raw)
+        payload["id"] = str(block_id)
+        payload["thread_id"] = str(thread.id)
+        payload["client_message_id"] = str(message.client_message_id)
+
+        defaults = {
+            "user": user,
+            "thread": thread,
+            "message": message,
+            "kind": _block_value(raw, "kind", default="text") or "text",
+            "status": incoming_status,
+            "revision": local_revision,
+            "order_key": _block_value(raw, "order_key", "orderKey"),
+            "tool_call_id": _block_value(raw, "tool_call_id", "toolCallId") or "",
+            "parent_tool_call_id": _block_value(raw, "parent_tool_call_id", "parentToolCallID") or "",
+            "parent_block_id": _block_value(raw, "parent_block_id", "parentBlockID"),
+            "node_role": _block_value(raw, "node_role", "nodeRole", default="timeline") or "timeline",
+            "anchor": _block_value(raw, "anchor"),
+            "payload": payload,
+            "created_at": _block_datetime(raw, "created_at", message.created_at),
+            "updated_at": _block_datetime(raw, "updated_at", message.created_at),
+        }
+        ChatMessageBlock.objects.update_or_create(
+            user=user,
+            id=block_id,
+            defaults=defaults,
+        )
+    if delete_missing:
+        ChatMessageBlock.objects.filter(user=user, message=message).exclude(id__in=incoming_ids).delete()
+
+
+def _upsert_message_block_update(*, user, thread_id, client_message_id, block: dict) -> ChatMessage:
+    thread = ChatThread.objects.filter(user=user, id=thread_id, is_deleted=False).first()
+    if thread is None:
+        raise APIError(
+            msg="thread_not_found",
+            code=40401,
+            status_code=404,
+            details={"thread_id": str(thread_id)},
+        )
+    message = ChatMessage.objects.filter(user=user, client_message_id=client_message_id, thread=thread).first()
+    if message is None:
+        raise APIError(
+            msg="message_not_found",
+            code=40402,
+            status_code=404,
+            details={"client_message_id": str(client_message_id)},
+        )
+    _upsert_message_blocks(user=user, thread=thread, message=message, blocks=[block], delete_missing=False)
+    message.save(update_fields=["server_updated_at"])
+    thread.updated_at = datetime.now(tz=timezone.utc)
+    thread.save(update_fields=["updated_at", "server_updated_at"])
+    return message
 
 
 def _to_thread_payload(thread: ChatThread) -> dict:
@@ -165,6 +266,7 @@ class ChatSyncPushView(APIView):
         serializer.is_valid(raise_exception=True)
 
         messages_payload = serializer.validated_data["messages"]
+        block_updates_payload = serializer.validated_data["block_updates"]
         logger.info(
             "chat push payload request_id=%s user_id=%s content_type=%s body=%s",
             request_id,
@@ -173,17 +275,19 @@ class ChatSyncPushView(APIView):
             _json_for_log(serializer.validated_data),
         )
         logger.info(
-            "chat push start request_id=%s user_id=%s count=%s content_type=%s",
+            "chat push start request_id=%s user_id=%s messages=%s block_updates=%s content_type=%s",
             request_id,
             getattr(request.user, "id", "-"),
             len(messages_payload),
+            len(block_updates_payload),
             request.content_type,
         )
-        if not messages_payload:
+        if not messages_payload and not block_updates_payload:
             logger.info("chat push skipped(empty) request_id=%s", request_id)
             return success_response({"messages": []}, msg="ok", code=0)
 
         result = []
+        result_by_client_id = {}
         with transaction.atomic():
             for payload in messages_payload:
                 thread, _ = ChatThread.objects.get_or_create(
@@ -219,7 +323,6 @@ class ChatSyncPushView(APIView):
 
                 metadata = {
                     "attachments": payload.get("attachments") or [],
-                    "blocks": payload.get("blocks") or [],
                     "reasoning_content": payload.get("reasoning_content"),
                     "reasoning_duration_ms": payload.get("reasoning_duration_ms"),
                     "reasoning_expanded": payload.get("reasoning_expanded"),
@@ -286,6 +389,13 @@ class ChatSyncPushView(APIView):
                         ]
                     )
 
+                _upsert_message_blocks(
+                    user=request.user,
+                    thread=thread,
+                    message=message,
+                    blocks=payload.get("blocks") or [],
+                )
+
                 thread.updated_at = datetime.now(tz=timezone.utc)
                 thread.save(
                     update_fields=[
@@ -302,7 +412,17 @@ class ChatSyncPushView(APIView):
                         "role_prompt",
                     ]
                 )
-                result.append(_to_payload(message))
+                result_by_client_id[str(message.client_message_id)] = _to_payload(message)
+
+            for payload in block_updates_payload:
+                message = _upsert_message_block_update(
+                    user=request.user,
+                    thread_id=payload["thread_id"],
+                    client_message_id=payload["client_message_id"],
+                    block=payload["block"],
+                )
+                result_by_client_id[str(message.client_message_id)] = _to_payload(message)
+            result = list(result_by_client_id.values())
 
         logger.info(
             "chat push success request_id=%s user_id=%s accepted=%s",
@@ -529,7 +649,7 @@ class ChatSyncPullView(APIView):
         cursor_dt, cursor_tie = _decode_cursor(cursor)
         limit = _normalize_limit(request.query_params.get("limit"), default=200, max_value=200)
 
-        queryset = ChatMessage.objects.filter(user=request.user, thread__is_deleted=False)
+        queryset = ChatMessage.objects.filter(user=request.user, thread__is_deleted=False).prefetch_related("blocks")
 
         thread_id_raw = request.query_params.get("thread_id")
         if thread_id_raw:

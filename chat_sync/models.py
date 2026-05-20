@@ -88,3 +88,39 @@ class ChatMessage(models.Model):
             models.Index(fields=["user", "server_updated_at", "id"], name="idx_chat_msg_user_sync"),
             models.Index(fields=["thread", "created_at", "id"], name="idx_chat_msg_thread_created"),
         ]
+
+
+class ChatMessageBlock(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending"
+        STREAMING = "streaming"
+        READY = "ready"
+        FAILED = "failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="chat_message_blocks", on_delete=models.CASCADE)
+    thread = models.ForeignKey(ChatThread, related_name="message_blocks", on_delete=models.CASCADE)
+    message = models.ForeignKey(ChatMessage, related_name="blocks", on_delete=models.CASCADE)
+    kind = models.CharField(max_length=64, default="text", db_index=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.READY)
+    revision = models.BigIntegerField(default=0)
+    order_key = models.FloatField(null=True, blank=True)
+    tool_call_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    parent_tool_call_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    parent_block_id = models.UUIDField(null=True, blank=True, db_index=True)
+    node_role = models.CharField(max_length=32, default="timeline")
+    anchor = models.JSONField(null=True, blank=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    server_updated_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        ordering = ["order_key", "created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "id"], name="uniq_chat_block_user_block_id"),
+        ]
+        indexes = [
+            models.Index(fields=["message", "order_key", "created_at"], name="idx_chat_block_msg_order"),
+            models.Index(fields=["user", "server_updated_at", "id"], name="idx_chat_block_user_sync"),
+        ]
