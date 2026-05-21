@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from file_manager.models import ManagedFile
+from file_manager.models import ManagedFile, ManagedFileBusinessRelation
 from medical.models import MedicationPlan, MedicineBox, Prescription
 
 User = get_user_model()
@@ -154,10 +154,15 @@ class CombinedMedicalCreateAPITests(APITestCase):
             "surgery": ("surgery", body["surgery_id"]),
             "follow": ("follow_up", body["follow_up_id"]),
             "report": ("examination_report", body["examination_report_ids"][0]),
-            "prescription": ("prescription", body["prescription_ids"][0]),
+            "prescription": ("prescription_batch", body["prescription_ids"][0]),
             "plan": ("medication_plan", body["medication_plan_ids"][0]),
         }
         for key, (business_type, business_id) in expected.items():
-            files[key].refresh_from_db()
-            self.assertEqual(files[key].business_type, business_type)
-            self.assertEqual(files[key].business_id, str(business_id))
+            self.assertTrue(
+                ManagedFileBusinessRelation.objects.filter(
+                    file=files[key],
+                    user=self.user,
+                    business_type=business_type,
+                    business_id=str(business_id),
+                ).exists()
+            )

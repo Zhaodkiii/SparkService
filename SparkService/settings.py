@@ -424,6 +424,16 @@ LOGGING = {
             "level": LOG_LEVEL,
             "filters": ["request_id"],
         },
+        "chat_sync_api_io_file": {
+            "class": "logging.handlers.TimedRotatingFileHandler",
+            "filename": str(LOG_DIR / "chat_sync_api_io.log"),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
         "medical_flow_file": {
             "class": "logging.handlers.TimedRotatingFileHandler",
             "filename": str(LOG_DIR / "medical_flow.log"),
@@ -463,6 +473,11 @@ LOGGING = {
         "accounts.flow": {"handlers": ["console", "access_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "celery": {"handlers": ["console", "celery_file"], "level": LOG_LEVEL, "propagate": True},
         "chat_sync": {"handlers": ["console", "chat_sync_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
+        "chat_sync.api_io": {
+            "handlers": ["console", "chat_sync_api_io_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
         "medical.flow": {"handlers": ["console", "medical_flow_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "medical.api_io": {
             "handlers": ["console", "medical_api_io_file"],

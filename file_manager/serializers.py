@@ -2,6 +2,7 @@ import logging
 
 from rest_framework import serializers
 
+from file_manager.business_relations import files_for_business
 from file_manager.models import ManagedFile
 from file_manager.url_utils import managed_file_download_url
 
@@ -9,6 +10,9 @@ logger = logging.getLogger("file_manager")
 
 
 class ManagedFileRecordSerializer(serializers.ModelSerializer):
+    business_type = serializers.SerializerMethodField()
+    business_id = serializers.SerializerMethodField()
+
     class Meta:
         model = ManagedFile
         fields = (
@@ -27,11 +31,42 @@ class ManagedFileRecordSerializer(serializers.ModelSerializer):
             "created_at",
         )
 
+    def _first_relation(self, obj):
+        preferred = self._preferred_relation(obj)
+        if preferred is not None:
+            return preferred
+        if hasattr(obj, "_prefetched_objects_cache") and "business_relations" in obj._prefetched_objects_cache:
+            relations = obj._prefetched_objects_cache["business_relations"]
+            return relations[0] if relations else None
+        return obj.business_relations.order_by("-created_at", "-id").first()
+
+    def _preferred_relation(self, obj):
+        bt = self.context.get("business_type")
+        bid = self.context.get("business_id")
+        if not bt and not bid:
+            return None
+        queryset = obj.business_relations.all()
+        if bt:
+            queryset = queryset.filter(business_type=bt)
+        if bid:
+            queryset = queryset.filter(business_id=str(bid))
+        return queryset.order_by("-created_at", "-id").first()
+
+    def get_business_type(self, obj):
+        relation = self._first_relation(obj)
+        return relation.business_type if relation else ""
+
+    def get_business_id(self, obj):
+        relation = self._first_relation(obj)
+        return relation.business_id if relation else ""
+
 
 class ManagedFileAttachmentOutSerializer(serializers.ModelSerializer):
     """附件输出：含可直链访问的 ``file_url``（与下载接口构造规则一致）。"""
 
     file_url = serializers.SerializerMethodField()
+    business_type = serializers.SerializerMethodField()
+    business_id = serializers.SerializerMethodField()
 
     class Meta:
         model = ManagedFile
@@ -52,6 +87,35 @@ class ManagedFileAttachmentOutSerializer(serializers.ModelSerializer):
 
     def get_file_url(self, obj):
         return managed_file_download_url(obj)
+
+    def _first_relation(self, obj):
+        preferred = self._preferred_relation(obj)
+        if preferred is not None:
+            return preferred
+        if hasattr(obj, "_prefetched_objects_cache") and "business_relations" in obj._prefetched_objects_cache:
+            relations = obj._prefetched_objects_cache["business_relations"]
+            return relations[0] if relations else None
+        return obj.business_relations.order_by("-created_at", "-id").first()
+
+    def _preferred_relation(self, obj):
+        bt = self.context.get("business_type")
+        bid = self.context.get("business_id")
+        if not bt and not bid:
+            return None
+        queryset = obj.business_relations.all()
+        if bt:
+            queryset = queryset.filter(business_type=bt)
+        if bid:
+            queryset = queryset.filter(business_id=str(bid))
+        return queryset.order_by("-created_at", "-id").first()
+
+    def get_business_type(self, obj):
+        relation = self._first_relation(obj)
+        return relation.business_type if relation else ""
+
+    def get_business_id(self, obj):
+        relation = self._first_relation(obj)
+        return relation.business_id if relation else ""
 
 
 class ManagedFileUploadSerializer(serializers.Serializer):
@@ -155,10 +219,9 @@ class HasAttachmentsMixin(serializers.Serializer):
         if not user or not getattr(user, "is_authenticated", False):
             return []
 
-        qs = ManagedFile.objects.filter(
-            user=user,
-            business_type=bt,
-            business_id=str(bid),
-            is_deleted=False,
-        ).order_by("-created_at")
-        return ManagedFileAttachmentOutSerializer(qs, many=True).data
+        qs = files_for_business(user, bt, bid)
+        return ManagedFileAttachmentOutSerializer(
+            qs,
+            many=True,
+            context={"business_type": bt, "business_id": str(bid)},
+        ).data

@@ -15,8 +15,6 @@ class ManagedFile(models.Model):
     file_size = models.BigIntegerField(default=0)
     file_md5 = models.CharField(max_length=64, blank=True, default="")
     is_public = models.BooleanField(default=False, db_index=True)
-    business_type = models.CharField(max_length=64, blank=True, default="", db_index=True)
-    business_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     object_key = models.CharField(max_length=1024, blank=True, default="")
     storage_type = models.CharField(max_length=32, blank=True, default="oss")
     is_deleted = models.BooleanField(default=False, db_index=True)
@@ -28,7 +26,6 @@ class ManagedFile(models.Model):
         ordering = ["-created_at", "-id"]
         indexes = [
             models.Index(fields=["user", "is_deleted", "updated_at"]),
-            models.Index(fields=["user", "business_type", "business_id", "is_deleted"]),
         ]
 
     def soft_delete(self):
@@ -40,3 +37,28 @@ class ManagedFile(models.Model):
 
     def __str__(self):
         return f"{self.id}:{self.original_name}"
+
+
+class ManagedFileBusinessRelation(models.Model):
+    file = models.ForeignKey(ManagedFile, related_name="business_relations", on_delete=models.CASCADE, db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="managed_file_business_relations", on_delete=models.CASCADE, db_index=True)
+    business_type = models.CharField(max_length=64, db_index=True)
+    business_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["file", "business_type", "business_id"],
+                name="uniq_managed_file_business_relation",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "business_type", "business_id"]),
+            models.Index(fields=["business_type", "business_id"]),
+        ]
+
+    def __str__(self):
+        return f"{self.file_id}:{self.business_type}:{self.business_id}"

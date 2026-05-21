@@ -101,6 +101,22 @@ def _extract_image_delivery_mode_from_attachments(attachments: list) -> str | No
     return None
 
 
+def _to_message_push_ack(message: ChatMessage) -> dict:
+    return {
+        "client_message_id": str(message.client_message_id),
+        "server_message_id": message.server_message_id,
+        "server_updated_at": message.server_updated_at.isoformat(),
+    }
+
+
+def _to_block_push_ack(message: ChatMessage, block_id) -> dict:
+    return {
+        "client_message_id": str(message.client_message_id),
+        "block_id": str(block_id),
+        "server_updated_at": message.server_updated_at.isoformat(),
+    }
+
+
 def _to_payload(message: ChatMessage) -> dict:
     metadata = message.metadata or {}
     return {
@@ -284,10 +300,14 @@ class ChatSyncPushView(APIView):
         )
         if not messages_payload and not block_updates_payload:
             logger.info("chat push skipped(empty) request_id=%s", request_id)
-            return success_response({"messages": []}, msg="ok", code=0)
+            return success_response(
+                {"accepted_messages": [], "accepted_block_updates": []},
+                msg="ok",
+                code=0,
+            )
 
-        result = []
-        result_by_client_id = {}
+        accepted_messages = []
+        accepted_block_updates = []
         with transaction.atomic():
             for payload in messages_payload:
                 thread, _ = ChatThread.objects.get_or_create(
@@ -412,26 +432,36 @@ class ChatSyncPushView(APIView):
                         "role_prompt",
                     ]
                 )
-                result_by_client_id[str(message.client_message_id)] = _to_payload(message)
+                accepted_messages.append(_to_message_push_ack(message))
 
             for payload in block_updates_payload:
+                block = payload["block"]
+                block_id = block.get("id")
                 message = _upsert_message_block_update(
                     user=request.user,
                     thread_id=payload["thread_id"],
                     client_message_id=payload["client_message_id"],
-                    block=payload["block"],
+                    block=block,
                 )
-                result_by_client_id[str(message.client_message_id)] = _to_payload(message)
-            result = list(result_by_client_id.values())
+                if block_id is not None:
+                    accepted_block_updates.append(_to_block_push_ack(message, block_id))
 
         logger.info(
-            "chat push success request_id=%s user_id=%s accepted=%s",
+            "chat push success request_id=%s user_id=%s accepted_messages=%s accepted_block_updates=%s",
             request_id,
             request.user.id,
-            len(result),
+            len(accepted_messages),
+            len(accepted_block_updates),
         )
 
-        return success_response({"messages": result}, msg="ok", code=0)
+        return success_response(
+            {
+                "accepted_messages": accepted_messages,
+                "accepted_block_updates": accepted_block_updates,
+            },
+            msg="ok",
+            code=0,
+        )
 
 
 class ChatSyncThreadHeadView(APIView):
@@ -440,7 +470,14 @@ class ChatSyncThreadHeadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        request_id = request.headers.get("X-Request-ID", "-")
         thread_id_raw = request.query_params.get("thread_id")
+        logger.info(
+            "chat thread-head start request_id=%s user_id=%s thread_id=%s",
+            request_id,
+            getattr(request.user, "id", "-"),
+            thread_id_raw,
+        )
         if not thread_id_raw:
             raise APIError(msg="thread_id_required", code=40031, status_code=400)
 
@@ -455,6 +492,13 @@ class ChatSyncThreadHeadView(APIView):
 
         max_dt = ChatMessage.objects.filter(user=request.user, thread_id=thread_uuid).aggregate(m=Max("server_updated_at"))["m"]
 
+        logger.info(
+            "chat thread-head success request_id=%s user_id=%s thread_id=%s last_server_updated_at=%s",
+            request_id,
+            request.user.id,
+            str(thread.id),
+            max_dt.isoformat() if max_dt is not None else None,
+        )
         return success_response(
             {
                 "thread_id": str(thread.id),
@@ -471,10 +515,19 @@ class ChatSyncThreadPushView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        request_id = request.headers.get("X-Request-ID", "-")
         serializer = ChatThreadPushRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         threads_payload = serializer.validated_data["threads"]
+        logger.info(
+            "chat thread-push start request_id=%s user_id=%s threads=%s body=%s",
+            request_id,
+            getattr(request.user, "id", "-"),
+            len(threads_payload),
+            _json_for_log(serializer.validated_data),
+        )
         if not threads_payload:
+            logger.info("chat thread-push skipped(empty) request_id=%s", request_id)
             return success_response({"threads": []}, msg="ok", code=0)
 
         result = []
@@ -540,7 +593,7 @@ class ChatSyncThreadPushView(APIView):
 
         logger.info(
             "chat thread-push success request_id=%s user_id=%s accepted=%s",
-            request.headers.get("X-Request-ID", "-"),
+            request_id,
             request.user.id,
             len(result),
         )
@@ -553,9 +606,17 @@ class ChatSyncThreadPullView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        request_id = request.headers.get("X-Request-ID", "-")
         cursor = request.query_params.get("cursor")
         cursor_dt, cursor_tie = _decode_cursor(cursor)
         limit = _normalize_limit(request.query_params.get("limit"), default=100, max_value=200)
+        logger.info(
+            "chat thread-pull start request_id=%s user_id=%s cursor=%s limit=%s",
+            request_id,
+            getattr(request.user, "id", "-"),
+            cursor,
+            limit,
+        )
 
         queryset = ChatThread.objects.filter(user=request.user)
         if cursor_dt is not None and cursor_tie is not None:
@@ -578,7 +639,7 @@ class ChatSyncThreadPullView(APIView):
 
         logger.info(
             "chat thread-pull success request_id=%s user_id=%s input_cursor=%s next_cursor=%s count=%s has_more=%s",
-            request.headers.get("X-Request-ID", "-"),
+            request_id,
             request.user.id,
             cursor,
             next_cursor,
@@ -594,13 +655,14 @@ class ChatSyncThreadDeleteView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        request_id = request.headers.get("X-Request-ID", "-")
         serializer = ChatThreadDeleteRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         requested_ids = serializer.validated_data["thread_ids"]
         logger.info(
             "chat thread-delete payload request_id=%s user_id=%s body=%s",
-            request.headers.get("X-Request-ID", "-"),
+            request_id,
             request.user.id,
             _json_for_log(serializer.validated_data),
         )
@@ -633,7 +695,7 @@ class ChatSyncThreadDeleteView(APIView):
 
         logger.info(
             "chat thread-delete success request_id=%s user_id=%s requested=%s changed=%s",
-            request.headers.get("X-Request-ID", "-"),
+            request_id,
             request.user.id,
             len(requested_ids),
             len(changed_ids),
@@ -645,13 +707,22 @@ class ChatSyncPullView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        request_id = request.headers.get("X-Request-ID", "-")
         cursor = request.query_params.get("cursor")
         cursor_dt, cursor_tie = _decode_cursor(cursor)
         limit = _normalize_limit(request.query_params.get("limit"), default=200, max_value=200)
+        thread_id_raw = request.query_params.get("thread_id")
+        logger.info(
+            "chat pull start request_id=%s user_id=%s cursor=%s limit=%s thread_id=%s",
+            request_id,
+            getattr(request.user, "id", "-"),
+            cursor,
+            limit,
+            thread_id_raw,
+        )
 
         queryset = ChatMessage.objects.filter(user=request.user, thread__is_deleted=False).prefetch_related("blocks")
 
-        thread_id_raw = request.query_params.get("thread_id")
         if thread_id_raw:
             try:
                 thread_uuid = uuid.UUID(thread_id_raw)
@@ -680,7 +751,7 @@ class ChatSyncPullView(APIView):
         )
         logger.info(
             "chat pull success request_id=%s user_id=%s input_cursor=%s next_cursor=%s count=%s has_more=%s",
-            request.headers.get("X-Request-ID", "-"),
+            request_id,
             request.user.id,
             cursor,
             next_cursor,

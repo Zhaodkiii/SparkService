@@ -6,7 +6,13 @@ from django.test import SimpleTestCase, TestCase
 
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from chat_sync.serializers import ChatPushRequestSerializer, ChatRemoteMessageSerializer
-from chat_sync.views import _to_payload, _upsert_message_block_update, _upsert_message_blocks
+from chat_sync.views import (
+    _to_block_push_ack,
+    _to_message_push_ack,
+    _to_payload,
+    _upsert_message_block_update,
+    _upsert_message_blocks,
+)
 
 
 class ChatRemoteMessageSerializerBlocksOnlyTests(SimpleTestCase):
@@ -162,3 +168,29 @@ class ChatMessageBlockProjectionTests(TestCase):
         task_block = ChatMessageBlock.objects.get(id=task_block_id)
         self.assertEqual(task_block.revision, 2)
         self.assertEqual(ChatMessageBlock.objects.filter(message=message).count(), 2)
+
+    def test_push_ack_helpers_return_metadata_without_blocks(self):
+        user = get_user_model().objects.create_user(username="chat-push-ack")
+        thread = ChatThread.objects.create(user=user, title="Ack")
+        message = ChatMessage.objects.create(
+            user=user,
+            thread=thread,
+            role=ChatMessage.Role.ASSISTANT,
+            client_message_id=uuid.uuid4(),
+            server_message_id="srv-ack-1",
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        block_id = uuid.uuid4()
+
+        message_ack = _to_message_push_ack(message)
+        self.assertEqual(message_ack["client_message_id"], str(message.client_message_id))
+        self.assertEqual(message_ack["server_message_id"], "srv-ack-1")
+        self.assertIn("server_updated_at", message_ack)
+        self.assertNotIn("blocks", message_ack)
+
+        block_ack = _to_block_push_ack(message, block_id)
+        self.assertEqual(block_ack["client_message_id"], str(message.client_message_id))
+        self.assertEqual(block_ack["block_id"], str(block_id))
+        self.assertIn("server_updated_at", block_ack)
+        self.assertNotIn("blocks", block_ack)

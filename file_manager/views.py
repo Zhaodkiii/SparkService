@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from common.http_cache import build_etag, normalize_etag
 from common.response import error_response, success_response
+from file_manager.business_relations import bind_file_to_business
 from file_manager.models import ManagedFile
 from file_manager.serializers import (
     ManagedFileBusinessUpdateSerializer,
@@ -43,11 +44,12 @@ class ManagedFileListView(APIView):
         )
 
         if business_type:
-            queryset = queryset.filter(business_type=business_type)
+            queryset = queryset.filter(business_relations__business_type=business_type)
         if business_id:
-            queryset = queryset.filter(business_id=business_id)
+            queryset = queryset.filter(business_relations__business_id=business_id)
         if is_public is not None:
             queryset = queryset.filter(is_public=self._to_bool(is_public))
+        queryset = queryset.distinct()
 
         etag = build_etag(
             {
@@ -65,7 +67,11 @@ class ManagedFileListView(APIView):
             response.content = b""
             return response
 
-        serializer = ManagedFileRecordSerializer(queryset, many=True)
+        serializer = ManagedFileRecordSerializer(
+            queryset,
+            many=True,
+            context={"business_type": business_type, "business_id": business_id},
+        )
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         logger.info(
             "文件列表查询成功",
@@ -126,10 +132,14 @@ class FileRegistrationView(APIView):
                 file_size=data["file_size"],
                 file_md5=data.get("file_md5", "").strip().lower(),
                 is_public=data.get("is_public", False),
-                business_type=data["business_type"],
-                business_id=data.get("business_id", ""),
                 object_key=data["object_key"],
                 storage_type=(data.get("storage_type", "") or "oss"),
+            )
+            bind_file_to_business(
+                request.user,
+                file_record,
+                data["business_type"],
+                data.get("business_id", ""),
             )
         except DatabaseError:
             # 常见于数据库 schema 未完成迁移（例如缺少 object_key/storage_type 列）。
@@ -152,7 +162,10 @@ class FileRegistrationView(APIView):
         )
 
         return success_response(
-            ManagedFileRecordSerializer(file_record).data,
+            ManagedFileRecordSerializer(
+                file_record,
+                context={"business_type": data["business_type"], "business_id": data.get("business_id", "")},
+            ).data,
             msg="created",
             code=0,
             status_code=status.HTTP_201_CREATED
@@ -200,16 +213,23 @@ class ManagedFileBusinessUpdateView(APIView):
             )
             return error_response(msg="file_not_found", code=4040, status_code=status.HTTP_404_NOT_FOUND)
 
-        file_record.business_type = data["business_type"]
-        file_record.business_id = data.get("business_id", "")
-        file_record.save(update_fields=["business_type", "business_id", "updated_at"])
+        bind_file_to_business(request.user, file_record, data["business_type"], data.get("business_id", ""))
+        file_record.save(update_fields=["updated_at"])
         duration_ms = int((time.perf_counter() - start_time) * 1000)
         logger.info(
             "更新文件业务绑定成功",
             extra={"user_id": request.user.id, "file_id": file_record.id, "duration_ms": duration_ms},
         )
 
-        return success_response(ManagedFileRecordSerializer(file_record).data, msg="updated", code=0, status_code=status.HTTP_200_OK)
+        return success_response(
+            ManagedFileRecordSerializer(
+                file_record,
+                context={"business_type": data["business_type"], "business_id": data.get("business_id", "")},
+            ).data,
+            msg="updated",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
 
 
 class ManagedFileDownloadURLView(APIView):

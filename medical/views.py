@@ -2,7 +2,7 @@ import logging
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import status, viewsets
@@ -43,6 +43,7 @@ from medical.serializers import (
     SymptomSerializer,
     VisitSerializer,
 )
+from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
 from file_manager.serializers import ManagedFileAttachmentOutSerializer
 
@@ -307,12 +308,7 @@ class PrescriptionViewSet(WrappedModelViewSet):
         attachments = []
         if prescription_ids:
             attachments = list(
-                ManagedFile.objects.filter(
-                    user=self.request.user,
-                    business_type="prescription",
-                    business_id__in=prescription_ids,
-                    is_deleted=False,
-                ).values_list("id", "updated_at")
+                relation_fingerprint(self.request.user, [("prescription_batch", prescription_ids)])
             )
         payload = {
             "path": self.request.path,
@@ -324,14 +320,7 @@ class PrescriptionViewSet(WrappedModelViewSet):
         return build_etag(payload)
 
     def _build_object_etag(self, instance):
-        attachments = list(
-            ManagedFile.objects.filter(
-                user=self.request.user,
-                business_type="prescription",
-                business_id=str(instance.id),
-                is_deleted=False,
-            ).values_list("id", "updated_at")
-        )
+        attachments = relation_fingerprint(self.request.user, [("prescription_batch", [instance.id])])
         payload = {
             "id": instance.id,
             "updated_at": instance.updated_at,
@@ -370,12 +359,7 @@ class MedicationPlanViewSet(WrappedModelViewSet):
         attachments = []
         if plan_ids:
             attachments = list(
-                ManagedFile.objects.filter(
-                    user=self.request.user,
-                    business_type="medication_plan",
-                    business_id__in=plan_ids,
-                    is_deleted=False,
-                ).values_list("id", "updated_at")
+                relation_fingerprint(self.request.user, [("medication_plan", plan_ids)])
             )
         payload = {
             "path": self.request.path,
@@ -387,14 +371,7 @@ class MedicationPlanViewSet(WrappedModelViewSet):
         return build_etag(payload)
 
     def _build_object_etag(self, instance):
-        attachments = list(
-            ManagedFile.objects.filter(
-                user=self.request.user,
-                business_type="medication_plan",
-                business_id=str(instance.id),
-                is_deleted=False,
-            ).values_list("id", "updated_at")
-        )
+        attachments = relation_fingerprint(self.request.user, [("medication_plan", [instance.id])])
         payload = {
             "id": instance.id,
             "updated_at": instance.updated_at,
@@ -563,13 +540,12 @@ class MemberCompleteDataAPI(APIView):
             return response
 
         def attachments_payload(business_type: str, business_id: int):
-            qs = ManagedFile.objects.filter(
-                user=request.user,
-                business_type=business_type,
-                business_id=str(business_id),
-                is_deleted=False,
-            ).order_by("-created_at")
-            return ManagedFileAttachmentOutSerializer(qs, many=True).data
+            qs = files_for_business(request.user, business_type, business_id)
+            return ManagedFileAttachmentOutSerializer(
+                qs,
+                many=True,
+                context={"business_type": business_type, "business_id": str(business_id)},
+            ).data
 
         medical_cases_payload = []
         for c in medical_cases:
@@ -682,30 +658,21 @@ class MemberCompleteDataAPI(APIView):
         prescription_ids = [str(pk) for pk in prescriptions.values_list("id", flat=True)]
         medication_plan_ids = [str(pk) for pk in medication_plans.values_list("id", flat=True)]
 
-        att_q = []
+        relation_specs = []
         if case_ids:
-            att_q.append(Q(business_type="medical_case", business_id__in=case_ids))
+            relation_specs.append(("medical_case", case_ids))
         if hex_ids:
-            att_q.append(Q(business_type="health_exam_report", business_id__in=hex_ids))
+            relation_specs.append(("health_exam_report", hex_ids))
         if er_ids:
-            att_q.append(Q(business_type="examination_report", business_id__in=er_ids))
+            relation_specs.append(("examination_report", er_ids))
         if medicine_box_ids:
-            att_q.append(Q(business_type="medicine_box", business_id__in=medicine_box_ids))
+            relation_specs.append(("medicine_box", medicine_box_ids))
         if prescription_ids:
-            att_q.append(Q(business_type="prescription", business_id__in=prescription_ids))
+            relation_specs.append(("prescription_batch", prescription_ids))
         if medication_plan_ids:
-            att_q.append(Q(business_type="medication_plan", business_id__in=medication_plan_ids))
+            relation_specs.append(("medication_plan", medication_plan_ids))
 
-        attachments_fingerprint = []
-        if att_q:
-            combined = att_q[0]
-            for q in att_q[1:]:
-                combined |= q
-            attachments_fingerprint = list(
-                ManagedFile.objects.filter(user=request.user, is_deleted=False)
-                .filter(combined)
-                .values_list("id", "updated_at")
-            )
+        attachments_fingerprint = relation_fingerprint(request.user, relation_specs)
 
         payload = {
             "path": request.path,
@@ -744,12 +711,7 @@ class _WorkflowBaseAPIView(APIView):
     _NULLISH_DATETIME_TOKENS = {"", "无", "未提及", "未知", "none", "null", "n/a", "na", "-", "--"}
 
     def _bind_files(self, user, business_type, business_id, file_ids):
-        if not file_ids:
-            return
-        ManagedFile.objects.filter(user=user, id__in=file_ids, is_deleted=False).update(
-            business_type=business_type,
-            business_id=str(business_id),
-        )
+        return bind_files_to_business(user, business_type, business_id, file_ids)
 
     @staticmethod
     def _pop_file_ids(payload, *keys):
@@ -1193,11 +1155,10 @@ class MedicalAttachmentBatchBindView(_WorkflowBaseAPIView):
             business_id = item.get("business_id")
             if not file_id or not business_type or business_id is None:
                 continue
-            count = ManagedFile.objects.filter(user=request.user, id=file_id, is_deleted=False).update(
-                business_type=business_type,
-                business_id=str(business_id),
-            )
-            updated += count
+            file_record = ManagedFile.objects.filter(user=request.user, id=file_id, is_deleted=False).first()
+            if file_record:
+                bind_file_to_business(request.user, file_record, business_type, business_id)
+                updated += 1
         return success_response({"updated": updated}, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
