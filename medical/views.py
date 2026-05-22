@@ -210,6 +210,22 @@ class FollowUpViewSet(WrappedModelViewSet):
         return queryset
 
 
+def _attachments_payload(user, business_type: str, business_id: int):
+    """complete-data 内病历等非 ModelSerializer 场景仍用手写附件列表。"""
+    qs = files_for_business(user, business_type, business_id)
+    return ManagedFileAttachmentOutSerializer(
+        qs,
+        many=True,
+        context={"business_type": business_type, "business_id": str(business_id)},
+    ).data
+
+
+def _report_row_payload(serializer, instance):
+    row = dict(serializer.to_representation(instance))
+    row.pop("raw_ocr", None)
+    return row
+
+
 class ExaminationReportViewSet(WrappedModelViewSet):
     queryset = ExaminationReport.objects.select_related("member", "medical_record").all()
     serializer_class = ExaminationReportSerializer
@@ -570,19 +586,22 @@ class MemberCompleteDataAPI(APIView):
                 }
             )
 
-        health_payload = []
-        for h in health_exam_reports:
-            row = dict(HealthExamReportSerializer(h).data)
-            row.pop("raw_ocr", None)
-            row["attachments"] = attachments_payload("health_exam_report", h.id)
-            health_payload.append(row)
+        report_serializer_context = {"request": request}
+        health_payload = [
+            _report_row_payload(
+                HealthExamReportSerializer(h, context=report_serializer_context),
+                h,
+            )
+            for h in health_exam_reports
+        ]
 
-        exam_payload = []
-        for e in examination_reports:
-            row = dict(ExaminationReportSerializer(e).data)
-            row.pop("raw_ocr", None)
-            row["attachments"] = attachments_payload("examination_report", e.id)
-            exam_payload.append(row)
+        exam_payload = [
+            _report_row_payload(
+                ExaminationReportSerializer(e, context=report_serializer_context),
+                e,
+            )
+            for e in examination_reports
+        ]
 
         medicine_box_payload = MedicineBoxSerializer(medicine_boxes, many=True, context={"request": request}).data
         prescription_payload = PrescriptionSerializer(prescriptions, many=True, context={"request": request}).data

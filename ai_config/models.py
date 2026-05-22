@@ -32,7 +32,14 @@ class IdentityKind(models.TextChoices):
 
 
 class SparkToolName(models.TextChoices):
-    """Spark 平台工具枚举（与客户端 ToolingModels.swift 对齐）。"""
+    """Spark 平台工具枚举（与客户端 ``ToolingModels.swift`` 的 ``SparkToolName`` 对齐）。
+
+    新增或重命名工具时须同步：
+    - SparkClient/Projects/Core/AIRuntime/ToolingModels.swift
+    - SparkClient/Projects/Core/AIRuntime/ToolHub/ToolHub.swift（schema / execute）
+    - SparkClient/Projects/App/Resources/*/ToolPrompts.strings（tool.summary.* / tool.param.*）
+    - SparkClient/Projects/App/Resources/*/Localizable.strings（ai_settings.tools.*）
+    """
 
     FETCH_STEP_DETAILS = "fetch_step_details", "步数详情"
     FETCH_ENERGY_DETAILS = "fetch_energy_details", "能量详情"
@@ -67,6 +74,9 @@ class SparkToolName(models.TextChoices):
     CREATE_CANVAS = "create_canvas", "创建画布"
     EDIT_CANVAS = "edit_canvas", "编辑画布"
     GENERATE_STRUCTURED_HEALTH_CARD = "generate_structured_health_card", "生成结构化健康卡片"
+    LIST_MEMBER_HEALTH_SOURCES = "list_member_health_sources", "检索成员健康资料"
+    GET_HEALTH_RESOURCE_REFERENCE = "get_health_resource_reference", "获取健康资料引用"
+    GET_HEALTH_RESOURCE_CONTEXT = "get_health_resource_context", "获取健康资料解读上下文"
     QUERY_TASKS_BY_MEMBER = "query_tasks_by_member", "查询成员任务"
     GENERATE_TASK = "generate_task", "生成任务"
 

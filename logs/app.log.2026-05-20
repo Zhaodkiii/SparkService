@@ -11980,3 +11980,4 @@ INFO 2026-05-21 12:47:43,891 chat_sync.sync [request_id=9DD96EC6-66D0-42E3-BE59-
 INFO 2026-05-21 12:47:43,911 chat_sync.sync [request_id=9DD96EC6-66D0-42E3-BE59-4AC680FDB4D0] chat sync notified user_id=5 cursor=2026-05-21T12:47:43.909280+00:00 message_count=1
 INFO 2026-05-21 12:47:43,930 chat_sync.sync [request_id=9DD96EC6-66D0-42E3-BE59-4AC680FDB4D0] chat push success request_id=9DD96EC6-66D0-42E3-BE59-4AC680FDB4D0 user_id=5 accepted_messages=1 accepted_block_updates=0
 INFO 2026-05-21 12:47:43,932 django.channels.server [request_id=-] HTTP POST /api/v1/ai/chat/sync/push/ 200 [0.05, 172.20.10.1:56647]
+INFO 2026-05-21 14:52:19,177 django.utils.autoreload [request_id=-] /Users/hua/Downloads/Reference/SparkService/medical/models.py changed, reloading.

@@ -1,0 +1,251 @@
+INFO 2026-05-21 01:09:57,306 file_manager.oss_sts_views [request_id=978DC292-7637-48D8-BA6A-4DD86C907E8A] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 01:53:31,121 file_manager.oss_sts_views [request_id=310A6240-DB4C-45EC-B6FE-E473B4C0256A] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 01:53:47,731 file_manager.api_io [request_id=CDB1BF3E-8A46-458E-8B93-2E16610131AC] 文件登记入参
+INFO 2026-05-21 01:53:47,736 file_manager [request_id=CDB1BF3E-8A46-458E-8B93-2E16610131AC] 文件登记成功
+INFO 2026-05-21 01:55:19,018 file_manager.oss_sts_views [request_id=FBABB687-86BA-4CA6-B604-5EC1951B515B] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 01:55:31,236 file_manager.api_io [request_id=B6129EEA-F20D-4B06-87F3-E21C048CB8D2] 文件登记入参
+INFO 2026-05-21 01:55:31,239 file_manager [request_id=B6129EEA-F20D-4B06-87F3-E21C048CB8D2] 文件登记成功
+INFO 2026-05-21 02:07:41,359 file_manager.oss_sts_views [request_id=9BA1138E-B56A-4858-BADF-0634465DB2D2] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:09:08,764 file_manager.oss_sts_views [request_id=D7672DFF-98D6-4C84-B64A-9D49E9F50961] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:10:17,043 file_manager.api_io [request_id=8476D29F-7DC0-41F0-872E-4F2D69D694AF] 文件登记入参
+INFO 2026-05-21 02:10:17,048 file_manager [request_id=8476D29F-7DC0-41F0-872E-4F2D69D694AF] 文件登记成功
+INFO 2026-05-21 02:11:48,839 file_manager.api_io [request_id=3413DA0C-26E6-4A14-965A-EE91632FBF3A] 文件登记入参
+INFO 2026-05-21 02:11:48,842 file_manager [request_id=3413DA0C-26E6-4A14-965A-EE91632FBF3A] 文件登记成功
+INFO 2026-05-21 02:17:03,170 file_manager.oss_sts_views [request_id=8DDF7347-8D4A-4CA1-BDD0-290724BEE358] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:17:34,681 file_manager.api_io [request_id=3C403314-680A-4F89-BF08-D4DA5BAF60A1] 文件登记入参
+INFO 2026-05-21 02:17:34,684 file_manager [request_id=3C403314-680A-4F89-BF08-D4DA5BAF60A1] 文件登记成功
+INFO 2026-05-21 02:19:29,498 file_manager.oss_sts_views [request_id=49E88538-D811-47B5-88F6-743BCF250D59] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:20:28,339 file_manager.api_io [request_id=214CA1CE-7FB6-478D-A728-790FC28F90F6] 文件登记入参
+INFO 2026-05-21 02:20:28,343 file_manager [request_id=214CA1CE-7FB6-478D-A728-790FC28F90F6] 文件登记成功
+INFO 2026-05-21 02:27:47,953 file_manager.oss_sts_views [request_id=DB25FDDF-6EBC-4C0C-A962-7465D18EDAEA] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:28:02,474 file_manager.api_io [request_id=9BFADCEA-75DF-49C3-A78B-225B58557FEE] 文件登记入参
+INFO 2026-05-21 02:28:02,478 file_manager [request_id=9BFADCEA-75DF-49C3-A78B-225B58557FEE] 文件登记成功
+INFO 2026-05-21 02:29:27,081 file_manager.api_io [request_id=83067C77-F077-407B-80C2-9455C2450B72] 文件登记入参
+INFO 2026-05-21 02:29:27,084 file_manager [request_id=83067C77-F077-407B-80C2-9455C2450B72] 文件登记成功
+INFO 2026-05-21 02:31:06,082 file_manager.api_io [request_id=85E17165-6C4B-42BD-BCC5-2D9B8A55E9C2] 文件登记入参
+INFO 2026-05-21 02:31:06,085 file_manager [request_id=85E17165-6C4B-42BD-BCC5-2D9B8A55E9C2] 文件登记成功
+INFO 2026-05-21 02:35:00,127 file_manager.oss_sts_views [request_id=96ECF132-87D8-48EF-819C-A36C19BF6139] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:35:26,083 file_manager.api_io [request_id=9894D1F7-F47A-497F-97F8-BBFB03155ECC] 文件登记入参
+INFO 2026-05-21 02:35:26,086 file_manager [request_id=9894D1F7-F47A-497F-97F8-BBFB03155ECC] 文件登记成功
+INFO 2026-05-21 02:40:00,772 file_manager.oss_sts_views [request_id=78301A1E-5326-4583-8F57-E61F02E6FA6D] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:40:31,733 file_manager.api_io [request_id=8BBBF49E-219D-4CCF-9E72-90D866BC86C0] 文件登记入参
+INFO 2026-05-21 02:40:31,738 file_manager [request_id=8BBBF49E-219D-4CCF-9E72-90D866BC86C0] 文件登记成功
+INFO 2026-05-21 02:45:06,569 file_manager.api_io [request_id=9F8F8A4F-588E-47D3-82EB-EFDF57CC2A63] 文件登记入参
+INFO 2026-05-21 02:45:06,573 file_manager [request_id=9F8F8A4F-588E-47D3-82EB-EFDF57CC2A63] 文件登记成功
+INFO 2026-05-21 02:46:18,346 file_manager.oss_sts_views [request_id=0C290103-1F3D-45A6-8944-FD3C95AC4095] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 02:46:29,024 file_manager.api_io [request_id=949E150E-1E47-4016-B22D-B70C836A0D69] 文件登记入参
+INFO 2026-05-21 02:46:29,027 file_manager [request_id=949E150E-1E47-4016-B22D-B70C836A0D69] 文件登记成功
+INFO 2026-05-21 02:53:51,388 file_manager.oss_sts_views [request_id=A85D15B0-2216-404A-9291-00FDA3A2298E] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 03:01:13,102 file_manager.oss_sts_views [request_id=79D4219A-9794-45EC-BBB2-FEF75D35745C] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 03:01:28,400 file_manager.api_io [request_id=D2333399-2D7C-4B36-976E-975FDB15A846] 文件登记入参
+INFO 2026-05-21 03:01:28,403 file_manager [request_id=D2333399-2D7C-4B36-976E-975FDB15A846] 文件登记成功
+INFO 2026-05-21 03:02:58,707 file_manager.api_io [request_id=9F3C37CB-48E3-4C1D-B472-903C2DF19910] 文件登记入参
+INFO 2026-05-21 03:02:58,710 file_manager [request_id=9F3C37CB-48E3-4C1D-B472-903C2DF19910] 文件登记成功
+INFO 2026-05-21 03:04:52,171 file_manager.oss_sts_views [request_id=CB118087-C082-453A-9146-8EED9B476677] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 03:40:53,744 file_manager.oss_sts_views [request_id=D9101D95-2759-415A-8F9B-5EA53B6256D9] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 03:41:09,340 file_manager.api_io [request_id=B1AE7943-2D72-4066-9975-53BE63EBE6F8] 文件登记入参
+INFO 2026-05-21 03:41:09,342 file_manager [request_id=B1AE7943-2D72-4066-9975-53BE63EBE6F8] 文件登记成功
+INFO 2026-05-21 03:41:38,152 file_manager.api_io [request_id=7241B6D2-912B-41CA-B98C-9E6F174A5E29] 文件登记入参
+INFO 2026-05-21 03:41:38,155 file_manager [request_id=7241B6D2-912B-41CA-B98C-9E6F174A5E29] 文件登记成功
+INFO 2026-05-21 03:52:11,954 file_manager.oss_sts_views [request_id=D0162FB6-1617-4E75-B081-7C97436A2052] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:01:47,973 file_manager.oss_sts_views [request_id=DE19DBF9-1118-478C-A703-7C41AC555A18] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:09:34,545 file_manager.oss_sts_views [request_id=49FE3438-C532-4EE0-96FD-54DB37542B87] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:19:24,826 file_manager.oss_sts_views [request_id=C3287F0F-3CF6-4709-81E7-F4942E1E8634] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:30:31,267 file_manager.oss_sts_views [request_id=7B91206F-D3EA-49DF-B75F-2FD535D64272] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:37:07,253 file_manager.oss_sts_views [request_id=AEFB822E-401D-4C2E-BF20-1FBCA61F552D] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:43:54,529 file_manager.oss_sts_views [request_id=2DD1D3BE-6CE6-48A7-8A79-5F9606450665] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:46:37,702 file_manager.oss_sts_views [request_id=40C29BC5-4528-46A6-B068-C9EAAE34F99C] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:51:40,709 file_manager.oss_sts_views [request_id=6CA9AAC2-FE83-451C-9919-CA0BB487F5E1] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:54:11,540 file_manager.oss_sts_views [request_id=428B8D4E-A307-40E6-8FD7-89F5BE3B4260] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 04:56:31,982 file_manager.oss_sts_views [request_id=34353CF9-B4D8-44D2-BF9F-046619D86FAB] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 05:02:51,550 file_manager.oss_sts_views [request_id=FA9C01D7-1367-4EE2-BAEC-5775D1B5FCA7] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 05:12:01,837 file_manager.oss_sts_views [request_id=71177B92-4B6C-4E13-B7A2-3B8B87B05D82] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 05:22:20,298 file_manager.oss_sts_views [request_id=339666EE-58D0-4E22-91EB-6EC88CFD00A1] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 05:22:40,633 file_manager.api_io [request_id=93932429-E858-4D50-BF35-2BE746D454ED] 文件登记入参
+INFO 2026-05-21 05:22:40,640 file_manager [request_id=93932429-E858-4D50-BF35-2BE746D454ED] 文件登记成功
+INFO 2026-05-21 05:22:42,159 file_manager.api_io [request_id=97F4BA7F-16A9-4504-9358-1109C6B8E576] 文件登记入参
+INFO 2026-05-21 05:22:42,163 file_manager [request_id=97F4BA7F-16A9-4504-9358-1109C6B8E576] 文件登记成功
+INFO 2026-05-21 05:22:44,416 file_manager.api_io [request_id=16D70293-376D-4154-B454-283D9AD6FDC6] 文件登记入参
+INFO 2026-05-21 05:22:44,419 file_manager [request_id=16D70293-376D-4154-B454-283D9AD6FDC6] 文件登记成功
+INFO 2026-05-21 05:25:29,141 file_manager.api_io [request_id=EDCE4377-316A-40BA-8736-1774622FC9E2] 文件登记入参
+INFO 2026-05-21 05:25:29,144 file_manager [request_id=EDCE4377-316A-40BA-8736-1774622FC9E2] 文件登记成功
+INFO 2026-05-21 05:25:29,712 file_manager.api_io [request_id=601D6195-80A9-474D-9F82-44196288CDDF] 文件登记入参
+INFO 2026-05-21 05:25:29,714 file_manager [request_id=601D6195-80A9-474D-9F82-44196288CDDF] 文件登记成功
+INFO 2026-05-21 05:25:29,743 file_manager.api_io [request_id=6609F473-982E-4DEB-90A2-A1B460F03647] 文件登记入参
+INFO 2026-05-21 05:25:29,746 file_manager [request_id=6609F473-982E-4DEB-90A2-A1B460F03647] 文件登记成功
+INFO 2026-05-21 05:26:39,497 file_manager.api_io [request_id=9D526AAD-EBDE-4409-881F-3ADECBC3840B] 文件登记入参
+INFO 2026-05-21 05:26:39,500 file_manager [request_id=9D526AAD-EBDE-4409-881F-3ADECBC3840B] 文件登记成功
+INFO 2026-05-21 05:26:40,083 file_manager.api_io [request_id=2B2AAA8E-1346-4139-BD09-79EE92C51C6D] 文件登记入参
+INFO 2026-05-21 05:26:40,086 file_manager [request_id=2B2AAA8E-1346-4139-BD09-79EE92C51C6D] 文件登记成功
+INFO 2026-05-21 05:26:40,460 file_manager.api_io [request_id=F59773DC-AEE0-4E5D-9747-423690B63500] 文件登记入参
+INFO 2026-05-21 05:26:40,462 file_manager [request_id=F59773DC-AEE0-4E5D-9747-423690B63500] 文件登记成功
+INFO 2026-05-21 05:27:43,911 file_manager.api_io [request_id=832DF6B1-894E-4CFF-A4C1-5D677FE2DC6A] 文件登记入参
+INFO 2026-05-21 05:27:43,914 file_manager [request_id=832DF6B1-894E-4CFF-A4C1-5D677FE2DC6A] 文件登记成功
+INFO 2026-05-21 05:27:43,949 file_manager.api_io [request_id=E74258C2-95AF-4700-B414-727C600F9EEC] 文件登记入参
+INFO 2026-05-21 05:27:43,952 file_manager [request_id=E74258C2-95AF-4700-B414-727C600F9EEC] 文件登记成功
+INFO 2026-05-21 05:32:52,549 file_manager.oss_sts_views [request_id=FB2FE851-109A-4873-B209-6F57CEB91E90] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 05:35:07,621 file_manager.oss_sts_views [request_id=B742A66E-72FA-4E99-BEBA-51E44011CE7A] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 05:54:20,907 file_manager.oss_sts_views [request_id=01CF76F7-845B-42C5-8340-854453662927] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 06:03:42,691 file_manager.oss_sts_views [request_id=470FB08D-12FB-469D-9E15-1D2FF7E415A8] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 06:56:04,099 file_manager.oss_sts_views [request_id=58E67176-5B2A-49F6-95D2-01D497770F37] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 07:01:16,351 file_manager.api_io [request_id=48232F8F-0ED7-4884-8397-073D202D3029] 文件登记入参
+INFO 2026-05-21 07:01:16,360 file_manager [request_id=48232F8F-0ED7-4884-8397-073D202D3029] 文件登记成功
+INFO 2026-05-21 07:01:16,447 file_manager.api_io [request_id=3CAD3491-1E25-4326-94EF-08384112D3CD] 文件登记入参
+INFO 2026-05-21 07:01:16,451 file_manager [request_id=3CAD3491-1E25-4326-94EF-08384112D3CD] 文件登记成功
+INFO 2026-05-21 07:09:33,669 file_manager.api_io [request_id=BABBE19C-8AEF-4B81-9C94-36B7745BB67A] 文件登记入参
+INFO 2026-05-21 07:09:33,675 file_manager [request_id=BABBE19C-8AEF-4B81-9C94-36B7745BB67A] 文件登记成功
+INFO 2026-05-21 07:11:20,108 file_manager.oss_sts_views [request_id=0E108D6E-B6C1-4BD0-9077-B821172EEFFB] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 07:47:36,623 file_manager.oss_sts_views [request_id=0E562B2E-9ED1-48A8-AC80-7F644F07921D] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 07:47:53,659 file_manager.api_io [request_id=2F59CF55-6DEB-4F29-8C84-1BDBB62B9FF9] 文件登记入参
+INFO 2026-05-21 07:47:53,663 file_manager [request_id=2F59CF55-6DEB-4F29-8C84-1BDBB62B9FF9] 文件登记成功
+INFO 2026-05-21 07:47:55,372 file_manager.api_io [request_id=9F79435C-B536-4CB2-B506-A83C5B2BE44E] 文件登记入参
+INFO 2026-05-21 07:47:55,378 file_manager [request_id=9F79435C-B536-4CB2-B506-A83C5B2BE44E] 文件登记成功
+INFO 2026-05-21 07:47:55,427 file_manager.api_io [request_id=43E5F4BE-96C2-4CB0-BA49-4B3871D189E2] 文件登记入参
+INFO 2026-05-21 07:47:55,430 file_manager [request_id=43E5F4BE-96C2-4CB0-BA49-4B3871D189E2] 文件登记成功
+INFO 2026-05-21 07:58:32,387 file_manager.oss_sts_views [request_id=589B74B8-BABB-427E-99BD-0031B727A933] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 07:59:06,641 file_manager.api_io [request_id=C3843BAD-41A3-43BD-8378-A93FA36A8E63] 文件登记入参
+INFO 2026-05-21 07:59:06,648 file_manager [request_id=C3843BAD-41A3-43BD-8378-A93FA36A8E63] 文件登记成功
+INFO 2026-05-21 07:59:08,180 file_manager.api_io [request_id=E3961E71-FFAE-4B33-AFFF-7DBB2979E28C] 文件登记入参
+INFO 2026-05-21 07:59:08,185 file_manager [request_id=E3961E71-FFAE-4B33-AFFF-7DBB2979E28C] 文件登记成功
+INFO 2026-05-21 07:59:08,221 file_manager.api_io [request_id=9C643081-19BC-436F-A319-4ED1F46FB509] 文件登记入参
+INFO 2026-05-21 07:59:08,225 file_manager [request_id=9C643081-19BC-436F-A319-4ED1F46FB509] 文件登记成功
+INFO 2026-05-21 08:07:10,714 file_manager.oss_sts_views [request_id=5BA24F32-7E63-4538-ADDD-AE3DD94E098F] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:07:54,726 file_manager.api_io [request_id=484687E5-1ADB-4CA0-9E2D-98ADC2A39CF8] 文件登记入参
+INFO 2026-05-21 08:07:54,729 file_manager [request_id=484687E5-1ADB-4CA0-9E2D-98ADC2A39CF8] 文件登记成功
+INFO 2026-05-21 08:17:41,478 file_manager.oss_sts_views [request_id=3366E2A9-23C7-42B0-ADE8-D1763B4A27C1] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:18:16,401 file_manager.api_io [request_id=D6335A03-443D-44B6-865C-5CB2033F0DFA] 文件登记入参
+INFO 2026-05-21 08:18:16,405 file_manager [request_id=D6335A03-443D-44B6-865C-5CB2033F0DFA] 文件登记成功
+INFO 2026-05-21 08:20:07,730 file_manager.oss_sts_views [request_id=EEF75C6C-95C8-46FE-9CDC-E6D7DB231C6D] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:20:20,363 file_manager.api_io [request_id=A2FFE849-366D-4007-897C-BFA28D2D12A1] 文件登记入参
+INFO 2026-05-21 08:20:20,366 file_manager [request_id=A2FFE849-366D-4007-897C-BFA28D2D12A1] 文件登记成功
+INFO 2026-05-21 08:24:10,973 file_manager.oss_sts_views [request_id=87C4581F-BBBB-42DB-8D1E-3384932FAD93] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:25:14,334 file_manager.api_io [request_id=6DBD3A38-9274-460D-AEC6-628ECAEE6BC3] 文件登记入参
+INFO 2026-05-21 08:25:14,338 file_manager [request_id=6DBD3A38-9274-460D-AEC6-628ECAEE6BC3] 文件登记成功
+INFO 2026-05-21 08:26:47,066 file_manager.oss_sts_views [request_id=388E6F2D-ACF4-499C-8A3F-F12C034BF2D7] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:29:42,075 file_manager.oss_sts_views [request_id=2664F127-6897-4051-8876-85C8A8B43C8F] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:29:57,899 file_manager.api_io [request_id=788AD464-0DCC-4F7B-A29E-022F76D314D3] 文件登记入参
+INFO 2026-05-21 08:29:57,902 file_manager [request_id=788AD464-0DCC-4F7B-A29E-022F76D314D3] 文件登记成功
+INFO 2026-05-21 08:34:37,100 file_manager.oss_sts_views [request_id=7F5B31DB-90A9-481E-A310-64902DC0D3F6] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:34:50,037 file_manager.api_io [request_id=F520779D-3AC0-44E8-90CE-7591D0559553] 文件登记入参
+INFO 2026-05-21 08:34:50,040 file_manager [request_id=F520779D-3AC0-44E8-90CE-7591D0559553] 文件登记成功
+INFO 2026-05-21 08:36:59,547 file_manager.oss_sts_views [request_id=C6093F62-EDD5-4D5D-865A-8D9499ED943B] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:37:18,784 file_manager.api_io [request_id=77DC95A8-7D5B-4BD8-8155-72B7F217F0A1] 文件登记入参
+INFO 2026-05-21 08:37:18,787 file_manager [request_id=77DC95A8-7D5B-4BD8-8155-72B7F217F0A1] 文件登记成功
+INFO 2026-05-21 08:37:19,950 file_manager.api_io [request_id=18DBEB9A-97CC-4AF0-936D-B88ECF4E0444] 文件登记入参
+INFO 2026-05-21 08:37:19,955 file_manager [request_id=18DBEB9A-97CC-4AF0-936D-B88ECF4E0444] 文件登记成功
+INFO 2026-05-21 08:49:05,758 file_manager.oss_sts_views [request_id=6FC6ACBC-86B6-444B-9052-AD14963C24C2] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 08:49:26,132 file_manager.api_io [request_id=3AD378B3-C926-46B1-9688-52F9BDAC8332] 文件登记入参
+INFO 2026-05-21 08:49:26,135 file_manager [request_id=3AD378B3-C926-46B1-9688-52F9BDAC8332] 文件登记成功
+{"ts": "2026-05-21T08:59:06.304925+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 25186, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:06.304925+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 25188, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:14.709663+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 25187, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:14.879236+00:00", "level": "INFO", "logger": "file_manager.oss_sts_views", "message": "OCR STS \u7b7e\u53d1\u6210\u529f user_id=1", "request_id": "4260d49e-8ed4-4063-b098-86b3a10b9fc5", "module_name": "oss_sts_views", "file": "oss_sts_views.py", "function": "get", "line": 51, "pid": 25187, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:15.026217+00:00", "level": "INFO", "logger": "file_manager.oss_sts_views", "message": "OSS STS \u7b7e\u53d1\u6210\u529f user_id=2", "request_id": "35abbdea-cf31-4967-bd6a-8823d448c7e8", "module_name": "oss_sts_views", "file": "oss_sts_views.py", "function": "get", "line": 25, "pid": 25187, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:15.171109+00:00", "level": "ERROR", "logger": "file_manager.oss_sts_views", "message": "OSS STS \u914d\u7f6e\u9519\u8bef: missing ak", "request_id": "74b2f211-b2e7-46ab-9166-886c4ff54757", "module_name": "oss_sts_views", "file": "oss_sts_views.py", "function": "get", "line": 28, "pid": 25187, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:30.041565+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 25842, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:37.954498+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 25841, "thread": "MainThread"}
+{"ts": "2026-05-21T08:59:51.950518+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 26291, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:11.121029+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 28434, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:11.121029+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 28433, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:18.753461+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 28437, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:33.244722+00:00", "level": "WARNING", "logger": "file_manager.sts_utils", "message": "\u963f\u91cc\u4e91 SDK \u672a\u5b89\u88c5\uff0cSTS \u529f\u80fd\u5c06\u4e0d\u53ef\u7528", "request_id": "-", "module_name": "sts_utils", "file": "sts_utils.py", "function": "<module>", "line": 24, "pid": 29069, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:33.409771+00:00", "level": "INFO", "logger": "file_manager.oss_sts_views", "message": "OCR STS \u7b7e\u53d1\u6210\u529f user_id=1", "request_id": "9c1ab0ed-ee62-4f1d-b29c-6aed22ea0644", "module_name": "oss_sts_views", "file": "oss_sts_views.py", "function": "get", "line": 51, "pid": 29069, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:33.554627+00:00", "level": "INFO", "logger": "file_manager.oss_sts_views", "message": "OSS STS \u7b7e\u53d1\u6210\u529f user_id=2", "request_id": "7b1e1ef3-d919-491d-aeed-57bea52faa8b", "module_name": "oss_sts_views", "file": "oss_sts_views.py", "function": "get", "line": 25, "pid": 29069, "thread": "MainThread"}
+{"ts": "2026-05-21T09:01:33.700034+00:00", "level": "ERROR", "logger": "file_manager.oss_sts_views", "message": "OSS STS \u914d\u7f6e\u9519\u8bef: missing ak", "request_id": "f8daf068-b49c-4122-a2e8-e54de9f718c1", "module_name": "oss_sts_views", "file": "oss_sts_views.py", "function": "get", "line": 28, "pid": 29069, "thread": "MainThread"}
+INFO 2026-05-21 09:04:29,921 file_manager.api_io [request_id=056F2514-790F-49E8-BD21-17FED25E5A24] 文件登记入参
+INFO 2026-05-21 09:04:29,926 file_manager [request_id=056F2514-790F-49E8-BD21-17FED25E5A24] 文件登记成功
+INFO 2026-05-21 09:04:30,533 file_manager.api_io [request_id=5C4C8C1A-C7F0-4828-A6C8-C29D58789015] 文件登记入参
+INFO 2026-05-21 09:04:30,538 file_manager [request_id=5C4C8C1A-C7F0-4828-A6C8-C29D58789015] 文件登记成功
+INFO 2026-05-21 09:06:37,141 file_manager.api_io [request_id=AD9AD8B4-8ECF-4884-9DA3-DD627B30EEEF] 文件登记入参
+INFO 2026-05-21 09:06:37,148 file_manager [request_id=AD9AD8B4-8ECF-4884-9DA3-DD627B30EEEF] 文件登记成功
+INFO 2026-05-21 09:07:36,692 file_manager.oss_sts_views [request_id=F1FACD32-7961-4D0E-83DD-3A4722ED3FBC] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 09:08:21,772 file_manager.oss_sts_views [request_id=DAEDE060-C68F-4BA9-8B23-E86C138FEC31] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 09:18:31,185 file_manager.oss_sts_views [request_id=A5E2CA89-DB53-4311-ADB4-F445DBA8931C] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 09:32:40,810 file_manager.oss_sts_views [request_id=CE4BBAD6-2A9B-46EC-A375-CEC8998A89F7] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 09:35:24,563 file_manager.oss_sts_views [request_id=FED54741-0542-4FB9-81AB-CD662A71ADB7] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:17:50,210 file_manager.oss_sts_views [request_id=8124AB56-E566-42A4-B620-C74075509A02] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:19:15,649 file_manager.oss_sts_views [request_id=7C13778A-736E-4E89-8C7D-81187E029040] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:19:43,615 file_manager.oss_sts_views [request_id=D567091B-8058-4CD5-8742-836096613808] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:21:33,036 file_manager.oss_sts_views [request_id=5F115193-5A6F-4C01-B80F-1F8868FA3232] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:31:54,870 file_manager [request_id=F2321FE6-8C10-42EA-9429-BFA713223996] 更新文件业务绑定请求
+INFO 2026-05-21 10:31:54,878 file_manager [request_id=F2321FE6-8C10-42EA-9429-BFA713223996] 更新文件业务绑定成功
+INFO 2026-05-21 10:35:40,749 file_manager.oss_sts_views [request_id=87D26262-01E6-495C-AF16-11E328DCD775] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:36:41,987 file_manager.oss_sts_views [request_id=84E4ADB9-41D4-46F6-81AE-F901918DC018] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:38:34,407 file_manager.api_io [request_id=19D2899A-1122-4F19-AA1D-5DAFFDCFEDAD] 文件登记入参
+INFO 2026-05-21 10:38:34,432 file_manager [request_id=19D2899A-1122-4F19-AA1D-5DAFFDCFEDAD] 文件登记成功
+INFO 2026-05-21 10:55:18,022 file_manager.oss_sts_views [request_id=5B208705-CB02-4847-B430-0C25CE1D1B08] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:55:32,778 file_manager.oss_sts_views [request_id=07D06F25-5A67-4B5E-8F69-55FD5639FD17] OSS STS 签发成功 user_id=4
+INFO 2026-05-21 10:56:13,980 file_manager.oss_sts_views [request_id=E0C4A6FD-9565-468B-8BF5-B63DD368DF3C] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 10:56:47,182 file_manager.oss_sts_views [request_id=AABB855C-61A3-43EF-907D-350BE4516820] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 10:58:25,462 file_manager.api_io [request_id=189A096F-86CA-4E00-880D-F365D38C50F4] 文件登记入参
+INFO 2026-05-21 10:58:25,470 file_manager [request_id=189A096F-86CA-4E00-880D-F365D38C50F4] 文件登记成功
+INFO 2026-05-21 11:00:08,342 file_manager.oss_sts_views [request_id=78804B70-51B5-4890-9ECE-3FC4C1CE06EF] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:03:09,346 file_manager [request_id=6B7D9963-A509-45C6-8027-ADFC47308BA2] 更新文件业务绑定请求
+INFO 2026-05-21 11:03:09,357 file_manager [request_id=6B7D9963-A509-45C6-8027-ADFC47308BA2] 更新文件业务绑定成功
+INFO 2026-05-21 11:05:39,571 file_manager.api_io [request_id=4DC33DE6-10B3-400E-B8F1-740D04AD5EFD] 文件登记入参
+INFO 2026-05-21 11:05:39,583 file_manager [request_id=4DC33DE6-10B3-400E-B8F1-740D04AD5EFD] 文件登记成功
+INFO 2026-05-21 11:06:24,879 file_manager.oss_sts_views [request_id=7D2E912C-A21D-4000-B752-9817E56C3993] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:13:30,297 file_manager.oss_sts_views [request_id=7AC1872C-07C1-4F2B-BB9B-2FD937D8E69F] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:15:25,764 file_manager.oss_sts_views [request_id=FAF237E6-0226-4429-8D99-F68992231080] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:16:17,212 file_manager.oss_sts_views [request_id=4865D1DE-3B98-4081-8145-123040AF1D0E] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:17:08,638 file_manager.oss_sts_views [request_id=BB9B0BA0-B2A8-476E-8F08-F5DE4FFBFF1B] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:20:44,587 file_manager.oss_sts_views [request_id=6CB493C6-FCCE-4003-96AA-9A7BCCDCAF56] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:26:54,525 file_manager.oss_sts_views [request_id=5E5EBB5B-6F1F-4F74-B0DC-E6A956391E7D] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:58:08,231 file_manager.oss_sts_views [request_id=DB079C72-BD6A-4359-B6FF-E711D2F91379] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 11:58:37,840 file_manager.oss_sts_views [request_id=A6D28C91-9100-4D6F-8203-95B420CEC25A] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 12:04:54,166 file_manager.oss_sts_views [request_id=814AB575-EC5D-4516-AE37-89843F8B0FE5] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 12:05:58,735 file_manager.api_io [request_id=3311A872-84B1-48D2-BE22-4FA746E83C78] 文件登记入参
+INFO 2026-05-21 12:05:58,748 file_manager [request_id=3311A872-84B1-48D2-BE22-4FA746E83C78] 文件登记成功
+INFO 2026-05-21 12:08:15,880 file_manager.oss_sts_views [request_id=BD9A1C66-A561-4E4C-84CC-10A1B4953ACE] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 12:10:44,434 file_manager.oss_sts_views [request_id=885D2C91-6673-4DD6-9E60-1DB5553610A4] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 12:13:20,351 file_manager.api_io [request_id=62C50085-1A85-419A-958A-FB7FE3628233] 文件登记入参
+INFO 2026-05-21 12:13:20,361 file_manager [request_id=62C50085-1A85-419A-958A-FB7FE3628233] 文件登记成功
+INFO 2026-05-21 12:20:38,402 file_manager.oss_sts_views [request_id=A23A1456-D3ED-4002-A972-33A82247697D] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 12:20:54,142 file_manager.api_io [request_id=47F0C78D-FE8D-456F-8D90-6E1739B64812] 文件登记入参
+INFO 2026-05-21 12:20:54,149 file_manager [request_id=47F0C78D-FE8D-456F-8D90-6E1739B64812] 文件登记成功
+INFO 2026-05-21 12:23:13,623 file_manager.oss_sts_views [request_id=660AE1B8-58EB-4CB8-8C44-2D80F792F637] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 12:32:45,924 file_manager.api_io [request_id=FA50327C-12CB-4708-8DA2-A24A40D4617C] 文件登记入参
+INFO 2026-05-21 12:32:45,937 file_manager [request_id=FA50327C-12CB-4708-8DA2-A24A40D4617C] 文件登记成功
+INFO 2026-05-21 12:35:48,596 file_manager.api_io [request_id=D8CBD76A-38BE-403D-BAFF-471B312C47F5] 文件登记入参
+INFO 2026-05-21 12:35:48,604 file_manager [request_id=D8CBD76A-38BE-403D-BAFF-471B312C47F5] 文件登记成功
+INFO 2026-05-21 12:35:49,343 file_manager.api_io [request_id=3F30D355-C713-4721-AE21-B21A0E671FE6] 文件登记入参
+INFO 2026-05-21 12:35:49,351 file_manager [request_id=3F30D355-C713-4721-AE21-B21A0E671FE6] 文件登记成功
+INFO 2026-05-21 12:35:49,419 file_manager.api_io [request_id=A42ACFE4-69F1-41FE-A0A2-45B16C05AC4F] 文件登记入参
+INFO 2026-05-21 12:35:49,427 file_manager [request_id=A42ACFE4-69F1-41FE-A0A2-45B16C05AC4F] 文件登记成功
+INFO 2026-05-21 12:37:29,596 file_manager [request_id=540D3F0F-3DE0-4B0D-A1D1-A793FF02DB9D] 更新文件业务绑定请求
+INFO 2026-05-21 12:37:29,608 file_manager [request_id=540D3F0F-3DE0-4B0D-A1D1-A793FF02DB9D] 更新文件业务绑定成功
+INFO 2026-05-21 12:37:32,415 file_manager [request_id=50E94F6F-F9E5-4FE1-AEAE-BB6B311D1EF3] 更新文件业务绑定请求
+INFO 2026-05-21 12:37:32,425 file_manager [request_id=50E94F6F-F9E5-4FE1-AEAE-BB6B311D1EF3] 更新文件业务绑定成功
+INFO 2026-05-21 12:40:30,719 file_manager.api_io [request_id=45D7081F-8A1B-498F-9740-839A9677F354] 文件登记入参
+INFO 2026-05-21 12:40:30,730 file_manager [request_id=45D7081F-8A1B-498F-9740-839A9677F354] 文件登记成功
+INFO 2026-05-21 12:46:16,680 file_manager.oss_sts_views [request_id=B3B09E4E-4DA4-476C-B053-CA1A0C79F5F6] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 15:43:05,984 file_manager.oss_sts_views [request_id=8032FE6D-7DD9-4482-81BE-1681E7A05746] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 15:57:06,504 file_manager.oss_sts_views [request_id=7D6505FA-B7F5-4C33-92C9-1A3E0F2C9387] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 15:57:40,868 file_manager.oss_sts_views [request_id=3D7D013D-0F2A-4566-BA85-5762EE5D9EFB] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 15:59:12,453 file_manager.api_io [request_id=FFE9087E-5AB0-401C-9A14-02B90C5F17A1] 文件登记入参
+INFO 2026-05-21 15:59:12,460 file_manager [request_id=FFE9087E-5AB0-401C-9A14-02B90C5F17A1] 文件登记成功
+INFO 2026-05-21 16:01:11,328 file_manager [request_id=48ABB779-F9B0-496D-8AD8-BA58CDECEE5C] 更新文件业务绑定请求
+INFO 2026-05-21 16:01:11,407 file_manager [request_id=48ABB779-F9B0-496D-8AD8-BA58CDECEE5C] 更新文件业务绑定成功
+INFO 2026-05-21 16:02:01,565 file_manager.oss_sts_views [request_id=39AD6319-7DEB-461F-A4BA-8172BE81EB04] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 16:02:40,732 file_manager.api_io [request_id=EFA0AE91-737F-4321-A752-68D3DE94AAE5] 文件登记入参
+INFO 2026-05-21 16:02:40,737 file_manager [request_id=EFA0AE91-737F-4321-A752-68D3DE94AAE5] 文件登记成功
+INFO 2026-05-21 16:02:40,869 file_manager.api_io [request_id=19735154-2CD2-4EC1-A88A-43627D950E61] 文件登记入参
+INFO 2026-05-21 16:02:40,874 file_manager [request_id=19735154-2CD2-4EC1-A88A-43627D950E61] 文件登记成功
+INFO 2026-05-21 16:02:40,982 file_manager.api_io [request_id=CA7118EB-2920-4C17-A88F-E0096E880833] 文件登记入参
+INFO 2026-05-21 16:02:40,992 file_manager [request_id=CA7118EB-2920-4C17-A88F-E0096E880833] 文件登记成功
+INFO 2026-05-21 16:02:41,313 file_manager.api_io [request_id=E96DDE0D-05EF-4406-80BA-A22096D56714] 文件登记入参
+INFO 2026-05-21 16:02:41,319 file_manager [request_id=E96DDE0D-05EF-4406-80BA-A22096D56714] 文件登记成功
+INFO 2026-05-21 16:02:41,446 file_manager.api_io [request_id=6640EA20-7355-4D94-BBDF-E34811E2BE74] 文件登记入参
+INFO 2026-05-21 16:02:41,452 file_manager [request_id=6640EA20-7355-4D94-BBDF-E34811E2BE74] 文件登记成功
+INFO 2026-05-21 16:02:41,641 file_manager.api_io [request_id=2193A2D4-7848-417F-9028-404349EEC0BC] 文件登记入参
+INFO 2026-05-21 16:02:41,648 file_manager [request_id=2193A2D4-7848-417F-9028-404349EEC0BC] 文件登记成功
+INFO 2026-05-21 16:13:05,014 file_manager.api_io [request_id=EEAA926A-D2AF-4212-A79F-F5BF7670F508] 文件登记入参
+INFO 2026-05-21 16:13:05,021 file_manager [request_id=EEAA926A-D2AF-4212-A79F-F5BF7670F508] 文件登记成功
+INFO 2026-05-21 16:16:50,864 file_manager.api_io [request_id=5797D1FD-9193-4322-8203-D897425EF170] 文件登记入参
+INFO 2026-05-21 16:16:50,870 file_manager [request_id=5797D1FD-9193-4322-8203-D897425EF170] 文件登记成功
+INFO 2026-05-21 16:20:11,431 file_manager.api_io [request_id=61A513A6-4F9D-4C93-B981-E0FEF28BC046] 文件登记入参
+INFO 2026-05-21 16:20:11,435 file_manager [request_id=61A513A6-4F9D-4C93-B981-E0FEF28BC046] 文件登记成功
+INFO 2026-05-21 21:45:14,767 file_manager.oss_sts_views [request_id=5072D88C-3B93-4BA8-9AEA-CE1C1FCAB000] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 21:46:38,673 file_manager.oss_sts_views [request_id=1A07B7E4-C72F-4EB2-8DF7-25798364BC3C] OSS STS 签发成功 user_id=5
+INFO 2026-05-21 21:46:53,478 file_manager.api_io [request_id=5597BFD6-0583-446D-B562-835195F2BF59] 文件登记入参
+INFO 2026-05-21 21:46:53,484 file_manager [request_id=5597BFD6-0583-446D-B562-835195F2BF59] 文件登记成功

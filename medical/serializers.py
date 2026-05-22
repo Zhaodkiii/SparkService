@@ -183,7 +183,8 @@ class FollowUpSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
-class ExaminationReportSerializer(serializers.ModelSerializer):
+class ExaminationReportSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
+    attachments_business_type = "examination_report"
     def validate_member(self, value):
         request = self.context.get("request")
         if request and not request.user.is_staff and value.user_id != request.user.id:
@@ -206,6 +207,11 @@ class ExaminationReportSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"medical_record": [_("medical_record.member mismatch with report.member")]})
         return attrs
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data.pop("raw_ocr", None)
+        return data
+
     class Meta:
         model = ExaminationReport
         fields = (
@@ -227,13 +233,21 @@ class ExaminationReportSerializer(serializers.ModelSerializer):
             "raw_ocr",
             "status",
             "extra",
+            "attachments",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
-class HealthExamReportSerializer(serializers.ModelSerializer):
+class HealthExamReportSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
+    attachments_business_type = "health_exam_report"
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data.pop("raw_ocr", None)
+        return data
+
     class Meta:
         model = HealthExamReport
         fields = (
@@ -249,6 +263,7 @@ class HealthExamReportSerializer(serializers.ModelSerializer):
             "raw_ocr",
             "status",
             "extra",
+            "attachments",
             "created_at",
             "updated_at",
         )
