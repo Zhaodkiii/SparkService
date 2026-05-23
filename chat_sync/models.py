@@ -19,9 +19,9 @@ class ChatThread(models.Model):
     title = models.CharField(max_length=255, default="New Chat")
     scenario = models.CharField(max_length=32, choices=Scenario.choices, default=Scenario.CHAT)
     current_model_name = models.CharField(max_length=128, blank=True, default="")
-    temperature = models.FloatField(default=0.6)
+    temperature = models.FloatField(null=True, blank=True)
     top_p = models.FloatField(default=1.0)
-    max_tokens = models.IntegerField(default=4096)
+    max_tokens = models.IntegerField(null=True, blank=True)
     max_messages = models.IntegerField(default=20)
     role_prompt = models.TextField(blank=True, default="")
     image_delivery_mode = models.CharField(
