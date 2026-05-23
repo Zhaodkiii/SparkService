@@ -432,7 +432,16 @@ class NotificationService:
                 sent_at=timezone.now(),
             )
 
-        ok, reason, provider_message_id = EmailProvider.send_notification(email=to, title=title, body=body, request_id=request_id)
+        ok, reason, provider_message_id, smtp_detail = EmailProvider.send_notification(
+            email=to, title=title, body=body, request_id=request_id
+        )
+        err_msg = ""
+        if not ok:
+            detail = (smtp_detail or "").strip()
+            base = reason or "email_send_failed"
+            err_msg = f"{base}: {detail}".strip(": ").strip() if detail else base
+            err_msg = err_msg[:2000]
+
         return NotificationMessage.objects.create(
             campaign_id=campaign_id,
             user_id=user.id,
@@ -446,7 +455,7 @@ class NotificationService:
             failure_count=0 if ok else 1,
             receiver_email=to,
             provider_message_id=provider_message_id,
-            error_message="" if ok else reason,
+            error_message="" if ok else err_msg,
             created_by_id=created_by_id,
             request_id=request_id or "",
             sent_at=timezone.now(),

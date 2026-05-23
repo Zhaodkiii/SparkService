@@ -21,9 +21,9 @@ from medical.models import (
 
 @admin.register(Member)
 class MemberAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "gender", "relationship", "blood_type", "is_primary", "is_deleted", "updated_at")
+    list_display = ("id", "name", "gender", "blood_type", "is_primary", "is_deleted", "updated_at")
     list_filter = ("gender", "is_primary", "is_deleted")
-    search_fields = ("name", "relationship", "blood_type", "notes")
+    search_fields = ("name", "blood_type", "notes")
 
 
 @admin.register(UserMemberBinding)

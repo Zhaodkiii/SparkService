@@ -97,6 +97,20 @@ APNS_TEAM_ID = (os.getenv("APNS_TEAM_ID") or "").strip()
 APNS_TOPIC = (os.getenv("APNS_TOPIC") or "").strip()
 APNS_USE_SANDBOX = (os.getenv("APNS_USE_SANDBOX") or "true").strip().lower() in ("1", "true", "yes", "y")
 
+# SMTP 邮件（成员邀请、通知等；QQ 邮箱示例：465 + SSL）
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "accounts.infrastructure.smtp_email_backend.EmailBackend",
+)
+EMAIL_HOST = (os.getenv("EMAIL_HOST") or "localhost").strip()
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = (os.getenv("EMAIL_HOST_USER") or "").strip()
+EMAIL_HOST_PASSWORD = (os.getenv("EMAIL_HOST_PASSWORD") or "").strip()
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in ("1", "true", "yes", "y")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "false").lower() in ("1", "true", "yes", "y")
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "15"))
+DEFAULT_FROM_EMAIL = (os.getenv("DEFAULT_FROM_EMAIL") or EMAIL_HOST_USER or "webmaster@localhost").strip()
+
 # Application definition
 
 INSTALLED_APPS = [

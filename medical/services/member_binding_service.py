@@ -18,18 +18,28 @@ from medical.models import (
     Member,
     UserMemberBinding,
 )
+from medical.services.member_permission_levels import (
+    role_to_permission,
+    permission_to_role,
+)
 
 
 @dataclass(frozen=True)
 class MemberCapabilities:
     binding_id: int
     binding_role: str
+    permission: str
     relationship: str
     shared_user_count: int
-    can_share: bool
+    can_view: bool
+    can_create: bool
     can_edit: bool
     can_delete: bool
+    can_delete_medical: bool
+    can_share: bool
     can_unbind: bool
+    can_manage_bindings: bool
+    can_remove_shared_binding: bool
 
 
 def active_bindings_qs():
@@ -66,25 +76,58 @@ def count_active_bindings(member_id: int) -> int:
 
 def compute_capabilities(binding: UserMemberBinding) -> MemberCapabilities:
     role = binding.role
+    permission = role_to_permission(role)
     shared_count = count_active_bindings(binding.member_id)
-    is_owner_like = role in (UserMemberBinding.Role.OWNER, UserMemberBinding.Role.ADMIN)
     only_binding = shared_count <= 1
 
-    can_share = is_owner_like
-    can_edit = is_owner_like
+    is_owner = role == UserMemberBinding.Role.OWNER
+    is_manage = role in (UserMemberBinding.Role.OWNER, UserMemberBinding.Role.ADMIN)
+    can_write_medical = role in (
+        UserMemberBinding.Role.OWNER,
+        UserMemberBinding.Role.ADMIN,
+        UserMemberBinding.Role.EDITOR,
+    )
+
+    can_view = True
+    can_create = can_write_medical
+    can_edit = can_write_medical
+    can_delete_medical = is_manage
+    can_delete = is_manage and only_binding
+    can_share = is_manage
     can_unbind = True
-    can_delete = is_owner_like and only_binding
+    can_manage_bindings = is_owner
+    can_remove_shared_binding = is_manage
 
     return MemberCapabilities(
         binding_id=binding.id,
         binding_role=role,
+        permission=permission,
         relationship=binding.relationship,
         shared_user_count=shared_count,
-        can_share=can_share,
+        can_view=can_view,
+        can_create=can_create,
         can_edit=can_edit,
         can_delete=can_delete,
+        can_delete_medical=can_delete_medical,
+        can_share=can_share,
         can_unbind=can_unbind,
+        can_manage_bindings=can_manage_bindings,
+        can_remove_shared_binding=can_remove_shared_binding,
     )
+
+
+def capabilities_to_dict(caps: MemberCapabilities) -> dict:
+    return {
+        "can_view": caps.can_view,
+        "can_create": caps.can_create,
+        "can_edit": caps.can_edit,
+        "can_delete": caps.can_delete,
+        "can_delete_medical": caps.can_delete_medical,
+        "can_share": caps.can_share,
+        "can_unbind": caps.can_unbind,
+        "can_manage_bindings": caps.can_manage_bindings,
+        "can_remove_shared_binding": caps.can_remove_shared_binding,
+    }
 
 
 @transaction.atomic
@@ -151,6 +194,59 @@ def revoke_binding(binding: UserMemberBinding) -> None:
     binding.save(update_fields=["status", "updated_at"])
 
 
+def ensure_can_manage_bindings(*, user: User, member_id: int) -> UserMemberBinding:
+    binding = ensure_can_access_member(user=user, member_id=member_id)
+    caps = compute_capabilities(binding)
+    if not caps.can_manage_bindings:
+        raise PermissionError("permission_denied")
+    return binding
+
+
+@transaction.atomic
+def change_binding_role(binding: UserMemberBinding, new_role: str) -> UserMemberBinding:
+    if new_role not in (
+        UserMemberBinding.Role.ADMIN,
+        UserMemberBinding.Role.EDITOR,
+        UserMemberBinding.Role.VIEWER,
+    ):
+        raise ValueError("invalid_role")
+    if binding.role == UserMemberBinding.Role.OWNER:
+        raise ValueError("cannot_change_owner_role")
+    binding.role = new_role
+    binding.save(update_fields=["role", "updated_at"])
+    return binding
+
+
+@transaction.atomic
+def change_binding_permission(binding: UserMemberBinding, permission: str) -> UserMemberBinding:
+    new_role = permission_to_role(permission)
+    return change_binding_role(binding, new_role)
+
+
+@transaction.atomic
+def remove_binding(binding: UserMemberBinding) -> None:
+    if binding.role == UserMemberBinding.Role.OWNER:
+        raise ValueError("cannot_remove_owner")
+    revoke_binding(binding)
+
+
+@transaction.atomic
+def transfer_owner(*, current_owner_binding: UserMemberBinding, target_binding: UserMemberBinding) -> None:
+    if current_owner_binding.member_id != target_binding.member_id:
+        raise ValueError("member_mismatch")
+    if current_owner_binding.role != UserMemberBinding.Role.OWNER:
+        raise ValueError("not_owner")
+    if target_binding.status != UserMemberBinding.Status.ACTIVE:
+        raise ValueError("target_inactive")
+    if target_binding.role == UserMemberBinding.Role.OWNER:
+        return
+
+    current_owner_binding.role = UserMemberBinding.Role.ADMIN
+    current_owner_binding.save(update_fields=["role", "updated_at"])
+    target_binding.role = UserMemberBinding.Role.OWNER
+    target_binding.save(update_fields=["role", "updated_at"])
+
+
 @transaction.atomic
 def delete_member_profile(member: Member) -> None:
     member.soft_delete()
@@ -193,12 +289,16 @@ def shared_users_payload(*, member_id: int, viewer: User, include_details: bool)
     rows = []
     for item in bindings:
         display = _masked_user_label(item.user)
+        caps = compute_capabilities(item)
         rows.append(
             {
+                "binding_id": item.id,
                 "user_id": item.user_id,
                 "display_name": display,
                 "relationship": item.relationship,
                 "role": item.role,
+                "permission": caps.permission,
+                "capabilities": capabilities_to_dict(caps),
                 "is_self": item.user_id == viewer.id,
                 "bound_at": item.created_at,
             }
@@ -225,20 +325,41 @@ def ensure_can_access_member(*, user: User, member_id: int) -> UserMemberBinding
     return binding
 
 
-def ensure_can_write_medical_member(*, user: User, member_id: int) -> UserMemberBinding:
-    """
-    第一期：只要存在 active binding，即允许对该成员执行医疗资料读写（含工作流保存）。
-    ``record.user`` 仅记录操作者，不作为授权依据。
-    """
-    return ensure_can_access_member(user=user, member_id=member_id)
+def ensure_can_create_member_resource(*, user: User, member_id: int) -> UserMemberBinding:
+    binding = ensure_can_access_member(user=user, member_id=member_id)
+    caps = compute_capabilities(binding)
+    if not caps.can_create:
+        raise PermissionError("permission_denied")
+    return binding
 
 
-def ensure_can_edit_member(*, user: User, member_id: int) -> UserMemberBinding:
+def ensure_can_edit_member_resource(*, user: User, member_id: int) -> UserMemberBinding:
     binding = ensure_can_access_member(user=user, member_id=member_id)
     caps = compute_capabilities(binding)
     if not caps.can_edit:
         raise PermissionError("permission_denied")
     return binding
+
+
+def ensure_can_delete_member_resource(*, user: User, member_id: int) -> UserMemberBinding:
+    binding = ensure_can_access_member(user=user, member_id=member_id)
+    caps = compute_capabilities(binding)
+    if not caps.can_delete_medical:
+        raise PermissionError("permission_denied")
+    return binding
+
+
+def ensure_can_remove_shared_binding(*, user: User, member_id: int) -> UserMemberBinding:
+    binding = ensure_can_access_member(user=user, member_id=member_id)
+    caps = compute_capabilities(binding)
+    if not caps.can_remove_shared_binding:
+        raise PermissionError("permission_denied")
+    return binding
+
+
+# Backward-compatible aliases
+ensure_can_write_medical_member = ensure_can_create_member_resource
+ensure_can_edit_member = ensure_can_edit_member_resource
 
 
 def ensure_can_share_member(*, user: User, member_id: int) -> UserMemberBinding:

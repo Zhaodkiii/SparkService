@@ -59,7 +59,6 @@ class Member(MedicalBaseModel):
 
     name = models.CharField(max_length=64)
     gender = models.CharField(max_length=16, choices=Gender.choices, default=Gender.UNKNOWN)
-    relationship = models.CharField(max_length=64, default="self")  # 与主账户关系，如 self / 父母等
     birth_date = models.DateField(null=True, blank=True)
     blood_type = models.CharField(max_length=8, blank=True, default="")
     allergies = models.JSONField(default=list, blank=True)
@@ -72,7 +71,7 @@ class Member(MedicalBaseModel):
         ordering = ["-is_primary", "-updated_at", "-id"]
 
     def __str__(self):
-        return f"{self.name}({self.relationship})"
+        return self.name
 
 
 class UserMemberBinding(models.Model):
@@ -81,6 +80,7 @@ class UserMemberBinding(models.Model):
     class Role(models.TextChoices):
         OWNER = "owner", "owner"
         ADMIN = "admin", "admin"
+        EDITOR = "editor", "editor"
         VIEWER = "viewer", "viewer"
 
     class Status(models.TextChoices):
@@ -115,6 +115,99 @@ class UserMemberBinding(models.Model):
 
     def __str__(self):
         return f"binding:user={self.user_id}:member={self.member_id}:{self.relationship}"
+
+
+class MemberShareInvite(models.Model):
+    """远程成员分享邀请（手机号 / 邮箱 / App 内）。"""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "pending"
+        ACCEPTED = "accepted", "accepted"
+        REJECTED = "rejected", "rejected"
+        EXPIRED = "expired", "expired"
+        CANCELLED = "cancelled", "cancelled"
+
+    class Channel(models.TextChoices):
+        PHONE = "phone", "phone"
+        EMAIL = "email", "email"
+        IN_APP = "in_app", "in_app"
+
+    member = models.ForeignKey(Member, related_name="share_invites", on_delete=models.CASCADE, db_index=True)
+    inviter_user = models.ForeignKey(
+        User,
+        related_name="sent_member_invites",
+        on_delete=models.CASCADE,
+        db_index=True,
+    )
+    target_user = models.ForeignKey(
+        User,
+        related_name="received_member_invites",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    target_contact = models.CharField(max_length=255, blank=True, default="")
+    channel = models.CharField(max_length=16, choices=Channel.choices, db_index=True)
+    role = models.CharField(max_length=16, default=UserMemberBinding.Role.VIEWER)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    expires_at = models.DateTimeField(db_index=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "medical_member_share_invite"
+        ordering = ["-created_at", "-id"]
+        # MySQL 不支持带 condition 的部分唯一约束；pending 去重由 member_invite_service.create_invite 保证。
+        indexes = [
+            models.Index(fields=["target_user", "status"]),
+            models.Index(fields=["member", "status"]),
+            models.Index(fields=["member", "inviter_user", "target_user", "status"]),
+        ]
+
+    def __str__(self):
+        return f"invite:member={self.member_id}:target={self.target_user_id}:{self.status}"
+
+
+class MemberShareInviteDeliveryLog(models.Model):
+    """记录每次邀请通知投递尝试（APNs / 邮件 / 短信）。"""
+
+    class Channel(models.TextChoices):
+        APNS = "apns", "apns"
+        EMAIL = "email", "email"
+        SMS = "sms", "sms"
+        NONE = "none", "none"
+
+    class Status(models.TextChoices):
+        SENT = "sent", "sent"
+        FAILED = "failed", "failed"
+        SKIPPED = "skipped", "skipped"
+
+    invite = models.ForeignKey(
+        MemberShareInvite,
+        on_delete=models.CASCADE,
+        related_name="delivery_logs",
+        db_index=True,
+    )
+    channel = models.CharField(max_length=10, choices=Channel.choices)
+    status = models.CharField(max_length=10, choices=Status.choices)
+    provider_message_id = models.CharField(max_length=255, blank=True, default="")
+    error_code = models.CharField(max_length=64, blank=True, default="")
+    error_message = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "medical_member_share_invite_delivery_log"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"delivery:invite={self.invite_id}:{self.channel}:{self.status}"
 
 
 class MedicalCase(MedicalBaseModel):

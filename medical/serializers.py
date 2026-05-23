@@ -76,8 +76,6 @@ class MemberSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         relationship = validated_data.pop("relationship", "self")
         member = super().create(validated_data)
-        member.relationship = relationship
-        member.save(update_fields=["relationship", "updated_at"])
         request = self.context.get("request")
         if request and request.user.is_authenticated:
             binding_service.create_owner_binding(
@@ -115,11 +113,15 @@ def serialize_member_list_item(member: Member, binding: UserMemberBinding) -> di
         "avatar_url": member.avatar_url,
         "is_primary": member.is_primary,
         "binding_role": caps.binding_role,
+        "permission": caps.permission,
         "shared_user_count": caps.shared_user_count,
+        "can_view": caps.can_view,
+        "can_create": caps.can_create,
         "can_share": caps.can_share,
         "can_edit": caps.can_edit,
         "can_delete": caps.can_delete,
         "can_unbind": caps.can_unbind,
+        "can_manage_bindings": caps.can_manage_bindings,
         "updated_at": member.updated_at,
     }
 

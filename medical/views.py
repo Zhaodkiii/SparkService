@@ -26,13 +26,14 @@ from medical.models import (
     MedicalCase,
     ModelChangeLog,
     Member,
+    MemberShareInvite,
     Prescription,
     Surgery,
     Symptom,
     UserMemberBinding,
     Visit,
 )
-from medical.permissions import filter_queryset_by_member_binding
+from medical.services.member_permission_gate import MemberPermissionGate
 from medical.serializers import (
     ExaminationReportSerializer,
     FollowUpSerializer,
@@ -52,6 +53,9 @@ from medical.serializers import (
     serialize_member_list_item,
 )
 from medical.services import member_binding_service as binding_service
+from medical.services import member_invite_service as invite_service
+from medical.services.member_invite_service import InviteError
+from medical.services.member_invite_delivery import create_invite_and_notify, DeliveryResult
 from medical.services import member_share_ticket as share_ticket_service
 from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
@@ -68,31 +72,43 @@ class WrappedModelViewSet(viewsets.ModelViewSet):
         queryset = self.queryset.filter(is_deleted=False)
         model = queryset.model
         if any(field.name == "member" for field in model._meta.fields):
-            return filter_queryset_by_member_binding(queryset, self.request.user)
+            return MemberPermissionGate.filter_qs(queryset, self.request.user)
         return queryset.filter(user=self.request.user)
 
-    def _ensure_member_write_access(self, member_id: int) -> None:
+    def _ensure_member_create_access(self, member_id: int) -> None:
         try:
-            binding_service.ensure_can_write_medical_member(user=self.request.user, member_id=member_id)
+            MemberPermissionGate.require_create(user=self.request.user, member_id=member_id)
+        except PermissionError as exc:
+            raise PermissionDenied(detail=str(exc)) from exc
+
+    def _ensure_member_edit_access(self, member_id: int) -> None:
+        try:
+            MemberPermissionGate.require_edit(user=self.request.user, member_id=member_id)
+        except PermissionError as exc:
+            raise PermissionDenied(detail=str(exc)) from exc
+
+    def _ensure_member_delete_access(self, member_id: int) -> None:
+        try:
+            MemberPermissionGate.require_delete(user=self.request.user, member_id=member_id)
         except PermissionError as exc:
             raise PermissionDenied(detail=str(exc)) from exc
 
     def perform_create(self, serializer):
         member = serializer.validated_data.get("member")
         if member is not None:
-            self._ensure_member_write_access(member.id)
+            self._ensure_member_create_access(member.id)
         serializer.save(user=self.request.user)
 
     def perform_update(self, serializer):
         member = serializer.validated_data.get("member") or getattr(serializer.instance, "member", None)
         if member is not None:
-            self._ensure_member_write_access(member.id)
+            self._ensure_member_edit_access(member.id)
         serializer.save()
 
     def perform_destroy(self, instance):
         member = getattr(instance, "member", None)
         if member is not None:
-            self._ensure_member_write_access(member.id)
+            self._ensure_member_delete_access(member.id)
         instance.soft_delete()
 
     def list(self, request, *args, **kwargs):
@@ -276,10 +292,12 @@ class MemberShareTicketCreateAPI(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, member_id: int):
+        from medical.services.member_permission_levels import resolve_share_role_from_request
+
         channel = (request.data or {}).get("channel") or "qr"
-        role = (request.data or {}).get("role") or UserMemberBinding.Role.VIEWER
+        role = resolve_share_role_from_request(request.data or {})
         try:
-            binding_service.ensure_can_share_member(user=request.user, member_id=member_id)
+            MemberPermissionGate.require_share(user=request.user, member_id=member_id)
         except PermissionError:
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
 
@@ -380,6 +398,326 @@ class MemberShareTicketAcceptAPI(APIView):
         )
         item = serialize_member_list_item(member, binding)
         return success_response(item, msg="accepted", code=0, status_code=status.HTTP_200_OK)
+
+
+def _invite_member_summary(member: Member) -> dict:
+    return {
+        "id": member.id,
+        "name": member.name,
+        "gender": member.gender,
+        "birth_date": member.birth_date,
+        "avatar_url": member.avatar_url,
+    }
+
+
+def _invite_inviter_summary(inviter: User, member_id: int) -> dict:
+    binding = binding_service.get_active_binding(user=inviter, member_id=member_id)
+    relationship = binding.relationship if binding else "self"
+    return {
+        "user_id": inviter.id,
+        "display_name": binding_service._masked_user_label(inviter),
+        "relationship": relationship,
+    }
+
+
+def _serialize_pending_invite(invite: MemberShareInvite) -> dict:
+    from medical.services.member_permission_levels import role_to_permission
+
+    return {
+        "invite_id": invite.id,
+        "member": _invite_member_summary(invite.member),
+        "inviter": _invite_inviter_summary(invite.inviter_user, invite.member_id),
+        "role": invite.role,
+        "permission": role_to_permission(invite.role),
+        "channel": invite.channel,
+        "expires_at": invite.expires_at,
+    }
+
+
+class MemberShareInviteCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, member_id: int):
+        data = request.data or {}
+        # Accept both field name styles (camelCase from Swift client and snake_case)
+        channel = (data.get("channel") or data.get("target_type") or "").strip().lower()
+        contact = (
+            data.get("target_contact")
+            or data.get("targetContact")
+            or data.get("target")
+            or ""
+        ).strip()
+        from common.exceptions import APIError
+        from medical.services.member_permission_levels import resolve_share_role_from_request
+
+        role = resolve_share_role_from_request(data)
+        country_code = (data.get("country_code") or data.get("countryCode") or "+86").strip()
+        phone_raw = (data.get("phone") or contact).strip() if channel == MemberShareInvite.Channel.PHONE else contact
+
+        if channel not in (
+            MemberShareInvite.Channel.PHONE,
+            MemberShareInvite.Channel.EMAIL,
+            MemberShareInvite.Channel.IN_APP,
+        ):
+            return error_response(msg="invalid_channel", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        if not contact and not phone_raw:
+            return error_response(msg="target_contact_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            member = Member.objects.get(pk=member_id, is_deleted=False)
+        except Member.DoesNotExist:
+            return error_response(msg="member_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+
+        normalized_contact = ""
+        lookup_contact = phone_raw if channel == MemberShareInvite.Channel.PHONE else contact
+        try:
+            target_user, normalized_contact = invite_service.resolve_user_by_contact(
+                channel=channel,
+                contact=lookup_contact,
+                country_code=country_code,
+            )
+        except APIError:
+            return error_response(msg="phone_invalid", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Cannot invite if user is already bound
+        if target_user is not None and binding_service.get_active_binding(user=target_user, member_id=member_id):
+            return error_response(msg="already_bound", code=-1, status_code=status.HTTP_409_CONFLICT)
+
+        try:
+            invite, delivery = create_invite_and_notify(
+                member=member,
+                inviter=request.user,
+                target_user=target_user,
+                channel=channel,
+                role=role,
+                target_contact=normalized_contact or contact,
+            )
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        except InviteError as exc:
+            msg = str(exc)
+            http_status = status.HTTP_400_BAD_REQUEST
+            if msg == "already_bound":
+                http_status = status.HTTP_409_CONFLICT
+            return error_response(msg=msg, code=-1, status_code=http_status)
+
+        open_url = f"spark://member-invite?id={invite.id}"
+        from medical.services.member_permission_levels import role_to_permission
+
+        response_data = {
+            "invite_id": invite.id,
+            "member_id": member_id,
+            "status": invite.status,
+            "expires_at": invite.expires_at,
+            "permission": role_to_permission(invite.role),
+            "matched_user_id": target_user.id if target_user else None,
+            **delivery.to_dict(),
+        }
+        if channel == MemberShareInvite.Channel.PHONE and normalized_contact:
+            response_data["normalized_phone"] = normalized_contact
+        return success_response(
+            response_data,
+            msg=delivery.api_msg(),
+            code=0,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+class PendingMemberInvitesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        invites = invite_service.pending_invites_for_user(request.user)
+        payload = [_serialize_pending_invite(item) for item in invites]
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class MemberShareInviteDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, invite_id: int):
+        try:
+            invite = (
+                MemberShareInvite.objects.select_related("member", "inviter_user")
+                .get(pk=invite_id)
+            )
+        except MemberShareInvite.DoesNotExist:
+            return error_response(msg="invite_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+
+        # Only inviter or target_user may see the detail
+        if invite.inviter_user_id != request.user.id and invite.target_user_id != request.user.id:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+
+        return success_response(
+            _serialize_pending_invite(invite),
+            msg="success",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class MemberShareInviteAcceptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, invite_id: int):
+        data = request.data or {}
+        relationship = (data.get("relationship") or "").strip()
+        custom_relationship = (data.get("custom_relationship") or data.get("customRelationship") or "").strip()
+        if not relationship:
+            return error_response(msg="relationship_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            invite = MemberShareInvite.objects.select_related("member").get(pk=invite_id)
+        except MemberShareInvite.DoesNotExist:
+            return error_response(msg="invite_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+
+        try:
+            binding = invite_service.accept_invite(
+                invite=invite,
+                acceptor=request.user,
+                relationship=relationship,
+                custom_relationship=custom_relationship,
+            )
+        except InviteError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        item = serialize_member_list_item(invite.member, binding)
+        return success_response(item, msg="accepted", code=0, status_code=status.HTTP_200_OK)
+
+
+class MemberShareInviteRejectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, invite_id: int):
+        try:
+            invite = MemberShareInvite.objects.get(pk=invite_id)
+        except MemberShareInvite.DoesNotExist:
+            return error_response(msg="invite_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            invite_service.reject_invite(invite=invite, user=request.user)
+        except InviteError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        return success_response({"invite_id": invite.id, "status": invite.status}, msg="rejected", code=0)
+
+
+class MemberShareInviteCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, invite_id: int):
+        try:
+            invite = MemberShareInvite.objects.get(pk=invite_id)
+        except MemberShareInvite.DoesNotExist:
+            return error_response(msg="invite_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            invite_service.cancel_invite(invite=invite, inviter=request.user)
+        except InviteError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        return success_response({"invite_id": invite.id, "status": invite.status}, msg="cancelled", code=0)
+
+
+class MemberBindingRoleUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk: int):
+        role = (request.data or {}).get("role") or ""
+        try:
+            binding = binding_service.active_bindings_qs().select_related("member").get(pk=pk)
+        except UserMemberBinding.DoesNotExist:
+            return error_response(msg="binding_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_manage(user=request.user, member_id=binding.member_id)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        try:
+            binding = binding_service.change_binding_role(binding, role)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        viewer_binding = binding_service.get_active_binding(user=request.user, member_id=binding.member_id)
+        payload = serialize_member_list_item(binding.member, viewer_binding)
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class MemberBindingPermissionUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk: int):
+        from medical.services.member_permission_levels import role_to_permission
+        from medical.services.member_permission_service import MemberPermissionDenied
+
+        permission = ((request.data or {}).get("permission") or "").strip().lower()
+        if not permission:
+            return error_response(msg="permission_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            binding = binding_service.active_bindings_qs().select_related("member").get(pk=pk)
+        except UserMemberBinding.DoesNotExist:
+            return error_response(msg="binding_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_manage(user=request.user, member_id=binding.member_id)
+        except MemberPermissionDenied as exc:
+            return MemberPermissionGate.permission_denied_response(exc, error_response)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        try:
+            binding = binding_service.change_binding_permission(binding, permission)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        caps = binding_service.compute_capabilities(binding)
+        return success_response(
+            {
+                "binding_id": binding.id,
+                "permission": role_to_permission(binding.role),
+                "capabilities": binding_service.capabilities_to_dict(caps),
+            },
+            msg="updated",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class MemberBindingRemoveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk: int):
+        try:
+            binding = binding_service.active_bindings_qs().select_related("member").get(pk=pk)
+        except UserMemberBinding.DoesNotExist:
+            return error_response(msg="binding_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_remove_shared(user=request.user, member_id=binding.member_id)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        if binding.user_id == request.user.id:
+            return error_response(msg="cannot_remove_self", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            binding_service.remove_binding(binding)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        return success_response({"binding_id": binding.id}, msg="removed", code=0, status_code=status.HTTP_200_OK)
+
+
+class MemberBindingTransferOwnerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, pk: int):
+        try:
+            target_binding = binding_service.active_bindings_qs().select_related("member").get(pk=pk)
+        except UserMemberBinding.DoesNotExist:
+            return error_response(msg="binding_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        owner_binding = binding_service.get_active_binding(user=request.user, member_id=target_binding.member_id)
+        if owner_binding is None or owner_binding.role != UserMemberBinding.Role.OWNER:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        try:
+            binding_service.transfer_owner(
+                current_owner_binding=owner_binding,
+                target_binding=target_binding,
+            )
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        owner_binding.refresh_from_db()
+        payload = serialize_member_list_item(target_binding.member, owner_binding)
+        return success_response(payload, msg="transferred", code=0, status_code=status.HTTP_200_OK)
 
 
 class MedicalCaseViewSet(WrappedModelViewSet):
@@ -502,7 +840,7 @@ class MedExamDetailViewSet(WrappedModelViewSet):
 
     def get_queryset(self):
         queryset = MedExamDetail.objects.select_related("member").filter(is_deleted=False)
-        queryset = filter_queryset_by_member_binding(queryset, self.request.user)
+        queryset = MemberPermissionGate.filter_qs(queryset, self.request.user)
         member_id = self.request.query_params.get("member_id")
         business_type = self.request.query_params.get("business_type")
         business_id = self.request.query_params.get("business_id")
@@ -710,7 +1048,7 @@ class MemberCompleteDataAPI(APIView):
 
     def get(self, request, member_id: int):
         try:
-            binding = binding_service.ensure_can_access_member(user=request.user, member_id=member_id)
+            binding = MemberPermissionGate.require_access(user=request.user, member_id=member_id)
             member = binding.member
         except PermissionError:
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
@@ -1012,7 +1350,7 @@ class _WorkflowBaseAPIView(APIView):
             )
 
         try:
-            binding = binding_service.ensure_can_write_medical_member(user=request.user, member_id=member_id)
+            binding = MemberPermissionGate.require_write(user=request.user, member_id=member_id)
         except PermissionError:
             return None, None, error_response(
                 msg="permission_denied",
@@ -1443,7 +1781,7 @@ class MedicationPlanWorkflowSaveView(_WorkflowBaseAPIView):
             return error_response(msg={"member": [_("member is required")]}, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
 
         try:
-            binding = binding_service.ensure_can_write_medical_member(user=request.user, member_id=member_id)
+            binding = MemberPermissionGate.require_write(user=request.user, member_id=member_id)
         except PermissionError:
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
         member = binding.member
@@ -1562,7 +1900,7 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
 
             if not request.user.is_staff:
                 try:
-                    binding_service.ensure_can_write_medical_member(user=request.user, member_id=member_obj.id)
+                    MemberPermissionGate.require_write(user=request.user, member_id=member_obj.id)
                 except PermissionError:
                     return Response({"detail": "无权编辑该成员医疗资料"}, status=status.HTTP_403_FORBIDDEN)
         else:

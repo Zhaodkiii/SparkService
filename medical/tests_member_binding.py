@@ -160,10 +160,48 @@ class MemberBindingAPITests(APITestCase):
         self.assertEqual(download_resp.status_code, status.HTTP_200_OK)
         self.assertTrue(download_resp.json()["data"]["url"])
 
-    def test_bound_guest_can_save_medication_plan_workflow(self):
+    def test_viewer_cannot_save_medication_plan_workflow(self):
         ticket_resp = self.client.post(
             f"/api/v1/medical/members/{self.member_id}/share-ticket/",
-            {"channel": "qr", "role": "viewer"},
+            {"channel": "qr", "permission": "view"},
+            format="json",
+        )
+        ticket = ticket_resp.json()["data"]["share_ticket"]
+
+        self.client.force_authenticate(self.guest)
+        accept_resp = self.client.post(
+            "/api/v1/medical/member-share-ticket/accept/",
+            {"share_ticket": ticket, "relationship": "son"},
+            format="json",
+        )
+        self.assertEqual(accept_resp.status_code, status.HTTP_200_OK)
+
+        save_resp = self.client.post(
+            "/api/v1/medical/workflows/medication-plans/save/",
+            {
+                "member": self.member_id,
+                "file_ids": [],
+                "items": [
+                    {
+                        "drug_name": "测试药品",
+                        "dose_per_time": "1片",
+                        "dose_unit": "片",
+                        "frequency_type": "daily",
+                        "frequency_text": "每日一次",
+                        "start_date": "2026-05-21",
+                        "status": "active",
+                        "medicine_box": {"medicine_name": "测试药品", "dose_unit": "片"},
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(save_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_editor_can_save_medication_plan_workflow(self):
+        ticket_resp = self.client.post(
+            f"/api/v1/medical/members/{self.member_id}/share-ticket/",
+            {"channel": "qr", "permission": "edit"},
             format="json",
         )
         ticket = ticket_resp.json()["data"]["share_ticket"]

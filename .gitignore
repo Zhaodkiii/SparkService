@@ -21,6 +21,11 @@ celerybeat-schedule
 run/
 
 # Logs
+logs/
 logs/*.log
+logs/*.log.*
 logs/*.stdout.log
 logs/*.stderr.log
+
+# Redis dump
+dump.rdb
