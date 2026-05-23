@@ -10,6 +10,7 @@ from medical.views import (
     HealthExamReportViewSet,
     HealthExamWorkflowSaveView,
     MedicineBoxViewSet,
+    MemberBindingViewSet,
     MemberCompleteDataAPI,
     MedicalAttachmentBatchBindView,
     MedicationPlanWorkflowSaveView,
@@ -19,6 +20,9 @@ from medical.views import (
     MedicalCaseViewSet,
     MedicalCaseWorkflowSaveView,
     MedicalReportWorkflowSaveView,
+    MemberShareTicketAcceptAPI,
+    MemberShareTicketCreateAPI,
+    MemberShareTicketResolveAPI,
     MemberViewSet,
     PrescriptionViewSet,
     SurgeryWorkflowCreateView,
@@ -47,6 +51,26 @@ router.register("resources", UnifiedMedicalResourceViewSet, basename="medical-un
 
 urlpatterns = [
     path("", include(router.urls)),
+    path(
+        "member-bindings/<int:pk>/",
+        MemberBindingViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
+        name="medical-member-bindings-detail",
+    ),
+    path(
+        "members/<int:member_id>/share-ticket/",
+        MemberShareTicketCreateAPI.as_view(),
+        name="medical-member-share-ticket",
+    ),
+    path(
+        "member-share-ticket/resolve/",
+        MemberShareTicketResolveAPI.as_view(),
+        name="medical-member-share-ticket-resolve",
+    ),
+    path(
+        "member-share-ticket/accept/",
+        MemberShareTicketAcceptAPI.as_view(),
+        name="medical-member-share-ticket-accept",
+    ),
     path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),
     path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),
     path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),

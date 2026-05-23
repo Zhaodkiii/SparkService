@@ -75,6 +75,48 @@ class Member(MedicalBaseModel):
         return f"{self.name}({self.relationship})"
 
 
+class UserMemberBinding(models.Model):
+    """用户与成员的多对多绑定：关系、角色与状态。"""
+
+    class Role(models.TextChoices):
+        OWNER = "owner", "owner"
+        ADMIN = "admin", "admin"
+        VIEWER = "viewer", "viewer"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "active"
+        REVOKED = "revoked", "revoked"
+
+    user = models.ForeignKey(User, related_name="member_bindings", on_delete=models.CASCADE, db_index=True)
+    member = models.ForeignKey(Member, related_name="user_bindings", on_delete=models.CASCADE, db_index=True)
+    relationship = models.CharField(max_length=64, default="self")
+    role = models.CharField(max_length=16, choices=Role.choices, default=Role.OWNER, db_index=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    invited_by = models.ForeignKey(
+        User,
+        related_name="invited_member_bindings",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "medical_user_member_binding"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "member"], name="uniq_user_member_binding"),
+        ]
+        indexes = [
+            models.Index(fields=["member", "status"]),
+            models.Index(fields=["user", "status"]),
+        ]
+
+    def __str__(self):
+        return f"binding:user={self.user_id}:member={self.member_id}:{self.relationship}"
+
+
 class MedicalCase(MedicalBaseModel):
     """门诊/住院病历叙事主档（聚合根）。
 
@@ -373,8 +415,6 @@ class MedicineBox(MedicalBaseModel):
         ]
 
     def clean(self):
-        if self.member_id and self.member.user_id != self.user_id:
-            raise ValidationError({"member": _("member does not belong to current user")})
         if not (self.medicine_name or "").strip():
             raise ValidationError({"medicine_name": _("medicine name is required")})
 
@@ -433,8 +473,6 @@ class Prescription(MedicalBaseModel):
         ]
 
     def clean(self):
-        if self.member_id and self.member.user_id != self.user_id:
-            raise ValidationError({"member": _("member does not belong to current user")})
         if self.medical_case_id and self.medical_case.member_id != self.member_id:
             raise ValidationError({"medical_case": _("medical_case does not belong to current member")})
 
@@ -534,8 +572,6 @@ class MedicationPlan(MedicalBaseModel):
         ]
 
     def clean(self):
-        if self.member_id and self.member.user_id != self.user_id:
-            raise ValidationError({"member": _("member does not belong to current user")})
         if self.medical_case_id and self.medical_case.member_id != self.member_id:
             raise ValidationError({"medical_case": _("medical_case does not belong to current member")})
         if self.medicine_box_id and self.medicine_box.member_id != self.member_id:
@@ -598,8 +634,6 @@ class MedicationRecord(MedicalBaseModel):
         ]
 
     def clean(self):
-        if self.member_id and self.member.user_id != self.user_id:
-            raise ValidationError({"member": _("member does not belong to current user")})
         if self.plan_id and self.plan.member_id != self.member_id:
             raise ValidationError({"plan": _("plan does not belong to current member")})
 

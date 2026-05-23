@@ -178,7 +178,7 @@ class HasAttachmentsMixin(serializers.Serializer):
     1. 子类设置 ``attachments_business_type``（推荐），或在 ``context`` 里传
        ``"attachments_business_type"``；
     2. 在 ``Meta.fields`` 里包含 ``"attachments"``；
-    3. 调用时确保 ``context["request"]`` 存在，附件按当前请求用户做隔离。
+    3. 调用时确保 ``context["request"]`` 存在；附件按成员绑定可访问的业务资源返回（非仅上传者本人）。
 
     可选项
     ------

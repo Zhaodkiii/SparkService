@@ -7,7 +7,8 @@ from rest_framework.views import APIView
 
 from common.http_cache import build_etag, normalize_etag
 from common.response import error_response, success_response
-from file_manager.business_relations import bind_file_to_business
+from file_manager.business_access import user_can_access_business, user_can_access_file
+from file_manager.business_relations import bind_file_to_business, files_for_business
 from file_manager.models import ManagedFile
 from file_manager.serializers import (
     ManagedFileBusinessUpdateSerializer,
@@ -28,8 +29,6 @@ class ManagedFileListView(APIView):
 
     def get(self, request):
         start_time = time.perf_counter()
-        queryset = ManagedFile.objects.filter(user=request.user, is_deleted=False)
-
         business_type = request.query_params.get("business_type", "")
         business_id = request.query_params.get("business_id", "")
         is_public = request.query_params.get("is_public")
@@ -43,13 +42,17 @@ class ManagedFileListView(APIView):
             },
         )
 
-        if business_type:
-            queryset = queryset.filter(business_relations__business_type=business_type)
-        if business_id:
-            queryset = queryset.filter(business_relations__business_id=business_id)
+        if business_type and business_id:
+            queryset = files_for_business(request.user, business_type, business_id)
+        else:
+            queryset = ManagedFile.objects.filter(user=request.user, is_deleted=False)
+            if business_type:
+                queryset = queryset.filter(business_relations__business_type=business_type)
+            if business_id:
+                queryset = queryset.filter(business_relations__business_id=business_id)
+            queryset = queryset.distinct()
         if is_public is not None:
             queryset = queryset.filter(is_public=self._to_bool(is_public))
-        queryset = queryset.distinct()
 
         etag = build_etag(
             {
@@ -242,10 +245,10 @@ class ManagedFileDownloadURLView(APIView):
         logger.info("下载URL生成请求", extra={"user_id": request.user.id, "file_id": file_id})
         file_record = (
             ManagedFile.objects.filter(id=file_id, is_deleted=False)
-            .filter(user=request.user)
+            .prefetch_related("business_relations")
             .first()
         )
-        if not file_record:
+        if not file_record or not user_can_access_file(request.user, file_record):
             logger.warning("下载URL生成失败：文件不存在", extra={"user_id": request.user.id, "file_id": file_id})
             return error_response(msg="file_not_found", code=4040, status_code=status.HTTP_404_NOT_FOUND)
 
@@ -263,7 +266,7 @@ class ManagedFileDownloadURLView(APIView):
                 "user_id": request.user.id,
                 "file_id": file_id,
                 "object_key": file_record.object_key,
-                "url_prefix": normalized,
+                "url_prefix": (url or "")[:80],
                 "duration_ms": duration_ms,
             },
         )

@@ -11,6 +11,7 @@ from medical.models import (
     MedicalCase,
     ModelChangeLog,
     Member,
+    UserMemberBinding,
     Prescription,
     Surgery,
     Symptom,
@@ -23,6 +24,13 @@ class MemberAdmin(admin.ModelAdmin):
     list_display = ("id", "name", "gender", "relationship", "blood_type", "is_primary", "is_deleted", "updated_at")
     list_filter = ("gender", "is_primary", "is_deleted")
     search_fields = ("name", "relationship", "blood_type", "notes")
+
+
+@admin.register(UserMemberBinding)
+class UserMemberBindingAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "member", "relationship", "role", "status", "invited_by", "updated_at")
+    list_filter = ("role", "status")
+    search_fields = ("relationship",)
 
 
 @admin.register(MedicalCase)

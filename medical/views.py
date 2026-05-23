@@ -1,11 +1,14 @@
 import logging
 from datetime import timedelta
 
+from django.contrib.auth.models import User
+from django.core import signing
 from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import status, viewsets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,8 +29,10 @@ from medical.models import (
     Prescription,
     Surgery,
     Symptom,
+    UserMemberBinding,
     Visit,
 )
+from medical.permissions import filter_queryset_by_member_binding
 from medical.serializers import (
     ExaminationReportSerializer,
     FollowUpSerializer,
@@ -37,12 +42,17 @@ from medical.serializers import (
     MedicationRecordSerializer,
     MedExamDetailSerializer,
     MedicalCaseSerializer,
+    MemberBindingUpdateSerializer,
     MemberSerializer,
     PrescriptionSerializer,
     SurgerySerializer,
     SymptomSerializer,
     VisitSerializer,
+    serialize_member_detail,
+    serialize_member_list_item,
 )
+from medical.services import member_binding_service as binding_service
+from medical.services import member_share_ticket as share_ticket_service
 from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
 from file_manager.serializers import ManagedFileAttachmentOutSerializer
@@ -55,12 +65,34 @@ class WrappedModelViewSet(viewsets.ModelViewSet):
     etag_max_age = 120
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user, is_deleted=False)
+        queryset = self.queryset.filter(is_deleted=False)
+        model = queryset.model
+        if any(field.name == "member" for field in model._meta.fields):
+            return filter_queryset_by_member_binding(queryset, self.request.user)
+        return queryset.filter(user=self.request.user)
+
+    def _ensure_member_write_access(self, member_id: int) -> None:
+        try:
+            binding_service.ensure_can_write_medical_member(user=self.request.user, member_id=member_id)
+        except PermissionError as exc:
+            raise PermissionDenied(detail=str(exc)) from exc
 
     def perform_create(self, serializer):
+        member = serializer.validated_data.get("member")
+        if member is not None:
+            self._ensure_member_write_access(member.id)
         serializer.save(user=self.request.user)
 
+    def perform_update(self, serializer):
+        member = serializer.validated_data.get("member") or getattr(serializer.instance, "member", None)
+        if member is not None:
+            self._ensure_member_write_access(member.id)
+        serializer.save()
+
     def perform_destroy(self, instance):
+        member = getattr(instance, "member", None)
+        if member is not None:
+            self._ensure_member_write_access(member.id)
         instance.soft_delete()
 
     def list(self, request, *args, **kwargs):
@@ -136,6 +168,218 @@ class WrappedModelViewSet(viewsets.ModelViewSet):
 class MemberViewSet(WrappedModelViewSet):
     queryset = Member.objects.all()
     serializer_class = MemberSerializer
+
+    def get_queryset(self):
+        return binding_service.accessible_members_queryset(self.request.user)
+
+    def _binding_for(self, member: Member) -> UserMemberBinding:
+        binding = binding_service.get_active_binding(user=self.request.user, member_id=member.id)
+        if binding is None:
+            raise PermissionDenied(detail="permission_denied")
+        return binding
+
+    def list(self, request, *args, **kwargs):
+        members = list(self.filter_queryset(self.get_queryset()))
+        bindings = {
+            item.member_id: item
+            for item in binding_service.active_bindings_qs()
+            .filter(user=request.user, member_id__in=[m.id for m in members])
+            .select_related("member")
+        }
+        payload = [serialize_member_list_item(member, bindings[member.id]) for member in members if member.id in bindings]
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+    def retrieve(self, request, *args, **kwargs):
+        member = self.get_object()
+        binding = self._binding_for(member)
+        include_shared = binding.role in (
+            UserMemberBinding.Role.OWNER,
+            UserMemberBinding.Role.ADMIN,
+        )
+        payload = serialize_member_detail(
+            member,
+            binding,
+            viewer=request.user,
+            include_shared_users=include_shared,
+        )
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        member = serializer.save(user=request.user)
+        binding = binding_service.get_active_binding(user=request.user, member_id=member.id)
+        payload = serialize_member_list_item(member, binding)
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        member = self.get_object()
+        binding = self._binding_for(member)
+        caps = binding_service.compute_capabilities(binding)
+        if not caps.can_edit:
+            raise PermissionDenied(detail="permission_denied")
+        serializer = self.get_serializer(member, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        member = serializer.save()
+        binding = self._binding_for(member)
+        payload = serialize_member_list_item(member, binding)
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        member = self.get_object()
+        binding = self._binding_for(member)
+        caps = binding_service.compute_capabilities(binding)
+        shared_count = binding_service.count_active_bindings(member.id)
+        if shared_count > 1 or not caps.can_delete:
+            binding_service.revoke_binding(binding)
+            return success_response(
+                {"id": member.id, "action": "unbound", "binding_id": binding.id},
+                msg="unbound",
+                code=0,
+                status_code=status.HTTP_200_OK,
+            )
+        binding_service.delete_member_profile(member)
+        return success_response(
+            {"id": member.id, "action": "deleted"},
+            msg="deleted",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class MemberBindingViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def partial_update(self, request, pk=None):
+        try:
+            binding = binding_service.active_bindings_qs().get(pk=pk, user=request.user)
+        except UserMemberBinding.DoesNotExist:
+            return error_response(msg="binding_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        serializer = MemberBindingUpdateSerializer(binding, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        member = binding.member
+        payload = serialize_member_list_item(member, binding)
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def destroy(self, request, pk=None):
+        try:
+            binding = binding_service.active_bindings_qs().get(pk=pk, user=request.user)
+        except UserMemberBinding.DoesNotExist:
+            return error_response(msg="binding_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        binding_service.revoke_binding(binding)
+        return success_response({"binding_id": binding.id}, msg="unbound", code=0, status_code=status.HTTP_200_OK)
+
+
+class MemberShareTicketCreateAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, member_id: int):
+        channel = (request.data or {}).get("channel") or "qr"
+        role = (request.data or {}).get("role") or UserMemberBinding.Role.VIEWER
+        try:
+            binding_service.ensure_can_share_member(user=request.user, member_id=member_id)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+
+        nonce = binding_service.new_share_nonce()
+        payload = share_ticket_service.build_ticket_payload(
+            member_id=member_id,
+            inviter_user_id=request.user.id,
+            role=role,
+            channel=channel,
+            nonce=nonce,
+        )
+        ticket = share_ticket_service.sign_ticket(payload)
+        qr_payload = f"spark://member-share?ticket={ticket}"
+        return success_response(
+            {
+                "share_ticket": ticket,
+                "qr_payload": qr_payload,
+                "nearby_payload": {
+                    "type": "member_share",
+                    "ticket": ticket,
+                    "member_id": member_id,
+                },
+            },
+            msg="success",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class MemberShareTicketResolveAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ticket = (request.data or {}).get("share_ticket") or ""
+        if not ticket:
+            return error_response(msg="share_ticket_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            resolved = share_ticket_service.resolve_ticket(ticket=ticket, acceptor=request.user)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        member = resolved["member"]
+        return success_response(
+            {
+                "member": {
+                    "id": member.id,
+                    "name": member.name,
+                    "gender": member.gender,
+                    "birth_date": member.birth_date,
+                    "avatar_url": member.avatar_url,
+                },
+                "inviter": {
+                    "user_id": resolved["inviter"].id,
+                    "display_name": resolved["inviter_display_name"],
+                    "relationship": resolved["inviter_relationship"],
+                },
+                "default_role": resolved["role"],
+                "already_bound": resolved["already_bound"],
+                "existing_binding_id": resolved["existing_binding_id"],
+                "shared_user_count": resolved["shared_user_count"],
+            },
+            msg="success",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class MemberShareTicketAcceptAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        data = request.data or {}
+        ticket = data.get("share_ticket") or ""
+        relationship = (data.get("relationship") or "").strip()
+        custom_relationship = (data.get("custom_relationship") or "").strip()
+        if not ticket:
+            return error_response(msg="share_ticket_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        if not relationship:
+            return error_response(msg="relationship_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            payload = share_ticket_service.unsign_ticket(ticket)
+            resolved = share_ticket_service.resolve_ticket(ticket=ticket, acceptor=request.user)
+        except signing.BadSignature:
+            return error_response(msg="share_ticket_invalid", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        member = resolved["member"]
+        inviter = resolved["inviter"]
+        binding, _created = binding_service.accept_share_binding(
+            user=request.user,
+            member=member,
+            relationship=relationship,
+            custom_relationship=custom_relationship,
+            role=payload.get("role") or UserMemberBinding.Role.VIEWER,
+            invited_by=inviter,
+        )
+        item = serialize_member_list_item(member, binding)
+        return success_response(item, msg="accepted", code=0, status_code=status.HTTP_200_OK)
 
 
 class MedicalCaseViewSet(WrappedModelViewSet):
@@ -251,16 +495,14 @@ class HealthExamReportViewSet(WrappedModelViewSet):
 
 
 class MedExamDetailViewSet(WrappedModelViewSet):
-    """明细表无 `user` 外键，通过 `member.user` 做数据隔离（勿复用 `WrappedModelViewSet.get_queryset` 的 user 过滤）。"""
+    """明细表无 `user` 外键，按成员绑定过滤可访问范围（与报告列表一致）。"""
 
     queryset = MedExamDetail.objects.select_related("member").all()
     serializer_class = MedExamDetailSerializer
 
     def get_queryset(self):
-        queryset = MedExamDetail.objects.select_related("member").filter(
-            member__user_id=self.request.user.id,
-            is_deleted=False,
-        )
+        queryset = MedExamDetail.objects.select_related("member").filter(is_deleted=False)
+        queryset = filter_queryset_by_member_binding(queryset, self.request.user)
         member_id = self.request.query_params.get("member_id")
         business_type = self.request.query_params.get("business_type")
         business_id = self.request.query_params.get("business_id")
@@ -468,12 +710,15 @@ class MemberCompleteDataAPI(APIView):
 
     def get(self, request, member_id: int):
         try:
-            member = Member.objects.get(id=member_id, user=request.user, is_deleted=False)
+            binding = binding_service.ensure_can_access_member(user=request.user, member_id=member_id)
+            member = binding.member
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
         except Member.DoesNotExist:
             return error_response(msg="member_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
 
         medical_cases = (
-            MedicalCase.objects.filter(user=request.user, is_deleted=False, member_id=member_id)
+            MedicalCase.objects.filter(is_deleted=False, member_id=member_id)
             .prefetch_related(
                 "symptoms",
             )
@@ -481,25 +726,21 @@ class MemberCompleteDataAPI(APIView):
         )
 
         health_exam_reports = HealthExamReport.objects.filter(
-            user=request.user,
             is_deleted=False,
             member_id=member_id,
         ).order_by("-exam_date", "-updated_at")
 
         examination_reports = ExaminationReport.objects.select_related("medical_record").filter(
-            user=request.user,
             is_deleted=False,
             member_id=member_id,
         ).order_by("-performed_at", "-updated_at")
 
         medicine_boxes = MedicineBox.objects.filter(
-            user=request.user,
             is_deleted=False,
             member_id=member_id,
         ).order_by("-updated_at", "-id")
 
         prescriptions = Prescription.objects.filter(
-            user=request.user,
             is_deleted=False,
             member_id=member_id,
         ).order_by("-prescribed_at", "-updated_at", "-id")
@@ -508,29 +749,27 @@ class MemberCompleteDataAPI(APIView):
             "medicine_box",
             "prescription",
         ).filter(
-            user=request.user,
             is_deleted=False,
             member_id=member_id,
         ).order_by("-start_date", "-updated_at", "-id")
 
         today = timezone.localdate()
         today_medication_records = MedicationRecord.objects.select_related("plan").filter(
-            user=request.user,
             is_deleted=False,
             member_id=member_id,
             scheduled_at__date=today,
         ).order_by("scheduled_at", "dose_sequence", "id")
 
-        symptoms = Symptom.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+        symptoms = Symptom.objects.filter(is_deleted=False, member_id=member_id).order_by(
             "-created_at", "-updated_at", "-id"
         )
-        visits = Visit.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+        visits = Visit.objects.filter(is_deleted=False, member_id=member_id).order_by(
             "-visited_at", "-updated_at", "-id"
         )
-        surgeries = Surgery.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+        surgeries = Surgery.objects.filter(is_deleted=False, member_id=member_id).order_by(
             "-performed_at", "-updated_at", "-id"
         )
-        follow_ups = FollowUp.objects.filter(user=request.user, is_deleted=False, member_id=member_id).order_by(
+        follow_ups = FollowUp.objects.filter(is_deleted=False, member_id=member_id).order_by(
             "-completed_at", "-updated_at", "-id"
         )
 
@@ -626,9 +865,12 @@ class MemberCompleteDataAPI(APIView):
         surgeries_payload = SurgerySerializer(surgeries, many=True).data
         follow_ups_payload = FollowUpSerializer(follow_ups, many=True).data
 
+        member_data = MemberSerializer(member, context={"request": request}).data
+        member_data["relationship"] = binding.relationship
+
         payload = {
             "member_id": member_id,
-            "member": MemberSerializer(member).data,
+            "member": member_data,
             "medical_cases": medical_cases_payload,
             "health_exam_reports": health_payload,
             "examination_reports": exam_payload,
@@ -770,21 +1012,22 @@ class _WorkflowBaseAPIView(APIView):
             )
 
         try:
-            member = Member.objects.get(id=member_id, user=request.user, is_deleted=False)
-        except Member.DoesNotExist:
+            binding = binding_service.ensure_can_write_medical_member(user=request.user, member_id=member_id)
+        except PermissionError:
             return None, None, error_response(
-                msg={"member": [_("invalid member")]},
+                msg="permission_denied",
                 code=-1,
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_403_FORBIDDEN,
             )
+        member = binding.member
 
         medical_case_id = payload.get("medical_case")
         if medical_case_id:
             try:
                 medical_case = MedicalCase.objects.get(
                     id=medical_case_id,
-                    user=request.user,
                     is_deleted=False,
+                    member_id=member.id,
                 )
             except MedicalCase.DoesNotExist:
                 return None, None, error_response(
@@ -1174,9 +1417,16 @@ class MedicalAttachmentBatchBindView(_WorkflowBaseAPIView):
             business_id = item.get("business_id")
             if not file_id or not business_type or business_id is None:
                 continue
-            file_record = ManagedFile.objects.filter(user=request.user, id=file_id, is_deleted=False).first()
-            if file_record:
-                bind_file_to_business(request.user, file_record, business_type, business_id)
+            from file_manager.business_access import user_can_access_business, user_can_access_file
+
+            file_record = (
+                ManagedFile.objects.filter(id=file_id, is_deleted=False)
+                .prefetch_related("business_relations")
+                .first()
+            )
+            if file_record and user_can_access_file(request.user, file_record):
+                if user_can_access_business(request.user, business_type, business_id):
+                    bind_file_to_business(request.user, file_record, business_type, business_id)
                 updated += 1
         return success_response({"updated": updated}, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
@@ -1193,15 +1443,16 @@ class MedicationPlanWorkflowSaveView(_WorkflowBaseAPIView):
             return error_response(msg={"member": [_("member is required")]}, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
 
         try:
-            member = Member.objects.get(id=member_id, user=request.user, is_deleted=False)
-        except Member.DoesNotExist:
-            return error_response(msg={"member": [_("invalid member")]}, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+            binding = binding_service.ensure_can_write_medical_member(user=request.user, member_id=member_id)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        member = binding.member
 
         medical_case = None
         medical_case_id = payload.get("medical_case")
         if medical_case_id:
             try:
-                medical_case = MedicalCase.objects.get(id=medical_case_id, user=request.user, is_deleted=False)
+                medical_case = MedicalCase.objects.get(id=medical_case_id, is_deleted=False, member_id=member.id)
             except MedicalCase.DoesNotExist:
                 return error_response(msg={"medical_case": [_("invalid medical_case")]}, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
             if medical_case.member_id != member.id:
@@ -1221,7 +1472,11 @@ class MedicationPlanWorkflowSaveView(_WorkflowBaseAPIView):
             prescription = prescription_serializer.save(user=request.user)
         elif payload.get("prescription_id"):
             try:
-                prescription = Prescription.objects.get(id=payload.get("prescription_id"), user=request.user, is_deleted=False)
+                prescription = Prescription.objects.get(
+                    id=payload.get("prescription_id"),
+                    member_id=member.id,
+                    is_deleted=False,
+                )
             except Prescription.DoesNotExist:
                 return error_response(msg={"prescription": [_("invalid prescription")]}, code=-1, status_code=status.HTTP_400_BAD_REQUEST)
             if prescription.member_id != member.id:
@@ -1305,8 +1560,11 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            if (not request.user.is_staff) and (member_obj.user_id != request.user.id):
-                return Response({"detail": "无权使用该成员"}, status=status.HTTP_403_FORBIDDEN)
+            if not request.user.is_staff:
+                try:
+                    binding_service.ensure_can_write_medical_member(user=request.user, member_id=member_obj.id)
+                except PermissionError:
+                    return Response({"detail": "无权编辑该成员医疗资料"}, status=status.HTTP_403_FORBIDDEN)
         else:
             # 无 id：创建成员
             ser_m = MemberSerializer(data=member_payload, context={"request": request})

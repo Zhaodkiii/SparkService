@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from django.contrib.auth.models import User
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from file_manager.serializers import HasAttachmentsMixin
@@ -17,8 +18,10 @@ from medical.models import (
     Prescription,
     Surgery,
     Symptom,
+    UserMemberBinding,
     Visit,
 )
+from medical.services import member_binding_service as binding_service
 
 
 class FlexibleDateField(serializers.DateField):
@@ -48,6 +51,7 @@ class FlexibleDateField(serializers.DateField):
 
 class MemberSerializer(serializers.ModelSerializer):
     birth_date = FlexibleDateField(required=False, allow_null=True)
+    relationship = serializers.CharField(required=False, write_only=True)
 
     class Meta:
         model = Member
@@ -69,8 +73,94 @@ class MemberSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
+    def create(self, validated_data):
+        relationship = validated_data.pop("relationship", "self")
+        member = super().create(validated_data)
+        member.relationship = relationship
+        member.save(update_fields=["relationship", "updated_at"])
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            binding_service.create_owner_binding(
+                user=request.user,
+                member=member,
+                relationship=relationship,
+            )
+        return member
+
+    def update(self, instance, validated_data):
+        validated_data.pop("relationship", None)
+        return super().update(instance, validated_data)
+
+
+class MemberBindingUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserMemberBinding
+        fields = ("relationship",)
+        extra_kwargs = {"relationship": {"required": True}}
+
+
+def serialize_member_list_item(member: Member, binding: UserMemberBinding) -> dict:
+    caps = binding_service.compute_capabilities(binding)
+    return {
+        "id": member.id,
+        "binding_id": caps.binding_id,
+        "name": member.name,
+        "gender": member.gender,
+        "relationship": caps.relationship,
+        "birth_date": member.birth_date,
+        "blood_type": member.blood_type,
+        "allergies": member.allergies,
+        "chronic_conditions": member.chronic_conditions,
+        "notes": member.notes,
+        "avatar_url": member.avatar_url,
+        "is_primary": member.is_primary,
+        "binding_role": caps.binding_role,
+        "shared_user_count": caps.shared_user_count,
+        "can_share": caps.can_share,
+        "can_edit": caps.can_edit,
+        "can_delete": caps.can_delete,
+        "can_unbind": caps.can_unbind,
+        "updated_at": member.updated_at,
+    }
+
+
+def serialize_member_detail(
+    member: Member,
+    binding: UserMemberBinding,
+    *,
+    viewer: User,
+    include_shared_users: bool,
+) -> dict:
+    caps = binding_service.compute_capabilities(binding)
+    overview = binding_service.member_medical_overview(member.id)
+    payload = serialize_member_list_item(member, binding)
+    payload.update(
+        {
+            "medical_overview": overview,
+            "shared_users": binding_service.shared_users_payload(
+                member_id=member.id,
+                viewer=viewer,
+                include_details=include_shared_users,
+            ),
+            "my_binding": {
+                "binding_id": caps.binding_id,
+                "relationship": caps.relationship,
+                "role": caps.binding_role,
+                "is_primary": member.is_primary,
+            },
+        }
+    )
+    return payload
+
 
 class MedicalCaseSerializer(serializers.ModelSerializer):
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
     class Meta:
         model = MedicalCase
         fields = (
@@ -187,8 +277,9 @@ class ExaminationReportSerializer(HasAttachmentsMixin, serializers.ModelSerializ
     attachments_business_type = "examination_report"
     def validate_member(self, value):
         request = self.context.get("request")
-        if request and not request.user.is_staff and value.user_id != request.user.id:
-            raise serializers.ValidationError(_("member does not belong to current user"))
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
     def validate(self, attrs):
@@ -200,11 +291,8 @@ class ExaminationReportSerializer(HasAttachmentsMixin, serializers.ModelSerializ
         )
         request = self.context.get("request")
 
-        if medical_record is not None:
-            if request and not request.user.is_staff and medical_record.user_id != request.user.id:
-                raise serializers.ValidationError({"medical_record": [_("medical_record does not belong to current user")]})
-            if member is not None and medical_record.member_id != member.id:
-                raise serializers.ValidationError({"medical_record": [_("medical_record.member mismatch with report.member")]})
+        if medical_record is not None and member is not None and medical_record.member_id != member.id:
+            raise serializers.ValidationError({"medical_record": [_("medical_record.member mismatch with report.member")]})
         return attrs
 
     def to_representation(self, instance):
@@ -243,6 +331,13 @@ class ExaminationReportSerializer(HasAttachmentsMixin, serializers.ModelSerializ
 class HealthExamReportSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
     attachments_business_type = "health_exam_report"
 
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data.pop("raw_ocr", None)
@@ -273,8 +368,9 @@ class HealthExamReportSerializer(HasAttachmentsMixin, serializers.ModelSerialize
 class MedExamDetailSerializer(serializers.ModelSerializer):
     def validate_member(self, value):
         request = self.context.get("request")
-        if request and not request.user.is_staff and value.user_id != request.user.id:
-            raise serializers.ValidationError(_("member does not belong to current user"))
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
     class Meta:
@@ -323,8 +419,9 @@ class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
 
     def validate_member(self, value):
         request = self.context.get("request")
-        if request and not request.user.is_staff and value.user_id != request.user.id:
-            raise serializers.ValidationError(_("member does not belong to current user"))
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
     def validate(self, attrs):
@@ -374,8 +471,9 @@ class PrescriptionSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
 
     def validate_member(self, value):
         request = self.context.get("request")
-        if request and not request.user.is_staff and value.user_id != request.user.id:
-            raise serializers.ValidationError(_("member does not belong to current user"))
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
     def validate(self, attrs):
@@ -386,11 +484,8 @@ class PrescriptionSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
             getattr(instance, "medical_case", None) if instance is not None else None
         )
         request = self.context.get("request")
-        if medical_case is not None:
-            if request and not request.user.is_staff and medical_case.user_id != request.user.id:
-                raise serializers.ValidationError({"medical_case": [_("medical_case does not belong to current user")]})
-            if member is not None and medical_case.member_id != member.id:
-                raise serializers.ValidationError({"medical_case": [_("medical_case.member mismatch with prescription.member")]})
+        if medical_case is not None and member is not None and medical_case.member_id != member.id:
+            raise serializers.ValidationError({"medical_case": [_("medical_case.member mismatch with prescription.member")]})
         return attrs
 
     class Meta:
@@ -427,8 +522,9 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
 
     def validate_member(self, value):
         request = self.context.get("request")
-        if request and not request.user.is_staff and value.user_id != request.user.id:
-            raise serializers.ValidationError(_("member does not belong to current user"))
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
     def validate(self, attrs):
@@ -453,8 +549,6 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
         def check_owner(obj, field_name):
             if obj is None:
                 return
-            if request and not request.user.is_staff and obj.user_id != request.user.id:
-                raise serializers.ValidationError({field_name: [_("object does not belong to current user")]})
             if member is not None and getattr(obj, "member_id", None) != member.id:
                 raise serializers.ValidationError({field_name: [_("object.member mismatch with plan.member")]})
 
@@ -535,8 +629,9 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
 class MedicationRecordSerializer(serializers.ModelSerializer):
     def validate_member(self, value):
         request = self.context.get("request")
-        if request and not request.user.is_staff and value.user_id != request.user.id:
-            raise serializers.ValidationError(_("member does not belong to current user"))
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
         return value
 
     def validate(self, attrs):
@@ -546,11 +641,8 @@ class MedicationRecordSerializer(serializers.ModelSerializer):
         plan = merged.get("plan") if "plan" in merged else (getattr(instance, "plan", None) if instance is not None else None)
         request = self.context.get("request")
 
-        if plan is not None:
-            if request and not request.user.is_staff and plan.user_id != request.user.id:
-                raise serializers.ValidationError({"plan": [_("plan does not belong to current user")]})
-            if member is not None and plan.member_id != member.id:
-                raise serializers.ValidationError({"plan": [_("plan.member mismatch with record.member")]})
+        if plan is not None and member is not None and plan.member_id != member.id:
+            raise serializers.ValidationError({"plan": [_("plan.member mismatch with record.member")]})
         return attrs
 
     class Meta:
