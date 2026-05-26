@@ -15,7 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from common.exceptions import APIError
 from accounts.infrastructure.email_provider import EmailProvider
 from accounts.infrastructure.sms_provider import AliyunSMSProvider
-from accounts.models import AccountProfile, EmailOTP, LoginAudit, PhoneOTP
+from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
 from accounts.services.phone_number_service import PhoneNumberService
 from accounts.services.device_linking_service import DeviceLinkingService
 from ai_config.services import TrialService
@@ -278,7 +278,6 @@ class OTPService:
             user = User.objects.create(username=email, email=email)
             user.set_unusable_password()
             user.save(update_fields=["password"])
-            AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
             flow_logger.info(
                 "user.register.success",
                 extra={
@@ -341,9 +340,10 @@ class OTPService:
     @staticmethod
     @transaction.atomic
     def verify_phone_otp_and_issue_tokens(*, otp_id: str, phone_number: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str):
+        normalized_bundle_id = (bundle_id or "").strip()
         flow_logger.info(
             "auth.phone_otp.verify.service.begin",
-            extra={"action": "auth.phone_otp.verify.service", "request_id": request_id, "otp_id": otp_id, "bundle_id": bundle_id, "device_id": device_id},
+            extra={"action": "auth.phone_otp.verify.service", "request_id": request_id, "otp_id": otp_id, "bundle_id": normalized_bundle_id, "device_id": device_id},
         )
         now = timezone.now()
         normalized_phone = PhoneNumberService.normalize_e164(phone_number)
@@ -365,6 +365,9 @@ class OTPService:
             raise APIError("OTP expired", code=40042, status_code=400)
         if otp.locked_until and otp.locked_until > now:
             raise APIError("OTP temporarily locked", code=42311, status_code=423)
+        if otp.bundle_id and normalized_bundle_id and otp.bundle_id != normalized_bundle_id:
+            raise APIError("bundle_id mismatch", code=40044, status_code=400)
+        normalized_bundle_id = normalized_bundle_id or otp.bundle_id or ""
 
         expected_hash = OTPService._hash_code(code)
         if expected_hash != otp.code_hash:
@@ -378,7 +381,7 @@ class OTPService:
                 outcome=LoginAudit.LoginOutcome.FAILED,
                 ip_address=ip_address or "",
                 user_agent=user_agent or "",
-                bundle_id=bundle_id or "",
+                bundle_id=normalized_bundle_id,
                 device_id=device_id or "",
                 raw_claims={"phone_number": normalized_phone},
                 request_id=request_id or "",
@@ -389,30 +392,46 @@ class OTPService:
         otp.save(update_fields=["used_at"])
 
         User = get_user_model()
-        user = (
-            User.objects.select_related("profile")
-            .filter(profile__phone_number=normalized_phone)
+        created_user = False
+
+        identity = (
+            SocialIdentity.objects.select_for_update()
+            .select_related("user")
+            .filter(
+                bundle_id=normalized_bundle_id,
+                provider=SocialIdentity.Provider.PHONE,
+                provider_uid=normalized_phone,
+            )
             .first()
         )
-        created_user = False
+        user = identity.user if identity else None
 
         if user and not user.is_active:
             raise APIError("user_inactive", code=40103, status_code=401)
 
-        if not user:
+        def _create_phone_user():
+            nonlocal created_user
             created_user = True
-            user = User.objects.create(
+            new_user = User.objects.create(
                 username=OTPService._build_phone_username(normalized_phone),
                 email="",
                 is_active=True,
             )
-            user.set_unusable_password()
-            user.save(update_fields=["password", "is_active"])
+            new_user.set_unusable_password()
+            new_user.save(update_fields=["password", "is_active"])
+            return new_user
 
-        profile, _ = AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": normalized_phone})
-        if profile.phone_number != normalized_phone:
-            profile.phone_number = normalized_phone
-            profile.save(update_fields=["phone_number", "updated_at"])
+        if identity is None:
+            identity, _ = SocialIdentity.objects.get_or_create(
+                bundle_id=normalized_bundle_id,
+                provider=SocialIdentity.Provider.PHONE,
+                provider_uid=normalized_phone,
+                defaults={"user": _create_phone_user},
+            )
+            user = identity.user
+
+        if not user.is_active:
+            raise APIError("user_inactive", code=40103, status_code=401)
 
         try:
             TrialService.grant_auto_trial_if_eligible(user=user)
@@ -437,7 +456,7 @@ class OTPService:
             outcome=LoginAudit.LoginOutcome.SUCCESS,
             ip_address=ip_address or "",
             user_agent=user_agent or "",
-            bundle_id=bundle_id or "",
+            bundle_id=normalized_bundle_id,
             device_id=device_id or "",
             raw_claims={"phone_number": normalized_phone},
             request_id=request_id or "",
@@ -446,7 +465,7 @@ class OTPService:
         DeviceLinkingService.try_attach_user_to_trusted_device(
             user=user,
             device_id=device_id,
-            bundle_id=bundle_id,
+            bundle_id=normalized_bundle_id,
             request_id=request_id,
         )
         flow_logger.info(

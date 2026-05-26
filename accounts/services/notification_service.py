@@ -11,10 +11,10 @@ from accounts.infrastructure.apns_provider import APNsProvider
 from accounts.infrastructure.email_provider import EmailProvider
 from accounts.infrastructure.sms_provider import AliyunSMSProvider
 from accounts.models import (
-    AccountProfile,
     NotificationCampaign,
     NotificationMessage,
     NotificationTemplate,
+    SocialIdentity,
     TrustedDevice,
 )
 
@@ -29,10 +29,23 @@ class _SafeDict(dict):
 
 class NotificationService:
     @staticmethod
+    def _phone_identity_queryset():
+        return SocialIdentity.objects.filter(provider=SocialIdentity.Provider.PHONE).exclude(provider_uid="")
+
+    @staticmethod
+    def _phone_number_for_user(user: User) -> str:
+        identity = NotificationService._phone_identity_queryset().filter(user_id=user.id).first()
+        return (identity.provider_uid if identity else "") or ""
+
+    @staticmethod
     def _filter_user_queryset(*, q: str = "", only_enabled: bool = True, has_email: bool | None = None, has_sms: bool | None = None, has_apns: bool | None = None, is_active: bool | None = None):
         queryset = User.objects.all().order_by("-date_joined", "-id")
         if q:
-            queryset = queryset.filter(Q(username__icontains=q) | Q(email__icontains=q))
+            queryset = queryset.filter(
+                Q(username__icontains=q)
+                | Q(email__icontains=q)
+                | Q(social_identities__provider=SocialIdentity.Provider.PHONE, social_identities__provider_uid__icontains=q)
+            )
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active)
 
@@ -42,9 +55,11 @@ class NotificationService:
             queryset = queryset.filter(Q(email="") | Q(email__isnull=True))
 
         if has_sms is True:
-            queryset = queryset.filter(profile__phone_number__isnull=False).exclude(profile__phone_number="")
+            queryset = queryset.filter(social_identities__provider=SocialIdentity.Provider.PHONE).exclude(social_identities__provider_uid="")
         elif has_sms is False:
-            queryset = queryset.filter(Q(profile__phone_number="") | Q(profile__phone_number__isnull=True))
+            queryset = queryset.exclude(
+                id__in=NotificationService._phone_identity_queryset().values("user_id")
+            )
 
         if has_apns is True:
             queryset = queryset.filter(
@@ -79,7 +94,10 @@ class NotificationService:
         rows = list(queryset[offset : offset + page_size])
         user_ids = [u.id for u in rows]
 
-        profiles = {p.user_id: p for p in AccountProfile.objects.filter(user_id__in=user_ids)}
+        phone_identities = {
+            identity.user_id: identity.provider_uid
+            for identity in NotificationService._phone_identity_queryset().filter(user_id__in=user_ids)
+        }
         device_stats = (
             TrustedDevice.objects.filter(user_id__in=user_ids)
             .values("user_id")
@@ -92,9 +110,8 @@ class NotificationService:
 
         items = []
         for user in rows:
-            profile = profiles.get(user.id)
             stat = stats_map.get(user.id, {"total_devices": 0, "enabled_push_devices": 0})
-            phone = (profile.phone_number if profile else "") or ""
+            phone = phone_identities.get(user.id, "") or ""
             email = (user.email or "").strip()
             enabled_push_devices = int(stat.get("enabled_push_devices") or 0)
             items.append(
@@ -132,13 +149,12 @@ class NotificationService:
 
     @staticmethod
     def build_context_for_user(user: User) -> dict[str, str]:
-        profile = AccountProfile.objects.filter(user_id=user.id).first()
         now = timezone.localtime()
         return {
             "user_id": str(user.id),
             "username": user.username or "",
             "email": (user.email or "").strip(),
-            "phone": (profile.phone_number if profile else "") or "",
+            "phone": NotificationService._phone_number_for_user(user),
             "date": now.strftime("%Y-%m-%d"),
             "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
         }
@@ -463,8 +479,7 @@ class NotificationService:
 
     @staticmethod
     def _send_sms(*, campaign_id: int | None, user: User, title: str, body: str, payload: dict, created_by_id: int | None, request_id: str) -> NotificationMessage:
-        profile = AccountProfile.objects.filter(user_id=user.id).first()
-        to = (profile.phone_number if profile else "") or ""
+        to = NotificationService._phone_number_for_user(user)
         if not to:
             return NotificationMessage.objects.create(
                 campaign_id=campaign_id,

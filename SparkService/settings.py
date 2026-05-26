@@ -137,6 +137,7 @@ INSTALLED_APPS = [
     'file_manager',
     'app_version',
     'backoffice',
+    'zdk_migration',
 ]
 
 MIDDLEWARE = [
@@ -232,10 +233,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = Path(os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles"))
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 
 DEFAULT_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"
 
@@ -367,9 +368,15 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "console")
 if LOG_FORMAT not in {"console", "json"}:
     LOG_FORMAT = "console"
-LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "14"))
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "30"))
+LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "30"))
 LOG_API_IO_TO_ACCESS = os.getenv("LOG_API_IO_TO_ACCESS", "false").lower() in ("1", "true", "yes", "y")
-LOG_DIR = BASE_DIR / "logs"
+LOG_ROOT = Path(os.getenv("LOG_ROOT", BASE_DIR / "logs"))
+LOG_DIR = LOG_ROOT / os.getenv("LOG_DATE", "")
+if not os.getenv("LOG_DATE"):
+    from datetime import datetime
+
+    LOG_DIR = LOG_ROOT / datetime.now().strftime("%Y-%m-%d")
 os.makedirs(LOG_DIR, exist_ok=True)
 API_IO_HANDLERS = ["console", "app_file"]
 if LOG_API_IO_TO_ACCESS:
@@ -399,8 +406,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "app_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "app.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "app.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -409,8 +417,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "access_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "access.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "access.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -419,8 +428,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "celery_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "celery.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "celery.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -429,8 +439,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "chat_sync_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "chat_sync.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "chat_sync.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -439,8 +450,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "chat_sync_api_io_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "chat_sync_api_io.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "chat_sync_api_io.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -449,8 +461,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "medical_flow_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "medical_flow.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "medical_flow.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -459,8 +472,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "medical_api_io_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "medical_api_io.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "medical_api_io.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",
@@ -469,8 +483,9 @@ LOGGING = {
             "filters": ["request_id"],
         },
         "file_manager_file": {
-            "class": "logging.handlers.TimedRotatingFileHandler",
-            "filename": str(LOG_DIR / "file_manager.log"),
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "file_manager.log",
+            "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
             "encoding": "utf-8",

@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from backoffice.models import AdminAuditLog, AdminRole, AdminUserRole
 from backoffice.rbac import bootstrap_admin_permissions
@@ -53,6 +54,10 @@ class BackofficePermissionTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("access", response.data["data"])
+        access = AccessToken(response.data["data"]["access"])
+        refresh = RefreshToken(response.data["data"]["refresh"])
+        self.assertEqual(access["exp"] - access["iat"], 24 * 60 * 60)
+        self.assertEqual(refresh["exp"] - refresh["iat"], 24 * 60 * 60)
 
     def test_user_status_update_writes_audit(self):
         self.client.force_authenticate(user=self.staff_user)

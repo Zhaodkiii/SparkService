@@ -5,11 +5,10 @@ from django.db import models
 class AccountProfile(models.Model):
     """
     Business fields that don't belong to Django's default User.
-    Explicit OneToOne to auth.User (same pattern as ZhaodkDream UserProfile).
+    Login identifiers such as phone numbers live in SocialIdentity.
     """
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
-    phone_number = models.CharField(max_length=32, blank=True, default="", db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -197,6 +196,7 @@ class SocialIdentity(models.Model):
     class Provider(models.TextChoices):
         APPLE = "apple"
         GOOGLE = "google"
+        PHONE = "phone"
 
     user = models.ForeignKey(User, related_name="social_identities", on_delete=models.CASCADE)
     provider = models.CharField(max_length=32, choices=Provider.choices, db_index=True)

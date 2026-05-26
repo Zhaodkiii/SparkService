@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import AccountProfile
+from accounts.models import SocialIdentity
 from accounts.services.phone_number_service import PhoneNumberService
 from common.exceptions import APIError
 from medical.models import Member, MemberShareInvite, UserMemberBinding
@@ -77,20 +77,16 @@ def resolve_user_by_contact(
         except APIError:
             return None, normalized
 
-        profile = (
-            AccountProfile.objects.filter(phone_number=e164)
+        identity = (
+            SocialIdentity.objects.filter(
+                provider=SocialIdentity.Provider.PHONE,
+                provider_uid=e164,
+            )
             .select_related("user")
             .first()
         )
-        if profile:
-            return profile.user, e164
-
-        digits = "".join(ch for ch in e164 if ch.isdigit())
-        if len(digits) > 2:
-            national = digits[-11:] if len(digits) >= 11 else digits
-            profile = AccountProfile.objects.filter(phone_number__endswith=national).select_related("user").first()
-            if profile:
-                return profile.user, e164
+        if identity:
+            return identity.user, e164
 
         return None, e164
 

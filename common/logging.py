@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from common.request_context import request_id_var
 
@@ -97,3 +99,52 @@ class JsonFormatter(logging.Formatter):
         payload = {k: v for k, v in payload.items() if v is not None}
 
         return json.dumps(payload, ensure_ascii=True)
+
+
+class DateFolderTimedRotatingFileHandler(logging.FileHandler):
+    """
+    Rotate daily logs into LOG_ROOT/YYYY-MM-DD/<filename>.
+    """
+
+    def __init__(
+        self,
+        filename: str,
+        log_root: str,
+        when: str = "midnight",
+        interval: int = 1,
+        backupCount: int = 0,
+        encoding: str | None = None,
+        delay: bool = False,
+        utc: bool = False,
+        atTime=None,
+    ):
+        self.log_root = Path(log_root)
+        self.base_filename = Path(filename).name
+        self.use_utc_date = utc
+        self.current_date = self._date_name()
+        super().__init__(str(self._dated_filename()), mode="a", encoding=encoding, delay=delay)
+
+    def _date_name(self) -> str:
+        now = datetime.now(timezone.utc) if self.use_utc_date else datetime.now()
+        return now.strftime("%Y-%m-%d")
+
+    def _dated_filename(self) -> Path:
+        log_dir = self.log_root / self.current_date
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir / self.base_filename
+
+    def _switch_date_if_needed(self) -> None:
+        date_name = self._date_name()
+        if date_name == self.current_date:
+            return
+        self.current_date = date_name
+        self.baseFilename = os.fspath(self._dated_filename())
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+        if not self.delay:
+            self.stream = self._open()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._switch_date_if_needed()
+        super().emit(record)

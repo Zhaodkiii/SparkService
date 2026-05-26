@@ -22,8 +22,9 @@ class DeactivationServiceTests(TestCase):
     def setUp(self):
         User = get_user_model()
         self.user = User.objects.create_user(username="tester", email="tester@example.com", password="secret123", first_name="Test")
-        self.profile = AccountProfile.objects.create(user=self.user, phone_number="+8613800000000")
+        self.profile = AccountProfile.objects.create(user=self.user)
         SocialIdentity.objects.create(user=self.user, provider=SocialIdentity.Provider.APPLE, provider_uid="apple-sub", bundle_id="com.spark")
+        SocialIdentity.objects.create(user=self.user, provider=SocialIdentity.Provider.PHONE, provider_uid="+8613800000000", bundle_id="com.spark")
         TrustedDevice.objects.create(user=self.user, bundle_id="com.spark", device_id="device-1", push_token="push", device_name="phone")
         EmailOTP.objects.create(
             otp_id="email-otp",

@@ -21,7 +21,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.serializers import Serializer, CharField
 from rest_framework.views import APIView
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from accounts.services.notification_service import NotificationService
@@ -78,6 +78,16 @@ User = get_user_model()
 BASE_DIR = Path(__file__).resolve().parent.parent
 RUN_DIR = BASE_DIR / "run"
 LOG_DIR = BASE_DIR / "logs"
+ADMIN_LOGIN_TOKEN_LIFETIME = timedelta(days=1)
+
+
+class AdminAccessToken(AccessToken):
+    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME
+
+
+class AdminRefreshToken(RefreshToken):
+    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME
+    access_token_class = AdminAccessToken
 
 
 def _read_pid(pid_file: Path) -> int | None:
@@ -428,7 +438,7 @@ class AdminAuthLoginView(APIView):
             write_audit_log(request, action="admin.login.denied", resource_type="auth", status_code=403)
             return error_response(msg="not_admin_user", code=40301, status_code=status.HTTP_403_FORBIDDEN)
 
-        token = TokenObtainPairSerializer.get_token(user)
+        token = AdminRefreshToken.for_user(user)
         payload = {
             "access": str(token.access_token),
             "refresh": str(token),

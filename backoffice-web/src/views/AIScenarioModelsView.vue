@@ -70,6 +70,25 @@
       <a-form-item label="系统说明（systemProvision）" extra="下发到客户端；若试用策略行有配置则策略优先">
         <a-textarea v-model:value="form.system_provision" :rows="3" allow-clear placeholder="可选" />
       </a-form-item>
+      <a-form-item label="在提示词中追加当前日期">
+        <a-switch
+          :checked="
+            AIPromptKeywords.contains(
+              AIPromptKeywords.currentDate,
+              String(form.system_provision ?? ''),
+            )
+          "
+          @update:checked="
+            (checked: boolean) => {
+              form.system_provision = AIPromptKeywords.setting(
+                AIPromptKeywords.currentDate,
+                checked,
+                String(form.system_provision ?? ''),
+              );
+            }
+          "
+        />
+      </a-form-item>
       <a-form-item label="简介（briefDescription）" extra="下发到客户端；若试用策略行有配置则策略优先">
         <a-textarea v-model:value="form.brief_description" :rows="2" allow-clear placeholder="可选" />
       </a-form-item>
@@ -122,6 +141,7 @@ import {
   type AIModelCatalog,
   type SmallTask,
 } from '../api/modules/ai';
+import { AIPromptKeywords } from '../constants/aiPromptKeywords';
 import { useAuthStore } from '../stores/auth';
 
 const route = useRoute();

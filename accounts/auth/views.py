@@ -138,35 +138,62 @@ class TokenObtainUnifiedView(APIView):
         )
 
 
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from rest_framework import status
+
+
+# 苹果第三方登录接口视图
 class AppleLoginView(APIView):
+    # 权限设置：允许所有用户访问（未登录/游客均可请求）
     permission_classes = [AllowAny]
 
     def post(self, request):
+        """
+        处理苹果登录的POST请求
+        接收前端传递的苹果授权参数，完成认证、用户注册/登录、颁发令牌
+        :param request: 请求对象，包含苹果登录相关参数
+        :return: 统一格式的登录成功响应（含用户信息、token等）
+        """
+        # 获取请求唯一标识（用于日志追踪、问题排查）
         request_id = getattr(request, "request_id", "") or ""
+
+        # 记录日志：苹果登录接口请求开始
         flow_logger.info(
             "Apple 登录接口请求开始",
-            extra={"action": "auth.apple.login", "path": request.path, "method": request.method, "request_id": request_id},
+            extra={"action": "auth.apple.login", "path": request.path, "method": request.method,
+                   "request_id": request_id},
         )
+
+        # 初始化序列化器，校验前端传入的苹果登录参数合法性
         serializer = AppleLoginSerializer(data=request.data)
+        # 参数校验失败时，直接抛出异常并返回错误响应
         serializer.is_valid(raise_exception=True)
 
+        # 获取请求头元信息
         meta = request.META
+        # 获取客户端真实IP地址（优先获取代理IP，无则获取直接连接IP）
         ip_address = meta.get("HTTP_X_FORWARDED_FOR", meta.get("REMOTE_ADDR", "")) or ""
+        # 获取客户端浏览器/设备信息
         user_agent = meta.get("HTTP_USER_AGENT", "") or ""
+        # 获取序列化器校验通过后的合法数据
         data = serializer.validated_data
 
+        # 调用登录服务层：执行苹果登录核心逻辑（认证、创建/更新用户、颁发token）
         result = LoginService.authenticate_apple_and_issue_tokens(
-            identity_token=data["identity_token"],
-            bundle_id=data["bundle_id"],
-            nonce=data.get("nonce", "") or "",
-            user_identifier=data.get("user", "") or "",
-            email=data.get("email", "") or "",
-            full_name=data.get("full_name", "") or "",
-            ip_address=ip_address,
-            user_agent=user_agent,
-            device_id=data.get("device_id", "") or "",
-            request_id=getattr(request, "request_id", "") or "",
+            identity_token=data["identity_token"],  # 苹果授权的身份令牌
+            bundle_id=data["bundle_id"],  # 应用Bundle ID（iOS应用标识）
+            nonce=data.get("nonce", "") or "",  # 随机字符串，防重放攻击
+            user_identifier=data.get("user", "") or "",  # 苹果用户唯一标识
+            email=data.get("email", "") or "",  # 用户邮箱（苹果可能加密）
+            full_name=data.get("full_name", "") or "",  # 用户姓名
+            ip_address=ip_address,  # 客户端IP
+            user_agent=user_agent,  # 客户端设备信息
+            device_id=data.get("device_id", "") or "",  # 设备唯一标识
+            request_id=getattr(request, "request_id", "") or "",  # 请求追踪ID
         )
+
+        # 记录日志：苹果登录成功，记录关键信息（用户ID、是否新用户等）
         flow_logger.info(
             "Apple 登录成功",
             extra={
@@ -178,4 +205,6 @@ class AppleLoginView(APIView):
                 "is_new_user": result.get("is_new_user", False),
             },
         )
+
+        # 返回统一格式的成功响应
         return success_response(result, msg="login_success", code=0, status_code=status.HTTP_200_OK)

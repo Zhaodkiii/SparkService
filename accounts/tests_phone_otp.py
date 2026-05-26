@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from accounts.models import PhoneOTP
+from accounts.models import PhoneOTP, SocialIdentity
 from accounts.services.otp_service import OTPService
 
 
@@ -50,7 +50,14 @@ class PhoneOTPServiceTests(TestCase):
         self.assertTrue(verified["is_new_user"])
 
         user = get_user_model().objects.get(id=verified["user_id"])
-        self.assertEqual(user.profile.phone_number, "+8615000000001")
+        self.assertTrue(
+            SocialIdentity.objects.filter(
+                user=user,
+                bundle_id="com.sparkclient.ios",
+                provider=SocialIdentity.Provider.PHONE,
+                provider_uid="+8615000000001",
+            ).exists()
+        )
 
     def test_request_phone_otp_falls_back_to_dev_success_when_sms_config_missing(self):
         result = OTPService.request_phone_otp(

@@ -16,11 +16,18 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.conf import settings
+from django.http import JsonResponse
 from django.urls import include, path
 from django.conf.urls.static import static
 from accounts.auth.views import TokenObtainUnifiedView, TokenRefreshView
 
+
+def health_check(_request):
+    return JsonResponse({"status": "ok", "service": "SparkService 哈哈哈请求成功更新成功啦"})
+
+
 urlpatterns = [
+    path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/v1/auth/token/', TokenObtainUnifiedView.as_view(), name='token_obtain_pair'),
     path('api/v1/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

@@ -24,7 +24,6 @@ from accounts.models import (
 )
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.otp_service import OTPService
-from accounts.services.phone_number_service import PhoneNumberService
 
 logger = logging.getLogger(__name__)
 flow_logger = logging.getLogger("accounts.flow")
@@ -47,6 +46,14 @@ class DeactivationService:
         AccountDeactivation.DeactivationState.COMPLETED,
         AccountDeactivation.DeactivationState.CANCELLED,
     )
+
+    @staticmethod
+    def _phone_number_for_user(user) -> str:
+        identity = SocialIdentity.objects.filter(
+            user=user,
+            provider=SocialIdentity.Provider.PHONE,
+        ).first()
+        return (identity.provider_uid if identity else "") or ""
 
     @staticmethod
     @transaction.atomic
@@ -88,9 +95,9 @@ class DeactivationService:
             return {"type": "email", "otp_id": otp_id}
 
         if verification_type == "phone":
-            profile = getattr(user, "profile", None)
-            phone_number = getattr(profile, "phone_number", "") if profile else ""
-            normalized_phone = PhoneNumberService.normalize_e164(phone_number)
+            normalized_phone = DeactivationService._phone_number_for_user(user)
+            if not normalized_phone:
+                raise APIError("phone identity not linked to current user", code=40163, status_code=401)
             otp_id = (verification.get("otp_id") or "").strip()
             code = (verification.get("code") or "").strip()
             otp = PhoneOTP.objects.select_for_update().filter(otp_id=otp_id, phone_number=normalized_phone).first()
@@ -202,11 +209,10 @@ class DeactivationService:
             return {"deactivation_id": obj.id, "state": obj.state, "noop": True, "scheduled_at": obj.scheduled_at}
 
         user = get_user_model().objects.select_for_update().get(id=obj.user_id)
-        profile = getattr(user, "profile", None)
         if not obj.freeze_email:
             obj.freeze_email = user.email or ""
         if not obj.freeze_phone_number:
-            obj.freeze_phone_number = getattr(profile, "phone_number", "") if profile else ""
+            obj.freeze_phone_number = DeactivationService._phone_number_for_user(user)
         if obj.processed_at is None:
             obj.processed_at = now
         obj.save(update_fields=["freeze_email", "freeze_phone_number", "processed_at"])
@@ -271,10 +277,7 @@ class DeactivationService:
             user.last_name = ""
             user.save(update_fields=["username", "email", "first_name", "last_name"])
 
-            profile = getattr(user, "profile", None)
-            if profile:
-                profile.phone_number = ""
-                profile.save(update_fields=["phone_number"])
+            SocialIdentity.objects.filter(user=user, provider=SocialIdentity.Provider.PHONE).delete()
 
             TrustedDevice.objects.filter(user=user).update(push_token="", device_name="", is_revoked=True)
             DeactivationService._anonymize_notification_receivers(user_id=user.id)
@@ -457,6 +460,7 @@ class DeactivationService:
     @staticmethod
     def _build_backup_payload(*, deactivation: AccountDeactivation, user):
         profile = getattr(user, "profile", None)
+        phone_number = DeactivationService._phone_number_for_user(user)
         payload = {
             "schema_version": 1,
             "deactivation_id": deactivation.id,
@@ -471,8 +475,8 @@ class DeactivationService:
         payload["accounts"]["social_identities"] = DeactivationService._rows_for_queryset(SocialIdentity.objects.filter(user=user))
         payload["accounts"]["trusted_devices"] = DeactivationService._rows_for_queryset(TrustedDevice.objects.filter(user=user))
         payload["accounts"]["email_otps"] = DeactivationService._rows_for_queryset(EmailOTP.objects.filter(email=user.email))
-        if profile and profile.phone_number:
-            payload["accounts"]["phone_otps"] = DeactivationService._rows_for_queryset(PhoneOTP.objects.filter(phone_number=profile.phone_number))
+        if phone_number:
+            payload["accounts"]["phone_otps"] = DeactivationService._rows_for_queryset(PhoneOTP.objects.filter(phone_number=phone_number))
         else:
             payload["accounts"]["phone_otps"] = []
 

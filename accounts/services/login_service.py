@@ -10,10 +10,11 @@ from django.db.utils import IntegrityError, OperationalError, ProgrammingError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from common.exceptions import APIError
-from accounts.models import AccountProfile, LoginAudit, SocialIdentity
+from accounts.models import LoginAudit, SocialIdentity
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.deactivation_service import DeactivationService
 from accounts.services.device_linking_service import DeviceLinkingService
+from accounts.services.phone_number_service import PhoneNumberService
 from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
@@ -72,21 +73,31 @@ class LoginService:
             ) from exc
 
     @staticmethod
-    def _find_user_by_identifier(identifier: str):
+    def _find_user_by_identifier(identifier: str, *, bundle_id: str = ""):
         User = get_user_model()
         identifier = identifier.strip()
+        normalized_bundle_id = (bundle_id or "").strip()
 
         # email
         if "@" in identifier:
             return User.objects.filter(email__iexact=identifier).first()
 
-        # phone (stored on AccountProfile)
-        if identifier.isdigit() and len(identifier) >= 7:
-            return (
-                User.objects.filter(profile__phone_number=identifier)
-                .select_related("profile")
-                .first()
-            )
+        # phone
+        if identifier.startswith(("+", "00")) or (identifier.isdigit() and len(identifier) >= 7):
+            try:
+                normalized_phone = PhoneNumberService.normalize_e164(identifier)
+            except APIError:
+                normalized_phone = ""
+            if normalized_phone:
+                queryset = SocialIdentity.objects.select_related("user").filter(
+                    provider=SocialIdentity.Provider.PHONE,
+                    provider_uid=normalized_phone,
+                )
+                if normalized_bundle_id:
+                    queryset = queryset.filter(bundle_id=normalized_bundle_id)
+                identity = queryset.first()
+                if identity:
+                    return identity.user
 
         # username
         return User.objects.filter(username__iexact=identifier).first()
@@ -105,7 +116,6 @@ class LoginService:
         user.set_unusable_password()
         user.first_name = chosen_name
         user.save(update_fields=["password", "first_name", "is_active"])
-        AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
         return user
 
     @staticmethod
@@ -125,7 +135,7 @@ class LoginService:
             extra={"action": "auth.password.authenticate", "request_id": request_id, "provider": provider},
         )
         User = get_user_model()
-        user = LoginService._find_user_by_identifier(identifier)
+        user = LoginService._find_user_by_identifier(identifier, bundle_id=bundle_id)
 
         if not user or not user.check_password(password):
             LoginAudit.objects.create(
@@ -165,8 +175,6 @@ class LoginService:
             )
             raise APIError("user_inactive", code=40103, status_code=401)
 
-        # Ensure profile exists for phone-related flows.
-        AccountProfile.objects.get_or_create(user=user, defaults={"phone_number": ""})
         cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
         LoginService._try_grant_auto_trial(user=user, request_id=request_id)
 

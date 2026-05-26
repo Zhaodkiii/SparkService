@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from accounts.models import AccountProfile
+from accounts.models import SocialIdentity
 from medical.models import Member, UserMemberBinding
 from medical.services import member_binding_service as binding_service
 from medical.services.member_invite_service import normalize_phone_for_lookup, resolve_user_by_contact
@@ -23,7 +23,12 @@ class MemberPermissionLevelTests(APITestCase):
 
     def test_resolve_user_by_e164_phone(self):
         user = User.objects.create_user(username="phoneuser", email="p@example.com", password="pass12345")
-        AccountProfile.objects.create(user=user, phone_number="+8615385056020")
+        SocialIdentity.objects.create(
+            user=user,
+            bundle_id="cn.Zhaodk.Health",
+            provider=SocialIdentity.Provider.PHONE,
+            provider_uid="+8615385056020",
+        )
         matched, normalized = resolve_user_by_contact(
             channel="phone",
             contact="15385056020",
