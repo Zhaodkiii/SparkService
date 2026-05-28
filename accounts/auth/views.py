@@ -1,6 +1,6 @@
 import logging
 
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status
@@ -208,3 +208,34 @@ class AppleLoginView(APIView):
 
         # 返回统一格式的成功响应
         return success_response(result, msg="login_success", code=0, status_code=status.HTTP_200_OK)
+
+
+class CurrentSessionView(APIView):
+    """Return latest account session for authenticated clients (cold-start refresh)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        request_id = getattr(request, "request_id", "") or ""
+        flow_logger.info(
+            "获取当前会话开始",
+            extra={
+                "action": "auth.session.current",
+                "path": request.path,
+                "method": request.method,
+                "request_id": request_id,
+                "user_id": getattr(request.user, "id", None),
+            },
+        )
+        payload = LoginService.build_current_session(user=request.user)
+        flow_logger.info(
+            "获取当前会话成功",
+            extra={
+                "action": "auth.session.current",
+                "outcome": "success",
+                "request_id": request_id,
+                "user_id": payload.get("user_id"),
+                "is_pro": payload.get("is_pro"),
+            },
+        )
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)

@@ -288,6 +288,12 @@ class OTPService:
                 },
             )
 
+        DeviceLinkingService.try_attach_user_to_trusted_device(
+            user=user,
+            device_id=device_id,
+            bundle_id=bundle_id,
+            request_id=request_id,
+        )
         try:
             TrialService.try_grant_auto_trial_for_login_device(
                 user=user,
@@ -314,15 +320,16 @@ class OTPService:
             request_id=request_id or "",
         )
 
+        is_pro = TrialService.is_pro_user(user=user)
         flow_logger.info(
             "auth.otp.verify.service.success",
-            extra={"action": "auth.otp.verify.service", "request_id": request_id, "otp_id": otp_id, "user_id": user.id},
-        )
-        DeviceLinkingService.try_attach_user_to_trusted_device(
-            user=user,
-            device_id=device_id,
-            bundle_id=bundle_id,
-            request_id=request_id,
+            extra={
+                "action": "auth.otp.verify.service",
+                "request_id": request_id,
+                "otp_id": otp_id,
+                "user_id": user.id,
+                "is_pro": is_pro,
+            },
         )
         return {
             "user_id": user.id,
@@ -331,7 +338,7 @@ class OTPService:
             "expires_in": expires_in,
             "token_type": "Bearer",
             "otp_id": otp.otp_id,
-            "is_pro": TrialService.is_pro_user(user=user),
+            "is_pro": is_pro,
         }
 
     @staticmethod
@@ -430,6 +437,12 @@ class OTPService:
         if not user.is_active:
             raise APIError("user_inactive", code=40103, status_code=401)
 
+        DeviceLinkingService.try_attach_user_to_trusted_device(
+            user=user,
+            device_id=device_id,
+            bundle_id=normalized_bundle_id,
+            request_id=request_id,
+        )
         try:
             TrialService.try_grant_auto_trial_for_login_device(
                 user=user,
@@ -456,21 +469,22 @@ class OTPService:
             request_id=request_id or "",
         )
 
-        DeviceLinkingService.try_attach_user_to_trusted_device(
-            user=user,
-            device_id=device_id,
-            bundle_id=normalized_bundle_id,
-            request_id=request_id,
-        )
+        is_pro = TrialService.is_pro_user(user=user)
         flow_logger.info(
             "auth.phone_otp.verify.service.success",
-            extra={"action": "auth.phone_otp.verify.service", "request_id": request_id, "otp_id": otp_id, "user_id": user.id},
+            extra={
+                "action": "auth.phone_otp.verify.service",
+                "request_id": request_id,
+                "otp_id": otp_id,
+                "user_id": user.id,
+                "is_pro": is_pro,
+            },
         )
         return {
             "user_id": user.id,
             "phone_number": normalized_phone,
             "display_name": PhoneNumberService.masked_display(normalized_phone),
-            "is_pro": TrialService.is_pro_user(user=user),
+            "is_pro": is_pro,
             "is_new_user": created_user,
             "access_token": str(access),
             "refresh_token": str(refresh),

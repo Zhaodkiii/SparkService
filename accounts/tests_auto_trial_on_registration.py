@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
-from accounts.models import EmailOTP
+from accounts.models import EmailOTP, TrustedDevice
 from accounts.services.otp_service import OTPService
 from ai_config.models import TrialApplication
 
@@ -14,6 +14,14 @@ class AutoTrialOnRegistrationTests(TestCase):
         email = "auto-trial@example.com"
         otp_code = "123456"
         otp_id = "otp-auto-trial-1"
+        bundle_id = "com.sparkclient.ios"
+        device_id = "device-auto-trial"
+
+        TrustedDevice.objects.create(
+            bundle_id=bundle_id,
+            device_id=device_id,
+            country_code="CN",
+        )
 
         EmailOTP.objects.create(
             otp_id=otp_id,
@@ -21,8 +29,8 @@ class AutoTrialOnRegistrationTests(TestCase):
             code_hash=OTPService._hash_code(otp_code),
             expires_at=timezone.now() + timedelta(minutes=5),
             provider_uid="",
-            bundle_id="com.sparkclient.ios",
-            device_id="device-auto-trial",
+            bundle_id=bundle_id,
+            device_id=device_id,
             ip_address="127.0.0.1",
             request_id="req-auto-trial",
         )
@@ -34,10 +42,11 @@ class AutoTrialOnRegistrationTests(TestCase):
             request_id="req-auto-trial",
             ip_address="127.0.0.1",
             user_agent="unit-test",
-            bundle_id="com.sparkclient.ios",
-            device_id="device-auto-trial",
+            bundle_id=bundle_id,
+            device_id=device_id,
         )
         self.assertIn("access_token", result)
+        self.assertTrue(result["is_pro"])
 
         user = get_user_model().objects.get(email=email)
         trial = TrialApplication.objects.get(user=user)

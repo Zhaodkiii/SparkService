@@ -77,7 +77,10 @@ class DeviceService:
         if "country_code" in explicit_keys:
             patch["country_code"] = _s(data, "country_code")
         if "push_token" in explicit_keys:
-            patch["push_token"] = _s(data, "push_token")
+            raw_push = data.get("push_token")
+            # JSON null / 省略语义：未知 token，不覆盖库内已有有效 token；仅显式空字符串表示清空。
+            if raw_push is not None:
+                patch["push_token"] = _s(data, "push_token")
         if "notifications_enabled" in explicit_keys:
             patch["notifications_enabled"] = _b(data, "notifications_enabled", False)
 

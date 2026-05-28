@@ -32,6 +32,31 @@ class LoginService:
         )
 
     @staticmethod
+    def _prepare_login_entitlements(*, user, bundle_id: str, device_id: str, request_id: str) -> None:
+        """
+        登录侧效应：先关联可信设备（供 country_code 判断），再尝试自动发放 Pro。
+        必须在计算响应 is_pro 与返回 token 之前完成（APP-STARTUP-000003）。
+        """
+        DeviceLinkingService.try_attach_user_to_trusted_device(
+            user=user,
+            device_id=device_id,
+            bundle_id=bundle_id,
+            request_id=request_id,
+        )
+        LoginService._try_grant_auto_trial(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+        )
+
+    @staticmethod
+    def _apply_is_pro(*, user, payload: dict[str, Any]) -> dict[str, Any]:
+        """在设备关联与自动发放完成后写入最终 is_pro。"""
+        payload["is_pro"] = TrialService.is_pro_user(user=user)
+        return payload
+
+    @staticmethod
     def _load_apple_identity_for_update(*, bundle_id: str, subject: str, request_id: str):
         """
         读取 Apple 社交身份绑定；若表未迁移或不可用，抛出可观测的 APIError，避免客户端收到裸 500。
@@ -184,14 +209,13 @@ class LoginService:
             request_id=request_id or "",
         )
 
-        tokens = LoginService._issue_tokens(user)
-        DeviceLinkingService.try_attach_user_to_trusted_device(
+        LoginService._prepare_login_entitlements(
             user=user,
-            device_id=device_id,
             bundle_id=bundle_id,
+            device_id=device_id,
             request_id=request_id,
         )
-        LoginService._try_grant_auto_trial(user=user, bundle_id=bundle_id, device_id=device_id, request_id=request_id)
+        tokens = LoginService._apply_is_pro(user=user, payload=LoginService._issue_tokens(user))
         flow_logger.info(
             "密码登录鉴权成功",
             extra={
@@ -200,6 +224,7 @@ class LoginService:
                 "request_id": request_id,
                 "provider": provider,
                 "user_id": user.id,
+                "is_pro": tokens.get("is_pro"),
             },
         )
         tokens["deactivation_cancelled"] = cancel_result
@@ -383,19 +408,18 @@ class LoginService:
 
         cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
 
-        result = LoginService._issue_tokens(user)
-        result["email"] = user.email or chosen_email
-        result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
-        result["is_pro"] = TrialService.is_pro_user(user=user)
-        result["is_new_user"] = created_user
-        result["deactivation_cancelled"] = cancel_result
-        DeviceLinkingService.try_attach_user_to_trusted_device(
+        LoginService._prepare_login_entitlements(
             user=user,
-            device_id=device_id,
             bundle_id=matched_audience,
+            device_id=device_id,
             request_id=request_id,
         )
-        LoginService._try_grant_auto_trial(user=user, bundle_id=matched_audience, device_id=device_id, request_id=request_id)
+
+        result = LoginService._apply_is_pro(user=user, payload=LoginService._issue_tokens(user))
+        result["email"] = user.email or chosen_email
+        result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
+        result["is_new_user"] = created_user
+        result["deactivation_cancelled"] = cancel_result
         flow_logger.info(
             "Apple 登录鉴权成功并签发令牌",
             extra={
@@ -405,6 +429,7 @@ class LoginService:
                 "user_id": user.id,
                 "is_new_user": created_user,
                 "bundle_id": matched_audience,
+                "is_pro": result.get("is_pro"),
             },
         )
         return result
@@ -422,5 +447,33 @@ class LoginService:
             "refresh_token": str(refresh),
             "expires_in": expires_in,
             "token_type": "Bearer",
+        }
+
+    @staticmethod
+    def build_current_session(*, user) -> dict[str, Any]:
+        """Return latest account session fields for cold-start refresh (no tokens)."""
+        if not getattr(user, "is_active", False):
+            raise APIError("user_inactive", code=40103, status_code=401)
+
+        providers = set(
+            SocialIdentity.objects.filter(user=user).values_list("provider", flat=True)
+        )
+        if SocialIdentity.Provider.APPLE in providers:
+            sign_in_method = "apple"
+        elif SocialIdentity.Provider.PHONE in providers:
+            sign_in_method = "phone"
+        else:
+            sign_in_method = "apple"
+
+        display_name = (getattr(user, "first_name", None) or "").strip()
+        if not display_name:
+            display_name = "Apple User"
+
+        return {
+            "user_id": user.id,
+            "email": user.email or "",
+            "display_name": display_name,
             "is_pro": TrialService.is_pro_user(user=user),
+            "is_new_user": False,
+            "sign_in_method": sign_in_method,
         }
