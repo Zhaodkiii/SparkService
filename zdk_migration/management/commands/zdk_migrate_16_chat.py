@@ -13,7 +13,9 @@ from zdk_migration.lib.old_db import old_fetch_all, old_table_exists
 from zdk_migration.lib.transforms import (
     chat_block_payload,
     chat_role_to_new,
+    json_safe_value,
     legacy_chat_anchor_is_invalid,
+    normalize_legacy_chat_attachment,
     parse_json_value,
 )
 
@@ -115,9 +117,7 @@ class Command(ZdkMigrateCommand):
                 self._repair_message_blocks(existing, row)
                 continue
 
-            metadata = parse_json_value(row.get("message_metadata"), default={}) or {}
-            metadata["legacy_message_id"] = row["id"]
-            metadata["legacy_conversation_id"] = old_conversation_id
+            metadata = self._build_message_metadata(row, old_conversation_id)
             created_at = row.get("created_at") or timezone.now()
 
             def _create_message(row=row, metadata=metadata, created_at=created_at):
@@ -133,10 +133,37 @@ class Command(ZdkMigrateCommand):
                     created_at=created_at,
                 )
                 self._create_text_block(message, row, created_at)
+                self._create_attachment_blocks(message, row, created_at)
                 return message
 
             if self.run_safe(f"message:{row['id']}", _create_message):
                 self.stats.migrated += 1
+
+    def _build_message_metadata(self, row: dict, old_conversation_id: str) -> dict:
+        legacy_metadata = parse_json_value(row.get("message_metadata"), default={})
+        metadata = dict(legacy_metadata) if isinstance(legacy_metadata, dict) else {}
+        if legacy_metadata and not isinstance(legacy_metadata, dict):
+            metadata["legacy_message_metadata"] = json_safe_value(legacy_metadata)
+
+        metadata["legacy_message_id"] = row["id"]
+        metadata["legacy_conversation_id"] = old_conversation_id
+        if row.get("message_type"):
+            metadata["legacy_message_type"] = row.get("message_type")
+            metadata.setdefault("messageType", row.get("message_type"))
+        for old_key, new_key in (
+            ("is_refusal", "legacy_is_refusal"),
+            ("is_local", "legacy_is_local"),
+            ("is_run_step", "legacy_is_run_step"),
+            ("synced_at", "legacy_synced_at"),
+            ("deleted_at", "legacy_deleted_at"),
+        ):
+            if row.get(old_key) is not None:
+                metadata[new_key] = json_safe_value(row.get(old_key))
+
+        attachments = self._normalized_legacy_attachments(row)
+        if attachments:
+            metadata["attachments"] = attachments
+        return json_safe_value(metadata)
 
     def _create_text_block(self, message: ChatMessage, row: dict, created_at) -> None:
         order_base = float(message.id)
@@ -163,6 +190,100 @@ class Command(ZdkMigrateCommand):
             created_at=created_at,
             updated_at=created_at,
         )
+
+    def _extract_legacy_attachments(self, row: dict) -> list[dict]:
+        attachments = parse_json_value(row.get("attachments"), default=[])
+        if isinstance(attachments, list) and attachments:
+            return attachments
+        metadata = parse_json_value(row.get("message_metadata"), default={}) or {}
+        if isinstance(metadata, dict):
+            report = metadata.get("reportData") if isinstance(metadata.get("reportData"), dict) else None
+            if report and isinstance(report.get("attachmentsJSON"), str):
+                parsed = parse_json_value(report.get("attachmentsJSON"), default=[])
+                if isinstance(parsed, list):
+                    return parsed
+        return []
+
+    def _normalized_legacy_attachments(self, row: dict) -> list[dict]:
+        attachments = self._extract_legacy_attachments(row)
+        if not attachments:
+            return []
+        normalized = [normalize_legacy_chat_attachment(att) for att in attachments]
+        return [att for att in normalized if att and (att.get("url") or att.get("fileId") or att.get("text"))]
+
+    def _create_image_gallery_block(self, message: ChatMessage, row: dict, created_at) -> None:
+        self._create_attachment_blocks(message, row, created_at, include_files=False)
+
+    def _create_attachment_blocks(
+        self,
+        message: ChatMessage,
+        row: dict,
+        created_at,
+        *,
+        include_files: bool = True,
+    ) -> None:
+        normalized = self._normalized_legacy_attachments(row)
+        if not normalized:
+            return
+        images = [att for att in normalized if att.get("type") == "image" and att.get("url")]
+        files = [att for att in normalized if att.get("type") != "image"]
+
+        order_base = float(message.id)
+        if images:
+            gallery_id = uuid.uuid5(uuid.NAMESPACE_URL, f"zdk-block-gallery:{row['id']}")
+            if ChatMessageBlock.objects.filter(message=message, id=gallery_id).exists():
+                images = []
+        if images:
+            gallery_payload = chat_block_payload(
+                block_id=str(gallery_id),
+                kind="imageGallery",
+                order_key=order_base + 0.001,
+                created_at=created_at,
+                updated_at=created_at,
+                attachments=images,
+            )
+            ChatMessageBlock.objects.create(
+                id=gallery_id,
+                user_id=message.user_id,
+                thread_id=message.thread_id,
+                message_id=message.id,
+                kind="imageGallery",
+                status=ChatMessageBlock.Status.READY,
+                revision=1,
+                order_key=order_base + 0.001,
+                payload=gallery_payload,
+                anchor=None,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+
+        if include_files and files:
+            files_id = uuid.uuid5(uuid.NAMESPACE_URL, f"zdk-block-files:{row['id']}")
+            if ChatMessageBlock.objects.filter(message=message, id=files_id).exists():
+                files = []
+        if include_files and files:
+            files_payload = chat_block_payload(
+                block_id=str(files_id),
+                kind="fileAttachments",
+                order_key=order_base + 0.002,
+                created_at=created_at,
+                updated_at=created_at,
+                attachments=files,
+            )
+            ChatMessageBlock.objects.create(
+                id=files_id,
+                user_id=message.user_id,
+                thread_id=message.thread_id,
+                message_id=message.id,
+                kind="fileAttachments",
+                status=ChatMessageBlock.Status.READY,
+                revision=1,
+                order_key=order_base + 0.002,
+                payload=files_payload,
+                anchor=None,
+                created_at=created_at,
+                updated_at=created_at,
+            )
 
     def _repair_message_blocks(self, message: ChatMessage, row: dict) -> None:
         """Fix blocks for messages that were migrated with invalid anchor/kind/payload."""
@@ -210,9 +331,24 @@ class Command(ZdkMigrateCommand):
             )
             self.stats.migrated += 1
 
-        non_text_blocks = ChatMessageBlock.objects.filter(message=message).exclude(kind="text")
-        if non_text_blocks.exists() and not self.dry_run:
-            deleted, _ = non_text_blocks.delete()
+        # Rebuild image gallery if legacy had images.
+        gallery_id = uuid.uuid5(uuid.NAMESPACE_URL, f"zdk-block-gallery:{row['id']}")
+        if not ChatMessageBlock.objects.filter(message=message, id=gallery_id).exists() and not self.dry_run:
+            self._create_image_gallery_block(message, row, created_at)
+
+        files_id = uuid.uuid5(uuid.NAMESPACE_URL, f"zdk-block-files:{row['id']}")
+        if not ChatMessageBlock.objects.filter(message=message, id=files_id).exists() and not self.dry_run:
+            self._create_attachment_blocks(message, row, created_at)
+
+        metadata = self._build_message_metadata(row, row.get("conversation_id"))
+        if message.metadata != metadata and not self.dry_run:
+            message.metadata = metadata
+            message.save(update_fields=["metadata", "server_updated_at"])
+            self.stats.migrated += 1
+
+        non_supported = ChatMessageBlock.objects.filter(message=message).exclude(kind__in=["text", "imageGallery", "fileAttachments"])
+        if non_supported.exists() and not self.dry_run:
+            deleted, _ = non_supported.delete()
             self.stats.migrated += deleted
 
     def _repair_legacy_chat_blocks(self) -> int:
@@ -228,15 +364,14 @@ class Command(ZdkMigrateCommand):
             block.save(update_fields=["anchor", "updated_at"])
             repaired += 1
 
-        non_text_blocks = ChatMessageBlock.objects.exclude(kind="text")
+        non_text_blocks = ChatMessageBlock.objects.exclude(kind__in=["text", "imageGallery", "fileAttachments"])
         non_text_count = non_text_blocks.count()
         if non_text_count:
             repaired += non_text_count
             if not self.dry_run:
                 non_text_blocks.delete()
 
-        thin_text_blocks = ChatMessageBlock.objects.filter(kind="text").iterator()
-        for block in thin_text_blocks:
+        for block in ChatMessageBlock.objects.filter(kind="text").iterator():
             payload = block.payload or {}
             enum_payload = payload.get("payload")
             if (
@@ -255,6 +390,71 @@ class Command(ZdkMigrateCommand):
                 created_at=block.created_at,
                 updated_at=block.updated_at,
                 text=text,
+            )
+            if self.dry_run:
+                repaired += 1
+                continue
+            block.payload = new_payload
+            if legacy_chat_anchor_is_invalid(block.anchor):
+                block.anchor = None
+            block.save(update_fields=["payload", "anchor", "updated_at"])
+            repaired += 1
+
+        for block in ChatMessageBlock.objects.filter(kind="imageGallery").iterator():
+            payload = block.payload or {}
+            enum_payload = payload.get("payload")
+            if (
+                payload.get("kind") == "imageGallery"
+                and isinstance(enum_payload, dict)
+                and isinstance(enum_payload.get("imageGallery"), dict)
+                and "_0" in enum_payload["imageGallery"]
+            ):
+                continue
+            attachments = payload.get("attachments") or []
+            if isinstance(attachments, list):
+                normalized = [normalize_legacy_chat_attachment(att) for att in attachments]
+                normalized = [att for att in normalized if att and att.get("type") == "image" and att.get("url")]
+            else:
+                normalized = []
+            new_payload = chat_block_payload(
+                block_id=str(block.id),
+                kind="imageGallery",
+                order_key=block.order_key or float(block.message_id),
+                created_at=block.created_at,
+                updated_at=block.updated_at,
+                attachments=normalized,
+            )
+            if self.dry_run:
+                repaired += 1
+                continue
+            block.payload = new_payload
+            if legacy_chat_anchor_is_invalid(block.anchor):
+                block.anchor = None
+            block.save(update_fields=["payload", "anchor", "updated_at"])
+            repaired += 1
+        for block in ChatMessageBlock.objects.filter(kind="fileAttachments").iterator():
+            payload = block.payload or {}
+            enum_payload = payload.get("payload")
+            if (
+                payload.get("kind") == "fileAttachments"
+                and isinstance(enum_payload, dict)
+                and isinstance(enum_payload.get("fileAttachments"), dict)
+                and "_0" in enum_payload["fileAttachments"]
+            ):
+                continue
+            attachments = payload.get("attachments") or []
+            if isinstance(attachments, list):
+                normalized = [normalize_legacy_chat_attachment(att) for att in attachments]
+                normalized = [att for att in normalized if att and att.get("type") != "image"]
+            else:
+                normalized = []
+            new_payload = chat_block_payload(
+                block_id=str(block.id),
+                kind="fileAttachments",
+                order_key=block.order_key or float(block.message_id),
+                created_at=block.created_at,
+                updated_at=block.updated_at,
+                attachments=normalized,
             )
             if self.dry_run:
                 repaired += 1

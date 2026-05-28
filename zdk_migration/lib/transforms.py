@@ -482,10 +482,14 @@ def normalize_legacy_chat_attachment(att: Any) -> dict[str, Any]:
     if not isinstance(att, dict):
         return {}
     legacy_id = str(att.get("id") or "").strip()
-    att_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"zdk-chat-att:{legacy_id or att.get('url') or 'unknown'}"))
+    oss_file_id = att.get("ossFileId") or att.get("oss_file_id") or att.get("file_id")
+    full_url = att.get("full") or att.get("url") or att.get("thumbnailURL") or att.get("thumbnail")
+    att_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"zdk-chat-att:{legacy_id or full_url or 'unknown'}"))
     raw_type = str(att.get("type") or "image").strip()
     if raw_type in {"image", "image_url", "image_base64"}:
         mapped_type = "image"
+    elif raw_type == "video":
+        mapped_type = "video"
     elif raw_type == "pdf":
         mapped_type = "pdf"
     else:
@@ -494,15 +498,51 @@ def normalize_legacy_chat_attachment(att: Any) -> dict[str, Any]:
         "id": att_uuid,
         "type": mapped_type,
     }
-    url = att.get("url")
+    url = full_url
     if url:
         out["url"] = url
-    if legacy_id.isdigit():
-        out["file_id"] = int(legacy_id)
-    text = att.get("text") or att.get("ocr_text")
+    if isinstance(oss_file_id, int):
+        out["fileId"] = oss_file_id
+    elif legacy_id.isdigit():
+        out["fileId"] = int(legacy_id)
+
+    full_cache_key = att.get("fullCacheKey") or att.get("full_cache_key") or att.get("cacheKey")
+    if full_cache_key:
+        out["fullCacheKey"] = str(full_cache_key)
+
+    file_md5 = att.get("fileMd5") or att.get("file_md5") or att.get("md5")
+    if file_md5:
+        out["fileMd5"] = str(file_md5)
+
+    text = att.get("ocrText") or att.get("ocr_text") or att.get("text") or att.get("name") or att.get("filename")
     if text:
         out["text"] = str(text)
     return out
+
+
+CHAT_BLOCK_PAYLOAD_ENUM_KEYS = {
+    "text": "text",
+    "deepThought": "deepThought",
+    "tool": "tool",
+    "imageGallery": "imageGallery",
+    "fileAttachments": "fileAttachments",
+    "knowledgeCards": "knowledgeCards",
+    "translatedText": "translatedText",
+    "mapRoute": "mapRoute",
+    "events": "events",
+    "healthCards": "healthCards",
+    "pendingMemberToolCards": "pendingMemberToolCards",
+    "structuredHealthCards": "structuredHealthCards",
+    "sleepVisualization": "sleepVisualization",
+    "workoutVisualization": "workoutVisualization",
+    "captureCard": "captureCard",
+    "html": "html",
+    "smallTaskCard": "smallTaskCard",
+    "taskCards": "taskCards",
+    "error": "error",
+    "assistantStatusCard": "assistantStatusCard",
+    "healthResourceReference": "healthResourceReference",
+}
 
 
 def chat_block_payload(
@@ -521,12 +561,54 @@ def chat_block_payload(
     Swift encodes `ChatMessageBlockPayload.text("...")` as
     `{"text":{"_0":"..."}}`; the client requires the top-level `payload` key.
     """
-    if kind == "text":
+    payload_extra = dict(extra or {})
+    explicit_payload = payload_extra.pop("payload_value", None)
+    enum_key = CHAT_BLOCK_PAYLOAD_ENUM_KEYS.get(kind, "text")
+
+    if explicit_payload is not None:
+        block_payload = {enum_key: {"_0": explicit_payload}}
+    elif kind == "text":
         block_payload: dict[str, Any] = {"text": {"_0": text or ""}}
     elif kind == "imageGallery" and attachments:
         block_payload = {"imageGallery": {"_0": attachments}}
     elif kind == "fileAttachments" and attachments:
         block_payload = {"fileAttachments": {"_0": attachments}}
+    elif kind == "translatedText":
+        block_payload = {"translatedText": {"_0": text or ""}}
+    elif kind == "html":
+        block_payload = {"html": {"_0": text or ""}}
+    elif kind == "error":
+        block_payload = {"error": {"_0": text or ""}}
+    elif kind == "deepThought":
+        block_payload = {
+            "deepThought": {
+                "_0": {
+                    "reasoningContent": text or None,
+                    "reasoningDurationMs": None,
+                    "reasoningExpanded": False,
+                    "reasoningVisibility": "full",
+                }
+            }
+        }
+    elif kind == "tool":
+        block_payload = {
+            "tool": {
+                "_0": {
+                    "name": payload_extra.get("tool_name"),
+                    "content": text or "",
+                    "invocationArguments": payload_extra.get("tool_invocation_arguments"),
+                }
+            }
+        }
+    elif kind == "assistantStatusCard":
+        block_payload = {
+            "assistantStatusCard": {
+                "_0": {
+                    "type": payload_extra.get("assistant_status_type") or "sendFailed",
+                    "message": text or "",
+                }
+            }
+        }
     else:
         block_payload = {"text": {"_0": text or ""}}
 
@@ -543,8 +625,10 @@ def chat_block_payload(
     }
     if kind == "text":
         payload["text"] = text or ""
-    if extra:
-        payload.update(extra)
+    if kind in {"imageGallery", "fileAttachments"} and attachments:
+        payload["attachments"] = attachments
+    if payload_extra:
+        payload.update(payload_extra)
     return payload
 
 
