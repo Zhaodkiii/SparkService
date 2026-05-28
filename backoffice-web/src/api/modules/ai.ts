@@ -159,7 +159,46 @@ export interface TrialApplicationItem {
   grant_source: string;
   started_at: string | null;
   expires_at: string | null;
+  applied_at?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
+  note?: string;
+  latest_device?: TrialLatestDevice | null;
+  application_requests?: TrialApplicationRequestItem[];
   created_at: string;
+  updated_at?: string;
+}
+
+export interface TrialLatestDevice {
+  id: number;
+  bundle_id: string;
+  device_id: string;
+  platform: string;
+  system_version: string;
+  device_model: string;
+  device_name: string;
+  language_code: string;
+  region_code: string;
+  country_code: string;
+  notifications_enabled: boolean;
+  verified: boolean;
+  is_revoked: boolean;
+  first_seen: string;
+  last_seen: string;
+}
+
+export interface TrialApplicationRequestItem {
+  id: number;
+  source: string;
+  sequence: number;
+  status: string;
+  note: string;
+  auto_approve_after_seconds: number | null;
+  scheduled_at: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TrialListResponse {
@@ -171,6 +210,12 @@ export function fetchAITrials(params: { page: number; page_size: number; status?
   return http.get<unknown, TrialListResponse>('/api/admin/v1/ai/trials/', { params });
 }
 
-export function trialAction(trialId: number, action: 'approve' | 'reject' | 'recycle', note = '') {
-  return http.post(`/api/admin/v1/ai/trials/${trialId}/${action}/`, { note });
+export type TrialAction = 'approve' | 'reject' | 'recycle' | 'grant';
+
+export function fetchAITrialDetail(trialId: number) {
+  return http.get<unknown, TrialApplicationItem>(`/api/admin/v1/ai/trials/${trialId}/`);
+}
+
+export function trialAction(trialId: number, action: TrialAction, payload: Record<string, unknown> = {}) {
+  return http.post(`/api/admin/v1/ai/trials/${trialId}/${action}/`, payload);
 }

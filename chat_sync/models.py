@@ -31,6 +31,10 @@ class ChatThread(models.Model):
         blank=True,
         db_index=True,
     )
+    icon_name = models.CharField(max_length=128, blank=True, default="")
+    icon_color_name = models.CharField(max_length=64, blank=True, default="")
+    is_pinned = models.BooleanField(default=False, db_index=True)
+    pinned_at = models.DateTimeField(null=True, blank=True, db_index=True)
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

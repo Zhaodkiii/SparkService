@@ -74,6 +74,8 @@ class DeviceService:
             "request_id": request_id or "",
             "is_revoked": False,
         }
+        if "country_code" in explicit_keys:
+            patch["country_code"] = _s(data, "country_code")
         if "push_token" in explicit_keys:
             patch["push_token"] = _s(data, "push_token")
         if "notifications_enabled" in explicit_keys:

@@ -14,7 +14,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -26,7 +26,16 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from accounts.services.notification_service import NotificationService
 from accounts.deactivation.tasks import process_deactivation_task
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, ScenarioKey, SmallTask, SparkToolName, TrialApplication
+from ai_config.models import (
+    AIModelCatalog,
+    AIProviderKeyConfig,
+    AIScenarioModelBinding,
+    ScenarioKey,
+    SmallTask,
+    SparkToolName,
+    TrialApplication,
+    TrialApplicationRequest,
+)
 from ai_config.services import TrialService
 from app_version.models import AppVersionConfig, VersionCheckLog
 from chat_sync.models import ChatMessage, ChatThread
@@ -1352,7 +1361,21 @@ class AdminAITrialListView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        queryset = TrialApplication.objects.select_related("user").all().order_by("-created_at", "-id")
+        queryset = (
+            TrialApplication.objects.select_related("user")
+            .prefetch_related(
+                Prefetch(
+                    "user__trusted_devices",
+                    queryset=TrustedDevice.objects.order_by("-last_seen", "-id"),
+                ),
+                Prefetch(
+                    "user__trial_application_requests",
+                    queryset=TrialApplicationRequest.objects.order_by("-created_at", "-id"),
+                ),
+            )
+            .all()
+            .order_by("-created_at", "-id")
+        )
         status_filter = (request.query_params.get("status") or "").strip()
         if status_filter:
             queryset = queryset.filter(status=status_filter)
@@ -1374,14 +1397,35 @@ class AdminAITrialListView(APIView):
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
+class AdminAITrialDetailView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request, trial_id: int):
+        row = get_object_or_404(
+            TrialApplication.objects.select_related("user").prefetch_related(
+                Prefetch(
+                    "user__trusted_devices",
+                    queryset=TrustedDevice.objects.order_by("-last_seen", "-id"),
+                ),
+                Prefetch(
+                    "user__trial_application_requests",
+                    queryset=TrialApplicationRequest.objects.order_by("-created_at", "-id"),
+                ),
+            ),
+            pk=trial_id,
+        )
+        payload = AdminTrialApplicationSerializer(row).data
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
 class AdminAITrialActionView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:ai:trial:approve"
+    # 权限码与动作绑定（approve/reject/recycle/grant），这里不使用 AdminCodePermission 的单码校验。
+    permission_classes = [AdminOnlyPermission]
 
     @transaction.atomic
     def post(self, request, trial_id: int, action: str):
         trial = get_object_or_404(TrialApplication.objects.select_for_update(), pk=trial_id)
-        serializer = AdminTrialActionSerializer(data=request.data)
+        serializer = AdminTrialActionSerializer(data=request.data, context={"action": action})
         serializer.is_valid(raise_exception=True)
         note = serializer.validated_data.get("note", "").strip()
 
@@ -1404,6 +1448,22 @@ class AdminAITrialActionView(APIView):
             trial.status = TrialApplication.Status.EXPIRED
             trial.expires_at = now
             required_code = "button:ai:trial:recycle"
+        elif action == "grant":
+            grant_days = serializer.validated_data.get("grant_days")
+            custom_expires_at = serializer.validated_data.get("expires_at")
+            expires_at = custom_expires_at
+            if expires_at is None:
+                expires_at = now + timedelta(days=int(grant_days or TrialService._trial_days()))
+            if expires_at <= now:
+                return error_response(msg="invalid_expires_at", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+            trial.status = TrialApplication.Status.ACTIVE
+            trial.grant_source = TrialApplication.GrantSource.MANUAL
+            trial.started_at = now
+            trial.expires_at = expires_at
+            trial.approved_at = now
+            trial.rejected_at = None
+            trial.applied_at = trial.applied_at or now
+            required_code = "button:ai:trial:grant"
         else:
             return error_response(msg="invalid_action", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
 
@@ -1413,6 +1473,108 @@ class AdminAITrialActionView(APIView):
         if note:
             trial.note = note
         trial.save()
+
+        # 同步申请流水（若存在 pending 流水则标记为通过/拒绝），并对通过/拒绝发送 APNs 通知。
+        pending_req = (
+            TrialApplicationRequest.objects.select_for_update()
+            .filter(
+                user_id=trial.user_id,
+                source=TrialApplicationRequest.Source.APPLICATION,
+                status=TrialApplication.Status.PENDING,
+            )
+            .order_by("-sequence")
+            .first()
+        )
+        if action == "approve":
+            if pending_req:
+                pending_req.status = TrialApplication.Status.ACTIVE
+                pending_req.approved_at = now
+                pending_req.rejected_at = None
+                pending_req.save(update_fields=["status", "approved_at", "rejected_at", "updated_at"])
+            try:
+                NotificationService.send_to_user_sync(
+                    campaign_id=None,
+                    user_id=trial.user_id,
+                    channels=[NotificationMessage.Channel.APNS],
+                    title="试用申请已通过",
+                    body="你的 Pro 模型试用申请已通过，现在可以使用服务端模型。",
+                    payload={
+                        "type": "ai_trial_application_result",
+                        "status": "active",
+                        "application_id": pending_req.id if pending_req else None,
+                        "refresh_ai_config": True,
+                        "route": "ai_settings",
+                    },
+                    created_by_id=getattr(request.user, "id", None),
+                    request_id=getattr(request, "request_id", "") or "",
+                )
+            except Exception:
+                # 通知失败不影响人工审核结果
+                pass
+        elif action == "reject":
+            if pending_req:
+                pending_req.status = TrialApplication.Status.REJECTED
+                pending_req.rejected_at = now
+                pending_req.approved_at = None
+                pending_req.save(update_fields=["status", "rejected_at", "approved_at", "updated_at"])
+            try:
+                NotificationService.send_to_user_sync(
+                    campaign_id=None,
+                    user_id=trial.user_id,
+                    channels=[NotificationMessage.Channel.APNS],
+                    title="试用申请未通过",
+                    body="你的 Pro 模型试用申请未通过。",
+                    payload={
+                        "type": "ai_trial_application_result",
+                        "status": "rejected",
+                        "application_id": pending_req.id if pending_req else None,
+                        "refresh_ai_config": True,
+                        "route": "ai_settings",
+                    },
+                    created_by_id=getattr(request.user, "id", None),
+                    request_id=getattr(request, "request_id", "") or "",
+                )
+            except Exception:
+                pass
+        elif action == "grant":
+            latest_seq = (
+                TrialApplicationRequest.objects.select_for_update()
+                .filter(user_id=trial.user_id, source=TrialApplicationRequest.Source.MANUAL)
+                .order_by("-sequence")
+                .values_list("sequence", flat=True)
+                .first()
+                or 0
+            )
+            grant_req = TrialApplicationRequest.objects.create(
+                user_id=trial.user_id,
+                source=TrialApplicationRequest.Source.MANUAL,
+                sequence=latest_seq + 1,
+                status=TrialApplication.Status.ACTIVE,
+                note=note,
+                auto_approve_after_seconds=None,
+                scheduled_at=None,
+                approved_at=now,
+                rejected_at=None,
+            )
+            try:
+                NotificationService.send_to_user_sync(
+                    campaign_id=None,
+                    user_id=trial.user_id,
+                    channels=[NotificationMessage.Channel.APNS],
+                    title="已发放 Pro 试用权限",
+                    body="管理员已为你发放 Pro 模型试用权限。",
+                    payload={
+                        "type": "ai_trial_application_result",
+                        "status": "active",
+                        "application_id": grant_req.id,
+                        "refresh_ai_config": True,
+                        "route": "ai_settings",
+                    },
+                    created_by_id=getattr(request.user, "id", None),
+                    request_id=getattr(request, "request_id", "") or "",
+                )
+            except Exception:
+                pass
 
         payload = AdminTrialApplicationSerializer(trial).data
         write_audit_log(

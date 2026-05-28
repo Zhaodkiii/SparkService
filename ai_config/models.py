@@ -309,6 +309,54 @@ class TrialApplication(models.Model):
         return self.expires_at > timezone.now()
 
 
+class TrialApplicationRequest(models.Model):
+    """试用申请流水（用于统计申请次数、异步自动审核与审计）。"""
+
+    class Source(models.TextChoices):
+        AUTO = "auto"
+        APPLICATION = "application"
+        MANUAL = "manual"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="trial_application_requests",
+        on_delete=models.CASCADE,
+        db_comment="用户",
+    )
+    source = models.CharField(
+        max_length=16,
+        choices=Source.choices,
+        default=Source.APPLICATION,
+        db_index=True,
+        db_comment="流水来源（auto/application/manual）",
+    )
+    sequence = models.PositiveIntegerField(db_index=True, db_comment="用户累计申请序号（从1开始）")
+    status = models.CharField(
+        max_length=16,
+        choices=TrialApplication.Status.choices,
+        default=TrialApplication.Status.PENDING,
+        db_index=True,
+        db_comment="申请流水状态",
+    )
+    note = models.CharField(max_length=255, blank=True, default="", db_comment="申请备注")
+    auto_approve_after_seconds = models.PositiveIntegerField(null=True, blank=True, db_comment="自动审核延迟秒数")
+    scheduled_at = models.DateTimeField(null=True, blank=True, db_comment="自动审核计划执行时间")
+    approved_at = models.DateTimeField(null=True, blank=True, db_comment="自动/人工通过时间")
+    rejected_at = models.DateTimeField(null=True, blank=True, db_comment="自动/人工拒绝时间")
+    created_at = models.DateTimeField(auto_now_add=True, db_comment="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, db_comment="更新时间")
+
+    class Meta:
+        ordering = ["-created_at"]
+        db_table_comment = "试用申请流水"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "source", "sequence"], name="uniq_trial_application_request_user_source_sequence"),
+        ]
+
+    def __str__(self):
+        return f"trial-request:{self.user_id}:{self.sequence}:{self.status}"
+
+
 class TrialModelPolicy(models.Model):
     """试用期内按场景替换模型策略的容器；列注释见 db_comment。"""
 

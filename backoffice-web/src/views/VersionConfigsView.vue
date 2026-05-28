@@ -40,12 +40,12 @@
       </template>
     </a-table-column>
     <a-table-column title="更新时间" data-index="updated_at" width="180" />
-    <a-table-column title="操作" key="actions" width="150" fixed="right">
+    <a-table-column title="操作" key="actions" :width="actionsColWidth" fixed="right">
       <template #default="{ record }">
-        <a-space>
+        <TableHoverActions>
           <a-button v-if="canUpdate" size="small" @click="openEdit(record)">编辑</a-button>
           <a-button v-if="canUpdate && record.is_active" size="small" danger @click="onDisable(record.id)">停用</a-button>
-        </a-space>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -93,6 +93,8 @@ import { message, Modal } from 'ant-design-vue';
 import { createVersionConfig, disableVersionConfig, fetchVersionConfigs, updateVersionConfig, type AppVersionConfig } from '../api/modules/version';
 import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const loading = ref(false);
@@ -106,6 +108,12 @@ const form = reactive<Record<string, any>>({});
 
 const canCreate = computed(() => auth.hasPermission('button:version:config:create'));
 const canUpdate = computed(() => auth.hasPermission('button:version:config:update'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canUpdate.value ? 2 : 0,
+    min: 60,
+  }),
+);
 const platformOptions = [{ value: 'iOS', label: 'iOS' }, { value: 'Android', label: 'Android' }];
 const channelOptions = [{ value: 'production', label: 'production' }, { value: 'testflight', label: 'testflight' }, { value: 'internal', label: 'internal' }];
 

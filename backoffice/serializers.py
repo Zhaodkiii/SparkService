@@ -1,7 +1,16 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from ai_config.models import AIModelCatalog, AIProviderKeyConfig, AIScenarioModelBinding, IdentityKind, ScenarioKey, SmallTask, TrialApplication
+from ai_config.models import (
+    AIModelCatalog,
+    AIProviderKeyConfig,
+    AIScenarioModelBinding,
+    IdentityKind,
+    ScenarioKey,
+    SmallTask,
+    TrialApplication,
+    TrialApplicationRequest,
+)
 from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
 from app_version.serializers import AppVersionConfigSerializer, VersionCheckLogSerializer
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
@@ -643,6 +652,8 @@ class AdminAuditLogSerializer(serializers.ModelSerializer):
 class AdminTrialApplicationSerializer(serializers.ModelSerializer):
     applicant = serializers.CharField(source="user.username", read_only=True)
     applicant_email = serializers.CharField(source="user.email", read_only=True)
+    latest_device = serializers.SerializerMethodField()
+    application_requests = serializers.SerializerMethodField()
 
     class Meta:
         model = TrialApplication
@@ -659,10 +670,141 @@ class AdminTrialApplicationSerializer(serializers.ModelSerializer):
             "approved_at",
             "rejected_at",
             "note",
+            "latest_device",
+            "application_requests",
             "created_at",
             "updated_at",
         )
 
+    @staticmethod
+    def _prefetched_latest_device(obj: TrialApplication) -> TrustedDevice | None:
+        user = getattr(obj, "user", None)
+        if user is None:
+            return None
+        cache = getattr(user, "_prefetched_objects_cache", None) or {}
+        devices = cache.get("trusted_devices")
+        if not devices:
+            return None
+        return devices[0]  # queryset already ordered in Prefetch
+
+    @staticmethod
+    def _fallback_latest_device(obj: TrialApplication) -> TrustedDevice | None:
+        user_id = getattr(obj, "user_id", None)
+        if not user_id:
+            return None
+        return (
+            TrustedDevice.objects.filter(user_id=user_id)
+            .order_by("-last_seen", "-id")
+            .only(
+                "id",
+                "bundle_id",
+                "device_id",
+                "platform",
+                "system_version",
+                "device_model",
+                "device_name",
+                "language_code",
+                "region_code",
+                "country_code",
+                "notifications_enabled",
+                "is_revoked",
+                "verified",
+                "first_seen",
+                "last_seen",
+            )
+            .first()
+        )
+
+    def get_latest_device(self, obj: TrialApplication):
+        device = self._prefetched_latest_device(obj) or self._fallback_latest_device(obj)
+        if device is None:
+            return None
+        return {
+            "id": device.id,
+            "bundle_id": device.bundle_id,
+            "device_id": device.device_id,
+            "platform": device.platform,
+            "system_version": device.system_version,
+            "device_model": device.device_model,
+            "device_name": device.device_name,
+            "language_code": device.language_code,
+            "region_code": device.region_code,
+            "country_code": device.country_code,
+            "notifications_enabled": bool(device.notifications_enabled),
+            "verified": bool(device.verified),
+            "is_revoked": bool(device.is_revoked),
+            "first_seen": device.first_seen,
+            "last_seen": device.last_seen,
+        }
+
+    @staticmethod
+    def _prefetched_requests(obj: TrialApplication) -> list[TrialApplicationRequest] | None:
+        user = getattr(obj, "user", None)
+        if user is None:
+            return None
+        cache = getattr(user, "_prefetched_objects_cache", None) or {}
+        return cache.get("trial_application_requests")
+
+    @staticmethod
+    def _fallback_requests(obj: TrialApplication, limit: int = 20) -> list[TrialApplicationRequest]:
+        user_id = getattr(obj, "user_id", None)
+        if not user_id:
+            return []
+        return list(
+            TrialApplicationRequest.objects.filter(user_id=user_id)
+            .order_by("-created_at", "-id")
+            .only(
+                "id",
+                "user_id",
+                "source",
+                "sequence",
+                "status",
+                "note",
+                "auto_approve_after_seconds",
+                "scheduled_at",
+                "approved_at",
+                "rejected_at",
+                "created_at",
+                "updated_at",
+            )[:limit]
+        )
+
+    def get_application_requests(self, obj: TrialApplication):
+        rows = self._prefetched_requests(obj)
+        if rows is None:
+            rows = self._fallback_requests(obj)
+        if not rows:
+            return []
+        out = []
+        for r in rows:
+            out.append(
+                {
+                    "id": r.id,
+                    "source": r.source,
+                    "sequence": int(r.sequence or 0),
+                    "status": r.status,
+                    "note": r.note,
+                    "auto_approve_after_seconds": r.auto_approve_after_seconds,
+                    "scheduled_at": r.scheduled_at,
+                    "approved_at": r.approved_at,
+                    "rejected_at": r.rejected_at,
+                    "created_at": r.created_at,
+                    "updated_at": r.updated_at,
+                }
+            )
+        return out
+
 
 class AdminTrialActionSerializer(serializers.Serializer):
     note = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    grant_days = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    expires_at = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        action = (self.context.get("action") or "").strip().lower()
+        if action == "grant":
+            grant_days = attrs.get("grant_days")
+            expires_at = attrs.get("expires_at")
+            if grant_days is None and expires_at is None:
+                raise serializers.ValidationError("grant_days 或 expires_at 至少提供一个")
+        return attrs

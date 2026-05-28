@@ -26,15 +26,13 @@
         <a-tag :color="record.is_revoked ? 'red' : 'green'">{{ record.is_revoked ? '已吊销' : '正常' }}</a-tag>
       </template>
     </a-table-column>
-    <a-table-column title="操作" key="actions" width="140">
+    <a-table-column title="操作" key="actions" :width="actionsColWidth" fixed="right">
       <template #default="{ record }">
-        <a-button
-          v-if="canRevoke"
-          size="small"
-          @click="onToggleRevoked(record.id, !record.is_revoked)"
-        >
-          {{ record.is_revoked ? '恢复' : '吊销' }}
-        </a-button>
+        <TableHoverActions>
+          <a-button v-if="canRevoke" size="small" @click="onToggleRevoked(record.id, !record.is_revoked)">
+            {{ record.is_revoked ? '恢复' : '吊销' }}
+          </a-button>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -54,6 +52,8 @@ import { message } from 'ant-design-vue';
 import { fetchDevices, updateDeviceRevoked, type AdminDevice } from '../api/modules/users';
 import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const loading = ref(false);
@@ -68,6 +68,12 @@ const query = reactive({
 });
 
 const canRevoke = computed(() => auth.hasPermission('button:user:device:revoke'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canRevoke.value ? 1 : 0,
+    min: 60,
+  }),
+);
 
 async function load() {
   try {

@@ -263,6 +263,10 @@ def _to_thread_payload(thread: ChatThread) -> dict:
         "role_prompt": thread.role_prompt,
         "system_prompt": thread.system_prompt,
         "image_delivery_mode": thread.image_delivery_mode,
+        "icon_name": thread.icon_name or None,
+        "icon_color_name": thread.icon_color_name or None,
+        "is_pinned": thread.is_pinned,
+        "pinned_at": thread.pinned_at.isoformat() if thread.pinned_at else None,
         "patient_id": str(thread.patient_id) if thread.patient_id else None,
         "member_id": thread.member_id,
         "is_deleted": thread.is_deleted,
@@ -554,6 +558,11 @@ class ChatSyncThreadPushView(APIView):
                 thread.is_deleted = payload.get("is_deleted", False)
                 thread.deleted_at = payload.get("deleted_at")
                 thread.image_delivery_mode = payload.get("image_delivery_mode") or None
+                thread.icon_name = (payload.get("icon_name") or "").strip()
+                thread.icon_color_name = (payload.get("icon_color_name") or "").strip()
+                if payload.get("is_pinned") is not None:
+                    thread.is_pinned = bool(payload["is_pinned"])
+                    thread.pinned_at = payload.get("pinned_at") if thread.is_pinned else None
                 thread.current_model_name = (payload.get("current_model_name") or "").strip()
                 if payload.get("temperature") is not None:
                     thread.temperature = float(payload["temperature"])
@@ -577,6 +586,10 @@ class ChatSyncThreadPushView(APIView):
                         "is_deleted",
                         "deleted_at",
                         "image_delivery_mode",
+                        "icon_name",
+                        "icon_color_name",
+                        "is_pinned",
+                        "pinned_at",
                         "current_model_name",
                         "temperature",
                         "top_p",

@@ -34,6 +34,61 @@ def migration_extra(legacy_table: str, legacy_id: Any, **extra: Any) -> dict[str
     return client_extra_dict(**fields)
 
 
+def normalize_country_code(value: Any) -> str:
+    """Normalize to uppercase country/region code (e.g. CN/US)."""
+    if not value:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    # Legacy may store locale like "zh_CN" or "zh-CN".
+    if "_" in text:
+        text = text.split("_")[-1]
+    if "-" in text:
+        text = text.split("-")[-1]
+    return text.upper()
+
+
+def infer_country_code(*, language_code: Any = None, region_code: Any = None, time_zone: Any = None) -> str:
+    """
+    Infer most likely country code from legacy device signals.
+
+    If cannot be inferred, default to CN (per migration requirement).
+    """
+    region = normalize_country_code(region_code)
+    if region:
+        return region
+
+    lang = str(language_code or "").strip()
+    if lang:
+        # BCP47 examples: zh-Hans-CN / en-US / zh_CN
+        candidate = normalize_country_code(lang)
+        if candidate and len(candidate) in {2, 3}:
+            return candidate
+        lower = lang.lower()
+        if lower.startswith("zh"):
+            return "CN"
+
+    tz = str(time_zone or "").strip()
+    if tz:
+        if tz.startswith("Asia/Shanghai") or tz.startswith("Asia/Chongqing") or tz.startswith("Asia/Harbin") or tz.startswith("Asia/Urumqi"):
+            return "CN"
+        if tz.startswith("Asia/Hong_Kong"):
+            return "HK"
+        if tz.startswith("Asia/Taipei"):
+            return "TW"
+        if tz.startswith("Asia/Macau"):
+            return "MO"
+        if tz.startswith("Asia/Tokyo"):
+            return "JP"
+        if tz.startswith("Asia/Seoul"):
+            return "KR"
+        if tz.startswith("America/"):
+            return "US"
+
+    return "CN"
+
+
 def extra_needs_client_repair(value: Any) -> bool:
     if not isinstance(value, dict) or not value:
         return False

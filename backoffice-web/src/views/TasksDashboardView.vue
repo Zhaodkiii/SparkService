@@ -80,9 +80,11 @@
           <span>{{ record.result_preview || '-' }}</span>
         </template>
       </a-table-column>
-      <a-table-column title="操作" key="actions" :width="130" fixed="right">
+      <a-table-column title="操作" key="actions" :width="actionsColWidth" fixed="right">
         <template #default="{ record }">
-          <a-button size="small" @click="openDetail(record)">详情</a-button>
+          <TableHoverActions>
+            <a-button size="small" @click="openDetail(record)">详情</a-button>
+          </TableHoverActions>
         </template>
       </a-table-column>
     </a-table>
@@ -110,6 +112,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { fetchTaskDashboard, type TaskSummaryResponse } from '../api/modules/tasks';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const loading = ref(false);
 const data = ref<TaskSummaryResponse | null>(null);
@@ -129,6 +133,13 @@ const tableRows = computed(() => {
   if (!onlyFailure.value) return rows;
   return rows.filter((r) => r.status === 'FAILURE');
 });
+
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: 1,
+    min: 60,
+  }),
+);
 
 function statusColor(status: string) {
   if (status === 'SUCCESS') return 'green';

@@ -17,15 +17,13 @@
         <a-tag :color="record.is_active ? 'green' : 'red'">{{ record.is_active ? '启用' : '禁用' }}</a-tag>
       </template>
     </a-table-column>
-    <a-table-column title="操作" key="actions">
+    <a-table-column title="操作" key="actions" :width="actionsColWidth">
       <template #default="{ record }">
-        <a-button
-          v-if="canUpdate"
-          size="small"
-          @click="onToggleStatus(record.id, !record.is_active)"
-        >
-          {{ record.is_active ? '禁用' : '启用' }}
-        </a-button>
+        <TableHoverActions>
+          <a-button v-if="canUpdate" size="small" @click="onToggleStatus(record.id, !record.is_active)">
+            {{ record.is_active ? '禁用' : '启用' }}
+          </a-button>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -45,6 +43,8 @@ import { message } from 'ant-design-vue';
 import { fetchUsers, updateUserStatus } from '../api/modules/users';
 import { useAuthStore } from '../stores/auth';
 import type { AdminUser, Pagination } from '../types';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const loading = ref(false);
@@ -59,6 +59,12 @@ const query = reactive({
 });
 
 const canUpdate = computed(() => auth.hasPermission('button:user:status:update'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canUpdate.value ? 1 : 0,
+    min: 60,
+  }),
+);
 
 async function load() {
   try {

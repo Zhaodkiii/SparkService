@@ -289,17 +289,14 @@ class OTPService:
             )
 
         try:
-            TrialService.grant_auto_trial_if_eligible(user=user)
-        except Exception as exc:  # noqa: BLE001 - trial should not block sign-in
-            flow_logger.warning(
-                "auth.trial.auto_grant.skipped",
-                extra={
-                    "action": "auth.trial.auto_grant",
-                    "request_id": request_id,
-                    "user_id": user.id,
-                    "reason": str(exc),
-                },
+            TrialService.try_grant_auto_trial_for_login_device(
+                user=user,
+                bundle_id=bundle_id or "",
+                device_id=device_id or "",
+                request_id=request_id,
             )
+        except Exception as exc:  # noqa: BLE001 - defensive
+            flow_logger.warning("auth.trial.auto_grant.skipped", extra={"action": "auth.trial.auto_grant", "request_id": request_id, "user_id": user.id, "reason": str(exc)})
 
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
@@ -434,17 +431,14 @@ class OTPService:
             raise APIError("user_inactive", code=40103, status_code=401)
 
         try:
-            TrialService.grant_auto_trial_if_eligible(user=user)
-        except Exception as exc:  # noqa: BLE001
-            flow_logger.warning(
-                "auth.trial.auto_grant.skipped",
-                extra={
-                    "action": "auth.trial.auto_grant",
-                    "request_id": request_id,
-                    "user_id": user.id,
-                    "reason": str(exc),
-                },
+            TrialService.try_grant_auto_trial_for_login_device(
+                user=user,
+                bundle_id=normalized_bundle_id,
+                device_id=device_id or "",
+                request_id=request_id,
             )
+        except Exception as exc:  # noqa: BLE001 - defensive
+            flow_logger.warning("auth.trial.auto_grant.skipped", extra={"action": "auth.trial.auto_grant", "request_id": request_id, "user_id": user.id, "reason": str(exc)})
 
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token

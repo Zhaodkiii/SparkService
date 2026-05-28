@@ -131,6 +131,13 @@ class TrustedDevice(models.Model):
         default="",
         db_comment="区域代码（如 CN、US）",
     )
+    country_code = models.CharField(
+        max_length=10,
+        blank=True,
+        default="",
+        db_index=True,
+        db_comment="客户端 SparkSystemInfo.mostLikelyCountryCode 推断的最可能国家/地区标识，可空",
+    )
     is_simulator = models.BooleanField(
         default=False,
         db_comment="是否在模拟器环境运行",

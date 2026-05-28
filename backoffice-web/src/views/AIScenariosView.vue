@@ -9,9 +9,11 @@
     <a-table-column title="默认模型" key="default_model">
       <template #default="{ record }">{{ record.default_model || '—' }}</template>
     </a-table-column>
-    <a-table-column title="操作" key="op">
+    <a-table-column title="操作" key="op" :width="actionsColWidth">
       <template #default="{ record }">
-        <a-button type="link" size="small" @click="goMaintain(record.scenario)">维护模型</a-button>
+        <TableHoverActions>
+          <a-button type="link" size="small" @click="goMaintain(record.scenario)">维护模型</a-button>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -21,9 +23,16 @@
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchAIScenarioSummaries, type AIScenarioSummary } from '../api/modules/ai';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const router = useRouter();
 const rows = ref<AIScenarioSummary[]>([]);
+const actionsColWidth = calcActionsColWidth({
+  buttons: 1,
+  min: 60,
+  perButton: 88,
+});
 
 function goMaintain(scenarioKey: string) {
   router.push({ name: 'AIScenarioModels', params: { scenarioKey } });

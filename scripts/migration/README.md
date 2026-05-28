@@ -64,10 +64,24 @@ chmod +x scripts/migration/run_all_migration.sh
 | 13 | `python manage.py zdk_migrate_13_medication_records` | 服药打卡记录 |
 | 14 | `python manage.py zdk_migrate_14_files` | OSS 元数据 → ManagedFile |
 | 15 | `python manage.py zdk_migrate_15_ai_config` | 试用/Provider/策略 |
-| 16 | `python manage.py zdk_migrate_16_chat` | 聊天历史 → chat_sync |
+| 16 | `python manage.py zdk_migrate_16_chat` | 聊天历史/会话元信息 → chat_sync |
 | 17 | `python manage.py zdk_migrate_17_app_version` | 版本配置与日志 |
 | 18 | `python manage.py zdk_migrate_18_notifications` | 通知发送日志（尽力映射） |
 | 99 | `python manage.py zdk_migrate_99_verify` | 数量校验 |
+
+### 16. 聊天历史（`chat_sync`）
+
+该步骤除迁移 `ChatMessage`/`ChatMessageBlock` 外，也会迁移/修复会话（`ChatThread`）的以下字段（若旧库表存在同名字段则读取，否则保持默认值）：
+
+- `icon_name`
+- `icon_color_name`
+- `is_pinned`
+- `pinned_at`
+
+### 04. 可信设备（`accounts.TrustedDevice`）
+
+`TrustedDevice.country_code` 为新字段：迁移时按旧表里的 `region_code / language_code / time_zone` **推断最可能国家/地区**；
+若无法确认，则默认写入 **CN**。
 
 每条命令支持：
 

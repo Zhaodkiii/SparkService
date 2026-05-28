@@ -22,19 +22,14 @@ flow_logger = logging.getLogger("accounts.flow")
 
 class LoginService:
     @staticmethod
-    def _try_grant_auto_trial(*, user, request_id: str):
-        try:
-            TrialService.grant_auto_trial_if_eligible(user=user)
-        except Exception as exc:  # noqa: BLE001 - trial should not block sign-in
-            flow_logger.warning(
-                "auth.trial.auto_grant.skipped",
-                extra={
-                    "action": "auth.trial.auto_grant",
-                    "request_id": request_id,
-                    "user_id": getattr(user, "id", None),
-                    "reason": str(exc),
-                },
-            )
+    def _try_grant_auto_trial(*, user, bundle_id: str, device_id: str, request_id: str):
+        # 登录自动试用仅对中国设备生效；失败/跳过不影响登录。
+        TrialService.try_grant_auto_trial_for_login_device(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+        )
 
     @staticmethod
     def _load_apple_identity_for_update(*, bundle_id: str, subject: str, request_id: str):
@@ -176,7 +171,6 @@ class LoginService:
             raise APIError("user_inactive", code=40103, status_code=401)
 
         cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
-        LoginService._try_grant_auto_trial(user=user, request_id=request_id)
 
         LoginAudit.objects.create(
             user=user,
@@ -197,6 +191,7 @@ class LoginService:
             bundle_id=bundle_id,
             request_id=request_id,
         )
+        LoginService._try_grant_auto_trial(user=user, bundle_id=bundle_id, device_id=device_id, request_id=request_id)
         flow_logger.info(
             "密码登录鉴权成功",
             extra={
@@ -386,7 +381,6 @@ class LoginService:
             request_id=request_id or "",
         )
 
-        LoginService._try_grant_auto_trial(user=user, request_id=request_id)
         cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
 
         result = LoginService._issue_tokens(user)
@@ -401,6 +395,7 @@ class LoginService:
             bundle_id=matched_audience,
             request_id=request_id,
         )
+        LoginService._try_grant_auto_trial(user=user, bundle_id=matched_audience, device_id=device_id, request_id=request_id)
         flow_logger.info(
             "Apple 登录鉴权成功并签发令牌",
             extra={

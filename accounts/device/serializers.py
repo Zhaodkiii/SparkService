@@ -22,4 +22,5 @@ class DeviceRegisterSerializer(serializers.Serializer):
     time_zone = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
     language_code = serializers.CharField(max_length=10, required=False, allow_blank=True, default="")
     region_code = serializers.CharField(max_length=10, required=False, allow_blank=True, default="")
+    country_code = serializers.CharField(max_length=10, required=False, allow_blank=True, default="")
     is_simulator = serializers.BooleanField(required=False, default=False)

@@ -4,6 +4,7 @@ from accounts.models import TrustedDevice
 
 from zdk_migration.lib.base import ZdkMigrateCommand
 from zdk_migration.lib.old_db import old_fetch_all
+from zdk_migration.lib.transforms import infer_country_code
 
 
 class Command(ZdkMigrateCommand):
@@ -37,6 +38,11 @@ class Command(ZdkMigrateCommand):
                 continue
 
             def _create(row=row, user_id=user_id, bundle_id=bundle_id, device_id=device_id):
+                country_code = infer_country_code(
+                    language_code=row.get("language_code"),
+                    region_code=row.get("region_code"),
+                    time_zone=row.get("time_zone"),
+                )
                 TrustedDevice.objects.create(
                     user_id=user_id,
                     bundle_id=bundle_id,
@@ -56,6 +62,7 @@ class Command(ZdkMigrateCommand):
                     time_zone=row.get("time_zone") or "",
                     language_code=row.get("language_code") or "",
                     region_code=row.get("region_code") or "",
+                    country_code=country_code,
                     is_simulator=bool(row.get("is_simulator")),
                     verified=bool(row.get("verified")),
                     is_revoked=False,

@@ -9,7 +9,7 @@ from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from chat_sync.signals import on_chat_message_saved
 
 from zdk_migration.lib.base import ZdkMigrateCommand
-from zdk_migration.lib.old_db import old_fetch_all, old_table_exists
+from zdk_migration.lib.old_db import old_fetch_all, old_select, old_table_exists
 from zdk_migration.lib.transforms import (
     chat_block_payload,
     chat_role_to_new,
@@ -23,19 +23,84 @@ from zdk_migration.lib.transforms import (
 class Command(ZdkMigrateCommand):
     help = "Migrate messaging conversations/messages to chat_sync threads/messages/blocks"
 
+    def _update_thread_metadata(self, thread: ChatThread, row: dict) -> bool:
+        changed = False
+
+        # Title/deleted flags should track legacy conversation on re-runs.
+        title = (row.get("title") or "Migrated Chat")[:255]
+        if (thread.title or "") != title:
+            thread.title = title
+            changed = True
+        is_deleted = bool(row.get("is_deleted"))
+        if thread.is_deleted != is_deleted:
+            thread.is_deleted = is_deleted
+            changed = True
+        if thread.deleted_at != row.get("deleted_at"):
+            thread.deleted_at = row.get("deleted_at")
+            changed = True
+
+        # New thread decoration fields (added in ChatThread).
+        if "icon_name" in row:
+            icon_name = (row.get("icon_name") or "")[:128]
+            if (thread.icon_name or "") != icon_name:
+                thread.icon_name = icon_name
+                changed = True
+        if "icon_color_name" in row:
+            icon_color_name = (row.get("icon_color_name") or "")[:64]
+            if (thread.icon_color_name or "") != icon_color_name:
+                thread.icon_color_name = icon_color_name
+                changed = True
+        if "is_pinned" in row:
+            is_pinned = bool(row.get("is_pinned"))
+            if thread.is_pinned != is_pinned:
+                thread.is_pinned = is_pinned
+                changed = True
+        if "pinned_at" in row:
+            if thread.pinned_at != row.get("pinned_at"):
+                thread.pinned_at = row.get("pinned_at")
+                changed = True
+
+        if changed and not self.dry_run:
+            thread.save(
+                update_fields=[
+                    "title",
+                    "icon_name",
+                    "icon_color_name",
+                    "is_pinned",
+                    "pinned_at",
+                    "is_deleted",
+                    "deleted_at",
+                    "updated_at",
+                ]
+            )
+        return changed
+
     def run_migration(self) -> None:
         post_save.disconnect(on_chat_message_saved, sender=ChatMessage)
         try:
             if not old_table_exists("messaging_conversation"):
                 return
             User = get_user_model()
-            conversations = old_fetch_all(
-                """
-                SELECT id, user_id, type, assistant_id, title, role_config, created_at, updated_at,
-                       last_message_at, is_deleted, deleted_at
-                FROM messaging_conversation
-                ORDER BY created_at, id
-                """
+            conversations = old_select(
+                "messaging_conversation",
+                [
+                    "id",
+                    "user_id",
+                    "type",
+                    "assistant_id",
+                    "title",
+                    "role_config",
+                    "created_at",
+                    "updated_at",
+                    "last_message_at",
+                    "is_deleted",
+                    "deleted_at",
+                    "icon_name",
+                    "icon_color_name",
+                    "is_pinned",
+                    "pinned_at",
+                ],
+                order_by="created_at, id",
             )
             self.stdout.write(f"Found {len(conversations)} conversations")
             for row in conversations:
@@ -43,6 +108,7 @@ class Command(ZdkMigrateCommand):
                 skip, mapped_id = self.resolve_mapped_row("conversation", old_id, ChatThread)
                 if skip and mapped_id:
                     thread = ChatThread.objects.get(pk=mapped_id)
+                    self._update_thread_metadata(thread, row)
                     self._migrate_messages(old_id, thread.id, thread.user_id)
                     self.stats.skipped += 1
                     continue
@@ -69,6 +135,10 @@ class Command(ZdkMigrateCommand):
                         title=(row.get("title") or "Migrated Chat")[:255],
                         scenario="chat",
                         role_prompt=role_prompt[:10000] if role_prompt else "",
+                        icon_name=(row.get("icon_name") or "")[:128],
+                        icon_color_name=(row.get("icon_color_name") or "")[:64],
+                        is_pinned=bool(row.get("is_pinned")) if "is_pinned" in row else False,
+                        pinned_at=row.get("pinned_at"),
                         is_deleted=bool(row.get("is_deleted")),
                         deleted_at=row.get("deleted_at"),
                     )

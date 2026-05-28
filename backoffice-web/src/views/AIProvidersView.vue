@@ -19,9 +19,11 @@
     <a-table-column title="激活" key="is_active">
       <template #default="{ record }">{{ record.is_active ? '是' : '否' }}</template>
     </a-table-column>
-    <a-table-column title="操作">
+    <a-table-column title="操作" :width="actionsColWidth">
       <template #default="{ record }">
-        <a-button v-if="canUpdateProvider" size="small" @click="openEdit(record)">编辑</a-button>
+        <TableHoverActions>
+          <a-button v-if="canUpdateProvider" size="small" @click="openEdit(record)">编辑</a-button>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -54,6 +56,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { message } from 'ant-design-vue';
 import { createAIProvider, fetchAIProviders, updateAIProvider, type AIProvider } from '../api/modules/ai';
 import { useAuthStore } from '../stores/auth';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const providers = ref<AIProvider[]>([]);
@@ -75,6 +79,12 @@ const form = reactive<Record<string, unknown>>({});
 
 const canCreateProvider = computed(() => auth.hasPermission('button:ai:provider:create'));
 const canUpdateProvider = computed(() => auth.hasPermission('button:ai:provider:update'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canUpdateProvider.value ? 1 : 0,
+    min: 60,
+  }),
+);
 
 async function load() {
   providers.value = await fetchAIProviders('');

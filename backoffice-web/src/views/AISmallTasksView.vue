@@ -11,12 +11,12 @@
     <a-table-column title="工具" key="tools" :width="180">
       <template #default="{ record }">{{ (record.tool_list || []).join(', ') || '—' }}</template>
     </a-table-column>
-    <a-table-column title="操作" key="op" :width="150">
+    <a-table-column title="操作" key="op" :width="actionsColWidth">
       <template #default="{ record }">
-        <a-space>
+        <TableHoverActions>
           <a-button v-if="canUpdate" size="small" @click="openEdit(record)">编辑</a-button>
           <a-button v-if="canUpdate" size="small" danger @click="confirmDelete(record)">删除</a-button>
-        </a-space>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -75,6 +75,8 @@ import {
 } from '../api/modules/ai';
 import { AI_PROMPT_KEYWORDS } from '../constants/aiPromptKeywords';
 import { useAuthStore } from '../stores/auth';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const rows = ref<SmallTask[]>([]);
@@ -86,6 +88,12 @@ const toolOptions = ref<AIToolOption[]>([]);
 
 const canCreate = computed(() => auth.hasPermission('button:ai:small_task:create'));
 const canUpdate = computed(() => auth.hasPermission('button:ai:small_task:update'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canUpdate.value ? 2 : 0,
+    min: 60,
+  }),
+);
 
 const sourceOptions = [
   { value: 'Service', label: '服务任务' },

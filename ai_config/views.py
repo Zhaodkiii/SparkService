@@ -6,6 +6,8 @@ from urllib import request as urllib_request
 from urllib import error as urllib_error
 import json
 
+import logging
+
 from ai_config.defaults import (
     DEFAULT_SCENARIOS,
 )
@@ -19,7 +21,9 @@ from ai_config.models import (
     TrialModelPolicyItem,
 )
 from ai_config.services import TrialService
-from common.response import success_response
+from common.response import success_response, error_response
+
+logger = logging.getLogger(__name__)
 
 
 def _bootstrap_json_string_list(value) -> list:
@@ -319,24 +323,40 @@ class TrialApplyView(APIView):
 
     def post(self, request):
         note = str(request.data.get("note", "") or "")
-        trial = TrialService.apply_trial(user=request.user, note=note)
-        trial = TrialService.ensure_status_fresh(trial=trial)
-
-        now = timezone.now()
-        remaining_seconds = 0
-        if trial and trial.expires_at:
-            remaining_seconds = max(int((trial.expires_at - now).total_seconds()), 0)
-
-        payload = {
-            "status": trial.status if trial else TrialApplication.Status.NONE,
-            "is_active": bool(trial and trial.is_active_trial()),
-            "grant_source": trial.grant_source if trial else TrialApplication.GrantSource.APPLICATION,
-            "started_at": trial.started_at.isoformat() if trial and trial.started_at else None,
-            "expires_at": trial.expires_at.isoformat() if trial and trial.expires_at else None,
-            "remaining_seconds": remaining_seconds,
-            "note": trial.note if trial else "",
-        }
-        return success_response(payload, msg="trial_updated", code=0, status_code=status.HTTP_200_OK)
+        request_id = getattr(request, "request_id", "") or ""
+        try:
+            req = TrialService.apply_trial(user=request.user, note=note, request_id=request_id)
+            payload = {
+                "submitted": True,
+                "application_id": req.id,
+                "sequence": req.sequence,
+                "status": req.status,
+                "message": "申请已提交，请等待通知",
+            }
+            return success_response(payload, msg="trial_submitted", code=0, status_code=status.HTTP_200_OK)
+        except Exception as exc:  # noqa: BLE001 - unexpected infra/db errors should return stable schema
+            logger.exception(
+                "trial.apply.failed request_id=%s user_id=%s note=%s reason=%s",
+                request_id,
+                getattr(getattr(request, "user", None), "id", None),
+                note,
+                str(exc),
+            )
+            # Avoid HTTP 500 so client can show stable “system error” prompt.
+            # Also keep `data` shape compatible with submission DTO to avoid client-side decode errors.
+            return error_response(
+                msg="trial_apply_failed",
+                code=-1,
+                status_code=status.HTTP_200_OK,
+                data={
+                    "submitted": False,
+                    "application_id": 0,
+                    "sequence": 0,
+                    "status": "failed",
+                    "message": "申请失败，请稍后重试",
+                    "request_id": request_id,
+                },
+            )
 
 
 class AIProviderConnectionTestView(APIView):

@@ -2,6 +2,7 @@ from django.urls import path
 
 from backoffice.views import (
     AdminAITrialActionView,
+    AdminAITrialDetailView,
     AdminAITrialListView,
     AdminAIModelCatalogDetailView,
     AdminAIModelCatalogListView,
@@ -84,6 +85,7 @@ urlpatterns = [
     path("ai/providers/", AdminAIProviderKeyListView.as_view(), name="admin-ai-provider-list"),
     path("ai/providers/<int:provider_id>/", AdminAIProviderKeyDetailView.as_view(), name="admin-ai-provider-detail"),
     path("ai/trials/", AdminAITrialListView.as_view(), name="admin-ai-trial-list"),
+    path("ai/trials/<int:trial_id>/", AdminAITrialDetailView.as_view(), name="admin-ai-trial-detail"),
     path("ai/trials/<int:trial_id>/<str:action>/", AdminAITrialActionView.as_view(), name="admin-ai-trial-action"),
     path("rbac/roles/", AdminRoleListCreateView.as_view(), name="admin-rbac-role-list-create"),
     path("rbac/roles/<int:role_id>/", AdminRoleDetailView.as_view(), name="admin-rbac-role-detail"),

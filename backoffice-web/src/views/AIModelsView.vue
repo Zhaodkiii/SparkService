@@ -10,7 +10,7 @@
     :scroll="{ x: 2400 }"
     size="small"
   >
-    <a-table-column title="模型名称" data-index="name" :width="160" fixed="left" />
+    <a-table-column title="模型名称" data-index="name" :width="60" fixed="left" />
     <a-table-column title="显示名称" data-index="display_name" :width="140" />
     <a-table-column title="图标" data-index="icon" :width="120" :ellipsis="true" />
     <a-table-column title="厂商名称" data-index="company" :width="100" />
@@ -39,9 +39,11 @@
     <a-table-column title="激活" key="is_active" :width="72">
       <template #default="{ record }">{{ record.is_active ? '是' : '否' }}</template>
     </a-table-column>
-    <a-table-column title="操作" key="op" :width="88" fixed="right">
+    <a-table-column title="操作" key="op" :width="actionsColWidth" fixed="right">
       <template #default="{ record }">
-        <a-button v-if="canUpdate" size="small" @click="openEdit(record)">编辑</a-button>
+        <TableHoverActions>
+          <a-button v-if="canUpdate" size="small" @click="openEdit(record)">编辑</a-button>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -124,6 +126,8 @@ import {
   type SmallTask,
 } from '../api/modules/ai';
 import { useAuthStore } from '../stores/auth';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const rows = ref<AIModelCatalog[]>([]);
@@ -137,6 +141,12 @@ const form = reactive<Record<string, unknown>>({});
 
 const canCreate = computed(() => auth.hasPermission('button:ai:model:create'));
 const canUpdate = computed(() => auth.hasPermission('button:ai:model:update'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canUpdate.value ? 1 : 0,
+    min: 60,
+  }),
+);
 
 const sourceOptions = [
   { value: 'system', label: '系统' },

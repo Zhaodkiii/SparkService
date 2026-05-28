@@ -39,9 +39,11 @@
         </a-space>
       </template>
     </a-table-column>
-    <a-table-column title="操作" key="actions" :width="140">
+    <a-table-column title="操作" key="actions" :width="actionsColWidth">
       <template #default="{ record }">
-        <a-button type="primary" size="small" :disabled="!canSend" @click="openSingleSend(record)">发送通知</a-button>
+        <TableHoverActions>
+          <a-button type="primary" size="small" :disabled="!canSend" @click="openSingleSend(record)">发送通知</a-button>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -146,9 +148,18 @@ import {
 } from '../api/modules/notifications';
 import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const canSend = computed(() => auth.hasPermission('button:notification:send'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: canSend.value ? 1 : 0,
+    min: 60,
+    perButton: 96,
+  }),
+);
 
 const loading = ref(false);
 const sending = ref(false);

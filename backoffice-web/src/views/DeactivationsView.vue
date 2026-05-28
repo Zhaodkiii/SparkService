@@ -30,9 +30,9 @@
       </template>
     </a-table-column>
     <a-table-column title="请求ID" data-index="request_id" width="220" />
-    <a-table-column title="操作" key="actions" width="280" fixed="right">
+    <a-table-column title="操作" key="actions" :width="actionsColWidth" fixed="right">
       <template #default="{ record }">
-        <a-space>
+        <TableHoverActions>
           <a-button size="small" @click="openAudits(record.id)">审计</a-button>
           <a-button
             v-if="canCancel"
@@ -51,7 +51,7 @@
           >
             重试
           </a-button>
-        </a-space>
+        </TableHoverActions>
       </template>
     </a-table-column>
   </a-table>
@@ -91,6 +91,8 @@ import {
 } from '../api/modules/users';
 import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
+import TableHoverActions from '../components/TableHoverActions.vue';
+import { calcActionsColWidth } from '../utils/tableActionsWidth';
 
 const auth = useAuthStore();
 const loading = ref(false);
@@ -108,6 +110,13 @@ const query = reactive({
 
 const canCancel = computed(() => auth.hasPermission('button:user:deactivation:cancel'));
 const canRetry = computed(() => auth.hasPermission('button:user:deactivation:retry'));
+const actionsColWidth = computed(() =>
+  calcActionsColWidth({
+    buttons: 1 + Number(canCancel.value) + Number(canRetry.value),
+    min: 60,
+    perButton: 72,
+  }),
+);
 
 async function load() {
   try {

@@ -6,3 +6,32 @@ body,
   min-height: 100%;
   font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
 }
+
+/* 表格：悬浮操作按钮（统一） */
+.spark-table-hover-actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.spark-table-hover-actions.is-align-left {
+  justify-content: flex-start;
+}
+.spark-table-hover-actions.is-align-center {
+  justify-content: center;
+}
+.spark-table-hover-actions.is-align-right {
+  justify-content: flex-end;
+}
+/* 可选：仅在行 hover 时显示操作 */
+.spark-table-hover-actions.is-hover {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease-in-out;
+}
+.ant-table-tbody > tr:hover .spark-table-hover-actions.is-hover {
+  opacity: 1;
+  pointer-events: auto;
+}
