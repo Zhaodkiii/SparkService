@@ -186,6 +186,7 @@ function scenarioLabel(key: string) {
     medical_report_extraction: '医疗报告结构化抽取',
     prescription_extraction: '处方结构化抽取',
     medication_extraction: '用药结构化抽取',
+    medicine_box_extraction: '药品结构化抽取',
     optimization_text: '文本优化模型',
     optimization_visual: '视觉优化模型',
     context_folding: '上下文折叠',

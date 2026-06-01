@@ -22,6 +22,7 @@ DEFAULT_SCENARIOS = {
     "medical_report_extraction": {},
     "prescription_extraction": {},
     "medication_extraction": {},
+    "medicine_box_extraction": {},
     "optimization_text": {
         "endpoint": "",
         "model": "",

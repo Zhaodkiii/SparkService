@@ -34,6 +34,16 @@ def migration_extra(legacy_table: str, legacy_id: Any, **extra: Any) -> dict[str
     return client_extra_dict(**fields)
 
 
+def matches_migration_legacy(extra: Any, legacy_table: str, old_id: Any) -> bool:
+    """Return True when migrated row extra points at the expected legacy source."""
+    if not isinstance(extra, dict):
+        return False
+    return (
+        str(extra.get("migration_legacy_table") or "") == legacy_table
+        and str(extra.get("migration_legacy_id") or "") == str(old_id)
+    )
+
+
 def normalize_country_code(value: Any) -> str:
     """Normalize to uppercase country/region code (e.g. CN/US)."""
     if not value:

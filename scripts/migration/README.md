@@ -57,7 +57,7 @@ chmod +x scripts/migration/run_all_migration.sh
 | 06 | `python manage.py zdk_migrate_06_members` | Patient → Member + Binding |
 | 07 | `python manage.py zdk_migrate_07_medical_cases` | MedicalRecord → MedicalCase |
 | 08 | `python manage.py zdk_migrate_08_clinical_children` | 症状/就诊/手术/随访 |
-| 09 | `python manage.py zdk_migrate_09_exam_reports` | 检查报告 + 明细合并 |
+| 09 | `python manage.py zdk_migrate_09_exam_reports` | 检查报告 + 明细合并（校验 id_map，清理串报告明细） |
 | 10 | `python manage.py zdk_migrate_10_health_exams` | 体检报告 + AI 结果写入 extra |
 | 11 | `python manage.py zdk_migrate_11_prescriptions` | 处方批次 |
 | 12 | `python manage.py zdk_migrate_12_medication_plans` | 用药计划 + 药箱 |
@@ -82,6 +82,14 @@ chmod +x scripts/migration/run_all_migration.sh
 
 `TrustedDevice.country_code` 为新字段：迁移时按旧表里的 `region_code / language_code / time_zone` **推断最可能国家/地区**；
 若无法确认，则默认写入 **CN**。
+
+### 09. 检查报告（`medical.ExaminationReport`）
+
+重跑 step 09 时会：
+
+- 校验 `id_map.exam_report` 与目标行 `extra.migration_legacy_id` 一致，不一致则清 map 并重建
+- 删除挂在错误报告上的 imaging/pathology/lab 明细（例如旧 `sheet_id=88` 的 lab 误挂到旧 `id=19` 的报告）
+- step 14 同步文件关联时，仅当 `examReport` 的 `business_id` 能匹配到正确报告时才建立 `examination_report` 关系；`chat_attachment` 会移除错误的报告关联
 
 每条命令支持：
 

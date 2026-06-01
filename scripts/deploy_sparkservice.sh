@@ -61,7 +61,7 @@ EXCLUDES=(
   --exclude "db.sqlite3"
   --exclude "dump.rdb"
   --exclude ".pytest_cache"
-  --exclude "bin"
+  --exclude "scripts/deploy_sparkservice.sh"
 )
 
 # ========== 4. 环境检查 ==========

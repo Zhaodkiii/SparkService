@@ -7,7 +7,7 @@ from medical.models import HealthExamReport, MedExamDetail
 from zdk_migration.lib.base import ZdkMigrateCommand
 from zdk_migration.lib.error_log import record_migration_issue
 from zdk_migration.lib.old_db import old_fetch_all, old_table_exists
-from zdk_migration.lib.transforms import combine_reference_range, health_exam_type_to_new, health_item_flag, migration_extra, normalize_client_extra, parse_json_value, truncate_char
+from zdk_migration.lib.transforms import combine_reference_range, health_exam_type_to_new, health_item_flag, matches_migration_legacy, migration_extra, normalize_client_extra, parse_json_value, truncate_char
 
 
 class Command(ZdkMigrateCommand):
@@ -114,7 +114,7 @@ class Command(ZdkMigrateCommand):
         report_ids: set[int] = set()
         if mapped_id is not None:
             report = HealthExamReport.all_objects.filter(pk=mapped_id).first()
-            if report and self._matches_legacy_extra(report.extra, "aera_health_exam_report_hdr", old_id):
+            if report and matches_migration_legacy(report.extra, "aera_health_exam_report_hdr", old_id):
                 report_ids.add(report.id)
             self.id_map.pop("health_exam_hdr", old_id)
 
@@ -139,7 +139,7 @@ class Command(ZdkMigrateCommand):
         if mapped_id is None:
             return False, None
         report = HealthExamReport.all_objects.filter(pk=mapped_id).first()
-        if report and self._matches_legacy_extra(report.extra, "aera_health_exam_report_hdr", old_id):
+        if report and matches_migration_legacy(report.extra, "aera_health_exam_report_hdr", old_id):
             return True, mapped_id
         self.id_map.pop("health_exam_hdr", old_id)
         record_migration_issue(
@@ -148,15 +148,6 @@ class Command(ZdkMigrateCommand):
             f"stale health_exam_hdr map cleared old_id={old_id} missing_or_mismatched target_id={mapped_id}",
         )
         return False, None
-
-    @staticmethod
-    def _matches_legacy_extra(extra, legacy_table: str, old_id) -> bool:
-        if not isinstance(extra, dict):
-            return False
-        return (
-            str(extra.get("migration_legacy_table") or "") == legacy_table
-            and str(extra.get("migration_legacy_id") or "") == str(old_id)
-        )
 
     def _migrate_items(self, old_hdr_id, new_hdr_id, member_id, ai_by_item) -> None:
         items = old_fetch_all(
@@ -234,7 +225,7 @@ class Command(ZdkMigrateCommand):
         if mapped_id is None:
             return False, None
         detail = MedExamDetail.objects.filter(pk=mapped_id).first()
-        if detail and self._matches_legacy_extra(detail.extra, "aera_health_exam_report_item", old_item_id):
+        if detail and matches_migration_legacy(detail.extra, "aera_health_exam_report_item", old_item_id):
             return True, mapped_id
         self.id_map.pop("health_exam_item", old_item_id)
         record_migration_issue(

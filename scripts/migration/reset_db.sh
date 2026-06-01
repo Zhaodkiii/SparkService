@@ -9,9 +9,9 @@
 # --- 1. 数据库重置操作示例 ---
 # 注意：以下为调用说明，根据需求取消注释或在命令行调用
 # cd /Users/hua/Downloads/Reference/SparkService
-# ./reset_db.sh --dry-run  # 预览（安全检查，不执行实际删除）
-# ./reset_db.sh           # 正式执行（带确认提示）
-# ./reset_db.sh -y        # 跳过确认（强制执行）
+# ./scripts/migration/reset_db.sh --dry-run  # 预览（安全检查，不执行实际删除）
+# ./scripts/migration/reset_db.sh            # 正式执行（带确认提示）
+# ./scripts/migration/reset_db.sh -y         # 跳过确认（强制执行）
 
 # --- 2. 环境初始化与安全设置 ---
 # set -e: 遇到错误立即停止执行
@@ -19,7 +19,7 @@
 # set -o pipefail: 管道命令中只要有一个失败则整体返回失败
 set -euo pipefail
 
-BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV_DIR="$BASE_DIR/.venv"
 
 DRY_RUN=0      # 预览模式：只展示将要执行的操作，不实际删除
@@ -36,7 +36,7 @@ DB_CONN_MAX_AGE="60"
 
 usage() {
   cat <<'EOF'
-用法: ./reset_db.sh [选项]
+用法: ./scripts/migration/reset_db.sh [选项]
 
 重置迁移历史并重建数据库（仅限开发环境）。
 

@@ -16,6 +16,7 @@ class ScenarioKey(models.TextChoices):
     MEDICAL_REPORT_EXTRACTION = "medical_report_extraction"
     PRESCRIPTION_EXTRACTION = "prescription_extraction"
     MEDICATION_EXTRACTION = "medication_extraction"
+    MEDICINE_BOX_EXTRACTION = "medicine_box_extraction"
     OPTIMIZATION_TEXT = "optimization_text"
     OPTIMIZATION_VISUAL = "optimization_visual"
     CONTEXT_FOLDING = "context_folding"

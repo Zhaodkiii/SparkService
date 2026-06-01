@@ -1,12 +1,25 @@
 from medical.models import ExaminationReport, MedExamDetail
 
 from zdk_migration.lib.base import ZdkMigrateCommand
+from zdk_migration.lib.error_log import record_migration_issue
 from zdk_migration.lib.old_db import old_fetch_all, old_select
-from zdk_migration.lib.transforms import char_field_with_overflow, migration_extra, truncate_char
+from zdk_migration.lib.transforms import (
+    char_field_with_overflow,
+    matches_migration_legacy,
+    migration_extra,
+    truncate_char,
+)
 
 
 class Command(ZdkMigrateCommand):
     help = "Migrate examination reports and imaging/pathology/lab details"
+
+    LEGACY_TABLE = "aera_exam_report"
+    DETAIL_SOURCES: tuple[tuple[str, str], ...] = (
+        ("aera_imaging", "SELECT id FROM aera_imaging WHERE sheet_id = %s"),
+        ("aera_pathology", "SELECT id FROM aera_pathology WHERE sheet_id = %s"),
+        ("aera_lab_datum", "SELECT id FROM aera_lab_datum WHERE sheet_id = %s"),
+    )
 
     def run_migration(self) -> None:
         reports = old_select(
@@ -18,12 +31,14 @@ class Command(ZdkMigrateCommand):
             ],
             order_by="id",
         )
+        self._discard_removed_legacy_maps({str(row["id"]) for row in reports})
         self.stdout.write(f"Found {len(reports)} exam reports")
         for row in reports:
             old_id = row["id"]
-            skip, mapped_id = self.resolve_mapped_row("exam_report", old_id, ExaminationReport)
+            skip, mapped_id = self._resolve_mapped_exam_report(old_id)
             if skip and mapped_id:
                 report = ExaminationReport.all_objects.get(pk=mapped_id)
+                self._remove_foreign_details(mapped_id, old_id)
                 self._migrate_details(old_id, mapped_id, report.member_id, report.user_id)
                 self.stats.skipped += 1
                 continue
@@ -39,7 +54,12 @@ class Command(ZdkMigrateCommand):
                 self.stats.migrated += 1
                 continue
 
-            extra = migration_extra("aera_exam_report", old_id, check_type=row.get("check_type") or "", doctor_advice=row.get("doctor_advice") or "")
+            extra = migration_extra(
+                self.LEGACY_TABLE,
+                old_id,
+                check_type=row.get("check_type") or "",
+                doctor_advice=row.get("doctor_advice") or "",
+            )
 
             def _create_report(row=row, old_id=old_id, member_id=member_id, case_id=case_id, user_id=user_id, extra=extra):
                 report = ExaminationReport.all_objects.create(
@@ -69,23 +89,105 @@ class Command(ZdkMigrateCommand):
                 self.log_fail(f"exam_report:{old_id}", exc)
                 continue
 
+            self._remove_foreign_details(new_report_id, old_id)
             self._migrate_details(old_id, new_report_id, member_id, user_id)
+
+        repaired = self._repair_all_misattached_details()
+        if repaired:
+            self.stdout.write(f"Removed {repaired} misattached exam report details")
+
+    def _discard_removed_legacy_maps(self, valid_old_ids: set[str]) -> None:
+        report_map = getattr(self.id_map, "_data", {}).get("exam_report", {})
+        for old_id in list(report_map):
+            if str(old_id) in valid_old_ids:
+                continue
+            mapped_id = self.id_map.pop("exam_report", old_id)
+            record_migration_issue(
+                self.command_name,
+                "WARN",
+                f"stale exam_report map cleared old_id={old_id} removed legacy source target_id={mapped_id}",
+            )
+
+    def _resolve_mapped_exam_report(self, old_id) -> tuple[bool, int | str | None]:
+        mapped_id = self.id_map.get("exam_report", old_id)
+        if mapped_id is None:
+            return False, None
+        report = ExaminationReport.all_objects.filter(pk=mapped_id).first()
+        if report and matches_migration_legacy(report.extra, self.LEGACY_TABLE, old_id):
+            return True, mapped_id
+        self.id_map.pop("exam_report", old_id)
+        record_migration_issue(
+            self.command_name,
+            "WARN",
+            f"stale exam_report map cleared old_id={old_id} missing_or_mismatched target_id={mapped_id}",
+        )
+        return False, None
+
+    def _valid_detail_legacy_ids(self, old_report_id) -> set[tuple[str, str]]:
+        valid: set[tuple[str, str]] = set()
+        for table, sql in self.DETAIL_SOURCES:
+            for row in old_fetch_all(sql, (old_report_id,)):
+                valid.add((table, str(row["id"])))
+        return valid
+
+    def _remove_foreign_details(self, new_report_id, old_report_id) -> int:
+        valid = self._valid_detail_legacy_ids(old_report_id)
+        detail_tables = {table for table, _ in self.DETAIL_SOURCES}
+        removed = 0
+        details = MedExamDetail.objects.filter(
+            business_type=MedExamDetail.BusinessType.EXAMINATION_REPORT,
+            business_id=new_report_id,
+        )
+        for detail in details:
+            extra = detail.extra if isinstance(detail.extra, dict) else {}
+            table = str(extra.get("migration_legacy_table") or "")
+            legacy_id = str(extra.get("migration_legacy_id") or "")
+            if table not in detail_tables or not legacy_id:
+                continue
+            if (table, legacy_id) in valid:
+                continue
+            if not self.dry_run:
+                detail.delete()
+            removed += 1
+        if removed:
+            self.stats.migrated += removed
+        return removed
+
+    def _repair_all_misattached_details(self) -> int:
+        repaired = 0
+        for report in ExaminationReport.all_objects.iterator():
+            extra = report.extra if isinstance(report.extra, dict) else {}
+            if str(extra.get("migration_legacy_table") or "") != self.LEGACY_TABLE:
+                continue
+            old_id = extra.get("migration_legacy_id")
+            if old_id is None:
+                continue
+            repaired += self._remove_foreign_details(report.id, old_id)
+        return repaired
 
     def _migrate_details(self, old_report_id, new_report_id, member_id, user_id) -> None:
         self._migrate_imaging(old_report_id, new_report_id, member_id, user_id)
         self._migrate_pathology(old_report_id, new_report_id, member_id, user_id)
         self._migrate_lab_data(old_report_id, new_report_id, member_id, user_id)
 
-    def _detail_exists(self, *, legacy_table: str, legacy_id) -> bool:
+    def _detail_exists(self, *, legacy_table: str, legacy_id, new_report_id) -> bool:
         needle = f'"migration_legacy_table": "{legacy_table}"'
         legacy_id_needle = f'"migration_legacy_id": "{legacy_id}"'
-        return MedExamDetail.objects.filter(extra__contains=needle).filter(extra__contains=legacy_id_needle).exists()
+        return (
+            MedExamDetail.objects.filter(
+                business_type=MedExamDetail.BusinessType.EXAMINATION_REPORT,
+                business_id=new_report_id,
+            )
+            .filter(extra__contains=needle)
+            .filter(extra__contains=legacy_id_needle)
+            .exists()
+        )
 
     def _migrate_imaging(self, old_report_id, new_report_id, member_id, user_id) -> None:
         rows = old_fetch_all("SELECT * FROM aera_imaging WHERE sheet_id = %s", (old_report_id,))
         for row in rows:
             legacy_id = row["id"]
-            if self._detail_exists(legacy_table="aera_imaging", legacy_id=legacy_id):
+            if self._detail_exists(legacy_table="aera_imaging", legacy_id=legacy_id, new_report_id=new_report_id):
                 continue
             if self.dry_run:
                 return
@@ -121,7 +223,7 @@ class Command(ZdkMigrateCommand):
         rows = old_fetch_all("SELECT * FROM aera_pathology WHERE sheet_id = %s", (old_report_id,))
         for row in rows:
             legacy_id = row["id"]
-            if self._detail_exists(legacy_table="aera_pathology", legacy_id=legacy_id):
+            if self._detail_exists(legacy_table="aera_pathology", legacy_id=legacy_id, new_report_id=new_report_id):
                 continue
             if self.dry_run:
                 return
@@ -150,7 +252,7 @@ class Command(ZdkMigrateCommand):
         )
         for row in rows:
             legacy_id = row["id"]
-            if self._detail_exists(legacy_table="aera_lab_datum", legacy_id=legacy_id):
+            if self._detail_exists(legacy_table="aera_lab_datum", legacy_id=legacy_id, new_report_id=new_report_id):
                 continue
             if self.dry_run:
                 return
