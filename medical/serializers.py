@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
+from file_manager.business_relations import bind_files_to_business
 from file_manager.serializers import HasAttachmentsMixin
 
 from medical.models import (
@@ -418,8 +419,17 @@ class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    entry_member_id = serializers.IntegerField(required=False, write_only=True, allow_null=True)
+    file_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        write_only=True,
+        allow_empty=True,
+    )
 
     def validate_member(self, value):
+        if value is None:
+            return value
         request = self.context.get("request")
         if request and not request.user.is_staff:
             if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
@@ -443,7 +453,57 @@ class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
                 attrs["medicine_type"] = None
             elif isinstance(mt, str):
                 attrs["medicine_type"] = mt.strip()
+
+        request = self.context.get("request")
+        member = attrs.get("member")
+        if member is None and self.instance is not None and "member" not in attrs:
+            member = self.instance.member
+
+        entry_member_id = attrs.pop("entry_member_id", None)
+        if entry_member_id is None and request is not None:
+            raw = request.data.get("entry_member_id")
+            if raw not in (None, ""):
+                try:
+                    entry_member_id = int(raw)
+                except (TypeError, ValueError) as exc:
+                    raise serializers.ValidationError({"entry_member_id": [_("invalid entry_member_id")]}) from exc
+
+        if member is None:
+            if entry_member_id is None:
+                raise serializers.ValidationError(
+                    {"member": [_("entry_member_id is required for household public medicine")]}
+                )
+            if request and not request.user.is_staff:
+                binding = binding_service.get_active_binding(user=request.user, member_id=entry_member_id)
+                if binding is None:
+                    raise serializers.ValidationError({"entry_member_id": [_("member does not belong to current user")]})
+                attrs["_owner_user"] = binding.member.user
+        elif member is not None and entry_member_id is None:
+            attrs["_owner_user"] = member.user
+
         return attrs
+
+    def create(self, validated_data):
+        file_ids = validated_data.pop("file_ids", [])
+        validated_data.pop("_owner_user", None)
+        instance = super().create(validated_data)
+        self._bind_medicine_box_files(instance, file_ids)
+        return instance
+
+    def update(self, instance, validated_data):
+        file_ids = validated_data.pop("file_ids", None)
+        validated_data.pop("_owner_user", None)
+        instance = super().update(instance, validated_data)
+        if file_ids is not None:
+            self._bind_medicine_box_files(instance, file_ids)
+        return instance
+
+    def _bind_medicine_box_files(self, instance, file_ids):
+        if not file_ids:
+            return
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            bind_files_to_business(request.user, "medicine_box", instance.id, file_ids)
 
     class Meta:
         model = MedicineBox
@@ -451,6 +511,8 @@ class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
             "id",
             "user",
             "member",
+            "entry_member_id",
+            "file_ids",
             "medicine_type",
             "medicine_name",
             "brand_name",
@@ -466,6 +528,7 @@ class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = ("id", "user", "created_at", "updated_at")
+        extra_kwargs = {"member": {"required": False, "allow_null": True}}
 
 
 class PrescriptionSerializer(HasAttachmentsMixin, serializers.ModelSerializer):

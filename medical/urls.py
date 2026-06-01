@@ -9,6 +9,7 @@ from medical.views import (
     FollowUpViewSet,
     HealthExamReportViewSet,
     HealthExamWorkflowSaveView,
+    FamilyMedicineCabinetSummaryAPI,
     MedicineBoxViewSet,
     MemberBindingViewSet,
     MemberCompleteDataAPI,
@@ -60,87 +61,31 @@ router.register("medication-records", MedicationRecordViewSet, basename="medical
 router.register("resources", UnifiedMedicalResourceViewSet, basename="medical-unified-resources")
 
 urlpatterns = [
-    path("", include(router.urls)),
-    path(
-        "member-bindings/<int:pk>/",
-        MemberBindingViewSet.as_view({"patch": "partial_update", "delete": "destroy"}),
-        name="medical-member-bindings-detail",
-    ),
-    path(
-        "members/<int:member_id>/share-ticket/",
-        MemberShareTicketCreateAPI.as_view(),
-        name="medical-member-share-ticket",
-    ),
-    path(
-        "member-share-ticket/resolve/",
-        MemberShareTicketResolveAPI.as_view(),
-        name="medical-member-share-ticket-resolve",
-    ),
-    path(
-        "member-share-ticket/accept/",
-        MemberShareTicketAcceptAPI.as_view(),
-        name="medical-member-share-ticket-accept",
-    ),
-    path(
-        "members/<int:member_id>/invites/",
-        MemberShareInviteCreateView.as_view(),
-        name="medical-member-share-invite-create",
-    ),
-    path(
-        "member-invites/pending/",
-        PendingMemberInvitesView.as_view(),
-        name="medical-member-invites-pending",
-    ),
-    path(
-        "member-invites/<int:invite_id>/",
-        MemberShareInviteDetailView.as_view(),
-        name="medical-member-invite-detail",
-    ),
-    path(
-        "member-invites/<int:invite_id>/accept/",
-        MemberShareInviteAcceptView.as_view(),
-        name="medical-member-invite-accept",
-    ),
-    path(
-        "member-invites/<int:invite_id>/reject/",
-        MemberShareInviteRejectView.as_view(),
-        name="medical-member-invite-reject",
-    ),
-    path(
-        "member-invites/<int:invite_id>/cancel/",
-        MemberShareInviteCancelView.as_view(),
-        name="medical-member-invite-cancel",
-    ),
-    path(
-        "member-bindings/<int:pk>/role/",
-        MemberBindingRoleUpdateView.as_view(),
-        name="medical-member-binding-role",
-    ),
-    path(
-        "member-bindings/<int:pk>/permission/",
-        MemberBindingPermissionUpdateView.as_view(),
-        name="medical-member-binding-permission",
-    ),
-    path(
-        "member-bindings/<int:pk>/remove/",
-        MemberBindingRemoveView.as_view(),
-        name="medical-member-binding-remove",
-    ),
-    path(
-        "member-bindings/<int:pk>/transfer-owner/",
-        MemberBindingTransferOwnerView.as_view(),
-        name="medical-member-binding-transfer-owner",
-    ),
-    path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),
-    path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),
-    path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),
-    path("workflows/medical-reports/create/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-create"),
-    path("workflows/medication-plans/save/", MedicationPlanWorkflowSaveView.as_view(), name="medical-workflow-medication-plan-save"),
-    path("workflows/symptoms/create/", SymptomWorkflowCreateView.as_view(), name="medical-workflow-symptom-create"),
-    path("workflows/visits/create/", VisitWorkflowCreateView.as_view(), name="medical-workflow-visit-create"),
-    path("workflows/surgeries/create/", SurgeryWorkflowCreateView.as_view(), name="medical-workflow-surgery-create"),
-    path("workflows/follow-ups/create/", FollowUpWorkflowCreateView.as_view(), name="medical-workflow-follow-up-create"),
-    path("workflows/attachments/batch-bind/", MedicalAttachmentBatchBindView.as_view(), name="medical-workflow-attachment-batch-bind"),
-    # 新增组合创建 API（一次性创建完整医疗记录）
-    path("combined-create/", CombinedMedicalCreateAPIView.as_view(), name="medical-combined-create"),
+    path("", include(router.urls)),  # ViewSet：成员/病例/药箱/处方/用药计划等资源 CRUD 与统一 resources 入口
+    path("member-bindings/<int:pk>/", MemberBindingViewSet.as_view({"patch": "partial_update", "delete": "destroy"}), name="medical-member-bindings-detail"),  # 更新或删除成员绑定
+    path("members/<int:member_id>/share-ticket/", MemberShareTicketCreateAPI.as_view(), name="medical-member-share-ticket"),  # 生成成员分享票据（二维码/附近分享）
+    path("member-share-ticket/resolve/", MemberShareTicketResolveAPI.as_view(), name="medical-member-share-ticket-resolve"),  # 解析分享票据预览
+    path("member-share-ticket/accept/", MemberShareTicketAcceptAPI.as_view(), name="medical-member-share-ticket-accept"),  # 接受分享票据建立绑定
+    path("members/<int:member_id>/invites/", MemberShareInviteCreateView.as_view(), name="medical-member-share-invite-create"),  # 创建成员分享邀请
+    path("member-invites/pending/", PendingMemberInvitesView.as_view(), name="medical-member-invites-pending"),  # 当前用户待处理邀请列表
+    path("member-invites/<int:invite_id>/", MemberShareInviteDetailView.as_view(), name="medical-member-invite-detail"),  # 邀请详情
+    path("member-invites/<int:invite_id>/accept/", MemberShareInviteAcceptView.as_view(), name="medical-member-invite-accept"),  # 接受邀请
+    path("member-invites/<int:invite_id>/reject/", MemberShareInviteRejectView.as_view(), name="medical-member-invite-reject"),  # 拒绝邀请
+    path("member-invites/<int:invite_id>/cancel/", MemberShareInviteCancelView.as_view(), name="medical-member-invite-cancel"),  # 取消邀请
+    path("member-bindings/<int:pk>/role/", MemberBindingRoleUpdateView.as_view(), name="medical-member-binding-role"),  # 修改绑定角色
+    path("member-bindings/<int:pk>/permission/", MemberBindingPermissionUpdateView.as_view(), name="medical-member-binding-permission"),  # 修改绑定权限档位
+    path("member-bindings/<int:pk>/remove/", MemberBindingRemoveView.as_view(), name="medical-member-binding-remove"),  # 移除他人绑定（管理员）
+    path("member-bindings/<int:pk>/transfer-owner/", MemberBindingTransferOwnerView.as_view(), name="medical-member-binding-transfer-owner"),  # 转移成员 Owner
+    path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),  # 成员医疗数据汇总（首页/列表快照）
+    path("medicine-cabinet/summary/", FamilyMedicineCabinetSummaryAPI.as_view(), name="medical-medicine-cabinet-summary"),  # 家庭药箱汇总（按入口成员推导创建者范围）
+    path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),  # 工作流：保存病例文档
+    path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),  # 工作流：保存体检报告
+    path("workflows/medical-reports/create/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-create"),  # 工作流：创建检查/检验报告
+    path("workflows/medication-plans/save/", MedicationPlanWorkflowSaveView.as_view(), name="medical-workflow-medication-plan-save"),  # 工作流：保存用药计划（可含药箱）
+    path("workflows/symptoms/create/", SymptomWorkflowCreateView.as_view(), name="medical-workflow-symptom-create"),  # 工作流：创建症状
+    path("workflows/visits/create/", VisitWorkflowCreateView.as_view(), name="medical-workflow-visit-create"),  # 工作流：创建就诊
+    path("workflows/surgeries/create/", SurgeryWorkflowCreateView.as_view(), name="medical-workflow-surgery-create"),  # 工作流：创建手术
+    path("workflows/follow-ups/create/", FollowUpWorkflowCreateView.as_view(), name="medical-workflow-follow-up-create"),  # 工作流：创建随访
+    path("workflows/attachments/batch-bind/", MedicalAttachmentBatchBindView.as_view(), name="medical-workflow-attachment-batch-bind"),  # 工作流：批量绑定附件到业务实体
+    path("combined-create/", CombinedMedicalCreateAPIView.as_view(), name="medical-combined-create"),  # 组合创建：病例及关联子资源一次性入库
 ]

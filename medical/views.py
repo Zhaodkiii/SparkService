@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.contrib.auth.models import User
 from django.core import signing
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import status, viewsets
@@ -57,6 +57,7 @@ from medical.services import member_invite_service as invite_service
 from medical.services.member_invite_service import InviteError
 from medical.services.member_invite_delivery import create_invite_and_notify, DeliveryResult
 from medical.services import member_share_ticket as share_ticket_service
+from medical.services.medicine_cabinet_service import family_medicine_cabinet_queryset
 from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
 from file_manager.serializers import ManagedFileAttachmentOutSerializer
@@ -865,7 +866,13 @@ class MedicineBoxViewSet(WrappedModelViewSet):
     serializer_class = MedicineBoxSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        user = self.request.user
+        queryset = self.queryset.filter(is_deleted=False)
+        member_ids = binding_service.accessible_member_ids(user)
+        if not member_ids:
+            return queryset.none()
+        owner_ids = Member.objects.filter(id__in=member_ids, is_deleted=False).values_list("user_id", flat=True).distinct()
+        queryset = queryset.filter(Q(member_id__in=member_ids) | Q(member_id__isnull=True, user_id__in=owner_ids))
         member_id = self.request.query_params.get("member_id")
         medicine_type = self.request.query_params.get("medicine_type")
         expire_before = self.request.query_params.get("expire_before")
@@ -879,6 +886,80 @@ class MedicineBoxViewSet(WrappedModelViewSet):
         if low_stock in {"1", "true", "True", "yes"}:
             queryset = queryset.filter(total_quantity__lte=0)
         return queryset
+
+    def perform_create(self, serializer):
+        member = serializer.validated_data.get("member")
+        owner_user = serializer.validated_data.pop("_owner_user", None)
+        entry_member_id = serializer.validated_data.pop("entry_member_id", None)
+        if member is not None:
+            self._ensure_member_create_access(member.id)
+            owner_user = owner_user or member.user
+        else:
+            resolved_entry = entry_member_id
+            if resolved_entry is None:
+                raw = self.request.data.get("entry_member_id")
+                resolved_entry = int(raw) if raw not in (None, "") else None
+            self._ensure_member_create_access(resolved_entry)
+            if owner_user is None:
+                owner_user = Member.objects.get(pk=resolved_entry, is_deleted=False).user
+        serializer.save(user=owner_user)
+
+    def _resolve_public_medicine_entry_member_id(self, owner_user_id: int) -> int:
+        accessible = binding_service.accessible_member_ids(self.request.user)
+        member_id = (
+            Member.objects.filter(user_id=owner_user_id, id__in=accessible, is_deleted=False)
+            .values_list("id", flat=True)
+            .first()
+        )
+        if member_id is None:
+            raise PermissionDenied(detail="permission_denied")
+        return member_id
+
+    def perform_update(self, serializer):
+        member = serializer.validated_data.get("member")
+        if member is None and "member" not in serializer.validated_data:
+            member = getattr(serializer.instance, "member", None)
+        serializer.validated_data.pop("_owner_user", None)
+        if member is not None:
+            self._ensure_member_edit_access(member.id)
+        else:
+            raw = self.request.data.get("entry_member_id")
+            if raw not in (None, ""):
+                self._ensure_member_edit_access(int(raw))
+            else:
+                entry_member_id = self._resolve_public_medicine_entry_member_id(serializer.instance.user_id)
+                self._ensure_member_edit_access(entry_member_id)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        member = getattr(instance, "member", None)
+        if member is not None:
+            self._ensure_member_delete_access(member.id)
+        else:
+            entry_id = self._resolve_public_medicine_entry_member_id(instance.user_id)
+            self._ensure_member_delete_access(entry_id)
+        instance.soft_delete()
+
+
+class FamilyMedicineCabinetSummaryAPI(APIView):
+    """家庭药箱汇总：按入口成员 ID 返回创建者名下全部药品。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        raw_member_id = request.query_params.get("member_id")
+        if raw_member_id in (None, ""):
+            return error_response(msg="member_id_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            entry_member_id = int(raw_member_id)
+        except (TypeError, ValueError):
+            return error_response(msg="invalid_member_id", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            queryset = family_medicine_cabinet_queryset(user=request.user, entry_member_id=entry_member_id)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        serializer = MedicineBoxSerializer(queryset, many=True, context={"request": request})
+        return success_response(serializer.data, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class PrescriptionViewSet(WrappedModelViewSet):

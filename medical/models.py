@@ -475,8 +475,10 @@ class MedicineBox(MedicalBaseModel):
         Member,
         related_name="medicine_boxes",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         db_index=True,
-        db_comment="所属家庭成员 ID",
+        db_comment="所属家庭成员 ID，可为空；为空表示家庭公共药品",
     )
     medicine_type = models.CharField(max_length=128, blank=True, null=True, db_index=True, db_comment="药品类型（预设编码、中文选项值或自定义文案，可空）")
     medicine_name = models.CharField(max_length=255, db_comment="药品名称（合并原通用名与商品名）")
