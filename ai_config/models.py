@@ -35,49 +35,68 @@ class IdentityKind(models.TextChoices):
 class SparkToolName(models.TextChoices):
     """Spark 平台工具枚举（与客户端 ``ToolingModels.swift`` 的 ``SparkToolName`` 对齐）。
 
-    新增或重命名工具时须同步：
-    - SparkClient/Projects/Core/AIRuntime/ToolingModels.swift
+    新增或重命名工具时须同步（保持 rawValue 一致）：
+    - SparkClient/Projects/Core/AIRuntime/ToolHub/Models/ToolingModels.swift
     - SparkClient/Projects/Core/AIRuntime/ToolHub/ToolHub.swift（schema / execute）
+    - SparkClient/Projects/Core/AIRuntime/ToolHub/Executors/
     - SparkClient/Projects/App/Resources/*/ToolPrompts.strings（tool.summary.* / tool.param.*）
     - SparkClient/Projects/App/Resources/*/Localizable.strings（ai_settings.tools.*）
     """
 
+    # 健康类（Apple Health / 结构化卡片 / 问报告）
     FETCH_STEP_DETAILS = "fetch_step_details", "步数详情"
     FETCH_ENERGY_DETAILS = "fetch_energy_details", "能量详情"
     FETCH_NUTRITION_DETAILS = "fetch_nutrition_details", "营养详情"
     MAKE_NUTRITION_DATA = "make_nutrition_data", "生成营养数据"
+    SHOW_MEDICAL_RISK_NOTICE = "show_medical_risk_notice", "医疗风险提示卡片"
     FETCH_SLEEP_DETAILS = "fetch_sleep_details", "睡眠详情"
     FETCH_WORKOUT_DETAILS = "fetch_workout_details", "运动详情"
+    GENERATE_STRUCTURED_HEALTH_CARD = "generate_structured_health_card", "生成结构化健康卡片"
+    LIST_MEMBER_HEALTH_SOURCES = "list_member_health_sources", "检索成员健康资料"
+    GET_HEALTH_RESOURCE_REFERENCE = "get_health_resource_reference", "获取健康资料引用"
+    GET_HEALTH_RESOURCE_CONTEXT = "get_health_resource_context", "获取健康资料解读上下文"
+
+    # 知识类
     SEARCH_KNOWLEDGE_BAG = "search_knowledge_bag", "搜索知识库"
     CREATE_KNOWLEDGE_DOCUMENT = "create_knowledge_document", "创建知识文档"
+
+    # 日历类
     SEARCH_CALENDAR_AND_REMINDERS = "search_calendar_and_reminders", "搜索日历与提醒"
     WRITE_SYSTEM_EVENT = "write_system_event", "写入系统事件"
+
+    # 位置类
     QUERY_LOCATION = "query_location", "查询位置"
     GET_CURRENT_LOCATION = "get_current_location", "获取当前位置"
     SEARCH_NEARBY_LOCATIONS = "search_nearby_locations", "搜索附近地点"
     GET_ROUTE = "get_route", "路线规划"
     QUERY_WEATHER = "query_weather", "查询天气"
+
+    # 记忆类
     SAVE_MEMORY = "save_memory", "保存记忆"
     RETRIEVE_MEMORY = "retrieve_memory", "检索记忆"
     UPDATE_MEMORY = "update_memory", "更新记忆"
+
+    # UI 交互类
     GENERATE_CHAT_TITLE = "generate_chat_title", "生成会话标题"
     SHOW_CUSTOM_MESSAGE_CARD = "show_custom_message_card", "展示消息卡片"
     ASK_USER_QUESTION = "ask_user_question", "询问用户"
+
+    # 成员类
     GET_CURRENT_MEMBER = "get_current_member", "获取当前成员"
     REQUEST_MEMBER_SELECTION = "request_member_selection", "请求选择成员"
     SWITCH_MEMBER = "switch_member", "切换成员"
     FIND_MEMBER = "find_member", "查找成员"
     QUERY_MEMBER_PROFILE = "query_member_profile", "查询成员资料"
+
+    # 网络类
     SEARCH_ONLINE = "search_online", "联网搜索"
     READ_WEB_PAGE = "read_web_page", "读取网页"
     SEARCH_ARXIV_PAPERS = "search_arxiv_papers", "搜索 arXiv 论文"
     EXTRACT_REMOTE_FILE_CONTENT = "extract_remote_file_content", "提取远程文件内容"
+
+    # 系统 / 画布 / 任务类
     CREATE_CANVAS = "create_canvas", "创建画布"
     EDIT_CANVAS = "edit_canvas", "编辑画布"
-    GENERATE_STRUCTURED_HEALTH_CARD = "generate_structured_health_card", "生成结构化健康卡片"
-    LIST_MEMBER_HEALTH_SOURCES = "list_member_health_sources", "检索成员健康资料"
-    GET_HEALTH_RESOURCE_REFERENCE = "get_health_resource_reference", "获取健康资料引用"
-    GET_HEALTH_RESOURCE_CONTEXT = "get_health_resource_context", "获取健康资料解读上下文"
     QUERY_TASKS_BY_MEMBER = "query_tasks_by_member", "查询成员任务"
     GENERATE_TASK = "generate_task", "生成任务"
 
