@@ -10,14 +10,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
-from rest_framework_simplejwt.tokens import RefreshToken
-
 from common.exceptions import APIError
 from accounts.infrastructure.email_provider import EmailProvider
 from accounts.infrastructure.sms_provider import AliyunSMSProvider
 from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
 from accounts.services.phone_number_service import PhoneNumberService
 from accounts.services.device_linking_service import DeviceLinkingService
+from accounts.services.device_session_service import DeviceSessionService
 from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
@@ -304,9 +303,12 @@ class OTPService:
         except Exception as exc:  # noqa: BLE001 - defensive
             flow_logger.warning("auth.trial.auto_grant.skipped", extra={"action": "auth.trial.auto_grant", "request_id": request_id, "user_id": user.id, "reason": str(exc)})
 
-        refresh = RefreshToken.for_user(user)
-        access = refresh.access_token
-        expires_in = int(access["exp"] - timezone.now().timestamp())
+        token_payload = DeviceSessionService.activate_and_issue_tokens(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+        )
 
         LoginAudit.objects.create(
             user=user,
@@ -332,11 +334,7 @@ class OTPService:
             },
         )
         return {
-            "user_id": user.id,
-            "access_token": str(access),
-            "refresh_token": str(refresh),
-            "expires_in": expires_in,
-            "token_type": "Bearer",
+            **token_payload,
             "otp_id": otp.otp_id,
             "is_pro": is_pro,
         }
@@ -453,9 +451,12 @@ class OTPService:
         except Exception as exc:  # noqa: BLE001 - defensive
             flow_logger.warning("auth.trial.auto_grant.skipped", extra={"action": "auth.trial.auto_grant", "request_id": request_id, "user_id": user.id, "reason": str(exc)})
 
-        refresh = RefreshToken.for_user(user)
-        access = refresh.access_token
-        expires_in = int(access["exp"] - timezone.now().timestamp())
+        token_payload = DeviceSessionService.activate_and_issue_tokens(
+            user=user,
+            bundle_id=normalized_bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+        )
 
         LoginAudit.objects.create(
             user=user,
@@ -481,14 +482,10 @@ class OTPService:
             },
         )
         return {
-            "user_id": user.id,
             "phone_number": normalized_phone,
             "display_name": PhoneNumberService.masked_display(normalized_phone),
             "is_pro": is_pro,
             "is_new_user": created_user,
-            "access_token": str(access),
-            "refresh_token": str(refresh),
-            "expires_in": expires_in,
-            "token_type": "Bearer",
             "otp_id": otp.otp_id,
+            **token_payload,
         }

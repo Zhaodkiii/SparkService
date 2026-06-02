@@ -10,6 +10,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.auth.serializers import AppleLoginSerializer, PasswordLoginSerializer, TokenRefreshSerializer
+from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.login_service import LoginService
 from common.exceptions import APIError
 from common.response import success_response
@@ -71,62 +72,132 @@ class TokenRefreshView(APIView):
         serializer.is_valid(raise_exception=True)
 
         provided_refresh = serializer.validated_data["refresh_token"]
-        simplejwt_serializer = SimpleJWTTokenRefreshSerializer(data={"refresh": provided_refresh})
+        bundle_id = serializer.validated_data.get("bundle_id", "") or ""
+        device_id = serializer.validated_data.get("device_id", "") or ""
+
         try:
-            simplejwt_serializer.is_valid(raise_exception=True)
+            refresh_claims = dict(RefreshToken(provided_refresh).payload)
         except Exception:
-            # SparkClient expects direct JSON on success. On failure we keep backend error schema.
             flow_logger.warning(
                 "刷新访问令牌失败",
                 extra={"action": "auth.token.refresh", "outcome": "failed", "request_id": request_id, "reason": "token_not_valid"},
             )
             raise APIError("token_not_valid", code=40102, status_code=status.HTTP_401_UNAUTHORIZED)
 
-        data = simplejwt_serializer.validated_data
-        resolved_refresh = data.get("refresh") or provided_refresh
-        try:
-            user_id = int(RefreshToken(resolved_refresh)["user_id"])
-        except Exception:
-            flow_logger.warning(
-                "刷新访问令牌失败：refresh 中 user_id 无效",
-                extra={"action": "auth.token.refresh", "outcome": "failed", "request_id": request_id, "reason": "invalid_user_id"},
+        if not DeviceSessionService.claims_require_device_session(refresh_claims):
+            simplejwt_serializer = SimpleJWTTokenRefreshSerializer(data={"refresh": provided_refresh})
+            try:
+                simplejwt_serializer.is_valid(raise_exception=True)
+            except Exception:
+                flow_logger.warning(
+                    "刷新访问令牌失败",
+                    extra={"action": "auth.token.refresh", "outcome": "failed", "request_id": request_id, "reason": "token_not_valid"},
+                )
+                raise APIError("token_not_valid", code=40102, status_code=status.HTTP_401_UNAUTHORIZED) from None
+            data = simplejwt_serializer.validated_data
+            try:
+                user_id = int(RefreshToken(data.get("refresh") or provided_refresh)["user_id"])
+            except Exception:
+                raise APIError("token_not_valid", code=40102, status_code=status.HTTP_401_UNAUTHORIZED) from None
+            return Response(
+                {
+                    "user_id": user_id,
+                    "access_token": data["access"],
+                    "refresh_token": data.get("refresh"),
+                    "token_type": "Bearer",
+                },
+                status=status.HTTP_200_OK,
             )
-            raise APIError("token_not_valid", code=40102, status_code=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            user, session, _claims = DeviceSessionService.validate_refresh_request(
+                refresh_token_str=provided_refresh,
+                bundle_id=bundle_id,
+                device_id=device_id,
+            )
+        except APIError:
+            flow_logger.warning(
+                "刷新访问令牌失败：设备会话校验未通过",
+                extra={"action": "auth.token.refresh", "outcome": "failed", "request_id": request_id},
+            )
+            raise
+
+        tokens = DeviceSessionService.rotate_tokens_after_refresh(
+            user=user,
+            session=session,
+            old_refresh_str=provided_refresh,
+            bundle_id=bundle_id or session.bundle_id,
+            device_id=device_id or session.device_id,
+        )
+        flow_logger.info(
+            "刷新访问令牌成功",
+            extra={
+                "action": "auth.token.refresh",
+                "outcome": "success",
+                "request_id": request_id,
+                "user_id": user.id,
+                "session_id": session.id,
+            },
+        )
         return Response(
             {
-                "user_id": user_id,
-                "access_token": data["access"],
-                # Keep refresh when rotate is enabled; otherwise return null and client keeps old one.
-                "refresh_token": data.get("refresh"),
-                "token_type": "Bearer",
+                "user_id": tokens["user_id"],
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+                "token_type": tokens["token_type"],
             },
             status=status.HTTP_200_OK,
         )
 
 
+
 class TokenObtainUnifiedView(APIView):
+    """
+    统一登录签发Token接口
+    逻辑：账号密码校验 -> simplejwt生成双Token -> 从refresh载荷解析用户ID -> 校验用户状态 -> 返回标准化token结构
+    开放匿名访问，无需携带登录鉴权头
+    """
+    # 放行所有请求，无需登录鉴权
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def post(self, request):
+        """
+        POST 登录获取 access/refresh 令牌
+        :param request: 请求体携带username/password
+        :return: user_id + access_token + refresh_token 标准化返回
+        错误码：
+            40101：账号密码错误、序列化校验失败
+            40102：refresh令牌解析异常、过期、篡改无效
+            40103：用户不存在或账号已禁用
+        """
+        # 实例化simplejwt账号密码序列化器
         serializer = TokenObtainPairSerializer(data=request.data)
         try:
+            # 校验账号密码，失败直接抛异常
             serializer.is_valid(raise_exception=True)
         except Exception:
+            # 账号/密码错误，自定义错误返回
             raise APIError("Invalid credentials", code=40101, status_code=status.HTTP_401_UNAUTHORIZED)
 
+        # 校验通过，取出序列化生成的access、refresh原始token
         data = serializer.validated_data
         refresh_token = data["refresh"]
         try:
+            # 用refresh_token反解析JWT载荷，提取user_id
             refresh = RefreshToken(refresh_token)
             user_id = int(refresh["user_id"])
         except Exception:
+            # refresh令牌非法、过期、被篡改
             raise APIError("token_not_valid", code=40102, status_code=status.HTTP_401_UNAUTHORIZED)
 
+        # 根据user_id查询用户，仅查id、is_active字段优化性能
         user = get_user_model().objects.filter(id=user_id).only("id", "is_active").first()
+        # 用户不存在 / 用户被禁用
         if not user or not user.is_active:
             raise APIError("user_inactive", code=40103, status_code=status.HTTP_401_UNAUTHORIZED)
 
+        # 组装统一格式Token返回体
         return Response(
             {
                 "user_id": user_id,
@@ -136,11 +207,6 @@ class TokenObtainUnifiedView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
-
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
-from rest_framework import status
 
 
 # 苹果第三方登录接口视图

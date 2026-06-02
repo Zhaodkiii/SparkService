@@ -1,7 +1,7 @@
 <template>
   <a-card :bordered="false" style="margin-bottom: 12px">
     <a-space wrap>
-      <a-input-search v-model:value="query.q" placeholder="用户名/邮箱" enter-button @search="load" style="width: 280px" />
+      <a-input-search v-model:value="query.q" placeholder="用户ID/用户名/邮箱" enter-button @search="load" style="width: 280px" />
       <a-select v-model:value="query.only_enabled" style="width: 130px" @change="load">
         <a-select-option :value="true">仅开通通知</a-select-option>
         <a-select-option :value="false">全部用户</a-select-option>

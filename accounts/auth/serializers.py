@@ -13,6 +13,8 @@ class PasswordLoginSerializer(serializers.Serializer):
 class TokenRefreshSerializer(serializers.Serializer):
     refresh = serializers.CharField(min_length=1, trim_whitespace=True, required=False)
     refresh_token = serializers.CharField(min_length=1, trim_whitespace=True, required=False)
+    bundle_id = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    device_id = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
     def validate(self, attrs):
         refresh_token = attrs.get("refresh_token") or attrs.get("refresh")

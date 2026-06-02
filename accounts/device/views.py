@@ -5,9 +5,11 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
+from accounts.auth.authentication import SparkJWTAuthentication
+from accounts.services.device_session_service import DeviceSessionService
+from common.exceptions import APIError
 from common.response import success_response
 from accounts.device.serializers import DeviceRegisterSerializer
 from accounts.services.device_service import DeviceService
@@ -52,7 +54,7 @@ class DeviceRegisterView(APIView):
         user = None
         try:
             # 手动初始化 JWT 认证器
-            auth = JWTAuthentication()
+            auth = SparkJWTAuthentication()
             # 尝试从请求中解析 JWT 并认证用户
             result = auth.authenticate(request)
             # 认证成功：获取用户对象（token 为 JWT 令牌本身）
@@ -73,6 +75,29 @@ class DeviceRegisterView(APIView):
         request_id = getattr(request, "request_id", "") or ""
         # 获取前端显式传递的参数键集合
         explicit_keys = set(request.data.keys())
+
+        if user is not None:
+            data = serializer.validated_data
+            bundle_id = (data.get("bundle_id") or data.get("bundle_identifier") or "").strip()
+            device_id = (data.get("device_id") or "").strip()
+            try:
+                DeviceSessionService.validate_authenticated_device_register(
+                    user=user,
+                    bundle_id=bundle_id,
+                    device_id=device_id,
+                )
+            except APIError:
+                flow_logger.warning(
+                    "device.register.rejected_inactive_session",
+                    extra={
+                        "action": "device.register",
+                        "request_id": request_id,
+                        "user_id": user.id,
+                        "bundle_id": bundle_id,
+                        "device_id": device_id,
+                    },
+                )
+                raise
 
         # 调用设备服务层：执行设备注册逻辑
         out = DeviceService.register_device(

@@ -7,13 +7,12 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.db import transaction
 from django.db.utils import IntegrityError, OperationalError, ProgrammingError
-from rest_framework_simplejwt.tokens import RefreshToken
-
 from common.exceptions import APIError
 from accounts.models import LoginAudit, SocialIdentity
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.deactivation_service import DeactivationService
 from accounts.services.device_linking_service import DeviceLinkingService
+from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.phone_number_service import PhoneNumberService
 from ai_config.services import TrialService
 
@@ -215,7 +214,15 @@ class LoginService:
             device_id=device_id,
             request_id=request_id,
         )
-        tokens = LoginService._apply_is_pro(user=user, payload=LoginService._issue_tokens(user))
+        tokens = LoginService._apply_is_pro(
+            user=user,
+            payload=LoginService._issue_tokens(
+                user,
+                bundle_id=bundle_id,
+                device_id=device_id,
+                request_id=request_id,
+            ),
+        )
         flow_logger.info(
             "密码登录鉴权成功",
             extra={
@@ -415,7 +422,15 @@ class LoginService:
             request_id=request_id,
         )
 
-        result = LoginService._apply_is_pro(user=user, payload=LoginService._issue_tokens(user))
+        result = LoginService._apply_is_pro(
+            user=user,
+            payload=LoginService._issue_tokens(
+                user,
+                bundle_id=matched_audience,
+                device_id=device_id,
+                request_id=request_id,
+            ),
+        )
         result["email"] = user.email or chosen_email
         result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
         result["is_new_user"] = created_user
@@ -435,19 +450,19 @@ class LoginService:
         return result
 
     @staticmethod
-    def _issue_tokens(user) -> dict[str, Any]:
+    def _issue_tokens(user, *, bundle_id: str, device_id: str, request_id: str = "") -> dict[str, Any]:
         if not getattr(user, "is_active", False):
             raise APIError("user_inactive", code=40103, status_code=401)
-        refresh = RefreshToken.for_user(user)
-        access = refresh.access_token
-        expires_in = int(access["exp"] - time.time())
-        return {
-            "user_id": user.id,
-            "access_token": str(access),
-            "refresh_token": str(refresh),
-            "expires_in": expires_in,
-            "token_type": "Bearer",
-        }
+        bundle_id = (bundle_id or "").strip()
+        device_id = (device_id or "").strip()
+        if not bundle_id or not device_id:
+            raise APIError("bundle_id and device_id are required", code=40024, status_code=400)
+        return DeviceSessionService.activate_and_issue_tokens(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+        )
 
     @staticmethod
     def build_current_session(*, user) -> dict[str, Any]:

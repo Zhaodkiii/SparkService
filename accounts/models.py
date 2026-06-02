@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.db import models
+from django.db.models import Q
 
 
 class AccountProfile(models.Model):
@@ -25,146 +26,31 @@ class TrustedDevice(models.Model):
     - 其余字段为终端画像与推送能力，供风控、运营触达与排障；verified / is_revoked 供后续设备证明或吊销策略扩展。
     """
 
-    user = models.ForeignKey(
-        User,
-        null=True,
-        blank=True,
-        related_name="trusted_devices",
-        on_delete=models.SET_NULL,
-        db_comment="关联 Django User；匿名登记为空，登录成功后回填",
-    )
-    bundle_id = models.CharField(
-        max_length=255,
-        db_index=True,
-        default="",
-        db_comment="应用维度分组键，与 device_id 组成唯一约束（可与 bundle_identifier 相同或业务自定义）",
-    )
-    device_id = models.CharField(
-        max_length=255,
-        db_index=True,
-        db_comment="客户端安装级稳定设备标识（如 Keychain UUID），与 bundle_id 唯一",
-    )
-    push_token = models.CharField(
-        max_length=512,
-        blank=True,
-        default="",
-        db_comment="APNs/FCM 等设备推送令牌（十六进制或供应商格式），可空",
-    )
-    notifications_enabled = models.BooleanField(
-        default=False,
-        db_comment="用户是否在系统设置中允许本应用通知（客户端上报）",
-    )
-    app_version = models.CharField(
-        max_length=50,
-        blank=True,
-        default="",
-        db_comment="面向用户的应用版本号（如 Marketing 版本）",
-    )
-    build_version = models.CharField(
-        max_length=50,
-        blank=True,
-        default="",
-        db_comment="构建号（CFBundleVersion 等）",
-    )
-    bundle_identifier = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        db_comment="包标识符（如 com.example.app），与 bundle_id 区分时可并存",
-    )
-    platform = models.CharField(
-        max_length=20,
-        blank=True,
-        default="",
-        db_comment="平台标识（如 ios、android）",
-    )
-    system_version = models.CharField(
-        max_length=50,
-        blank=True,
-        default="",
-        db_comment="操作系统版本字符串",
-    )
-    device_model = models.CharField(
-        max_length=100,
-        blank=True,
-        default="",
-        db_comment="设备硬件型号代码（如 iPhone15,2）",
-    )
-    device_model_name = models.CharField(
-        max_length=100,
-        blank=True,
-        default="",
-        db_comment="设备市场友好名称（若客户端可解析）",
-    )
-    device_name = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        db_comment="用户在系统中设置的设备名称（可能含隐私，注意展示策略）",
-    )
-    screen_size = models.CharField(
-        max_length=50,
-        blank=True,
-        default="",
-        db_comment="逻辑分辨率描述（如 393x852）",
-    )
-    screen_scale = models.FloatField(
-        null=True,
-        blank=True,
-        db_comment="屏幕 scale（@2x/@3x 等）",
-    )
-    time_zone = models.CharField(
-        max_length=50,
-        blank=True,
-        default="",
-        db_comment="当前系统时区标识符",
-    )
-    language_code = models.CharField(
-        max_length=10,
-        blank=True,
-        default="",
-        db_comment="首选语言代码（BCP 47 或短码）",
-    )
-    region_code = models.CharField(
-        max_length=10,
-        blank=True,
-        default="",
-        db_comment="区域代码（如 CN、US）",
-    )
-    country_code = models.CharField(
-        max_length=10,
-        blank=True,
-        default="",
-        db_index=True,
-        db_comment="客户端 SparkSystemInfo.mostLikelyCountryCode 推断的最可能国家/地区标识，可空",
-    )
-    is_simulator = models.BooleanField(
-        default=False,
-        db_comment="是否在模拟器环境运行",
-    )
-    verified = models.BooleanField(
-        default=False,
-        db_comment="是否通过额外设备证明（预留，默认未验证）",
-    )
-    first_seen = models.DateTimeField(
-        auto_now_add=True,
-        db_comment="首次登记时间",
-    )
-    last_seen = models.DateTimeField(
-        auto_now=True,
-        db_comment="最近一次上报或刷新时间",
-    )
-    request_id = models.CharField(
-        max_length=64,
-        blank=True,
-        default="",
-        db_comment="关联网关或链路 request id，便于日志串联",
-    )
-    is_revoked = models.BooleanField(
-        default=False,
-        db_index=True,
-        db_comment="是否已吊销（禁止推送或拒绝敏感操作等策略可读取）",
-    )
+    user = models.ForeignKey(User, null=True, blank=True, related_name="trusted_devices", on_delete=models.SET_NULL, db_comment="关联 Django User；匿名登记为空，登录成功后回填")
+    bundle_id = models.CharField(max_length=255, db_index=True, default="", db_comment="应用维度分组键，与 device_id 组成唯一约束（可与 bundle_identifier 相同或业务自定义）")
+    device_id = models.CharField(max_length=255, db_index=True, db_comment="客户端安装级稳定设备标识（如 Keychain UUID），与 bundle_id 唯一")
+    push_token = models.CharField(max_length=512, blank=True, default="", db_comment="APNs/FCM 等设备推送令牌（十六进制或供应商格式），可空")
+    notifications_enabled = models.BooleanField(default=False, db_comment="用户是否在系统设置中允许本应用通知（客户端上报）")
+    app_version = models.CharField(max_length=50, blank=True, default="", db_comment="面向用户的应用版本号（如 Marketing 版本）")
+    build_version = models.CharField(max_length=50, blank=True, default="", db_comment="构建号（CFBundleVersion 等）")
+    bundle_identifier = models.CharField(max_length=255, blank=True, default="", db_comment="包标识符（如 com.example.app），与 bundle_id 区分时可并存")
+    platform = models.CharField(max_length=20, blank=True, default="", db_comment="平台标识（如 ios、android）")
+    system_version = models.CharField(max_length=50, blank=True, default="", db_comment="操作系统版本字符串")
+    device_model = models.CharField(max_length=100, blank=True, default="", db_comment="设备硬件型号代码（如 iPhone15,2）")
+    device_model_name = models.CharField(max_length=100, blank=True, default="", db_comment="设备市场友好名称（若客户端可解析）")
+    device_name = models.CharField(max_length=255, blank=True, default="", db_comment="用户在系统中设置的设备名称（可能含隐私，注意展示策略）")
+    screen_size = models.CharField(max_length=50, blank=True, default="", db_comment="逻辑分辨率描述（如 393x852）")
+    screen_scale = models.FloatField(null=True, blank=True, db_comment="屏幕 scale（@2x/@3x 等）")
+    time_zone = models.CharField(max_length=50, blank=True, default="", db_comment="当前系统时区标识符")
+    language_code = models.CharField(max_length=10, blank=True, default="", db_comment="首选语言代码（BCP 47 或短码）")
+    region_code = models.CharField(max_length=10, blank=True, default="", db_comment="区域代码（如 CN、US）")
+    country_code = models.CharField(max_length=10, blank=True, default="", db_index=True, db_comment="客户端 SparkSystemInfo.mostLikelyCountryCode 推断的最可能国家/地区标识，可空")
+    is_simulator = models.BooleanField(default=False, db_comment="是否在模拟器环境运行")
+    verified = models.BooleanField(default=False, db_comment="是否通过额外设备证明（预留，默认未验证）")
+    first_seen = models.DateTimeField(auto_now_add=True, db_comment="首次登记时间")
+    last_seen = models.DateTimeField(auto_now=True, db_comment="最近一次上报或刷新时间")
+    request_id = models.CharField(max_length=64, blank=True, default="", db_comment="关联网关或链路 request id，便于日志串联")
+    is_revoked = models.BooleanField(default=False, db_index=True, db_comment="是否已吊销（禁止推送或拒绝敏感操作等策略可读取）")
 
     class Meta:
         db_table_comment = "客户端上报的可信安装实例：bundle_id+device_id 唯一，支持匿名后关联用户。"
@@ -172,6 +58,62 @@ class TrustedDevice(models.Model):
         verbose_name_plural = "可信设备"
         constraints = [
             models.UniqueConstraint(fields=["bundle_id", "device_id"], name="uniq_bundle_device"),
+        ]
+
+
+class AccountDeviceSession(models.Model):
+    """
+    用户当前有效登录设备会话（与 TrustedDevice 安装画像解耦）。
+
+  同一用户同一时间最多一个 ACTIVE 会话；新设备登录会将旧会话标记为 REVOKED。
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "有效"
+        REVOKED = "revoked", "已失效"
+        LOGGED_OUT = "logged_out", "已退出"
+
+    user = models.ForeignKey(User, related_name="device_sessions", on_delete=models.CASCADE, db_comment="所属用户")
+    trusted_device = models.ForeignKey(
+        TrustedDevice,
+        related_name="account_sessions",
+        on_delete=models.CASCADE,
+        db_comment="绑定的可信设备安装实例",
+    )
+    bundle_id = models.CharField(max_length=255, db_index=True, default="", db_comment="登录时 bundle_id 快照")
+    device_id = models.CharField(max_length=255, db_index=True, default="", db_comment="登录时 device_id 快照")
+    session_version = models.PositiveIntegerField(default=1, db_index=True, db_comment="会话版本号，写入 JWT claim")
+    refresh_jti = models.CharField(max_length=255, blank=True, default="", db_index=True, db_comment="当前 refresh token jti")
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+        db_comment="会话状态",
+    )
+    revoked_reason = models.CharField(max_length=64, blank=True, default="", db_comment="失效原因（如 replaced_by_new_device）")
+    replaced_by = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="replaced_sessions",
+        db_comment="被哪条新会话替换",
+    )
+    last_refreshed_at = models.DateTimeField(null=True, blank=True, db_comment="最近一次 refresh 成功时间")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table_comment = "账号设备登录会话：单用户单 ACTIVE，供 token 校验与 APNs 投递。"
+        verbose_name = "设备登录会话"
+        verbose_name_plural = "设备登录会话"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=Q(status="active"),
+                name="uniq_active_device_session_per_user",
+            ),
         ]
 
 

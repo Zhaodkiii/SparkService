@@ -3,7 +3,7 @@ import logging
 
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from accounts.auth.authentication import SparkJWTAuthentication
 
 logger = logging.getLogger("chat_sync.ws")
 
@@ -12,10 +12,15 @@ def resolve_user_from_token(raw_token: str):
     if raw_token is None or raw_token == "":
         return AnonymousUser()
 
-    authenticator = JWTAuthentication()
+    class _BearerRequest:
+        META = {"HTTP_AUTHORIZATION": f"Bearer {raw_token}"}
+
     try:
-        validated = authenticator.get_validated_token(raw_token)
-        return authenticator.get_user(validated)
+        result = SparkJWTAuthentication().authenticate(_BearerRequest())
+        if result is None:
+            return AnonymousUser()
+        user, _token = result
+        return user
     except Exception:
         logger.warning("chat ws token validation failed")
         return AnonymousUser()

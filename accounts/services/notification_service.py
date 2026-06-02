@@ -11,12 +11,14 @@ from accounts.infrastructure.apns_provider import APNsProvider
 from accounts.infrastructure.email_provider import EmailProvider
 from accounts.infrastructure.sms_provider import AliyunSMSProvider
 from accounts.models import (
+    AccountDeviceSession,
     NotificationCampaign,
     NotificationMessage,
     NotificationTemplate,
     SocialIdentity,
     TrustedDevice,
 )
+from accounts.services.device_session_service import DeviceSessionService
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -38,45 +40,104 @@ class NotificationService:
         return (identity.provider_uid if identity else "") or ""
 
     @staticmethod
-    def _filter_user_queryset(*, q: str = "", only_enabled: bool = True, has_email: bool | None = None, has_sms: bool | None = None, has_apns: bool | None = None, is_active: bool | None = None):
+    def _q_user_has_apns_notification_allowed() -> Q:
+        """APNs：至少一台可信设备在系统侧已允许通知（notifications_enabled，不要求 push_token）。"""
+        return Q(trusted_devices__notifications_enabled=True)
+
+    @staticmethod
+    def _q_user_has_push_capable_apns() -> Q:
+        """APNs：当前 ACTIVE 设备会话对应 TrustedDevice 可推送。"""
+        return Q(
+            device_sessions__status=AccountDeviceSession.Status.ACTIVE,
+            device_sessions__trusted_device__notifications_enabled=True,
+            device_sessions__trusted_device__push_token__isnull=False,
+        ) & ~Q(device_sessions__trusted_device__push_token="")
+
+    @staticmethod
+    def _q_user_has_email_channel() -> Q:
+        """邮箱：已绑定非空邮箱。"""
+        return Q(email__isnull=False) & ~Q(email="")
+
+    @staticmethod
+    def _q_user_has_sms_channel() -> Q:
+        """短信：已绑定非空手机号（PHONE SocialIdentity）。"""
+        return Q(
+            social_identities__provider=SocialIdentity.Provider.PHONE,
+            social_identities__provider_uid__gt="",
+        )
+
+    @staticmethod
+    def _q_user_has_any_notifiable_channel() -> Q:
+        """用户维度：任一通知渠道可用（APNs 允许通知 / 有邮箱 / 有手机号）。"""
+        return (
+            NotificationService._q_user_has_apns_notification_allowed()
+            | NotificationService._q_user_has_email_channel()
+            | NotificationService._q_user_has_sms_channel()
+        )
+
+    @staticmethod
+    def _filter_user_queryset(
+        *,
+        q: str = "",
+        only_enabled: bool = True,
+        has_email: bool | None = None,
+        has_sms: bool | None = None,
+        has_apns: bool | None = None,
+        is_active: bool | None = None,
+    ):
+        """
+        通知用户列表筛选（面向后台运营/管理员）。
+
+        - q: 搜索关键词。纯数字时按用户 id 精确匹配；否则模糊匹配 用户名 / 邮箱 / 手机号（PHONE SocialIdentity.provider_uid）。
+        - only_enabled: “仅开通通知”（用户维度）。任一渠道可用即入选：
+          APNs（至少一台设备 notifications_enabled=True）/ 邮箱（非空）/ 短信（已绑手机号）。
+        - has_email: 是否“有邮箱”。True 要求 email 非空；False 要求 email 为空/NULL；None 不限制。
+        - has_sms: 是否“有短信”。这里等价于：是否存在 provider=phone 的 SocialIdentity 且 provider_uid 非空。
+        - has_apns: 是否“有APNs”（可下发推送）。要求 notifications_enabled=True 且 push_token 非空；与 only_enabled 的 APNs 判定不同。
+        - is_active: Django User.is_active 状态过滤；None 不限制。
+        """
         queryset = User.objects.all().order_by("-date_joined", "-id")
         if q:
-            queryset = queryset.filter(
-                Q(username__icontains=q)
-                | Q(email__icontains=q)
-                | Q(social_identities__provider=SocialIdentity.Provider.PHONE, social_identities__provider_uid__icontains=q)
+            q_stripped = q.strip()
+            search_q = Q(
+                username__icontains=q_stripped
+            ) | Q(email__icontains=q_stripped) | Q(
+                social_identities__provider=SocialIdentity.Provider.PHONE,
+                social_identities__provider_uid__icontains=q_stripped,
             )
+            if q_stripped.isdigit():
+                search_q |= Q(id=int(q_stripped))
+            queryset = queryset.filter(search_q)
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active)
 
         if has_email is True:
+            # 有邮箱：非空且非 NULL
             queryset = queryset.exclude(email="").filter(email__isnull=False)
         elif has_email is False:
+            # 无邮箱：空串或 NULL
             queryset = queryset.filter(Q(email="") | Q(email__isnull=True))
 
         if has_sms is True:
+            # 有短信：存在 PHONE 身份且 provider_uid 非空（手机号）
             queryset = queryset.filter(social_identities__provider=SocialIdentity.Provider.PHONE).exclude(social_identities__provider_uid="")
         elif has_sms is False:
+            # 无短信：排除存在 PHONE 身份的用户
             queryset = queryset.exclude(
                 id__in=NotificationService._phone_identity_queryset().values("user_id")
             )
 
         if has_apns is True:
-            queryset = queryset.filter(
-                trusted_devices__notifications_enabled=True,
-                trusted_devices__push_token__isnull=False,
-            ).exclude(trusted_devices__push_token="")
+            # 有 APNs（可推送）：已允许通知且具备 push_token
+            queryset = queryset.filter(NotificationService._q_user_has_push_capable_apns())
         elif has_apns is False:
-            queryset = queryset.exclude(
-                id__in=TrustedDevice.objects.filter(notifications_enabled=True).exclude(push_token="").filter(push_token__isnull=False).values("user_id")
-            )
+            queryset = queryset.exclude(NotificationService._q_user_has_push_capable_apns())
 
         if only_enabled:
-            queryset = queryset.filter(
-                trusted_devices__notifications_enabled=True,
-                trusted_devices__push_token__isnull=False,
-            ).exclude(trusted_devices__push_token="")
+            # “仅开通通知”：用户维度，任一渠道可用即可
+            queryset = queryset.filter(NotificationService._q_user_has_any_notifiable_channel())
 
+        # trusted_devices / social_identities 是 1-N 关系，JOIN 后同一用户可能出现多行，distinct 去重。
         return queryset.distinct()
 
     @staticmethod
@@ -103,6 +164,7 @@ class NotificationService:
             .values("user_id")
             .annotate(
                 total_devices=Count("id"),
+                notifications_enabled_devices=Count("id", filter=Q(notifications_enabled=True)),
                 enabled_push_devices=Count("id", filter=Q(notifications_enabled=True) & ~Q(push_token="") & Q(push_token__isnull=False)),
             )
         )
@@ -110,9 +172,13 @@ class NotificationService:
 
         items = []
         for user in rows:
-            stat = stats_map.get(user.id, {"total_devices": 0, "enabled_push_devices": 0})
+            stat = stats_map.get(
+                user.id,
+                {"total_devices": 0, "notifications_enabled_devices": 0, "enabled_push_devices": 0},
+            )
             phone = phone_identities.get(user.id, "") or ""
             email = (user.email or "").strip()
+            notifications_enabled_devices = int(stat.get("notifications_enabled_devices") or 0)
             enabled_push_devices = int(stat.get("enabled_push_devices") or 0)
             items.append(
                 {
@@ -126,7 +192,8 @@ class NotificationService:
                     "total_devices": int(stat.get("total_devices") or 0),
                     "enabled_push_devices": enabled_push_devices,
                     "channels": {
-                        "apns": enabled_push_devices > 0,
+                        # APNs 渠道：系统侧已允许通知；APNs设备 列仍用 enabled_push_devices（含 token）
+                        "apns": notifications_enabled_devices > 0,
                         "email": bool(email),
                         "sms": bool(phone),
                     },
@@ -337,12 +404,8 @@ class NotificationService:
 
     @staticmethod
     def _send_apns(*, campaign_id: int | None, user: User, title: str, body: str, payload: dict, created_by_id: int | None, request_id: str) -> NotificationMessage:
-        devices = list(
-            TrustedDevice.objects.filter(user_id=user.id, notifications_enabled=True)
-            .exclude(push_token="")
-            .filter(push_token__isnull=False)
-            .order_by("-last_seen", "-id")
-        )
+        active_device = DeviceSessionService.apns_trusted_device_for_user(user=user)
+        devices = [active_device] if active_device else []
         details: list[dict[str, Any]] = []
         success_count = 0
         failure_count = 0
