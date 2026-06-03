@@ -1,13 +1,13 @@
 import logging
 
-from accounts.models import TrustedDevice
+from accounts.services.device_service import DeviceService
 
 flow_logger = logging.getLogger("accounts.flow")
 
 
 class DeviceLinkingService:
     """
-    登录成功后尝试把匿名登记的 TrustedDevice 关联到当前用户；失败只打日志。
+    登录成功后：用匿名设备画像补全当前用户的设备行，不改绑匿名行（ACCOUNTS-000002）。
     """
 
     @staticmethod
@@ -17,45 +17,12 @@ class DeviceLinkingService:
         if not device_id or not bundle_id or user is None:
             return
         try:
-            row = TrustedDevice.objects.filter(bundle_id=bundle_id, device_id=device_id).first()
-            if row is None:
-                flow_logger.info(
-                    "device.attach.skip_no_row",
-                    extra={
-                        "action": "device.attach",
-                        "request_id": request_id,
-                        "bundle_id": bundle_id,
-                        "device_id": device_id,
-                        "user_id": user.id,
-                    },
-                )
-                return
-            if row.user_id is None:
-                row.user = user
-                row.save(update_fields=["user"])
-                flow_logger.info(
-                    "device.attach.ok",
-                    extra={
-                        "action": "device.attach",
-                        "request_id": request_id,
-                        "bundle_id": bundle_id,
-                        "device_id": device_id,
-                        "user_id": user.id,
-                    },
-                )
-                return
-            if row.user_id != user.id:
-                flow_logger.warning(
-                    "device.attach.conflict_existing_user",
-                    extra={
-                        "action": "device.attach",
-                        "request_id": request_id,
-                        "bundle_id": bundle_id,
-                        "device_id": device_id,
-                        "expected_user_id": user.id,
-                        "existing_user_id": row.user_id,
-                    },
-                )
+            DeviceService.ensure_user_device_profile_from_anonymous(
+                user=user,
+                bundle_id=bundle_id,
+                device_id=device_id,
+                request_id=request_id,
+            )
         except Exception as exc:  # noqa: BLE001
             flow_logger.warning(
                 "device.attach.failed",

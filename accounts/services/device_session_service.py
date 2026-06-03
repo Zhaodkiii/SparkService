@@ -51,28 +51,13 @@ class DeviceSessionService:
         if not bundle_id or not device_id:
             raise APIError("bundle_id and device_id are required for login", code=40024, status_code=400)
 
-        obj = TrustedDevice.objects.filter(bundle_id=bundle_id, device_id=device_id).first()
-        if obj is None:
-            obj = TrustedDevice.objects.create(
-                bundle_id=bundle_id,
-                device_id=device_id,
-                bundle_identifier=bundle_id,
-                user=user,
-            )
-        elif obj.user_id is None:
-            obj.user = user
-            obj.save(update_fields=["user"])
-        elif obj.user_id != user.id:
-            flow_logger.warning(
-                "device.session.trusted_device_user_conflict",
-                extra={
-                    "bundle_id": bundle_id,
-                    "device_id": device_id,
-                    "expected_user_id": user.id,
-                    "existing_user_id": obj.user_id,
-                },
-            )
-        return obj
+        from accounts.services.device_service import DeviceService
+
+        return DeviceService.ensure_user_device_profile_from_anonymous(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+        )
 
     @staticmethod
     def _blacklist_refresh_jti(jti: str) -> None:

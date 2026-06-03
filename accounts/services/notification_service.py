@@ -41,8 +41,11 @@ class NotificationService:
 
     @staticmethod
     def _q_user_has_apns_notification_allowed() -> Q:
-        """APNs：至少一台可信设备在系统侧已允许通知（notifications_enabled，不要求 push_token）。"""
-        return Q(trusted_devices__notifications_enabled=True)
+        """APNs：当前 ACTIVE 设备会话对应设备在系统侧已允许通知。"""
+        return Q(
+            device_sessions__status=AccountDeviceSession.Status.ACTIVE,
+            device_sessions__trusted_device__notifications_enabled=True,
+        )
 
     @staticmethod
     def _q_user_has_push_capable_apns() -> Q:
@@ -90,7 +93,7 @@ class NotificationService:
 
         - q: 搜索关键词。纯数字时按用户 id 精确匹配；否则模糊匹配 用户名 / 邮箱 / 手机号（PHONE SocialIdentity.provider_uid）。
         - only_enabled: “仅开通通知”（用户维度）。任一渠道可用即入选：
-          APNs（至少一台设备 notifications_enabled=True）/ 邮箱（非空）/ 短信（已绑手机号）。
+          APNs（当前 ACTIVE 会话设备 notifications_enabled=True）/ 邮箱（非空）/ 短信（已绑手机号）。
         - has_email: 是否“有邮箱”。True 要求 email 非空；False 要求 email 为空/NULL；None 不限制。
         - has_sms: 是否“有短信”。这里等价于：是否存在 provider=phone 的 SocialIdentity 且 provider_uid 非空。
         - has_apns: 是否“有APNs”（可下发推送）。要求 notifications_enabled=True 且 push_token 非空；与 only_enabled 的 APNs 判定不同。
@@ -159,16 +162,24 @@ class NotificationService:
             identity.user_id: identity.provider_uid
             for identity in NotificationService._phone_identity_queryset().filter(user_id__in=user_ids)
         }
-        device_stats = (
-            TrustedDevice.objects.filter(user_id__in=user_ids)
-            .values("user_id")
-            .annotate(
-                total_devices=Count("id"),
-                notifications_enabled_devices=Count("id", filter=Q(notifications_enabled=True)),
-                enabled_push_devices=Count("id", filter=Q(notifications_enabled=True) & ~Q(push_token="") & Q(push_token__isnull=False)),
+        stats_map: dict[int, dict[str, int]] = {}
+        active_sessions = (
+            AccountDeviceSession.objects.filter(
+                user_id__in=user_ids,
+                status=AccountDeviceSession.Status.ACTIVE,
             )
+            .select_related("trusted_device")
         )
-        stats_map = {row["user_id"]: row for row in device_stats}
+        for session in active_sessions:
+            device = session.trusted_device
+            if device is None:
+                continue
+            has_push = bool((device.push_token or "").strip())
+            stats_map[session.user_id] = {
+                "total_devices": 1,
+                "notifications_enabled_devices": 1 if device.notifications_enabled else 0,
+                "enabled_push_devices": 1 if device.notifications_enabled and has_push else 0,
+            }
 
         items = []
         for user in rows:
@@ -192,7 +203,7 @@ class NotificationService:
                     "total_devices": int(stat.get("total_devices") or 0),
                     "enabled_push_devices": enabled_push_devices,
                     "channels": {
-                        # APNs 渠道：系统侧已允许通知；APNs设备 列仍用 enabled_push_devices（含 token）
+                        # APNs 渠道：以当前 ACTIVE 会话设备为准
                         "apns": notifications_enabled_devices > 0,
                         "email": bool(email),
                         "sms": bool(phone),

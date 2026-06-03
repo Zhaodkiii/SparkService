@@ -10,6 +10,11 @@ class ChatSyncConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope.get("user")
         if user is None or user.is_authenticated is False:
             logger.warning("chat ws connect rejected unauthenticated")
+            await self.accept()
+            await self.send_json({
+                "type": "auth.session.invalidated",
+                "msg": "unauthenticated",
+            })
             await self.close(code=4401)
             return
 

@@ -23,6 +23,27 @@ class DeviceRegisterAnonThrottle(AnonRateThrottle):
     rate = "120/hour"
 
 
+def _authorization_header_present(request) -> bool:
+    auth = request.headers.get("Authorization") or request.META.get("HTTP_AUTHORIZATION")
+    return bool(auth and str(auth).strip())
+
+
+def _authentication_failure_message(exc: AuthenticationFailed) -> str:
+    detail = exc.detail
+    if isinstance(detail, str):
+        return detail.strip() or "authentication_failed"
+    if isinstance(detail, list) and detail:
+        first = detail[0]
+        return str(first).strip() if first else "authentication_failed"
+    if isinstance(detail, dict):
+        for value in detail.values():
+            if isinstance(value, list) and value:
+                return str(value[0]).strip()
+            if value:
+                return str(value).strip()
+    return "authentication_failed"
+
+
 # 设备注册接口视图
 class DeviceRegisterView(APIView):
     """
@@ -30,50 +51,48 @@ class DeviceRegisterView(APIView):
     POST 请求地址：/api/v1/device/register/
 
     权限说明：
-    1. 允许所有用户访问（未登录/已登录均可）
-    2. 支持可选的 Bearer JWT 身份验证
-       - 若 JWT 有效：注册的设备会绑定到当前登录用户
-       - 若 JWT 无效/过期：不会返回 401 未授权，仅跳过用户绑定逻辑
-    3. JWT 仅在 post 方法内解析，避免无效 token 直接拦截请求
+    1. 无 Authorization：匿名登记，upsert `TrustedDevice(user=NULL)`。
+    2. 有 Authorization：必须 JWT + 有效设备会话；失效返回 401，不降级匿名登记。
     """
 
-    # 权限控制：允许所有访问
     permission_classes = [AllowAny]
-    # 关闭默认身份认证（手动处理 JWT）
     authentication_classes = []
-    # 接口限流：匿名用户设备注册限流规则
     throttle_classes = [DeviceRegisterAnonThrottle]
 
     def post(self, request):
-        """
-        处理设备注册的 POST 请求
-        :param request: 请求对象，包含设备注册参数、可选的 JWT 认证信息
-        :return: 统一格式的成功响应
-        """
-        # 初始化用户为 None（未登录/无有效token时，设备不绑定用户）
+        has_auth_header = _authorization_header_present(request)
         user = None
-        try:
-            # 手动初始化 JWT 认证器
-            auth = SparkJWTAuthentication()
-            # 尝试从请求中解析 JWT 并认证用户
-            result = auth.authenticate(request)
-            # 认证成功：获取用户对象（token 为 JWT 令牌本身）
-            if result is not None:
-                user, _token = result
-        except (InvalidToken, TokenError, AuthenticationFailed) as exc:
-            # JWT 认证失败（无效/过期/格式错误）：记录调试日志，不中断注册流程
-            flow_logger.debug(
-                "device.register.optional_jwt_skip",
-                extra={"action": "device.register", "reason": str(exc)},
-            )
 
-        # 序列化器校验请求参数（校验不通过直接抛出异常）
+        if has_auth_header:
+            auth = SparkJWTAuthentication()
+            try:
+                result = auth.authenticate(request)
+            except (InvalidToken, TokenError) as exc:
+                flow_logger.warning(
+                    "device.register.rejected_invalid_token",
+                    extra={"action": "device.register", "reason": str(exc)},
+                )
+                raise APIError("token_not_valid", code=40102, status_code=401) from exc
+            except AuthenticationFailed as exc:
+                msg = _authentication_failure_message(exc)
+                flow_logger.warning(
+                    "device.register.rejected_auth_failed",
+                    extra={"action": "device.register", "reason": msg},
+                )
+                raise APIError(msg, code=40102, status_code=401) from exc
+
+            if result is None:
+                flow_logger.warning(
+                    "device.register.rejected_missing_user",
+                    extra={"action": "device.register"},
+                )
+                raise APIError("token_not_valid", code=40102, status_code=401)
+            user, _token = result
+
         serializer = DeviceRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # 获取请求唯一 ID（用于日志追踪）
         request_id = getattr(request, "request_id", "") or ""
-        # 获取前端显式传递的参数键集合
         explicit_keys = set(request.data.keys())
 
         if user is not None:
@@ -99,18 +118,16 @@ class DeviceRegisterView(APIView):
                 )
                 raise
 
-        # 调用设备服务层：执行设备注册逻辑
         out = DeviceService.register_device(
-            user=user,                  # 绑定的用户（可为 None）
-            data=serializer.validated_data,  # 校验后的合法参数
-            explicit_keys=explicit_keys,      # 前端显式传入的字段
-            request_id=request_id,      # 请求追踪 ID
+            user=user,
+            data=serializer.validated_data,
+            explicit_keys=explicit_keys,
+            request_id=request_id,
         )
 
-        # 返回统一格式的成功响应
         return success_response(
             data=out,
             msg="device_registered",
             code=0,
-            status_code=status.HTTP_200_OK
+            status_code=status.HTTP_200_OK,
         )

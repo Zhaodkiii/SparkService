@@ -1,8 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
-from accounts.models import AccountDeviceSession
+from accounts.models import AccountDeviceSession, TrustedDevice
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.otp_service import OTPService
 from common.exceptions import APIError
@@ -118,3 +119,95 @@ class DeviceSessionServiceTests(TestCase):
                 device_id=self.device_a2,
             )
         self.assertEqual(ctx.exception.msg, "device_mismatch")
+
+
+class DeviceRegisterViewAuthTests(TestCase):
+    bundle_id = "com.sparkclient.ios"
+    register_url = "/api/v1/device/register/"
+
+    def _payload(self, *, device_id: str) -> dict:
+        return {
+            "device_id": device_id,
+            "bundle_id": self.bundle_id,
+            "platform": "iOS",
+        }
+
+    def test_anonymous_register_without_authorization_succeeds(self):
+        client = APIClient()
+        response = client.post(self.register_url, self._payload(device_id="anon-device"), format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["code"], 0)
+        self.assertTrue(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_id,
+                device_id="anon-device",
+                user__isnull=True,
+            ).exists()
+        )
+
+    def test_invalid_authorization_returns_401_without_anonymous_row(self):
+        client = APIClient()
+        response = client.post(
+            self.register_url,
+            self._payload(device_id="bad-auth-device"),
+            format="json",
+            HTTP_AUTHORIZATION="Bearer not-a-real-jwt",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(
+            TrustedDevice.objects.filter(bundle_id=self.bundle_id, device_id="bad-auth-device").exists()
+        )
+
+    def _login_phone(self, *, device_id: str) -> dict:
+        requested = OTPService.request_phone_otp(
+            phone_number="13800138000",
+            provider_uid="",
+            bundle_id=self.bundle_id,
+            device_id=device_id,
+            ip_address="127.0.0.1",
+            request_id=f"req-{device_id}",
+        )
+        return OTPService.verify_phone_otp_and_issue_tokens(
+            otp_id=requested["otp_id"],
+            phone_number="13800138000",
+            code="989898",
+            request_id=f"req-{device_id}",
+            ip_address="127.0.0.1",
+            user_agent="unit-test",
+            bundle_id=self.bundle_id,
+            device_id=device_id,
+        )
+
+    @override_settings(
+        OTP_WHITELIST_PHONES=["13800138000"],
+        OTP_FIXED_WHITELIST_CODE="989898",
+        ALIYUN_SMS_OTP_TEMPLATE_CODE="",
+    )
+    def test_old_device_authenticated_register_returns_401(self):
+        first = self._login_phone(device_id="device-a1")
+        second = self._login_phone(device_id="device-a2")
+
+        client = APIClient()
+        response = client.post(
+            self.register_url,
+            self._payload(device_id="device-a1"),
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {first['access_token']}",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertIn(
+            response.json()["msg"],
+            ("device_session_replaced", "device_session_revoked", "device_session_not_found"),
+        )
+
+        active_row = TrustedDevice.objects.get(
+            bundle_id=self.bundle_id,
+            device_id="device-a2",
+            user_id=first["user_id"],
+        )
+        self.assertEqual(active_row.push_token, "")
+
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {second['access_token']}")
+        ok = client.post(self.register_url, self._payload(device_id="device-a2"), format="json")
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.json()["code"], 0)

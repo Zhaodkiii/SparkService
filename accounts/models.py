@@ -19,14 +19,14 @@ class AccountProfile(models.Model):
 
 class TrustedDevice(models.Model):
     """
-    可信设备（安装实例维度）。
+    可信设备（安装实例 + 用户维度）。
 
-    - 业务键：同一应用安装以 (bundle_id, device_id) 唯一；device_id 由客户端 Keychain 级 UUID 等稳定标识提供。
-    - user 可空：允许匿名 POST /device/register/ 先落库，密码 / Apple / OTP 登录成功后再关联同一行。
-    - 其余字段为终端画像与推送能力，供风控、运营触达与排障；verified / is_revoked 供后续设备证明或吊销策略扩展。
+    - 匿名：`(bundle_id, device_id, user=NULL)` 唯一，用于未登录冷启动画像。
+    - 已绑定用户：`(bundle_id, device_id, user)` 唯一，同一安装可为不同用户各保留一条画像。
+    - 禁止改绑、删除匿名行；登录后 upsert 当前用户行，并用同安装匿名行画像覆盖/补全用户行。
     """
 
-    user = models.ForeignKey(User, null=True, blank=True, related_name="trusted_devices", on_delete=models.SET_NULL, db_comment="关联 Django User；匿名登记为空，登录成功后回填")
+    user = models.ForeignKey(User, null=True, blank=True, related_name="trusted_devices", on_delete=models.SET_NULL, db_comment="关联 Django User；NULL=匿名冷启动画像，非 NULL=该用户设备行（与匿名行并存，不改绑匿名行）")
     bundle_id = models.CharField(max_length=255, db_index=True, default="", db_comment="应用维度分组键，与 device_id 组成唯一约束（可与 bundle_identifier 相同或业务自定义）")
     device_id = models.CharField(max_length=255, db_index=True, db_comment="客户端安装级稳定设备标识（如 Keychain UUID），与 bundle_id 唯一")
     push_token = models.CharField(max_length=512, blank=True, default="", db_comment="APNs/FCM 等设备推送令牌（十六进制或供应商格式），可空")
@@ -53,11 +53,20 @@ class TrustedDevice(models.Model):
     is_revoked = models.BooleanField(default=False, db_index=True, db_comment="是否已吊销（禁止推送或拒绝敏感操作等策略可读取）")
 
     class Meta:
-        db_table_comment = "客户端上报的可信安装实例：bundle_id+device_id 唯一，支持匿名后关联用户。"
+        db_table_comment = "客户端上报的可信安装实例：匿名 bundle+device 唯一；已登录用户 bundle+device+user 唯一。"
         verbose_name = "可信设备"
         verbose_name_plural = "可信设备"
         constraints = [
-            models.UniqueConstraint(fields=["bundle_id", "device_id"], name="uniq_bundle_device"),
+            models.UniqueConstraint(
+                fields=["bundle_id", "device_id"],
+                condition=Q(user__isnull=True),
+                name="uniq_bundle_device_anonymous",
+            ),
+            models.UniqueConstraint(
+                fields=["bundle_id", "device_id", "user"],
+                condition=Q(user__isnull=False),
+                name="uniq_bundle_device_user_bound",
+            ),
         ]
 
 
