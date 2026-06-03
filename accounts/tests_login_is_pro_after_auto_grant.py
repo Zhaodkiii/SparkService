@@ -157,3 +157,55 @@ class LoginIsProAfterAutoGrantTests(TestCase):
         )
 
         self.assertTrue(result["is_pro"])
+
+    def test_email_otp_second_user_on_same_install_returns_is_pro_via_historical_cn_device(self):
+        """AI-CONFIG-000005: A1 退出后 B1 无匿名行、当前设备行无 country 时仍应 is_pro=true。"""
+        User = get_user_model()
+        user_a = User.objects.create_user(username="hist_a", email="hist-a@example.com", password="x")
+        TrustedDevice.objects.create(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            user=user_a,
+            country_code="CN",
+            is_revoked=True,
+        )
+
+        email_b = "hist-b@example.com"
+        otp_code = "112233"
+        otp_id = "otp-hist-b"
+        EmailOTP.objects.create(
+            otp_id=otp_id,
+            email=email_b,
+            code_hash=OTPService._hash_code(otp_code),
+            expires_at=timezone.now() + timedelta(minutes=5),
+            provider_uid="",
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            ip_address="127.0.0.1",
+            request_id="req-hist-b",
+        )
+
+        result = OTPService.verify_email_otp_and_issue_tokens(
+            otp_id=otp_id,
+            email=email_b,
+            code=otp_code,
+            request_id="req-hist-b",
+            ip_address="127.0.0.1",
+            user_agent="unit-test",
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+        )
+
+        self.assertTrue(result["is_pro"])
+        user_b = User.objects.get(email=email_b)
+        device_b = TrustedDevice.objects.get(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            user=user_b,
+            is_revoked=False,
+        )
+        self.assertEqual(device_b.country_code, "")
+        self.assertEqual(
+            TrialApplication.objects.get(user=user_b).status,
+            TrialApplication.Status.ACTIVE,
+        )

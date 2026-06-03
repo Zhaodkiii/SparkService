@@ -10,6 +10,7 @@
 | `AI-CONFIG-000002` | 试用申请提交后请求通知权限并通过通知刷新 Pro 模型 | 已实现 | 客户端提交申请、通知权限、公共通知接收、刷新服务端 Pro 模型列表 |
 | `AI-CONFIG-000003` | 服务端试用申请延迟自动审核与 APNs 通知 | 已实现 | `TrialApplication` 申请次数、延迟自动通过、通过/拒绝触发公共 APNs 通知 |
 | `AI-CONFIG-000004` | 登录自动 Pro 发放仅限中国设备 | 新需求/待实现 | `TrustedDevice` 增加国家登记；登录成功后仅中国设备立即自动发放 Pro |
+| `AI-CONFIG-000005` | 同一设备换用户首次登录自动 Pro 发放修复 | 新需求/待实现 | 同一安装上 A1 退出后 B1/C1 首次登录也应按用户维度发放 15 天 Pro |
 
 ## 工单 `AI-CONFIG-000001`：中国大陆用户才展示 Pro 试用申请入口
 
@@ -903,6 +904,186 @@ A：本工单先按 backoffice 权限管理能力补齐。通知可以复用 `AI
 16. 发放权限成功后，列表状态变为“已有权限”，到期时间按所选天数更新。
 17. 点击“详细”弹窗能看到 `TrialApplication` 申请信息和 `TrialApplicationRequest` 流水。
 18. `TrustedDevice.country_code` 新增 migration 后，历史/旧客户端数据为空值，不影响列表、详情、登录和设备注册。
+
+## 工单 `AI-CONFIG-000005`：同一设备换用户首次登录自动 Pro 发放修复
+
+### 1. 背景
+
+### Q：当前发现了什么问题？
+
+A：同一台设备 `0001` 上存在如下场景：
+
+1. 首次下载 App。
+2. 用户 A1 首次注册并登录设备 `0001`。
+3. A1 没有 Pro 发放记录，系统正常自动发放 15 天 Pro。
+4. A1 主动退出登录。
+5. 用户 B1 在同一设备 `0001` 首次注册/登录。
+6. B1 没有 Pro 发放记录，但 Pro 没有正常自动发放。
+7. 用户 C1 在同一设备 `0001` 首次注册/登录，同样没有正常自动发放。
+
+原始业务规则是：**用户登录时，只要该用户没有 Pro 发放记录，并且当前设备符合中国设备条件，就应自动发放 15 天 Pro。**
+
+本问题不是“一个设备只能领一次 Pro”，而是同一设备换用户后，新的用户设备行缺少国家画像，导致用户维度的首次自动发放被误跳过。
+
+### 2. 问题原因
+
+### Q：为什么 A1 正常，B1/C1 不正常？
+
+A：A1 首次下载后，未登录冷启动会先执行匿名设备登记：
+
+```text
+TrustedDevice(user=NULL, bundle_id=..., device_id=0001, country_code=CN)
+```
+
+A1 登录时，登录链路会把匿名设备行升级为 A1 用户设备行，因此 A1 的 `TrustedDevice.country_code` 仍然是 `CN`，自动发放判断通过：
+
+```text
+TrustedDevice(user=A1, device_id=0001, country_code=CN, is_revoked=false)
+```
+
+A1 退出后，设备行会保留为历史用户设备行：
+
+```text
+TrustedDevice(user=A1, device_id=0001, country_code=CN, is_revoked=true)
+```
+
+B1/C1 在同一设备直接登录时，已经没有 `user=NULL` 匿名设备行可升级。当前登录链路会为 B1/C1 创建一条新的用户设备行，但只写入 `bundle_id/device_id/user/is_revoked/request_id`，这条新设备行暂时没有 `country_code`：
+
+```text
+TrustedDevice(user=B1, device_id=0001, country_code="", is_revoked=false)
+```
+
+随后 `TrialService.try_grant_auto_trial_for_login_device(...)` 读取当前设备国家，发现 `country_code != CN`，于是跳过自动 Pro 发放。
+
+### Q：问题发生在什么时机？
+
+A：发生在登录流程中“创建/关联当前用户可信设备”之后、“计算并返回 `is_pro`”之前。
+
+关键时序：
+
+```text
+登录成功创建/找到 User
+  -> DeviceLinkingService.try_attach_user_to_trusted_device(...)
+  -> DeviceService.ensure_user_device_profile_from_anonymous(...)
+       没有匿名行时，创建当前用户 TrustedDevice，country_code 为空
+  -> TrialService.try_grant_auto_trial_for_login_device(...)
+       只读取当前用户设备行 country_code，空值时跳过自动发放
+  -> TrialService.is_pro_user(user)
+  -> 登录响应 is_pro=false
+```
+
+涉及位置：
+
+| 文件 | 位置/职责 | 当前问题 |
+| --- | --- | --- |
+| `SparkService/accounts/services/login_service.py` | `_prepare_login_entitlements(...)` | Apple/密码等登录入口先关联设备，再自动发放 Pro |
+| `SparkService/accounts/services/otp_service.py` | OTP 登录成功后设备关联与自动发放 | 邮箱/手机号 OTP 路径同样存在该时序 |
+| `SparkService/accounts/services/device_linking_service.py` | 登录后设备画像关联入口 | 委托 `DeviceService.ensure_user_device_profile_from_anonymous(...)` |
+| `SparkService/accounts/services/device_service.py` | `ensure_user_device_profile_from_anonymous(...)` | 无匿名行时直接创建空画像用户设备行，当前用户设备行可能没有国家 |
+| `SparkService/ai_config/services.py` | `try_grant_auto_trial_for_login_device(...)` | 只依赖当前用户设备行 `country_code == CN`，空值时没有按同安装历史设备行兜底 |
+
+### 3. 修复目标
+
+### Q：这个工单要达成什么？
+
+A：
+
+1. 自动 Pro 发放仍然是**用户维度**，不能变成设备维度。
+2. 同一设备上 A1 已经领取过 Pro，不影响 B1/C1 作为新用户首次登录领取 Pro。
+3. 只有当前设备国家为 `CN` 时才自动发放。
+4. 如果 B1/C1 没有 `TrialApplication` 或状态为 `none` 且从未开始过试用，应立即发放 15 天 Pro。
+5. 登录响应里的 `is_pro` 必须反映发放后的真实状态，不能登录返回 `false` 后再依赖后续设备登记补发。
+
+### 4. 推荐实现方案
+
+### Q：应该怎么修？
+
+A：推荐在自动 Pro 发放的国家判断阶段修复，不复制历史设备画像。
+
+原因：
+
+1. 登录响应需要立即返回正确 `is_pro`。
+2. `/device/register/` 是登录后的启动引导请求，不能作为登录授权结果的前置依赖。
+3. 最小改动是把同一 `bundle_id + device_id` 下 `last_seen` 最新的历史用户设备行作为国家判断兜底，不改写 B1/C1 的设备画像。
+
+建议调整 `TrialService.try_grant_auto_trial_for_login_device(...)`：
+
+1. 先查询当前登录用户自己的非失效设备行。
+2. 如果当前用户设备行 `country_code == "CN"`，直接允许自动发放。
+3. 如果当前用户设备行不存在或 `country_code` 为空，则查询同一 `bundle_id + device_id` 下历史用户设备行：
+   - `user__isnull=False`
+   - 按 `last_seen` 倒序，其次按 `id` 倒序
+   - 取最新一条记录的 `country_code` 作为本次登录国家判断依据
+4. 如果最新历史设备行 `country_code == "CN"`，允许自动发放。
+5. 如果历史设备行也不存在，或 `country_code` 为空/非 `CN`，跳过自动发放。
+6. 不把历史设备行的 `country_code` 复制到当前用户设备行，避免额外写入和归属混淆。
+
+伪代码：
+
+```python
+current = TrustedDevice.objects.filter(
+    user=user,
+    bundle_id=bundle_id,
+    device_id=device_id,
+    is_revoked=False,
+).first()
+
+country_code = current.country_code if current else ""
+
+if not country_code:
+    latest = (
+        TrustedDevice.objects
+        .filter(bundle_id=bundle_id, device_id=device_id, user__isnull=False)
+        .order_by("-last_seen", "-id")
+        .first()
+    )
+    country_code = latest.country_code if latest else ""
+
+if country_code == "CN":
+    TrialService.grant_auto_trial_if_eligible(user=user)
+```
+
+### Q：是否应该改 `TrialService.try_grant_auto_trial_for_login_device(...)`？
+
+A：需要改。该函数应负责完整国家判断，不要求 `DeviceService` 复制设备画像。
+
+当前用户设备行查询应定位到当前登录用户自己的设备行：
+
+```python
+TrustedDevice.objects.filter(
+    user=user,
+    bundle_id=bundle_id,
+    device_id=device_id,
+    is_revoked=False,
+).first()
+```
+
+如果当前用户设备行没有国家，再按同一 `bundle_id + device_id` 查 `last_seen` 最新历史用户设备行做兜底。注意兜底只用于国家判断，不用于选择发放对象；发放对象始终是当前登录用户 `user`。
+
+### 5. 涉及文件
+
+| 文件 | 改动内容 |
+| --- | --- |
+| `SparkService/ai_config/services.py` | `try_grant_auto_trial_for_login_device(...)` 先查当前用户设备行；国家为空时按同一 `bundle_id + device_id` 的历史用户设备行 `last_seen` 最新记录兜底判断国家 |
+| `SparkService/accounts/services/login_service.py` | 保持时序：设备关联后自动发放 Pro，再计算 `is_pro` |
+| `SparkService/accounts/services/otp_service.py` | 邮箱 OTP、手机号 OTP 路径保持同样时序 |
+| `SparkService/accounts/tests_auto_trial_on_registration.py` 或新增测试文件 | 增加同设备 A1 退出后 B1/C1 首次登录自动发放测试 |
+| `SparkService/accounts/tests_login_is_pro_after_auto_grant.py` | 补充同安装多用户场景，验证登录响应 `is_pro=true` |
+
+### 6. 验收标准
+
+1. 设备 `0001` 首次下载，匿名登记 `country_code=CN`。
+2. A1 首次注册/登录后，A1 自动获得 15 天 Pro，登录响应 `is_pro=true`。
+3. A1 退出后，A1 的 `TrustedDevice(user=A1, device_id=0001).is_revoked=true`。
+4. B1 在同一设备 `0001` 首次注册/登录，没有历史 Pro 发放记录时，自动获得 15 天 Pro，登录响应 `is_pro=true`。
+5. B1 的 `TrustedDevice(user=B1, device_id=0001)` 不要求复制 `country_code`；自动发放判断可使用同安装 `last_seen` 最新历史用户设备行的 `country_code=CN`。
+6. B1 退出后，C1 在同一设备 `0001` 首次注册/登录，同样自动获得 15 天 Pro，登录响应 `is_pro=true`。
+7. 如果同一设备历史国家不是 `CN`，B1/C1 登录仍不自动发放。
+8. 如果当前用户已经存在 `TrialApplication(status=active)`，重复登录不重复生成新的自动发放周期。
+9. 如果当前用户已有过期、拒绝或已开始过的试用记录，仍遵守现有“一次性自动发放”规则，不静默重新发放。
+10. 自动发放流水 `TrialApplicationRequest(source=auto)` 按用户维度记录，A1/B1/C1 各自有自己的流水。
+11. 登录后再执行 `/device/register/` 只更新设备画像，不作为自动发放成功的必要条件。
+12. Apple/密码/邮箱 OTP/手机号 OTP 登录路径表现一致。
 
 ## 全局注意事项
 

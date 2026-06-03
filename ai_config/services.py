@@ -81,9 +81,40 @@ class TrialService:
         return trial
 
     @staticmethod
+    def _resolve_login_device_country_code(*, user, bundle_id: str, device_id: str) -> str:
+        """
+        解析本次登录用于自动 Pro 发放的国家：优先当前用户非失效设备行；
+        若为空则按同安装历史用户设备行（排除当前用户）last_seen 最新记录兜底，不复制画像。
+        """
+        from accounts.models import TrustedDevice
+
+        current = TrustedDevice.objects.filter(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            is_revoked=False,
+        ).first()
+        country_code = (current.country_code if current else "") or ""
+        if country_code:
+            return country_code
+
+        latest = (
+            TrustedDevice.objects.filter(
+                bundle_id=bundle_id,
+                device_id=device_id,
+                user__isnull=False,
+            )
+            .exclude(country_code="")
+            .order_by("-last_seen", "-id")
+            .first()
+        )
+        return (latest.country_code if latest else "") or ""
+
+    @staticmethod
     def try_grant_auto_trial_for_login_device(*, user, bundle_id: str, device_id: str, request_id: str) -> bool:
         """
         登录自动发放 Pro：仅当本次登录设备登记的 country_code == CN 时才允许触发。
+        当前用户设备行无国家时，可用同安装历史用户设备行国家兜底（仅判断，不写回画像）。
         失败/跳过不影响登录流程，只记录日志。
         """
         bundle_id = (bundle_id or "").strip()
@@ -91,14 +122,11 @@ class TrialService:
         if not bundle_id or not device_id or user is None:
             return False
         try:
-            from accounts.models import TrustedDevice
-
-            dev = TrustedDevice.objects.filter(
+            cc = TrialService._resolve_login_device_country_code(
+                user=user,
                 bundle_id=bundle_id,
                 device_id=device_id,
-                is_revoked=False,
-            ).first()
-            cc = (dev.country_code if dev else "") or ""
+            )
             if cc != "CN":
                 flow_logger.info(
                     "auth.trial.auto_grant.skipped_by_country",
