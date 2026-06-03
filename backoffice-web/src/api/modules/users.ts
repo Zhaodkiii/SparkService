@@ -62,12 +62,57 @@ export interface AdminDeactivationAudit {
   created_at: string;
 }
 
+export interface AdminUserTrustedDevice {
+  id: number;
+  bundle_id: string;
+  device_id: string;
+  push_token_masked: string;
+  notifications_enabled: boolean;
+  platform: string;
+  system_version: string;
+  device_model: string;
+  device_model_name: string;
+  device_name: string;
+  country_code: string;
+  region_code: string;
+  language_code: string;
+  is_simulator: boolean;
+  is_revoked: boolean;
+  first_seen: string;
+  last_seen: string;
+  request_id: string;
+}
+
+export interface AdminUserDeviceSession {
+  id: number;
+  trusted_device: number;
+  bundle_id: string;
+  device_id: string;
+  session_version: number;
+  status: string;
+  revoked_reason: string;
+  replaced_by: number | null;
+  last_refreshed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  trusted_devices: AdminUserTrustedDevice[];
+  device_sessions: AdminUserDeviceSession[];
+}
+
 export function fetchUsers(params: { page: number; page_size: number; q?: string; is_active?: string }) {
   return http.get<unknown, UserListResponse>('/api/admin/v1/users/', { params });
 }
 
 export function updateUserStatus(userId: number, isActive: boolean) {
   return http.post(`/api/admin/v1/users/${userId}/status/`, { is_active: isActive });
+}
+
+export function fetchUserDetail(userId: number) {
+  return http.get<unknown, AdminUserDetail>(`/api/admin/v1/users/${userId}/detail/`);
 }
 
 export function assignUserRoles(userId: number, roleCodes: string[]) {

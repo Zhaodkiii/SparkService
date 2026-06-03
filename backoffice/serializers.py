@@ -11,7 +11,15 @@ from ai_config.models import (
     TrialApplication,
     TrialApplicationRequest,
 )
-from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
+from accounts.models import (
+    AccountDeactivation,
+    AccountDeactivationAudit,
+    AccountDeviceSession,
+    NotificationCampaign,
+    NotificationMessage,
+    NotificationTemplate,
+    TrustedDevice,
+)
 from app_version.serializers import AppVersionConfigSerializer, VersionCheckLogSerializer
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 
@@ -53,6 +61,63 @@ class AdminUserSerializer(serializers.ModelSerializer):
 
 class AdminUserStatusSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
+
+
+def mask_push_token(token: str) -> str:
+    t = (token or "").strip()
+    if not t:
+        return ""
+    if len(t) <= 12:
+        return "***"
+    return f"{t[:6]}...{t[-6:]}"
+
+
+class AdminUserTrustedDeviceSerializer(serializers.ModelSerializer):
+    push_token_masked = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TrustedDevice
+        fields = (
+            "id",
+            "bundle_id",
+            "device_id",
+            "push_token_masked",
+            "notifications_enabled",
+            "platform",
+            "system_version",
+            "device_model",
+            "device_model_name",
+            "device_name",
+            "country_code",
+            "region_code",
+            "language_code",
+            "is_simulator",
+            "is_revoked",
+            "first_seen",
+            "last_seen",
+            "request_id",
+        )
+
+    def get_push_token_masked(self, obj: TrustedDevice) -> str:
+        return mask_push_token(obj.push_token)
+
+
+class AdminUserDeviceSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccountDeviceSession
+        fields = (
+            "id",
+            "trusted_device",
+            "bundle_id",
+            "device_id",
+            "session_version",
+            "status",
+            "revoked_reason",
+            "replaced_by",
+            "last_refreshed_at",
+            "created_at",
+            "updated_at",
+        )
 
 
 class AdminDeviceSerializer(serializers.ModelSerializer):

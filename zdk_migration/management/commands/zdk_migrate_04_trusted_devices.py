@@ -27,12 +27,19 @@ class Command(ZdkMigrateCommand):
         for row in rows:
             bundle_id = row.get("bundle_id") or ""
             device_id = row.get("device_id") or ""
-            if TrustedDevice.objects.filter(bundle_id=bundle_id, device_id=device_id).exists():
-                self.stats.skipped += 1
-                continue
             user_id = row.get("user_id")
             if user_id and not User.objects.filter(pk=user_id).exists():
                 user_id = None
+
+            # 新模型：匿名 (bundle_id, device_id, user=NULL) 与用户行 (bundle_id, device_id, user) 各自唯一
+            exists_qs = TrustedDevice.objects.filter(bundle_id=bundle_id, device_id=device_id)
+            if user_id is None:
+                already = exists_qs.filter(user__isnull=True).exists()
+            else:
+                already = exists_qs.filter(user_id=user_id).exists()
+            if already:
+                self.stats.skipped += 1
+                continue
             if self.dry_run:
                 self.stats.migrated += 1
                 continue

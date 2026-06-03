@@ -51,7 +51,7 @@ class DeviceRegisterView(APIView):
     POST 请求地址：/api/v1/device/register/
 
     权限说明：
-    1. 无 Authorization：匿名登记，upsert `TrustedDevice(user=NULL)`。
+    1. 无 Authorization：匿名登记或更新 revoked 用户行（见 ACCOUNTS-000003）；可带 `user_id` 辅助定位上次登录用户。
     2. 有 Authorization：必须 JWT + 有效设备会话；失效返回 401，不降级匿名登记。
     """
 

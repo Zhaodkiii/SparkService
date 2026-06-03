@@ -9,6 +9,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer as Simpl
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from accounts.auth.authentication import SparkJWTAuthentication
 from accounts.auth.serializers import AppleLoginSerializer, PasswordLoginSerializer, TokenRefreshSerializer
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.login_service import LoginService
@@ -274,6 +275,44 @@ class AppleLoginView(APIView):
 
         # 返回统一格式的成功响应
         return success_response(result, msg="login_success", code=0, status_code=status.HTTP_200_OK)
+
+
+class LogoutView(APIView):
+    """主动退出：撤销当前设备会话并标记 trusted_device.is_revoked=true（ACCOUNTS-000003）。"""
+
+    authentication_classes = [SparkJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        request_id = getattr(request, "request_id", "") or ""
+        flow_logger.info(
+            "用户登出开始",
+            extra={
+                "action": "auth.logout",
+                "path": request.path,
+                "method": request.method,
+                "request_id": request_id,
+                "user_id": getattr(request.user, "id", None),
+            },
+        )
+        claims = None
+        if request.auth is not None:
+            claims = DeviceSessionService._claims_from_validated_token(request.auth)
+        DeviceSessionService.logout_current_session(
+            user=request.user,
+            request_id=request_id,
+            claims=claims,
+        )
+        flow_logger.info(
+            "用户登出成功",
+            extra={
+                "action": "auth.logout",
+                "outcome": "success",
+                "request_id": request_id,
+                "user_id": getattr(request.user, "id", None),
+            },
+        )
+        return success_response({}, msg="logout_success", code=0, status_code=status.HTTP_200_OK)
 
 
 class CurrentSessionView(APIView):

@@ -77,6 +77,19 @@ class DeviceSessionServiceTests(TestCase):
         )
         self.assertEqual(revoked.count(), 1)
 
+        old_device = TrustedDevice.objects.get(
+            bundle_id=self.bundle_a,
+            device_id=self.device_a1,
+            user=user,
+        )
+        new_device = TrustedDevice.objects.get(
+            bundle_id=self.bundle_a,
+            device_id=self.device_a2,
+            user=user,
+        )
+        self.assertTrue(old_device.is_revoked)
+        self.assertFalse(new_device.is_revoked)
+
     def test_old_device_refresh_rejected_after_replacement(self):
         first = self._login_phone(device_id=self.device_a1)
         self._login_phone(device_id=self.device_a2)
@@ -119,6 +132,72 @@ class DeviceSessionServiceTests(TestCase):
                 device_id=self.device_a2,
             )
         self.assertEqual(ctx.exception.msg, "device_mismatch")
+
+    def test_same_install_login_revokes_other_user_device_and_session(self):
+        User = get_user_model()
+        user_a = User.objects.create_user(username="install_user_a", password="x")
+        user_b = User.objects.create_user(username="install_user_b", password="x")
+        shared_device = "shared-install-id"
+
+        session_a = DeviceSessionService.activate_session_on_login(
+            user=user_a,
+            bundle_id=self.bundle_a,
+            device_id=shared_device,
+            request_id="req-a",
+        )
+        self.assertEqual(session_a.status, AccountDeviceSession.Status.ACTIVE)
+        device_a = TrustedDevice.objects.get(
+            bundle_id=self.bundle_a,
+            device_id=shared_device,
+            user=user_a,
+        )
+        self.assertFalse(device_a.is_revoked)
+
+        session_b = DeviceSessionService.activate_session_on_login(
+            user=user_b,
+            bundle_id=self.bundle_a,
+            device_id=shared_device,
+            request_id="req-b",
+        )
+        self.assertEqual(session_b.status, AccountDeviceSession.Status.ACTIVE)
+
+        device_a.refresh_from_db()
+        device_b = TrustedDevice.objects.get(
+            bundle_id=self.bundle_a,
+            device_id=shared_device,
+            user=user_b,
+        )
+        self.assertTrue(device_a.is_revoked)
+        self.assertFalse(device_b.is_revoked)
+
+        session_a.refresh_from_db()
+        self.assertEqual(session_a.status, AccountDeviceSession.Status.REVOKED)
+
+    def test_logout_uses_token_session_id_when_provided(self):
+        user = get_user_model().objects.create_user(username="logout_claims", password="x")
+        bundle_id = self.bundle_a
+        device_id = "logout-device"
+        session = DeviceSessionService.activate_session_on_login(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id="req-logout",
+        )
+        tokens = DeviceSessionService.issue_tokens_for_session(
+            user=user,
+            session=session,
+            bundle_id=bundle_id,
+            device_id=device_id,
+        )
+        access = AccessToken(tokens["access_token"])
+        claims = DeviceSessionService._claims_from_validated_token(access)
+
+        DeviceSessionService.logout_current_session(user=user, claims=claims, request_id="req-logout")
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, AccountDeviceSession.Status.LOGGED_OUT)
+        session.trusted_device.refresh_from_db()
+        self.assertTrue(session.trusted_device.is_revoked)
 
 
 class DeviceRegisterViewAuthTests(TestCase):
@@ -211,3 +290,27 @@ class DeviceRegisterViewAuthTests(TestCase):
         ok = client.post(self.register_url, self._payload(device_id="device-a2"), format="json")
         self.assertEqual(ok.status_code, 200)
         self.assertEqual(ok.json()["code"], 0)
+
+    @override_settings(
+        OTP_WHITELIST_PHONES=["13800138000"],
+        OTP_FIXED_WHITELIST_CODE="989898",
+        ALIYUN_SMS_OTP_TEMPLATE_CODE="",
+    )
+    def test_authenticated_register_rejected_when_trusted_device_revoked(self):
+        tokens = self._login_phone(device_id="revoked-reg-device")
+        user = get_user_model().objects.get(id=tokens["user_id"])
+        active = AccountDeviceSession.objects.get(
+            user=user,
+            status=AccountDeviceSession.Status.ACTIVE,
+        )
+        TrustedDevice.objects.filter(pk=active.trusted_device_id).update(is_revoked=True)
+
+        client = APIClient()
+        response = client.post(
+            self.register_url,
+            self._payload(device_id="revoked-reg-device"),
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}",
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["msg"], "device_session_revoked")

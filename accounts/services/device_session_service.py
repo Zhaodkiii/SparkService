@@ -74,13 +74,117 @@ class DeviceSessionService:
             blacklisted_token.objects.get_or_create(token=token)
 
     @staticmethod
+    def _revoke_same_installation_other_users(
+        *,
+        bundle_id: str,
+        device_id: str,
+        except_user,
+        request_id: str = "",
+    ) -> None:
+        """同一安装实例切换到新用户：撤销其他用户设备行与同安装 ACTIVE 会话（ACCOUNTS-000003）。"""
+        bundle_id = (bundle_id or "").strip()
+        device_id = (device_id or "").strip()
+        if not bundle_id or not device_id:
+            return
+
+        TrustedDevice.objects.filter(
+            bundle_id=bundle_id,
+            device_id=device_id,
+            user__isnull=False,
+        ).exclude(user=except_user).update(is_revoked=True)
+
+        other_sessions = list(
+            AccountDeviceSession.objects.select_for_update()
+            .filter(
+                bundle_id=bundle_id,
+                device_id=device_id,
+                status=AccountDeviceSession.Status.ACTIVE,
+            )
+            .exclude(user=except_user)
+            .select_related("trusted_device")
+        )
+        for old in other_sessions:
+            old.status = AccountDeviceSession.Status.REVOKED
+            old.revoked_reason = "replaced_by_other_user_on_install"
+            old.save(update_fields=["status", "revoked_reason", "updated_at"])
+            DeviceSessionService._blacklist_refresh_jti(old.refresh_jti)
+            flow_logger.info(
+                "device.session.revoked_on_install_user_switch",
+                extra={
+                    "action": "device.session.activate",
+                    "request_id": request_id,
+                    "user_id": old.user_id,
+                    "session_id": old.id,
+                    "except_user_id": except_user.id,
+                },
+            )
+
+    @staticmethod
+    def _resolve_logout_session(*, user, claims: dict | None = None) -> AccountDeviceSession | None:
+        """优先按 token claims 的 device_session_id 定位；否则回退用户 ACTIVE 会话。"""
+        if claims and DeviceSessionService.claims_require_device_session(claims):
+            try:
+                return DeviceSessionService._load_session_from_claims(user=user, claims=claims)
+            except APIError:
+                return None
+        return DeviceSessionService.get_active_session(user=user)
+
+    @staticmethod
+    @transaction.atomic
+    def logout_current_session(*, user, request_id: str = "", claims: dict | None = None) -> None:
+        """主动退出：标记当前会话与 trusted_device 为失效（ACCOUNTS-000003）。"""
+        session = DeviceSessionService._resolve_logout_session(user=user, claims=claims)
+        if session is None:
+            return
+
+        session = (
+            AccountDeviceSession.objects.select_for_update()
+            .filter(id=session.id)
+            .select_related("trusted_device")
+            .first()
+        )
+        if session is None:
+            return
+
+        session.status = AccountDeviceSession.Status.LOGGED_OUT
+        session.revoked_reason = "user_logout"
+        session.save(update_fields=["status", "revoked_reason", "updated_at"])
+        DeviceSessionService._blacklist_refresh_jti(session.refresh_jti)
+
+        trusted_device = session.trusted_device
+        if trusted_device is not None:
+            trusted_device.is_revoked = True
+            trusted_device.save(update_fields=["is_revoked", "last_seen"])
+
+        flow_logger.info(
+            "device.session.logged_out",
+            extra={
+                "action": "device.session.logout",
+                "request_id": request_id,
+                "user_id": user.id,
+                "session_id": session.id,
+            },
+        )
+
+    @staticmethod
     @transaction.atomic
     def activate_session_on_login(*, user, bundle_id: str, device_id: str, request_id: str = "") -> AccountDeviceSession:
+        bundle_id = (bundle_id or "").strip()
+        device_id = (device_id or "").strip()
+        DeviceSessionService._revoke_same_installation_other_users(
+            bundle_id=bundle_id,
+            device_id=device_id,
+            except_user=user,
+            request_id=request_id,
+        )
+
         trusted_device = DeviceSessionService._get_or_create_trusted_device(
             user=user,
             bundle_id=bundle_id,
             device_id=device_id,
         )
+        trusted_device.is_revoked = False
+        trusted_device.save(update_fields=["is_revoked", "last_seen"])
 
         active_sessions = list(
             AccountDeviceSession.objects.select_for_update()
@@ -95,6 +199,8 @@ class DeviceSessionService:
             old.revoked_reason = "replaced_by_new_device"
             old.save(update_fields=["status", "revoked_reason", "updated_at"])
             DeviceSessionService._blacklist_refresh_jti(old.refresh_jti)
+            if old.trusted_device_id:
+                TrustedDevice.objects.filter(pk=old.trusted_device_id).update(is_revoked=True)
             flow_logger.info(
                 "device.session.revoked_on_login",
                 extra={
@@ -311,6 +417,10 @@ class DeviceSessionService:
         active = DeviceSessionService.get_active_session(user=user)
         if active is None:
             DeviceSessionService._raise_api(DeviceSessionService.DEVICE_SESSION_NOT_FOUND, code=40106)
+
+        trusted_device = active.trusted_device
+        if trusted_device is None or trusted_device.is_revoked:
+            DeviceSessionService._raise_api(DeviceSessionService.DEVICE_SESSION_REVOKED, code=40104)
 
         req_bundle = (bundle_id or "").strip()
         req_device = (device_id or "").strip()

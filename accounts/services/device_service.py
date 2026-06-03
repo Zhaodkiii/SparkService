@@ -1,5 +1,7 @@
 from typing import Any
 
+from django.contrib.auth import get_user_model
+
 from common.exceptions import APIError
 from accounts.models import TrustedDevice
 
@@ -33,6 +35,19 @@ def _f(data: dict, key: str) -> float | None:
         return None
 
 
+def _parse_unsigned_hint_user_id(data: dict[str, Any], explicit_keys: set[str]) -> int | None:
+    """未登录登记时 body.user_id 仅作辅助定位，非鉴权凭证。"""
+    if "user_id" not in explicit_keys:
+        return None
+    raw = data.get("user_id")
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 _PROFILE_STRING_FIELDS = (
     "app_version",
     "build_version",
@@ -51,7 +66,7 @@ _PROFILE_STRING_FIELDS = (
 
 _PROFILE_COPY_FIELDS = _PROFILE_STRING_FIELDS + ("screen_scale", "is_simulator")
 
-_ALWAYS_APPLY_PATCH_KEYS = frozenset({"request_id", "is_revoked"})
+_ALWAYS_APPLY_PATCH_KEYS = frozenset({"request_id"})
 
 
 class DeviceService:
@@ -66,7 +81,6 @@ class DeviceService:
         """仅收集请求体显式携带的字段；未在 explicit_keys 中的画像字段不参与 patch。"""
         patch: dict[str, Any] = {
             "request_id": request_id or "",
-            "is_revoked": False,
         }
 
         for field in _PROFILE_STRING_FIELDS:
@@ -95,8 +109,12 @@ class DeviceService:
         row: TrustedDevice,
         patch: dict[str, Any],
         explicit_keys: set[str],
+        reactivate: bool = False,
     ) -> None:
-        """应用 patch：画像字符串字段仅非空时写入，避免空串冲掉匿名补全值。"""
+        """应用 patch：画像字符串字段仅非空时写入；reactivate 时置 is_revoked=false。"""
+        if reactivate:
+            row.is_revoked = False
+
         for key, value in patch.items():
             if key in _ALWAYS_APPLY_PATCH_KEYS:
                 setattr(row, key, value)
@@ -127,37 +145,75 @@ class DeviceService:
         ).first()
 
     @staticmethod
-    def _seed_from_anonymous(*, bundle_id: str, device_id: str) -> dict[str, Any]:
-        anon = DeviceService._anonymous_row(bundle_id=bundle_id, device_id=device_id)
-        if anon is None:
-            return {}
-        seed = {
-            field: getattr(anon, field)
-            for field in _PROFILE_COPY_FIELDS
-            if getattr(anon, field, None) not in (None, "")
-        }
-        if anon.push_token:
-            seed["push_token"] = anon.push_token
-        if anon.notifications_enabled:
-            seed["notifications_enabled"] = anon.notifications_enabled
-        return seed
+    def _user_row(*, bundle_id: str, device_id: str, user) -> TrustedDevice | None:
+        return TrustedDevice.objects.filter(
+            bundle_id=bundle_id,
+            device_id=device_id,
+            user=user,
+        ).first()
 
     @staticmethod
-    def _merge_anonymous_profile_into_user_row(
-        *,
-        user_row: TrustedDevice,
-        anon: TrustedDevice,
-        explicit_keys: set[str],
-    ) -> None:
-        """用匿名行画像覆盖/补全用户行；匿名行保持 user=NULL。"""
+    def _copy_profile_fields(*, source: TrustedDevice, target: TrustedDevice) -> None:
         for field in _PROFILE_COPY_FIELDS:
-            value = getattr(anon, field, None)
+            value = getattr(source, field, None)
             if value not in (None, ""):
-                setattr(user_row, field, value)
-        if "push_token" not in explicit_keys and anon.push_token:
-            user_row.push_token = anon.push_token
-        if "notifications_enabled" not in explicit_keys:
-            user_row.notifications_enabled = anon.notifications_enabled
+                setattr(target, field, value)
+        if source.push_token:
+            target.push_token = source.push_token
+        target.notifications_enabled = source.notifications_enabled
+
+    @staticmethod
+    def _resolve_unsigned_register_row(
+        *,
+        bundle_id: str,
+        device_id: str,
+        data: dict[str, Any],
+        explicit_keys: set[str],
+    ) -> TrustedDevice | None:
+        """
+        未登录登记目标行：仅 body.user_id 命中已有用户行时更新该行；否则匿名行。
+        不允许凭 body 创建任意用户设备行。
+        """
+        User = get_user_model()
+        hinted_user_id = _parse_unsigned_hint_user_id(data, explicit_keys)
+        if hinted_user_id is not None and User.objects.filter(pk=hinted_user_id).exists():
+            hinted = TrustedDevice.objects.filter(
+                bundle_id=bundle_id,
+                device_id=device_id,
+                user_id=hinted_user_id,
+            ).first()
+            if hinted is not None:
+                return hinted
+
+        return DeviceService._anonymous_row(bundle_id=bundle_id, device_id=device_id)
+
+    @staticmethod
+    def _upgrade_anonymous_row_to_user(
+        *,
+        anon: TrustedDevice,
+        user,
+        patch: dict[str, Any],
+        explicit_keys: set[str],
+    ) -> TrustedDevice:
+        """匿名行升级为当前用户行（ACCOUNTS-000003）。"""
+        anon.user = user
+        DeviceService._apply_patch_to_row(
+            row=anon,
+            patch=patch,
+            explicit_keys=explicit_keys,
+            reactivate=True,
+        )
+        anon.save()
+        return anon
+
+    @staticmethod
+    def _absorb_anonymous_into_user_row(
+        *,
+        anon: TrustedDevice,
+        user_row: TrustedDevice,
+    ) -> None:
+        DeviceService._copy_profile_fields(source=anon, target=user_row)
+        anon.delete()
 
     @staticmethod
     def ensure_user_device_profile_from_anonymous(
@@ -173,33 +229,30 @@ class DeviceService:
             raise APIError("bundle_id and device_id are required", code=40002, status_code=400)
 
         anon = DeviceService._anonymous_row(bundle_id=bundle_id, device_id=device_id)
-        user_row = TrustedDevice.objects.filter(
-            bundle_id=bundle_id,
-            device_id=device_id,
-            user=user,
-        ).first()
+        user_row = DeviceService._user_row(bundle_id=bundle_id, device_id=device_id, user=user)
 
-        if user_row is None:
-            seed = DeviceService._seed_from_anonymous(bundle_id=bundle_id, device_id=device_id)
-            user_row = TrustedDevice.objects.create(
-                bundle_id=bundle_id,
-                device_id=device_id,
-                user=user,
-                push_token=seed.get("push_token", ""),
-                notifications_enabled=seed.get("notifications_enabled", False),
-                **{k: v for k, v in seed.items() if k not in ("push_token", "notifications_enabled")},
-            )
+        if user_row is not None:
+            if anon is not None:
+                DeviceService._absorb_anonymous_into_user_row(anon=anon, user_row=user_row)
+            user_row.is_revoked = False
+            user_row.request_id = request_id or user_row.request_id
+            user_row.save()
             return user_row
 
         if anon is not None:
-            DeviceService._merge_anonymous_profile_into_user_row(
-                user_row=user_row,
-                anon=anon,
-                explicit_keys=set(),
-            )
-            user_row.request_id = request_id or user_row.request_id
-            user_row.save()
-        return user_row
+            anon.user = user
+            anon.is_revoked = False
+            anon.request_id = request_id or anon.request_id
+            anon.save()
+            return anon
+
+        return TrustedDevice.objects.create(
+            bundle_id=bundle_id,
+            device_id=device_id,
+            user=user,
+            is_revoked=False,
+            request_id=request_id or "",
+        )
 
     @staticmethod
     def register_device(
@@ -210,9 +263,9 @@ class DeviceService:
         request_id: str,
     ) -> dict[str, Any]:
         """
-        Upsert TrustedDevice by (bundle_id, device_id, user).
-        - user=None: only touch anonymous row; never overwrite user-bound rows.
-        - user set: only touch that user's row; merge anonymous then apply explicit patch.
+        Upsert TrustedDevice（ACCOUNTS-000003）。
+        - user=None：更新 revoked 用户行或创建唯一匿名行；不凭 body 创建任意用户行。
+        - user set：升级匿名行或更新当前用户行，is_revoked=false。
         """
         device_id = _s(data, "device_id")
         bundle_id = _s(data, "bundle_id") or _s(data, "bundle_identifier")
@@ -229,11 +282,12 @@ class DeviceService:
         )
 
         if user is None:
-            obj = TrustedDevice.objects.filter(
+            obj = DeviceService._resolve_unsigned_register_row(
                 bundle_id=bundle_id,
                 device_id=device_id,
-                user__isnull=True,
-            ).first()
+                data=data,
+                explicit_keys=explicit_keys,
+            )
             if obj is None:
                 obj = TrustedDevice.objects.create(
                     bundle_id=bundle_id,
@@ -245,35 +299,53 @@ class DeviceService:
                 created = True
             else:
                 created = False
-            DeviceService._apply_patch_to_row(row=obj, patch=patch, explicit_keys=explicit_keys)
+            DeviceService._apply_patch_to_row(
+                row=obj,
+                patch=patch,
+                explicit_keys=explicit_keys,
+                reactivate=False,
+            )
             obj.save()
         else:
-            obj = TrustedDevice.objects.filter(
-                bundle_id=bundle_id,
-                device_id=device_id,
-                user=user,
-            ).first()
-            if obj is None:
-                seed = DeviceService._seed_from_anonymous(bundle_id=bundle_id, device_id=device_id)
+            user_row = DeviceService._user_row(bundle_id=bundle_id, device_id=device_id, user=user)
+            anon = DeviceService._anonymous_row(bundle_id=bundle_id, device_id=device_id)
+
+            if user_row is not None:
+                created = False
+                if anon is not None:
+                    DeviceService._absorb_anonymous_into_user_row(anon=anon, user_row=user_row)
+                obj = user_row
+            elif anon is not None:
+                created = True
+                obj = DeviceService._upgrade_anonymous_row_to_user(
+                    anon=anon,
+                    user=user,
+                    patch=patch,
+                    explicit_keys=explicit_keys,
+                )
+                return {
+                    "id": obj.id,
+                    "device_id": obj.device_id,
+                    "bundle_id": obj.bundle_id,
+                    "created": created,
+                }
+            else:
+                created = True
                 obj = TrustedDevice.objects.create(
                     bundle_id=bundle_id,
                     device_id=device_id,
                     user=user,
-                    push_token=seed.get("push_token", ""),
-                    notifications_enabled=seed.get("notifications_enabled", False),
-                    **{k: v for k, v in seed.items() if k not in ("push_token", "notifications_enabled")},
+                    push_token="",
+                    notifications_enabled=False,
+                    is_revoked=False,
                 )
-                created = True
-            else:
-                created = False
-                anon = DeviceService._anonymous_row(bundle_id=bundle_id, device_id=device_id)
-                if anon is not None:
-                    DeviceService._merge_anonymous_profile_into_user_row(
-                        user_row=obj,
-                        anon=anon,
-                        explicit_keys=explicit_keys,
-                    )
-            DeviceService._apply_patch_to_row(row=obj, patch=patch, explicit_keys=explicit_keys)
+
+            DeviceService._apply_patch_to_row(
+                row=obj,
+                patch=patch,
+                explicit_keys=explicit_keys,
+                reactivate=True,
+            )
             obj.save()
 
         return {

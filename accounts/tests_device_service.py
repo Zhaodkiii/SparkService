@@ -61,6 +61,114 @@ class DeviceServicePushTokenTests(TestCase):
         self.assertEqual(self.device.push_token, "existing-token")
 
 
+class DeviceServiceUpgradeTests(TestCase):
+    bundle_id = "com.spark.test"
+    device_id = "upgrade-install"
+
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username="upgrade_user", password="x")
+        self.anon = TrustedDevice.objects.create(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            user=None,
+            country_code="CN",
+            app_version="1.0",
+            push_token="anon-token",
+        )
+
+    def test_authenticated_register_upgrades_anonymous_row(self):
+        anon_id = self.anon.id
+        DeviceService.register_device(
+            user=self.user,
+            data={
+                "device_id": self.device_id,
+                "bundle_id": self.bundle_id,
+                "country_code": "US",
+            },
+            explicit_keys={"device_id", "bundle_id", "country_code"},
+            request_id="req-upgrade",
+        )
+        self.assertFalse(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_id,
+                device_id=self.device_id,
+                user__isnull=True,
+            ).exists()
+        )
+        user_row = TrustedDevice.objects.get(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            user=self.user,
+        )
+        self.assertEqual(user_row.id, anon_id)
+        self.assertEqual(user_row.country_code, "US")
+        self.assertFalse(user_row.is_revoked)
+
+
+class DeviceServiceRevokedReuseTests(TestCase):
+    bundle_id = "com.spark.test"
+    device_id = "revoked-reuse"
+
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username="revoked_user", password="x")
+        self.revoked_row = TrustedDevice.objects.create(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            user=self.user,
+            is_revoked=True,
+            country_code="CN",
+            push_token="old-token",
+        )
+
+    def test_unsigned_register_updates_revoked_user_row_with_hint(self):
+        DeviceService.register_device(
+            user=None,
+            data={
+                "device_id": self.device_id,
+                "bundle_id": self.bundle_id,
+                "user_id": self.user.id,
+                "push_token": "new-token",
+            },
+            explicit_keys={
+                "device_id",
+                "bundle_id",
+                "user_id",
+                "push_token",
+            },
+            request_id="req-revoked",
+        )
+        self.revoked_row.refresh_from_db()
+        self.assertEqual(self.revoked_row.user_id, self.user.id)
+        self.assertTrue(self.revoked_row.is_revoked)
+        self.assertEqual(self.revoked_row.push_token, "new-token")
+        self.assertFalse(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_id,
+                device_id=self.device_id,
+                user__isnull=True,
+            ).exists()
+        )
+
+    def test_unsigned_cannot_create_arbitrary_user_row_from_hint(self):
+        User = get_user_model()
+        other = User.objects.create_user(username="other", password="x")
+        DeviceService.register_device(
+            user=None,
+            data={
+                "device_id": self.device_id,
+                "bundle_id": self.bundle_id,
+                "user_id": other.id,
+            },
+            explicit_keys={"device_id", "bundle_id", "user_id"},
+            request_id="req-hint-miss",
+        )
+        self.assertFalse(TrustedDevice.objects.filter(user=other).exists())
+        self.revoked_row.refresh_from_db()
+        self.assertEqual(self.revoked_row.push_token, "old-token")
+
+
 class DeviceServiceUserIsolationTests(TestCase):
     bundle_id = "com.spark.test"
     device_id = "shared-install-id"
@@ -69,19 +177,13 @@ class DeviceServiceUserIsolationTests(TestCase):
         User = get_user_model()
         self.user1 = User.objects.create_user(username="user1", password="x")
         self.user2 = User.objects.create_user(username="user2", password="x")
-        self.anon = TrustedDevice.objects.create(
-            bundle_id=self.bundle_id,
-            device_id=self.device_id,
-            user=None,
-            push_token="anon-token",
-            country_code="CN",
-        )
         self.user1_device = TrustedDevice.objects.create(
             bundle_id=self.bundle_id,
             device_id=self.device_id,
             user=self.user1,
             push_token="user1-token",
             country_code="US",
+            is_revoked=True,
         )
 
     def _register(self, *, user, push_token: str, country_code: str):
@@ -104,19 +206,12 @@ class DeviceServiceUserIsolationTests(TestCase):
             request_id="req-isolation",
         )
 
-    def test_same_install_can_have_anonymous_and_user_rows(self):
-        self.assertEqual(
-            TrustedDevice.objects.filter(bundle_id=self.bundle_id, device_id=self.device_id).count(),
-            2,
-        )
-
-    def test_user2_register_does_not_overwrite_user1(self):
+    def test_user2_register_creates_separate_row(self):
         self._register(user=self.user2, push_token="user2-token", country_code="HK")
         self.user1_device.refresh_from_db()
-        self.anon.refresh_from_db()
         self.assertEqual(self.user1_device.push_token, "user1-token")
         self.assertEqual(self.user1_device.country_code, "US")
-        self.assertEqual(self.anon.push_token, "anon-token")
+        self.assertTrue(self.user1_device.is_revoked)
 
         user2_row = TrustedDevice.objects.get(
             bundle_id=self.bundle_id,
@@ -125,94 +220,63 @@ class DeviceServiceUserIsolationTests(TestCase):
         )
         self.assertEqual(user2_row.push_token, "user2-token")
         self.assertEqual(user2_row.country_code, "HK")
+        self.assertFalse(user2_row.is_revoked)
 
-    def test_anonymous_register_does_not_touch_user_rows(self):
+    def test_unsigned_without_user_id_only_touches_anonymous_row(self):
+        self.user2_device = TrustedDevice.objects.create(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            user=self.user2,
+            push_token="user2-token",
+            is_revoked=True,
+        )
         DeviceService.register_device(
             user=None,
             data={
                 "device_id": self.device_id,
                 "bundle_id": self.bundle_id,
-                "push_token": "anon-updated",
-                "country_code": "JP",
+                "push_token": "anon-only",
             },
-            explicit_keys={"device_id", "bundle_id", "push_token", "country_code"},
-            request_id="req-anon",
+            explicit_keys={"device_id", "bundle_id", "push_token"},
+            request_id="req-anon-only",
         )
         self.user1_device.refresh_from_db()
-        self.anon.refresh_from_db()
-        self.assertEqual(self.anon.push_token, "anon-updated")
-        self.assertEqual(self.anon.country_code, "JP")
+        self.user2_device.refresh_from_db()
         self.assertEqual(self.user1_device.push_token, "user1-token")
-
-
-class DeviceServiceAnonymousMergeTests(TestCase):
-    bundle_id = "com.spark.test"
-    device_id = "partial-merge-install"
-
-    def setUp(self):
-        User = get_user_model()
-        self.user = User.objects.create_user(username="merge_user", password="x")
-        self.anon = TrustedDevice.objects.create(
+        self.assertEqual(self.user2_device.push_token, "user2-token")
+        anon = TrustedDevice.objects.get(
             bundle_id=self.bundle_id,
             device_id=self.device_id,
+            user__isnull=True,
+        )
+        self.assertEqual(anon.push_token, "anon-only")
+
+    def test_unsigned_with_user_id_hint_updates_matching_revoked_row(self):
+        DeviceService.register_device(
             user=None,
-            country_code="CN",
-            app_version="1.0",
-            push_token="anon-token",
-            notifications_enabled=True,
-        )
-
-    def test_authenticated_register_partial_body_preserves_anonymous_profile(self):
-        DeviceService.register_device(
-            user=self.user,
             data={
                 "device_id": self.device_id,
                 "bundle_id": self.bundle_id,
+                "push_token": "unsigned-update",
+                "user_id": self.user1.id,
             },
-            explicit_keys={"device_id", "bundle_id"},
-            request_id="req-partial",
-        )
-
-        user_row = TrustedDevice.objects.get(
-            bundle_id=self.bundle_id,
-            device_id=self.device_id,
-            user=self.user,
-        )
-        self.anon.refresh_from_db()
-
-        self.assertEqual(user_row.country_code, "CN")
-        self.assertEqual(user_row.app_version, "1.0")
-        self.assertEqual(user_row.push_token, "anon-token")
-        self.assertTrue(user_row.notifications_enabled)
-        self.assertIsNone(self.anon.user_id)
-        self.assertEqual(self.anon.country_code, "CN")
-        self.assertEqual(self.anon.app_version, "1.0")
-        self.assertEqual(self.anon.push_token, "anon-token")
-
-    def test_explicit_empty_app_version_does_not_clear_anonymous_merge(self):
-        TrustedDevice.objects.create(
-            bundle_id=self.bundle_id,
-            device_id=self.device_id,
-            user=self.user,
-            app_version="1.0",
-            country_code="CN",
-        )
-        DeviceService.register_device(
-            user=self.user,
-            data={
-                "device_id": self.device_id,
-                "bundle_id": self.bundle_id,
-                "app_version": "",
+            explicit_keys={
+                "device_id",
+                "bundle_id",
+                "push_token",
+                "user_id",
             },
-            explicit_keys={"device_id", "bundle_id", "app_version"},
-            request_id="req-empty-version",
+            request_id="req-anon-hint",
         )
-        user_row = TrustedDevice.objects.get(
-            bundle_id=self.bundle_id,
-            device_id=self.device_id,
-            user=self.user,
+        self.user1_device.refresh_from_db()
+        self.assertEqual(self.user1_device.push_token, "unsigned-update")
+        self.assertFalse(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_id,
+                device_id=self.device_id,
+                user__isnull=True,
+            ).exists()
         )
-        self.assertEqual(user_row.app_version, "1.0")
 
 
 class DeviceLinkingServiceTests(TestCase):
@@ -231,25 +295,31 @@ class DeviceLinkingServiceTests(TestCase):
             notifications_enabled=True,
         )
 
-    def test_login_linking_creates_user_row_without_rebinding_anonymous(self):
+    def test_login_linking_upgrades_anonymous_row(self):
         from accounts.services.device_linking_service import DeviceLinkingService
 
-        DeviceLinkingService.try_attach_user_to_trusted_device(
+        anon_id = self.anon.id
+        DeviceLinkingService.ensure_user_device_profile_from_anonymous(
             user=self.user,
             device_id=self.device_id,
             bundle_id=self.bundle_id,
             request_id="req-link",
         )
 
-        self.anon.refresh_from_db()
-        self.assertIsNone(self.anon.user_id)
-        self.assertEqual(self.anon.push_token, "anon-token")
-
+        self.assertFalse(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_id,
+                device_id=self.device_id,
+                user__isnull=True,
+            ).exists()
+        )
         user_row = TrustedDevice.objects.get(
             bundle_id=self.bundle_id,
             device_id=self.device_id,
             user=self.user,
         )
+        self.assertEqual(user_row.id, anon_id)
         self.assertEqual(user_row.country_code, "CN")
         self.assertEqual(user_row.push_token, "anon-token")
         self.assertTrue(user_row.notifications_enabled)
+        self.assertFalse(user_row.is_revoked)

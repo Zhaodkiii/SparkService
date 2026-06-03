@@ -21,9 +21,9 @@ class TrustedDevice(models.Model):
     """
     可信设备（安装实例 + 用户维度）。
 
-    - 匿名：`(bundle_id, device_id, user=NULL)` 唯一，用于未登录冷启动画像。
-    - 已绑定用户：`(bundle_id, device_id, user)` 唯一，同一安装可为不同用户各保留一条画像。
-    - 禁止改绑、删除匿名行；登录后 upsert 当前用户行，并用同安装匿名行画像覆盖/补全用户行。
+    - 匿名：`(bundle_id, device_id, user=NULL)` 唯一，仅用于从未登录的安装（ACCOUNTS-000003）。
+    - 已绑定用户：`(bundle_id, device_id, user)` 唯一；登录可将匿名行升级为当前用户行。
+    - 退出后保留用户行并 `is_revoked=true`；未登录登记更新 revoked 行或匿名行，不凭 body 创建任意用户行。
     """
 
     user = models.ForeignKey(User, null=True, blank=True, related_name="trusted_devices", on_delete=models.SET_NULL, db_comment="关联 Django User；NULL=匿名冷启动画像，非 NULL=该用户设备行（与匿名行并存，不改绑匿名行）")

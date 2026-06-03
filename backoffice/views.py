@@ -23,7 +23,15 @@ from rest_framework.serializers import Serializer, CharField
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from accounts.models import AccountDeactivation, AccountDeactivationAudit, NotificationCampaign, NotificationMessage, NotificationTemplate, TrustedDevice
+from accounts.models import (
+    AccountDeactivation,
+    AccountDeactivationAudit,
+    AccountDeviceSession,
+    NotificationCampaign,
+    NotificationMessage,
+    NotificationTemplate,
+    TrustedDevice,
+)
 from accounts.services.notification_service import NotificationService
 from accounts.deactivation.tasks import process_deactivation_task
 from ai_config.models import (
@@ -75,9 +83,11 @@ from backoffice.serializers import (
     AdminRoleSerializer,
     AdminTrialActionSerializer,
     AdminTrialApplicationSerializer,
+    AdminUserDeviceSessionSerializer,
     AdminUserRoleAssignSerializer,
     AdminUserSerializer,
     AdminUserStatusSerializer,
+    AdminUserTrustedDeviceSerializer,
     AppVersionConfigSerializer,
     VersionCheckLogSerializer,
 )
@@ -564,6 +574,25 @@ class AdminUserStatusView(APIView):
             response_payload=payload,
         )
         return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminUserDetailView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request, user_id: int):
+        user = get_object_or_404(User, pk=user_id)
+        trusted_devices = TrustedDevice.objects.filter(user=user).order_by("-last_seen", "-id")
+        device_sessions = (
+            AccountDeviceSession.objects.filter(user=user)
+            .select_related("trusted_device")
+            .order_by("-updated_at", "-id")
+        )
+        payload = {
+            "user": AdminUserSerializer(user).data,
+            "trusted_devices": AdminUserTrustedDeviceSerializer(trusted_devices, many=True).data,
+            "device_sessions": AdminUserDeviceSessionSerializer(device_sessions, many=True).data,
+        }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminDeviceListView(APIView):
