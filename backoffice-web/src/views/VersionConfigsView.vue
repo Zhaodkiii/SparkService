@@ -39,7 +39,11 @@
         <a-tag :color="record.is_active ? 'green' : 'red'">{{ record.is_active ? '启用' : '停用' }}</a-tag>
       </template>
     </a-table-column>
-    <a-table-column title="更新时间" data-index="updated_at" width="180" />
+    <a-table-column title="更新时间" key="updated_at" width="180">
+      <template #default="{ record }">
+        {{ formatDateTime(record.updated_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="操作" key="actions" :width="actionsColWidth" fixed="right">
       <template #default="{ record }">
         <TableHoverActions>
@@ -95,6 +99,7 @@ import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
+import { formatDateTime } from '../utils/datetime';
 
 const auth = useAuthStore();
 const loading = ref(false);

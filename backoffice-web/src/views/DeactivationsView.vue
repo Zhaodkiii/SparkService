@@ -22,8 +22,16 @@
       </template>
     </a-table-column>
     <a-table-column title="状态" data-index="state" width="120" />
-    <a-table-column title="请求时间" data-index="requested_at" width="180" />
-    <a-table-column title="完成时间" data-index="completed_at" width="180" />
+    <a-table-column title="请求时间" key="requested_at" width="180">
+      <template #default="{ record }">
+        {{ formatDateTime(record.requested_at) }}
+      </template>
+    </a-table-column>
+    <a-table-column title="完成时间" key="completed_at" width="180">
+      <template #default="{ record }">
+        {{ formatDateTime(record.completed_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="错误" key="error" width="280">
       <template #default="{ record }">
         <span>{{ record.error_message || '-' }}</span>
@@ -66,7 +74,11 @@
 
   <a-drawer v-model:open="auditDrawerOpen" title="注销审计日志" width="700">
     <a-table :data-source="audits" :pagination="false" row-key="id" size="small">
-      <a-table-column title="时间" data-index="created_at" width="180" />
+      <a-table-column title="时间" key="created_at" width="180">
+        <template #default="{ record }">
+          {{ formatDateTime(record.created_at) }}
+        </template>
+      </a-table-column>
       <a-table-column title="动作" data-index="action" width="160" />
       <a-table-column title="请求ID" data-index="request_id" width="220" />
       <a-table-column title="详情" key="details">
@@ -93,6 +105,7 @@ import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
+import { formatDateTime } from '../utils/datetime';
 
 const auth = useAuthStore();
 const loading = ref(false);

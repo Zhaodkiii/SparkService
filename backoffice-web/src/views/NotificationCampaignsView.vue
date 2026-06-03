@@ -29,8 +29,16 @@
     <a-table-column title="目标" data-index="target_count" :width="90" />
     <a-table-column title="成功" data-index="success_count" :width="90" />
     <a-table-column title="失败" data-index="failure_count" :width="90" />
-    <a-table-column title="定时" data-index="scheduled_at" :width="190" />
-    <a-table-column title="创建时间" data-index="created_at" :width="190" />
+    <a-table-column title="定时" key="scheduled_at" :width="190">
+      <template #default="{ record }">
+        {{ formatDateTime(record.scheduled_at) }}
+      </template>
+    </a-table-column>
+    <a-table-column title="创建时间" key="created_at" :width="190">
+      <template #default="{ record }">
+        {{ formatDateTime(record.created_at) }}
+      </template>
+    </a-table-column>
   </a-table>
 
   <a-pagination
@@ -46,6 +54,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { fetchNotificationCampaigns, type NotificationCampaign } from '../api/modules/notifications';
 import type { Pagination } from '../types';
+import { formatDateTime } from '../utils/datetime';
 
 const loading = ref(false);
 const rows = ref<NotificationCampaign[]>([]);

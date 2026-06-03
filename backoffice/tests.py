@@ -166,3 +166,48 @@ class BackofficePermissionTests(TestCase):
         self.assertEqual(data["device_sessions"][1]["id"], session_revoked.id)
         self.assertEqual(data["device_sessions"][1]["status"], "revoked")
         self.assertEqual(data["device_sessions"][1]["replaced_by"], session_active.id)
+
+    def test_user_list_includes_last_used_at(self):
+        from django.utils import timezone
+
+        device_time = timezone.now() - timezone.timedelta(hours=2)
+        login_time = timezone.now() - timezone.timedelta(hours=5)
+        refresh_time = timezone.now() - timezone.timedelta(hours=1)
+
+        self.target_user.last_login = login_time
+        self.target_user.save(update_fields=["last_login"])
+
+        device = TrustedDevice.objects.create(
+            user=self.target_user,
+            bundle_id="cn.Zhaodk.Health",
+            device_id="device-last-used",
+        )
+        TrustedDevice.objects.filter(pk=device.pk).update(last_seen=device_time)
+
+        session_device = TrustedDevice.objects.create(
+            user=self.target_user,
+            bundle_id="cn.Zhaodk.Health",
+            device_id="device-session",
+        )
+        TrustedDevice.objects.filter(pk=session_device.pk).update(last_seen=device_time)
+        AccountDeviceSession.objects.create(
+            user=self.target_user,
+            trusted_device=session_device,
+            bundle_id=session_device.bundle_id,
+            device_id=session_device.device_id,
+            status=AccountDeviceSession.Status.LOGGED_OUT,
+            last_refreshed_at=refresh_time,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/")
+        self.assertEqual(response.status_code, 200)
+        items = response.data["data"]["items"]
+        row = next(item for item in items if item["id"] == self.target_user.id)
+        last_used = row["last_used_at"]
+        self.assertIsNotNone(last_used)
+        if isinstance(last_used, str):
+            from django.utils.dateparse import parse_datetime
+
+            last_used = parse_datetime(last_used)
+        self.assertEqual(last_used.replace(microsecond=0), refresh_time.replace(microsecond=0))

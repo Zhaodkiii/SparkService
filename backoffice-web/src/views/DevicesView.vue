@@ -20,7 +20,11 @@
     <a-table-column title="Bundle" data-index="bundle_id" />
     <a-table-column title="平台" data-index="platform" width="100" />
     <a-table-column title="型号" data-index="device_model" />
-    <a-table-column title="最后在线" data-index="last_seen" width="180" />
+    <a-table-column title="最后在线" key="last_seen" width="180">
+      <template #default="{ record }">
+        {{ formatDateTime(record.last_seen) }}
+      </template>
+    </a-table-column>
     <a-table-column title="状态" key="status" width="100">
       <template #default="{ record }">
         <a-tag :color="record.is_revoked ? 'red' : 'green'">{{ record.is_revoked ? '已吊销' : '正常' }}</a-tag>
@@ -54,6 +58,7 @@ import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
+import { formatDateTime } from '../utils/datetime';
 
 const auth = useAuthStore();
 const loading = ref(false);

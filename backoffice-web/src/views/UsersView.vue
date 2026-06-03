@@ -17,11 +17,16 @@
         <a-tag :color="record.is_active ? 'green' : 'red'">{{ record.is_active ? '启用' : '禁用' }}</a-tag>
       </template>
     </a-table-column>
+    <a-table-column title="最近使用时间" key="last_used_at" :width="180">
+      <template #default="{ record }">
+        {{ formatDateTime(record.last_used_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="操作" key="actions" :width="actionsColWidth">
       <template #default="{ record }">
         <TableHoverActions>
           <a-button size="small" @click="openUserDetail(record)">详细</a-button>
-          <a-button v-if="canUpdate" size="small" @click="onToggleStatus(record.id, !record.is_active)">
+          <a-button v-if="canUpdate" size="small" @click="onStatusAction(record)">
             {{ record.is_active ? '禁用' : '启用' }}
           </a-button>
         </TableHoverActions>
@@ -49,8 +54,8 @@
       </a-descriptions-item>
       <a-descriptions-item label="是否 Staff">{{ detailModal.data.user.is_staff ? '是' : '否' }}</a-descriptions-item>
       <a-descriptions-item label="是否 Superuser">{{ detailModal.data.user.is_superuser ? '是' : '否' }}</a-descriptions-item>
-      <a-descriptions-item label="注册时间">{{ detailModal.data.user.date_joined || '-' }}</a-descriptions-item>
-      <a-descriptions-item label="最近登录">{{ detailModal.data.user.last_login || '-' }}</a-descriptions-item>
+      <a-descriptions-item label="注册时间">{{ formatDateTime(detailModal.data.user.date_joined) }}</a-descriptions-item>
+      <a-descriptions-item label="最近登录">{{ formatDateTime(detailModal.data.user.last_login) }}</a-descriptions-item>
     </a-descriptions>
 
     <div style="margin-top: 16px" />
@@ -99,8 +104,16 @@
           <a-tag :color="record.is_revoked ? 'red' : 'green'">{{ record.is_revoked ? '失效' : '有效' }}</a-tag>
         </template>
       </a-table-column>
-      <a-table-column title="首次登记" data-index="first_seen" :width="180" />
-      <a-table-column title="最近上报" data-index="last_seen" :width="180" />
+      <a-table-column title="首次登记" key="first_seen" :width="180">
+        <template #default="{ record }">
+          {{ formatDateTime(record.first_seen) }}
+        </template>
+      </a-table-column>
+      <a-table-column title="最近上报" key="last_seen" :width="180">
+        <template #default="{ record }">
+          {{ formatDateTime(record.last_seen) }}
+        </template>
+      </a-table-column>
       <a-table-column title="request_id" data-index="request_id" :width="280" />
     </a-table>
 
@@ -135,24 +148,33 @@
       </a-table-column>
       <a-table-column title="最近刷新" key="last_refreshed_at" :width="180">
         <template #default="{ record }">
-          {{ record.last_refreshed_at || '-' }}
+          {{ formatDateTime(record.last_refreshed_at) }}
         </template>
       </a-table-column>
-      <a-table-column title="创建时间" data-index="created_at" :width="180" />
-      <a-table-column title="更新时间" data-index="updated_at" :width="180" />
+      <a-table-column title="创建时间" key="created_at" :width="180">
+        <template #default="{ record }">
+          {{ formatDateTime(record.created_at) }}
+        </template>
+      </a-table-column>
+      <a-table-column title="更新时间" key="updated_at" :width="180">
+        <template #default="{ record }">
+          {{ formatDateTime(record.updated_at) }}
+        </template>
+      </a-table-column>
     </a-table>
   </AdminDetailModal>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { message } from 'ant-design-vue';
+import { message, Modal } from 'ant-design-vue';
 import { fetchUserDetail, fetchUsers, updateUserStatus, type AdminUserDetail } from '../api/modules/users';
 import { useAuthStore } from '../stores/auth';
 import type { AdminUser, Pagination } from '../types';
 import AdminDetailModal from '../components/detail/AdminDetailModal.vue';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
+import { formatDateTime } from '../utils/datetime';
 
 const auth = useAuthStore();
 const loading = ref(false);
@@ -228,6 +250,18 @@ async function openUserDetail(record: AdminUser) {
   } finally {
     detailModal.loading = false;
   }
+}
+
+function onStatusAction(record: AdminUser) {
+  if (record.is_active) {
+    Modal.confirm({
+      title: '禁用用户',
+      content: '禁用后该用户将无法继续登录和使用 App，确定要禁用吗？',
+      onOk: () => onToggleStatus(record.id, false),
+    });
+    return;
+  }
+  void onToggleStatus(record.id, true);
 }
 
 async function onToggleStatus(userId: number, isActive: boolean) {

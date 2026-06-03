@@ -19,7 +19,11 @@
   </a-space>
 
   <a-table :data-source="rows" row-key="id" :pagination="false" :loading="loading" :scroll="{ x: 1600 }">
-    <a-table-column title="时间" data-index="checked_at" width="180" />
+    <a-table-column title="时间" key="checked_at" width="180">
+      <template #default="{ record }">
+        {{ formatDateTime(record.checked_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="平台" data-index="platform" width="90" />
     <a-table-column title="Bundle" data-index="bundle_id" :ellipsis="true" />
     <a-table-column title="当前版本" key="current" width="140">
@@ -55,6 +59,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { fetchVersionCheckLogs, type VersionCheckLog } from '../api/modules/version';
 import type { Pagination } from '../types';
+import { formatDateTime } from '../utils/datetime';
 
 const loading = ref(false);
 const rows = ref<VersionCheckLog[]>([]);

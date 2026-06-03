@@ -22,7 +22,11 @@
     <a-table-column title="结果" key="result" :width="140">
       <template #default="{ record }">{{ record.success_count }}/{{ record.target_count }}</template>
     </a-table-column>
-    <a-table-column title="发送时间" data-index="sent_at" :width="190" />
+    <a-table-column title="发送时间" key="sent_at" :width="190">
+      <template #default="{ record }">
+        {{ formatDateTime(record.sent_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="操作" key="actions" :width="120">
       <template #default="{ record }">
         <a-button size="small" @click="openDetail(record.id)">查看</a-button>
@@ -65,6 +69,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { fetchNotificationLogDetail, fetchNotificationLogs, type NotificationMessageLog } from '../api/modules/notifications';
 import type { Pagination } from '../types';
+import { formatDateTime } from '../utils/datetime';
 
 const route = useRoute();
 const channel = (route.meta.channel as 'apns' | 'email' | 'sms') || 'apns';

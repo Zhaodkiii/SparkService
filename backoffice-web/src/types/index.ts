@@ -27,4 +27,5 @@ export interface AdminUser {
   is_superuser: boolean;
   date_joined: string;
   last_login: string | null;
+  last_used_at?: string | null;
 }

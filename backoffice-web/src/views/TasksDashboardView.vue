@@ -74,7 +74,11 @@
           <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
         </template>
       </a-table-column>
-      <a-table-column title="完成时间" data-index="date_done" :width="200" />
+      <a-table-column title="完成时间" key="date_done" :width="200">
+        <template #default="{ record }">
+          {{ formatDateTime(record.date_done) }}
+        </template>
+      </a-table-column>
       <a-table-column title="结果摘要" key="result" :ellipsis="true">
         <template #default="{ record }">
           <span>{{ record.result_preview || '-' }}</span>
@@ -97,7 +101,7 @@
       <a-descriptions-item label="状态">
         <a-tag :color="statusColor(activeTask.status)">{{ activeTask.status }}</a-tag>
       </a-descriptions-item>
-      <a-descriptions-item label="完成时间">{{ activeTask.date_done || '-' }}</a-descriptions-item>
+      <a-descriptions-item label="完成时间">{{ formatDateTime(activeTask.date_done) }}</a-descriptions-item>
     </a-descriptions>
 
     <a-divider />
@@ -114,6 +118,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { fetchTaskDashboard, type TaskSummaryResponse } from '../api/modules/tasks';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
+import { formatDateTime } from '../utils/datetime';
 
 const loading = ref(false);
 const data = ref<TaskSummaryResponse | null>(null);
@@ -154,7 +159,7 @@ async function load() {
   try {
     loading.value = true;
     data.value = await fetchTaskDashboard(query.value);
-    lastUpdatedText.value = new Date().toLocaleString();
+    lastUpdatedText.value = formatDateTime(new Date());
   } finally {
     loading.value = false;
   }

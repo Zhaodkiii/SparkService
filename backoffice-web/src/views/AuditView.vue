@@ -12,7 +12,11 @@
   </a-space>
 
   <a-table :data-source="rows" :pagination="false" row-key="id">
-    <a-table-column title="时间" data-index="created_at" />
+    <a-table-column title="时间" key="created_at">
+      <template #default="{ record }">
+        {{ formatDateTime(record.created_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="用户" data-index="user_name" />
     <a-table-column title="动作" data-index="action" />
     <a-table-column title="资源" data-index="resource_type" />
@@ -33,6 +37,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { fetchAuditLogs, type AuditLogItem } from '../api/modules/audit';
 import type { Pagination } from '../types';
+import { formatDateTime } from '../utils/datetime';
 
 const rows = ref<AuditLogItem[]>([]);
 const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0, total_pages: 0 });

@@ -59,6 +59,31 @@ class AdminUserSerializer(serializers.ModelSerializer):
         )
 
 
+def _compute_last_used_at(user):
+    candidates = []
+    max_device_seen = getattr(user, "_max_device_seen", None)
+    max_session_refresh = getattr(user, "_max_session_refresh", None)
+    if max_device_seen is not None:
+        candidates.append(max_device_seen)
+    if max_session_refresh is not None:
+        candidates.append(max_session_refresh)
+    if user.last_login is not None:
+        candidates.append(user.last_login)
+    if not candidates:
+        return None
+    return max(candidates)
+
+
+class AdminUserListSerializer(AdminUserSerializer):
+    last_used_at = serializers.SerializerMethodField()
+
+    class Meta(AdminUserSerializer.Meta):
+        fields = AdminUserSerializer.Meta.fields + ("last_used_at",)
+
+    def get_last_used_at(self, obj):
+        return _compute_last_used_at(obj)
+
+
 class AdminUserStatusSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
 

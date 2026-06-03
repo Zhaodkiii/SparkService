@@ -89,7 +89,11 @@
     <a-divider />
     <div style="font-weight: 600; margin-bottom: 8px">最近操作记录</div>
     <a-table :data-source="operationRows" row-key="id" :pagination="false" size="small">
-      <a-table-column title="时间" data-index="time" :width="200" />
+      <a-table-column title="时间" key="time" :width="200">
+        <template #default="{ record }">
+          {{ formatDateTime(record.time) }}
+        </template>
+      </a-table-column>
       <a-table-column title="动作" data-index="action" :width="100" />
       <a-table-column title="组件" data-index="name" :width="150" />
       <a-table-column title="结果" data-index="result" :width="180" />
@@ -103,6 +107,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { controlTaskManager, fetchTaskManagerStatus, type TaskManagerStatusResponse } from '../api/modules/tasks';
 import { useAuthStore } from '../stores/auth';
+import { formatDateTime } from '../utils/datetime';
 
 type ActionType = 'start' | 'stop' | 'restart' | 'start_redis' | 'stop_redis';
 
@@ -118,13 +123,13 @@ const actionLoading = ref<ActionType | ''>('');
 const status = ref<TaskManagerStatusResponse | null>(null);
 const autoRefresh = ref(true);
 const lastUpdatedText = ref('-');
-const operationRows = ref<Array<{ id: string; time: string; action: string; name: string; result: string; pid: string }>>([]);
+const operationRows = ref<Array<{ id: string; time: string | Date; action: string; name: string; result: string; pid: string }>>([]);
 
 async function loadStatus() {
   try {
     loading.value = true;
     status.value = await fetchTaskManagerStatus();
-    lastUpdatedText.value = new Date().toLocaleString();
+    lastUpdatedText.value = formatDateTime(new Date());
   } finally {
     loading.value = false;
   }
@@ -139,8 +144,8 @@ async function doControl(action: ActionType) {
     actionLoading.value = action;
     const resp = await controlTaskManager(action);
     status.value = resp.status;
-    lastUpdatedText.value = new Date().toLocaleString();
-    const now = new Date().toLocaleString();
+    lastUpdatedText.value = formatDateTime(new Date());
+    const now = new Date();
     const rows = resp.operations.map((item, idx) => ({
       id: `${Date.now()}-${idx}`,
       time: now,

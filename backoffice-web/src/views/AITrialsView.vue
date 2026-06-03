@@ -16,8 +16,16 @@
         <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
       </template>
     </a-table-column>
-    <a-table-column title="试用到期时间" data-index="expires_at" />
-    <a-table-column title="创建时间" data-index="created_at" />
+    <a-table-column title="试用到期时间" key="expires_at">
+      <template #default="{ record }">
+        {{ formatDateTime(record.expires_at) }}
+      </template>
+    </a-table-column>
+    <a-table-column title="创建时间" key="created_at">
+      <template #default="{ record }">
+        {{ formatDateTime(record.created_at) }}
+      </template>
+    </a-table-column>
     <a-table-column title="操作" key="actions" :width="actionsColWidth">
       <template #default="{ record }">
         <TableHoverActions>
@@ -68,8 +76,8 @@
           <a-tag :color="statusColor(detailModal.data.status)">{{ statusLabel(detailModal.data.status) }}</a-tag>
         </a-descriptions-item>
         <a-descriptions-item label="授权来源">{{ detailModal.data.grant_source }}</a-descriptions-item>
-        <a-descriptions-item label="开始时间">{{ detailModal.data.started_at || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="到期时间">{{ detailModal.data.expires_at || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="开始时间">{{ formatDateTime(detailModal.data.started_at) }}</a-descriptions-item>
+        <a-descriptions-item label="到期时间">{{ formatDateTime(detailModal.data.expires_at) }}</a-descriptions-item>
         <a-descriptions-item label="备注" :span="2">{{ detailModal.data.note || '-' }}</a-descriptions-item>
       </a-descriptions>
 
@@ -85,7 +93,7 @@
           <a-descriptions-item label="platform">{{ detailModal.data.latest_device.platform }}</a-descriptions-item>
           <a-descriptions-item label="system_version">{{ detailModal.data.latest_device.system_version }}</a-descriptions-item>
           <a-descriptions-item label="device_model">{{ detailModal.data.latest_device.device_model }}</a-descriptions-item>
-          <a-descriptions-item label="last_seen">{{ detailModal.data.latest_device.last_seen }}</a-descriptions-item>
+          <a-descriptions-item label="last_seen">{{ formatDateTime(detailModal.data.latest_device.last_seen) }}</a-descriptions-item>
         </template>
         <template v-else>
           <a-descriptions-item label="设备">无</a-descriptions-item>
@@ -109,7 +117,11 @@
           </template>
         </a-table-column>
         <a-table-column title="note" data-index="note" />
-        <a-table-column title="created_at" data-index="created_at" :width="200" />
+        <a-table-column title="created_at" key="created_at" :width="200">
+          <template #default="{ record }">
+            {{ formatDateTime(record.created_at) }}
+          </template>
+        </a-table-column>
       </a-table>
     </a-spin>
   </a-modal>
@@ -123,6 +135,7 @@ import { useAuthStore } from '../stores/auth';
 import type { Pagination } from '../types';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
+import { formatDateTime } from '../utils/datetime';
 
 const auth = useAuthStore();
 const loading = ref(false);

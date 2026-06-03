@@ -14,7 +14,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q, Count, Prefetch
+from django.db.models import Q, Count, Max, Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -84,6 +84,7 @@ from backoffice.serializers import (
     AdminTrialActionSerializer,
     AdminTrialApplicationSerializer,
     AdminUserDeviceSessionSerializer,
+    AdminUserListSerializer,
     AdminUserRoleAssignSerializer,
     AdminUserSerializer,
     AdminUserStatusSerializer,
@@ -517,7 +518,14 @@ class AdminUserListView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        queryset = User.objects.all().order_by("-date_joined", "-id")
+        queryset = (
+            User.objects.annotate(
+                _max_device_seen=Max("trusted_devices__last_seen"),
+                _max_session_refresh=Max("device_sessions__last_refreshed_at"),
+            )
+            .all()
+            .order_by("-date_joined", "-id")
+        )
         query = (request.query_params.get("q") or "").strip()
         if query:
             queryset = queryset.filter(Q(username__icontains=query) | Q(email__icontains=query))
@@ -531,7 +539,7 @@ class AdminUserListView(APIView):
 
         paginator = Paginator(queryset, page_size)
         page_obj = paginator.get_page(page)
-        rows = AdminUserSerializer(page_obj.object_list, many=True).data
+        rows = AdminUserListSerializer(page_obj.object_list, many=True).data
         payload = {
             "items": rows,
             "pagination": {
