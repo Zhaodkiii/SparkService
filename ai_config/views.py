@@ -15,6 +15,7 @@ from ai_config.models import (
     AIModelCatalog,
     AIProviderKeyConfig,
     AIScenarioModelBinding,
+    IdentityKind,
     SmallTask,
     TrialApplication,
     TrialModelPolicy,
@@ -171,9 +172,11 @@ class AIBootstrapConfigView(APIView):
             for row in bindings:
                 model = row.model
                 provider = self._resolve_provider_for_model(model.company, provider_by_company)
+                is_agent = row.identity == IdentityKind.AGENT
+                row_name = row.bootstrap_name()
 
                 if row.is_default:
-                    default_model = model.name
+                    default_model = row_name
 
                 policy_item = trial_overlay.get((scenario_key, model.pk))
                 provision_src = policy_item if policy_item is not None else row
@@ -188,9 +191,10 @@ class AIBootstrapConfigView(APIView):
                 # - `systemProvision` / `briefDescription` / `aiScenarios` / `aiToolScenarios` 无 rawValue，JSON 须为 camelCase
                 # - systemProvision / briefDescription / aiToolScenarios：优先当前启用试用策略的 TrialModelPolicyItem，否则 AIScenarioModelBinding
                 model_data = {
-                    "name": model.name,
-                    "display_name": model.display_name,
+                    "name": row_name,
+                    "display_name": row.display_name,
                     "identity": row.identity,
+                    "baseModelName": model.name if is_agent else None,
                     "company": model.company,
                     "endpoint": provider["endpoint"] if provider else "",
                     "api_key": provider["api_key"] if provider else "",

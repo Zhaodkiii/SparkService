@@ -14,9 +14,9 @@ from ai_config.models import (
 
 @admin.register(AIScenarioModelBinding)
 class AIScenarioModelBindingAdmin(admin.ModelAdmin):
-    list_display = ("scenario", "identity", "model", "is_default", "is_active", "position", "updated_at")
+    list_display = ("scenario", "display_name", "identity", "model", "is_default", "is_active", "position", "updated_at")
     list_filter = ("scenario", "is_active", "is_default")
-    search_fields = ("scenario", "model__name", "model__display_name")
+    search_fields = ("scenario", "display_name", "model__name", "model__display_name")
     ordering = ("scenario", "position")
 
 

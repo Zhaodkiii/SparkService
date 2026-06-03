@@ -9,8 +9,10 @@
 | `AI-CONFIG-000001` | 中国大陆用户才展示 Pro 试用申请入口 | 已实现 | 客户端 `AITrialSettingsView` 展示条件、`SparkSystemInfo` 统一国家标识判断 |
 | `AI-CONFIG-000002` | 试用申请提交后请求通知权限并通过通知刷新 Pro 模型 | 已实现 | 客户端提交申请、通知权限、公共通知接收、刷新服务端 Pro 模型列表 |
 | `AI-CONFIG-000003` | 服务端试用申请延迟自动审核与 APNs 通知 | 已实现 | `TrialApplication` 申请次数、延迟自动通过、通过/拒绝触发公共 APNs 通知 |
-| `AI-CONFIG-000004` | 登录自动 Pro 发放仅限中国设备 | 新需求/待实现 | `TrustedDevice` 增加国家登记；登录成功后仅中国设备立即自动发放 Pro |
-| `AI-CONFIG-000005` | 同一设备换用户首次登录自动 Pro 发放修复 | 新需求/待实现 | 同一安装上 A1 退出后 B1/C1 首次登录也应按用户维度发放 15 天 Pro |
+| `AI-CONFIG-000004` | 登录自动 Pro 发放仅限中国设备 | 已实现 | `TrustedDevice` 增加国家登记；登录成功后仅中国设备立即自动发放 Pro |
+| `AI-CONFIG-000005` | 同一设备换用户首次登录自动 Pro 发放修复 | 已实现 | 同一安装上 A1 退出后 B1/C1 首次登录也应按用户维度发放 15 天 Pro |
+| `AI-CONFIG-000006` | 场景下支持同一基座模型配置多个智能体 | 已实现 | 后台同场景允许添加多个同底模 agent；bootstrap 返回 agent 唯一名和 baseModelName |
+| `AI-CONFIG-000007` | 场景模型绑定增加显示名称 | 新需求/待实现 | `AIScenarioModelBinding` 增加必填显示名称；后台表单维护；bootstrap 使用绑定显示名称 |
 
 ## 工单 `AI-CONFIG-000001`：中国大陆用户才展示 Pro 试用申请入口
 
@@ -1084,6 +1086,442 @@ TrustedDevice.objects.filter(
 10. 自动发放流水 `TrialApplicationRequest(source=auto)` 按用户维度记录，A1/B1/C1 各自有自己的流水。
 11. 登录后再执行 `/device/register/` 只更新设备画像，不作为自动发放成功的必要条件。
 12. Apple/密码/邮箱 OTP/手机号 OTP 登录路径表现一致。
+
+## 工单 `AI-CONFIG-000006`：场景下支持同一基座模型配置多个智能体
+
+### 1. 背景
+
+### Q：当前有什么问题？
+
+A：当前服务端场景绑定模型 `AIScenarioModelBinding` 以 `scenario + model + identity` 做唯一约束：
+
+```python
+models.UniqueConstraint(
+    fields=["scenario", "model", "identity"],
+    name="uniq_scenario_model_identity_binding",
+)
+```
+
+服务端位置：
+
+```text
+SparkService/ai_config/models.py:103-143
+```
+
+因此在同一个场景下，后台管理系统无法为同一款模型创建多个 `identity=agent` 的智能体。后台请求：
+
+```text
+POST /api/admin/v1/ai/scenarios/chat/models/
+body.model = doubao-seed-2-0-pro-260215
+body.identity = agent
+```
+
+如果该场景下已经存在同模型同 `agent` 绑定，会返回：
+
+```json
+{
+  "code": -1,
+  "msg": {
+    "model": ["model_already_bound_to_this_scenario_with_same_identity"]
+  }
+}
+```
+
+但客户端本地能力已经支持“同一基座模型下多个智能体”。客户端 `AIScenarioRemoteModelRow` 有：
+
+```swift
+var baseModelName: String?
+var localFilename: String?
+```
+
+客户端位置：
+
+```text
+SparkClient/SparkClient/Projects/Core/AI/AIConfigModels.swift:238-239
+```
+
+本地创建智能体时，智能体有自己的唯一 `name`，同时用 `baseModelName` 指向真实调用的底层模型。运行时调用厂商模型时会用 `baseModelName` 替换智能体名，因此多个智能体可以共享同一基座模型。
+
+### 2. 目标
+
+### Q：服务端要支持什么能力？
+
+A：服务端需要支持：
+
+1. 同一个场景下，可以添加多个 `identity=agent` 的智能体。
+2. 多个智能体可以指向同一个基座模型 `AIModelCatalog`。
+3. 每个智能体在 bootstrap 返回时必须有自己的唯一实例名，但不新增数据库字段，直接由绑定行派生：
+
+```text
+agent-ai_config_aiscenariomodelbinding_id-model_id-model_name
+```
+
+4. bootstrap 返回给客户端时：
+   - `name` 使用派生智能体实例名。
+   - `baseModelName` 使用基座模型名，例如 `deepseek-v4-pro`。
+   - `identity` 为 `agent`。
+5. 普通模型 `identity=model` 的行为保持稳定，仍可继续以模型目录 `model.name` 作为 `name`。
+6. 后台管理系统支持在同一场景下重复选择同一模型并添加多个智能体。
+
+示例 bootstrap 返回：
+
+```json
+{
+  "name": "agent-18-7-deepseek-v4-pro",
+  "identity": "agent",
+  "baseModelName": "deepseek-v4-pro",
+  "display_name": "报告解读智能体",
+  "systemProvision": "...",
+  "briefDescription": "..."
+}
+```
+
+### 3. 设计原则
+
+### Q：为什么不能只是删除唯一约束？
+
+A：不能只删除 `scenario + model + identity` 唯一约束，否则会出现多个绑定行在客户端 bootstrap 中都返回同一个 `name=model.name`。客户端 `AIScenarioRemoteModelRow.id` 等于 `name`，如果多行同名，会导致：
+
+1. 客户端模型列表无法稳定区分多个智能体。
+2. 会话内选择某个智能体后，重启/刷新可能匹配到另一条配置。
+3. `is_default`、排序、偏好存储、Core Data upsert 都可能被同名覆盖。
+4. 运行时无法知道当前 agent 应该使用哪套 systemProvision / toolScenarios。
+
+因此必须同时满足：
+
+1. 数据库存储层：一个 agent 绑定行用自身 `id` 作为实例唯一性的来源。
+2. API 返回层：agent 的 `name` 返回实例标识，而不是基座模型名。
+3. API 返回层：agent 的 `baseModelName` 返回基座模型名，供客户端实际调用底层模型。
+
+### 4. 数据模型设计
+
+### Q：`AIScenarioModelBinding` 是否需要增加字段？
+
+A：不需要新增 `agent_name` 字段。
+
+智能体唯一名在 bootstrap 组装时由现有字段派生：
+
+```text
+agent-{binding.id}-{model.id}-{model.name}
+```
+
+按用户要求，说明中的完整语义为：
+
+```text
+agent-ai_config_aiscenariomodelbinding_id-model_id-model_name
+```
+
+示例：
+
+```text
+agent-18-7-deepseek-v4-pro
+```
+
+其中：
+
+1. `18` 是 `AIScenarioModelBinding.id`。
+2. `7` 是 `AIModelCatalog.id`。
+3. `deepseek-v4-pro` 是 `AIModelCatalog.name`。
+
+字段语义：
+
+| 字段 | identity=model | identity=agent |
+| --- | --- | --- |
+| `model` | 真实模型目录行 | 基座模型目录行 |
+| API `name` | `model.name` | `agent-{binding.id}-{model.id}-{model.name}` |
+| API `baseModelName` | 空或不返回 | `model.name` |
+| `display_name` | `model.display_name` | 可沿用 `model.display_name`，或后续增加独立 agent 展示名 |
+
+### Q：唯一约束如何调整？
+
+A：建议从“模型绑定唯一”改成“返回模型名唯一”。
+
+当前约束：
+
+```python
+UniqueConstraint(fields=["scenario", "model", "identity"])
+```
+
+需要改为：
+
+1. 删除 `uniq_scenario_model_identity_binding`。
+2. 不新增替代数据库唯一字段。
+3. `identity=model` 仍建议在 serializer 层保留 `scenario + model + identity=model` 唯一校验，避免普通模型重复。
+4. `identity=agent` 不再限制 `scenario + model` 唯一；多个 agent 的 bootstrap `name` 由绑定行 `id` 天然区分。
+
+说明：
+
+1. `AIScenarioModelBinding.id` 是数据库主键，已具备全局唯一性。
+2. agent 派生名包含 `binding.id`，因此同场景同模型多个 agent 不会同名。
+3. 不新增字段可避免 migration、后台表单字段、手动唯一校验和历史数据回填。
+
+### 5. 后台管理设计
+
+### Q：后台创建智能体时如何传参？
+
+A：后台 `/api/admin/v1/ai/scenarios/{scenario}/models/` 不需要传 `agent_name`。
+
+推荐最小方案：
+
+1. 前端创建 `identity=agent` 时，仍选择基座模型 `model`。
+2. 后端 serializer 对 `identity=agent` 放开 `scenario + model + identity` 唯一校验。
+3. 后台创建多个同基座模型 agent 时，不再报 `model_already_bound_to_this_scenario_with_same_identity`。
+4. 后台列表可用派生规则展示“智能体实例名”，但该值不是数据库字段。
+
+后续增强方案：
+
+1. 增加 `agent_display_name`，用于后台和客户端展示“医生智能体 / 报告解读智能体 / 用药顾问”等名称。
+2. 当前阶段可先用 `brief_description` 或 `model.display_name` 展示，避免一次性扩太多字段。
+
+### Q：后台列表需要展示什么？
+
+A：`AIScenarioModelsView.vue` 当前只展示 `模型 / 类型 / 默认 / 厂商 / 温度 / 最大 Token / 排序 / 激活`。支持多 agent 后建议补充：
+
+1. 智能体名：按 `agent-{id}-{model_id}-{model}` 规则派生展示，仅 agent 展示。
+2. 基座模型：`model`，agent 场景显示“基座模型”语义。
+3. 类型：继续展示“模型/智能体”。
+4. 默认：仍然整个场景只能有一个默认项，不区分 model/agent。
+
+### 6. Bootstrap 返回设计
+
+### Q：`/api/v1/ai/config/bootstrap` 如何返回？
+
+A：当前服务端在 `_build_pro_scenarios(...)` 中构造每行：
+
+```python
+model_data = {
+    "name": model.name,
+    "display_name": model.display_name,
+    "identity": row.identity,
+    ...
+}
+```
+
+服务端位置：
+
+```text
+SparkService/ai_config/views.py:190-217
+```
+
+需要调整为：
+
+```python
+is_agent = row.identity == IdentityKind.AGENT
+row_name = f"agent-{row.id}-{model.id}-{model.name}" if is_agent else model.name
+
+model_data = {
+    "name": row_name,
+    "display_name": model.display_name,
+    "identity": row.identity,
+    "baseModelName": model.name if is_agent else None,
+    ...
+}
+```
+
+注意：
+
+1. agent 的 `name` 必须按 `agent-{binding.id}-{model.id}-{model.name}` 组装，不能再是基座模型名。
+2. agent 的 `baseModelName` 必须是基座模型名。
+3. 普通 model 可以不返回 `baseModelName`，或返回 `null`。
+4. `default_model` 如果默认项是 agent，应使用 agent 的 `name`，否则客户端默认模型无法选中对应 agent。
+5. `models[]` 中同一基座模型的多个 agent 必须都保留，不能按 `name/model` 去重。
+
+### 7. 客户端兼容性
+
+### Q：客户端是否需要大改？
+
+A：客户端本地模型已经具备兼容基础：
+
+1. `AIScenarioRemoteModelRow.name` 作为行唯一 ID。
+2. `baseModelName` 已存在。
+3. 运行时对 `identity=agent` 且存在 `baseModelName` 的行，会用 `baseModelName` 调用底层模型。
+
+因此服务端只要按契约返回：
+
+```json
+{
+  "name": "agent-18-7-deepseek-v4-pro",
+  "identity": "agent",
+  "baseModelName": "deepseek-v4-pro"
+}
+```
+
+客户端就能区分多个同基座 agent。
+
+需要注意：
+
+1. 后端 JSON 字段应使用 `baseModelName`，因为客户端 `AIScenarioRemoteModelRow` 当前按该 key 解码。
+2. 不要返回 `base_model_name`，除非客户端也增加兼容解码。
+3. 不新增 `agent_name` 字段；后台如需展示智能体实例名，应按同一派生规则计算。
+
+### 8. 涉及文件
+
+| 端 | 文件 | 改动内容 |
+| --- | --- | --- |
+| 服务端 | `SparkService/ai_config/models.py` | 删除/调整 `scenario + model + identity` 数据库唯一约束；不新增 `agent_name` 字段 |
+| 服务端 | `SparkService/ai_config/migrations/*` | 仅调整唯一约束；新项目可同步 initial migration |
+| 服务端 | `SparkService/backoffice/serializers.py` | `AdminAIScenarioModelBindingSerializer` 对 `identity=agent` 放开同场景同模型校验；普通 model 仍保持唯一 |
+| 服务端 | `SparkService/backoffice/views.py` | 创建/更新场景绑定时沿用 serializer；审计日志继续记录绑定行 id/model/identity |
+| 服务端 | `SparkService/ai_config/views.py` | bootstrap 中 agent 返回 `name=agent-{binding.id}-{model.id}-{model.name}`、`baseModelName=model.name`；默认项使用返回名 |
+| 服务端 | `SparkService/ai_config/tests.py` | 增加 bootstrap 多 agent 返回测试 |
+| 服务端 | `SparkService/backoffice/tests.py` | 增加同场景同模型创建多个 agent 的后台 API 测试 |
+| 管理端前端 | `SparkService/backoffice-web/src/api/modules/ai.ts` | 不新增 `agent_name` 字段；如接口返回 `model_id` 可补充用于展示派生名 |
+| 管理端前端 | `SparkService/backoffice-web/src/views/AIScenarioModelsView.vue` | agent 行可按 `id/model_id/model` 展示派生智能体名；创建 agent 时允许同模型重复提交 |
+
+### 9. 验收标准
+
+1. 后台在 `chat` 场景下可连续创建多个 `identity=agent + model=doubao-seed-2-0-pro-260215` 的绑定。
+2. 创建第二个同基座 agent 不再返回 `model_already_bound_to_this_scenario_with_same_identity`。
+3. 不新增 `agent_name` 数据库字段。
+4. 每个 agent 的 bootstrap `name` 都按 `agent-{binding.id}-{model.id}-{model.name}` 派生，且互不相同。
+5. 普通 `identity=model` 仍不允许同场景重复绑定同一个模型，除非后续明确要支持普通模型重复。
+6. bootstrap 返回 agent 时，`name` 为派生智能体名。
+7. bootstrap 返回 agent 时，`baseModelName` 为基座模型 `model.name`。
+8. 同一场景同一基座模型的多个 agent 在 `models[]` 中都存在，不被覆盖或去重。
+9. 如果默认项是 agent，`default_model` 等于该 agent 的 `name`，客户端能默认选中该智能体。
+10. 客户端收到多个同基座 agent 后，模型选择列表可区分多行，运行时实际请求使用 `baseModelName`。
+11. agent 的 `systemProvision`、`briefDescription`、`aiToolScenarios`、`relatedTaskCodes` 按绑定行分别生效。
+12. 删除某个 agent 不影响同场景同基座模型的其他 agent。
+13. 修改某个 agent 的 prompt/工具/排序，只影响该 agent 绑定行。
+
+## 工单 `AI-CONFIG-000007`：场景模型绑定增加显示名称
+
+### 1. 背景
+
+### Q：为什么 `AI-CONFIG-000006` 之后还需要显示名称字段？
+
+A：`AI-CONFIG-000006` 解决的是“同场景同基座模型可以创建多个智能体，并且每个 agent 在客户端有唯一技术标识”的问题。当前 agent 的 bootstrap `name` 使用：
+
+```text
+agent-{binding.id}-{model.id}-{model.name}
+```
+
+这个值适合作为客户端行 ID、偏好存储 ID 和运行时选择 ID，但不适合直接给用户看。后台和客户端仍需要一个稳定、可运营配置的展示名，例如：
+
+1. 报告解读助手
+2. 用药建议助手
+3. 慢病随访助手
+4. 儿科问诊助手
+
+因此需要在 `AIScenarioModelBinding` 绑定行上增加“显示名称”，让同一个基座模型在同一个场景下可以被配置成多个业务语义不同的智能体。
+
+### 2. 需求目标
+
+### Q：显示名称属于模型目录还是场景绑定？
+
+A：属于 `AIScenarioModelBinding`，不属于 `AIModelCatalog`。
+
+原因：
+
+1. `AIModelCatalog.display_name` 表示模型目录名，例如“Doubao Seed 2.0 Pro”，是底层模型展示名。
+2. `AIScenarioModelBinding.display_name` 表示场景绑定名，例如“报告解读助手”，是业务使用名。
+3. 同一个 `AIModelCatalog` 可以在同一个场景下绑定多个 agent，每个 agent 需要不同展示名。
+4. 普通 `identity=model` 也可以使用绑定显示名，方便在不同场景下展示不同文案。
+
+### 3. 数据模型设计
+
+### Q：服务端需要增加什么字段？
+
+A：在 `AIScenarioModelBinding` 增加必填显示名称字段：
+
+```python
+class AIScenarioModelBinding(TimeStampedModel):
+    display_name = models.CharField(
+        max_length=128,
+        verbose_name="显示名称",
+        help_text="场景内展示名称；agent 可配置为报告解读助手、用药建议助手等业务名称",
+    )
+```
+
+字段规则：
+
+1. 必填，不允许空字符串。
+2. 建议 `max_length=128`，避免后台配置过长影响客户端列表。
+3. 不作为唯一约束字段；允许不同 agent 使用相同展示名，但后台可提示运营人员避免重复。
+4. 迁移已有数据时，可用 `AIModelCatalog.display_name` 回填，避免历史绑定行为空。
+
+### 4. Bootstrap 返回设计
+
+### Q：bootstrap 中 `name`、`baseModelName`、`display_name` 分别是什么？
+
+A：三者职责必须拆开：
+
+| 字段 | 作用 | identity=model | identity=agent |
+| --- | --- | --- | --- |
+| `name` | 客户端唯一 ID / 选择 ID | `model.name` | `agent-{binding.id}-{model.id}-{model.name}` |
+| `baseModelName` | agent 调用的真实底层模型名 | `null` | `model.name` |
+| `display_name` | 客户端和后台展示名 | `binding.display_name` | `binding.display_name` |
+
+服务端 bootstrap 组装时不能再使用 `model.display_name` 作为返回展示名，应统一使用 `AIScenarioModelBinding.display_name`：
+
+```python
+model_data = {
+    "name": row.bootstrap_name(),
+    "display_name": row.display_name,
+    "identity": row.identity,
+    "baseModelName": model.name if is_agent else None,
+    ...
+}
+```
+
+### 5. 后台管理设计
+
+### Q：后台创建/编辑场景绑定需要如何调整？
+
+A：`AIScenarioModelsView.vue` 的创建/编辑弹窗需要增加“显示名称”字段，并设为必填。
+
+页面位置：
+
+```text
+SparkService/backoffice-web/src/views/AIScenarioModelsView.vue:45-130
+```
+
+交互规则：
+
+1. 新建绑定时必须填写显示名称。
+2. 编辑绑定时可修改显示名称。
+3. 列表建议展示“显示名称 / 类型 / 基座模型 / 智能体名 / 默认 / 排序 / 激活”等信息。
+4. 当选择基座模型后，前端可以把输入框 placeholder 设为模型目录展示名，但不能静默替用户提交空值。
+5. agent 行的“智能体名”仍展示派生唯一名；“显示名称”展示运营配置名。
+
+### 6. API 与序列化设计
+
+### Q：后台 API 需要如何调整？
+
+A：`AdminAIScenarioModelBindingSerializer` 需要纳入 `display_name`：
+
+1. `fields` 增加 `display_name`。
+2. create/update 校验 `display_name` 非空。
+3. 返回列表时带出 `display_name`，供后台表格展示。
+4. 不要用 `display_name` 参与 agent 唯一性判断。
+5. 普通 `identity=model` 的重复校验仍按 `scenario + model + identity=model` 保持。
+
+### 7. 涉及文件
+
+| 端 | 文件 | 改动内容 |
+| --- | --- | --- |
+| 服务端 | `SparkService/ai_config/models.py` | `AIScenarioModelBinding` 增加 `display_name` 必填字段 |
+| 服务端 | `SparkService/ai_config/migrations/*` | 增加字段并回填已有绑定行显示名称 |
+| 服务端 | `SparkService/ai_config/views.py` | bootstrap 返回 `display_name=row.display_name` |
+| 服务端 | `SparkService/backoffice/serializers.py` | 后台场景绑定 serializer 增加 `display_name` 字段与非空校验 |
+| 服务端 | `SparkService/backoffice/views.py` | 创建/编辑场景绑定沿用 serializer；审计日志建议记录显示名称 |
+| 服务端 | `SparkService/ai_config/tests.py` | 增加 bootstrap 使用绑定显示名称的测试 |
+| 服务端 | `SparkService/backoffice/tests.py` | 增加后台创建/编辑绑定显示名称必填测试 |
+| 管理端前端 | `SparkService/backoffice-web/src/api/modules/ai.ts` | `AIScenarioModelBinding` 类型增加 `display_name` |
+| 管理端前端 | `SparkService/backoffice-web/src/views/AIScenarioModelsView.vue` | 表格与弹窗增加显示名称；提交时必填 |
+
+### 8. 验收标准
+
+1. 后台创建场景模型绑定时，“显示名称”为空不能提交。
+2. 后台编辑场景模型绑定时，可以修改显示名称。
+3. 后台列表能看到绑定显示名称。
+4. 同场景同基座模型创建多个 agent 时，可以分别配置不同显示名称。
+5. bootstrap 返回的 `display_name` 使用 `AIScenarioModelBinding.display_name`，不再使用 `AIModelCatalog.display_name`。
+6. agent 的 `name` 仍保持 `agent-{binding.id}-{model.id}-{model.name}`，不能被显示名称替代。
+7. agent 的 `baseModelName` 仍返回基座模型 `model.name`。
+8. 普通 model 绑定也返回绑定行显示名称。
+9. 已有绑定行迁移后显示名称不为空。
+10. 客户端无需新增解码字段；继续使用现有 `display_name` 展示即可。
 
 ## 全局注意事项
 

@@ -15,6 +15,9 @@ export interface AIScenarioModelBinding {
   scenario: string;
   identity: string;
   model: string;
+  display_name: string;
+  model_id?: number;
+  bootstrap_name?: string;
   endpoint: string;
   provider_company?: string;
   provider_name?: string;
@@ -27,6 +30,10 @@ export interface AIScenarioModelBinding {
   brief_description?: string;
   ai_tool_scenarios?: string[];
   related_task_codes?: string[];
+}
+
+export function derivedAgentBootstrapName(row: Pick<AIScenarioModelBinding, 'id' | 'model_id' | 'model'>): string {
+  return `agent-${row.id}-${row.model_id}-${row.model}`;
 }
 
 export function fetchAIScenarioSummaries() {

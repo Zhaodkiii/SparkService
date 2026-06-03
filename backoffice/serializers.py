@@ -381,6 +381,9 @@ def _resolve_provider_for_catalog_model(model_obj: AIModelCatalog):
 
 class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
     model = serializers.SlugRelatedField(slug_field="name", queryset=AIModelCatalog.objects.filter(is_active=True))
+    model_id = serializers.IntegerField(read_only=True)
+    display_name = serializers.CharField(max_length=128, trim_whitespace=False)
+    bootstrap_name = serializers.SerializerMethodField()
     endpoint = serializers.SerializerMethodField()
     provider_company = serializers.SerializerMethodField()
     provider_name = serializers.SerializerMethodField()
@@ -392,6 +395,9 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
             "scenario",
             "identity",
             "model",
+            "model_id",
+            "display_name",
+            "bootstrap_name",
             "endpoint",
             "provider_company",
             "provider_name",
@@ -415,8 +421,17 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
     def validate_related_task_codes(self, value):
         return _normalize_string_list(value, "related_task_codes")
 
+    def validate_display_name(self, value):
+        text = "" if value is None else str(value).strip()
+        if not text:
+            raise serializers.ValidationError("display_name_required")
+        return text
+
     def _resolve_provider(self, obj: AIScenarioModelBinding):
         return _resolve_provider_for_catalog_model(obj.model)
+
+    def get_bootstrap_name(self, obj):
+        return obj.bootstrap_name()
 
     def get_endpoint(self, obj):
         p = self._resolve_provider(obj)
@@ -439,14 +454,23 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
         if _resolve_provider_for_catalog_model(model_obj) is None:
             raise serializers.ValidationError({"model": "provider_not_configured_for_model_company"})
         scenario = self.context.get("scenario") or (self.instance.scenario if self.instance else None)
-        if scenario and self.instance is None:
-            # Catch duplicate (scenario, model, identity) before hitting DB UniqueConstraint.
-            # `scenario` is read_only so DRF skips auto UniqueTogetherValidator.
-            identity = attrs.get("identity", IdentityKind.MODEL)
-            if AIScenarioModelBinding.objects.filter(scenario=scenario, model=model_obj, identity=identity).exists():
+        identity = attrs.get("identity")
+        if identity is None and self.instance is not None:
+            identity = self.instance.identity
+        elif identity is None:
+            identity = IdentityKind.MODEL
+        if scenario and identity == IdentityKind.MODEL:
+            duplicate_qs = AIScenarioModelBinding.objects.filter(
+                scenario=scenario,
+                model=model_obj,
+                identity=IdentityKind.MODEL,
+            )
+            if self.instance is not None:
+                duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+            if duplicate_qs.exists():
                 raise serializers.ValidationError({"model": "model_already_bound_to_this_scenario_with_same_identity"})
-            if not AIScenarioModelBinding.objects.filter(scenario=scenario).exists():
-                attrs.setdefault("is_default", True)
+        if scenario and self.instance is None and not AIScenarioModelBinding.objects.filter(scenario=scenario).exists():
+            attrs.setdefault("is_default", True)
         return attrs
 
     def create(self, validated_data):

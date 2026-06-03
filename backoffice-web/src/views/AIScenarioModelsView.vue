@@ -9,7 +9,13 @@
   </a-space>
 
   <a-table :data-source="bindings" row-key="id" :pagination="false" :loading="loading">
-    <a-table-column title="模型" data-index="model" />
+    <a-table-column title="显示名称" data-index="display_name" />
+    <a-table-column title="基座模型" data-index="model" />
+    <a-table-column title="智能体名" key="agent_name">
+      <template #default="{ record }">
+        {{ record.identity === 'agent' ? agentBootstrapName(record) : '—' }}
+      </template>
+    </a-table-column>
     <a-table-column title="类型" key="identity">
       <template #default="{ record }">{{ record.identity === 'agent' ? '智能体' : '模型' }}</template>
     </a-table-column>
@@ -40,7 +46,14 @@
 
   <a-modal v-model:open="modalOpen" :title="isCreate ? '添加模型' : '编辑模型'" @ok="submit" :confirm-loading="saving" width="520px">
     <a-form layout="vertical">
-      <a-form-item label="模型" extra="从模型目录选择（须已激活且厂商已配置 API）">
+      <a-form-item label="显示名称" required extra="场景内展示名称；智能体可配置为报告解读助手、用药建议助手等">
+        <a-input
+          v-model:value="form.display_name"
+          allow-clear
+          :placeholder="displayNamePlaceholder"
+        />
+      </a-form-item>
+      <a-form-item label="基座模型" extra="从模型目录选择（须已激活且厂商已配置 API）；智能体可重复选择同一基座模型">
         <a-select
           v-model:value="form.model"
           show-search
@@ -131,6 +144,7 @@ import { Modal, message } from 'ant-design-vue';
 import {
   createScenarioBinding,
   deleteScenarioBinding,
+  derivedAgentBootstrapName,
   fetchAIToolOptions,
   fetchAIModelCatalog,
   fetchSmallTasks,
@@ -174,6 +188,16 @@ const identityOptions = [
   { value: 'agent', label: '智能体' },
 ];
 
+function agentBootstrapName(row: AIScenarioModelBinding) {
+  if (row.bootstrap_name) {
+    return row.bootstrap_name;
+  }
+  if (row.model_id == null) {
+    return row.model;
+  }
+  return derivedAgentBootstrapName(row);
+}
+
 function scenarioLabel(key: string) {
   const map: Record<string, string> = {
     chat: '对话',
@@ -205,6 +229,15 @@ const modelSelectOptions = computed(() =>
       label: `${c.display_name}（${c.name}）`,
     })),
 );
+
+const displayNamePlaceholder = computed(() => {
+  const modelName = typeof form.model === 'string' ? form.model : undefined;
+  if (!modelName) {
+    return '例如：报告解读助手';
+  }
+  const catalog = catalogRows.value.find((row) => row.name === modelName);
+  return catalog ? `例如：${catalog.display_name}` : '例如：报告解读助手';
+});
 
 const smallTaskOptions = computed(() =>
   smallTasks.value.map((task) => ({
@@ -259,6 +292,7 @@ function openCreate() {
   Object.assign(form, {
     id: undefined,
     model: undefined,
+    display_name: '',
     identity: 'model',
     is_default: false,
     temperature: 0.2,
@@ -278,6 +312,7 @@ function openEdit(row: AIScenarioModelBinding) {
   Object.assign(form, {
     id: row.id,
     model: row.model,
+    display_name: row.display_name ?? '',
     identity: row.identity || 'model',
     is_default: row.is_default,
     temperature: row.temperature,
@@ -327,10 +362,16 @@ async function submit() {
       message.warning('请选择模型');
       return;
     }
+    const displayName = String(form.display_name ?? '').trim();
+    if (!displayName) {
+      message.warning('请填写显示名称');
+      return;
+    }
     const tools = normalizeStringArray(form.ai_tool_scenarios);
     if (isCreate.value) {
       await createScenarioBinding(scenarioKey.value, {
         model: form.model,
+        display_name: displayName,
         identity: form.identity,
         is_default: form.is_default,
         temperature: form.temperature,
@@ -345,6 +386,7 @@ async function submit() {
       message.success('已添加');
     } else {
       await updateScenarioBinding(Number(form.id), {
+        display_name: displayName,
         identity: form.identity,
         is_default: form.is_default,
         temperature: form.temperature,

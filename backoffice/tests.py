@@ -211,3 +211,131 @@ class BackofficePermissionTests(TestCase):
 
             last_used = parse_datetime(last_used)
         self.assertEqual(last_used.replace(microsecond=0), refresh_time.replace(microsecond=0))
+
+
+class AdminAIScenarioMultiAgentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff_user = User.objects.create_user(
+            username="ai_staff",
+            email="ai-staff@example.com",
+            password="pass1234",
+            is_staff=True,
+        )
+        bootstrap_admin_permissions()
+        super_admin = AdminRole.objects.get(code="super_admin")
+        AdminUserRole.objects.create(user=self.staff_user, role=super_admin)
+        self.client.force_authenticate(user=self.staff_user)
+
+        from ai_config.models import AIModelCatalog, AIProviderKeyConfig, IdentityKind, ScenarioKey
+
+        AIProviderKeyConfig.objects.create(
+            kind=AIProviderKeyConfig.Kind.API,
+            name="Test Provider",
+            company="TESTCO",
+            key="test-key",
+            request_url="https://api.example.com/v1",
+            is_using=True,
+        )
+        self.catalog_model = AIModelCatalog.objects.create(
+            name="doubao-seed-2-0-pro-260215",
+            display_name="Doubao Seed 2.0 Pro",
+            company="TESTCO",
+        )
+        self.scenario_key = ScenarioKey.CHAT
+        self.agent_identity = IdentityKind.AGENT
+
+    def test_create_multiple_agents_for_same_base_model(self):
+        payload = {
+            "model": self.catalog_model.name,
+            "display_name": "报告解读助手",
+            "identity": self.agent_identity,
+            "temperature": 0.2,
+            "max_tokens": 2048,
+            "position": 1,
+            "is_active": True,
+        }
+        first = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+
+        second = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            {**payload, "display_name": "用药建议助手", "position": 2, "brief_description": "第二个智能体"},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertNotEqual(first.data["data"]["id"], second.data["data"]["id"])
+        self.assertNotEqual(first.data["data"]["bootstrap_name"], second.data["data"]["bootstrap_name"])
+        self.assertEqual(first.data["data"]["display_name"], "报告解读助手")
+        self.assertEqual(second.data["data"]["display_name"], "用药建议助手")
+
+    def test_create_binding_requires_display_name(self):
+        response = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            {
+                "model": self.catalog_model.name,
+                "display_name": "   ",
+                "identity": self.agent_identity,
+                "temperature": 0.2,
+                "max_tokens": 2048,
+                "position": 1,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("display_name_required", str(response.data))
+
+    def test_update_binding_display_name(self):
+        create_resp = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            {
+                "model": self.catalog_model.name,
+                "display_name": "初始名称",
+                "identity": self.agent_identity,
+                "temperature": 0.2,
+                "max_tokens": 2048,
+                "position": 1,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, 201, create_resp.data)
+        binding_id = create_resp.data["data"]["id"]
+
+        update_resp = self.client.patch(
+            f"/api/admin/v1/ai/scenario-models/{binding_id}/",
+            {"display_name": "更新后的名称"},
+            format="json",
+        )
+        self.assertEqual(update_resp.status_code, 200, update_resp.data)
+        self.assertEqual(update_resp.data["data"]["display_name"], "更新后的名称")
+
+    def test_create_duplicate_model_binding_still_rejected(self):
+        payload = {
+            "model": self.catalog_model.name,
+            "display_name": "Doubao 对话模型",
+            "identity": "model",
+            "temperature": 0.2,
+            "max_tokens": 2048,
+            "position": 1,
+            "is_active": True,
+        }
+        first = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+
+        second = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            {**payload, "position": 2},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 400)
+        self.assertIn("model_already_bound_to_this_scenario_with_same_identity", str(second.data))

@@ -1136,7 +1136,7 @@ class AdminAIScenarioSummaryListView(APIView):
                     "scenario": key,
                     "label": SCENARIO_LABEL_ZH.get(key, key),
                     "models_count": qs.count(),
-                    "default_model": default_row.model.name if default_row else None,
+                    "default_model": default_row.bootstrap_name() if default_row else None,
                     "active_bindings": active.count(),
                 }
             )
