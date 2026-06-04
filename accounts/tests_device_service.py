@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
+from unittest.mock import patch
 
 from accounts.models import TrustedDevice
 from accounts.services.device_service import DeviceService
@@ -323,3 +325,46 @@ class DeviceLinkingServiceTests(TestCase):
         self.assertEqual(user_row.push_token, "anon-token")
         self.assertTrue(user_row.notifications_enabled)
         self.assertFalse(user_row.is_revoked)
+
+    def test_repeated_login_linking_reuses_current_user_row(self):
+        from accounts.services.device_linking_service import DeviceLinkingService
+
+        first = DeviceLinkingService.ensure_user_device_profile_from_anonymous(
+            user=self.user,
+            device_id=self.device_id,
+            bundle_id=self.bundle_id,
+            request_id="req-first",
+        )
+        second = DeviceLinkingService.ensure_user_device_profile_from_anonymous(
+            user=self.user,
+            device_id=self.device_id,
+            bundle_id=self.bundle_id,
+            request_id="req-second",
+        )
+
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_id,
+                device_id=self.device_id,
+                user=self.user,
+            ).count(),
+            1,
+        )
+
+    def test_database_error_is_not_swallowed_and_outer_transaction_can_roll_back(self):
+        from accounts.services.device_linking_service import DeviceLinkingService
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                with patch.object(
+                    DeviceService,
+                    "ensure_user_device_profile_from_anonymous",
+                    side_effect=IntegrityError("broken device constraint"),
+                ):
+                    DeviceLinkingService.ensure_user_device_profile_from_anonymous(
+                        user=self.user,
+                        device_id=self.device_id,
+                        bundle_id=self.bundle_id,
+                        request_id="req-error",
+                    )

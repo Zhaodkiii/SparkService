@@ -370,7 +370,6 @@ if LOG_FORMAT not in {"console", "json"}:
     LOG_FORMAT = "console"
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "30"))
 LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "30"))
-LOG_API_IO_TO_ACCESS = os.getenv("LOG_API_IO_TO_ACCESS", "false").lower() in ("1", "true", "yes", "y")
 LOG_ROOT = Path(os.getenv("LOG_ROOT", BASE_DIR / "logs"))
 LOG_DIR = LOG_ROOT / os.getenv("LOG_DATE", "")
 if not os.getenv("LOG_DATE"):
@@ -378,9 +377,6 @@ if not os.getenv("LOG_DATE"):
 
     LOG_DIR = LOG_ROOT / datetime.now().strftime("%Y-%m-%d")
 os.makedirs(LOG_DIR, exist_ok=True)
-API_IO_HANDLERS = ["console", "app_file"]
-if LOG_API_IO_TO_ACCESS:
-    API_IO_HANDLERS.append("access_file")
 
 LOGGING = {
     "version": 1,
@@ -419,6 +415,17 @@ LOGGING = {
         "access_file": {
             "class": "common.logging.DateFolderTimedRotatingFileHandler",
             "filename": "access.log",
+            "log_root": str(LOG_ROOT),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
+        "access_api_io_file": {
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "access_api_io.log",
             "log_root": str(LOG_ROOT),
             "when": "midnight",
             "backupCount": LOG_BACKUP_COUNT,
@@ -498,7 +505,11 @@ LOGGING = {
         "django": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": True},
         "accounts": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": True},
         "accounts.request": {"handlers": ["console", "access_file"], "level": LOG_LEVEL, "propagate": False},
-        "accounts.api_io": {"handlers": API_IO_HANDLERS, "level": LOG_LEVEL, "propagate": False},
+        "accounts.api_io": {
+            "handlers": ["console", "access_api_io_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
         "accounts.flow": {"handlers": ["console", "access_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "celery": {"handlers": ["console", "celery_file"], "level": LOG_LEVEL, "propagate": True},
         "chat_sync": {"handlers": ["console", "chat_sync_file", "app_file"], "level": LOG_LEVEL, "propagate": False},

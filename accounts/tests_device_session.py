@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import TestCase, override_settings
+from unittest.mock import patch
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -172,6 +174,42 @@ class DeviceSessionServiceTests(TestCase):
 
         session_a.refresh_from_db()
         self.assertEqual(session_a.status, AccountDeviceSession.Status.REVOKED)
+
+    def test_profile_binding_failure_does_not_revoke_existing_install_user(self):
+        User = get_user_model()
+        user_a = User.objects.create_user(username="rollback_install_a", password="x")
+        user_b = User.objects.create_user(username="rollback_install_b", password="x")
+        shared_device = "rollback-shared-install"
+        session_a = DeviceSessionService.activate_session_on_login(
+            user=user_a,
+            bundle_id=self.bundle_a,
+            device_id=shared_device,
+            request_id="req-a",
+        )
+
+        with patch(
+            "accounts.services.device_service.DeviceService.ensure_user_device_profile_from_anonymous",
+            side_effect=IntegrityError("broken device constraint"),
+        ):
+            with self.assertRaises(IntegrityError):
+                DeviceSessionService.activate_session_on_login(
+                    user=user_b,
+                    bundle_id=self.bundle_a,
+                    device_id=shared_device,
+                    request_id="req-b",
+                )
+
+        session_a.refresh_from_db()
+        session_a.trusted_device.refresh_from_db()
+        self.assertEqual(session_a.status, AccountDeviceSession.Status.ACTIVE)
+        self.assertFalse(session_a.trusted_device.is_revoked)
+        self.assertFalse(
+            TrustedDevice.objects.filter(
+                bundle_id=self.bundle_a,
+                device_id=shared_device,
+                user=user_b,
+            ).exists()
+        )
 
     def test_logout_uses_token_session_id_when_provided(self):
         user = get_user_model().objects.create_user(username="logout_claims", password="x")

@@ -1,6 +1,7 @@
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 
 from common.exceptions import APIError
 from accounts.models import TrustedDevice
@@ -137,16 +138,26 @@ class DeviceService:
                 setattr(row, key, value)
 
     @staticmethod
-    def _anonymous_row(*, bundle_id: str, device_id: str) -> TrustedDevice | None:
-        return TrustedDevice.objects.filter(
+    def _anonymous_row(
+        *, bundle_id: str, device_id: str, for_update: bool = False
+    ) -> TrustedDevice | None:
+        queryset = TrustedDevice.objects
+        if for_update:
+            queryset = queryset.select_for_update()
+        return queryset.filter(
             bundle_id=bundle_id,
             device_id=device_id,
             user__isnull=True,
         ).first()
 
     @staticmethod
-    def _user_row(*, bundle_id: str, device_id: str, user) -> TrustedDevice | None:
-        return TrustedDevice.objects.filter(
+    def _user_row(
+        *, bundle_id: str, device_id: str, user, for_update: bool = False
+    ) -> TrustedDevice | None:
+        queryset = TrustedDevice.objects
+        if for_update:
+            queryset = queryset.select_for_update()
+        return queryset.filter(
             bundle_id=bundle_id,
             device_id=device_id,
             user=user,
@@ -216,6 +227,7 @@ class DeviceService:
         anon.delete()
 
     @staticmethod
+    @transaction.atomic
     def ensure_user_device_profile_from_anonymous(
         *,
         user,
@@ -228,8 +240,12 @@ class DeviceService:
         if not bundle_id or not device_id:
             raise APIError("bundle_id and device_id are required", code=40002, status_code=400)
 
-        anon = DeviceService._anonymous_row(bundle_id=bundle_id, device_id=device_id)
-        user_row = DeviceService._user_row(bundle_id=bundle_id, device_id=device_id, user=user)
+        user_row = DeviceService._user_row(
+            bundle_id=bundle_id, device_id=device_id, user=user, for_update=True
+        )
+        anon = DeviceService._anonymous_row(
+            bundle_id=bundle_id, device_id=device_id, for_update=True
+        )
 
         if user_row is not None:
             if anon is not None:
@@ -240,19 +256,49 @@ class DeviceService:
             return user_row
 
         if anon is not None:
-            anon.user = user
-            anon.is_revoked = False
-            anon.request_id = request_id or anon.request_id
-            anon.save()
-            return anon
+            try:
+                with transaction.atomic():
+                    anon.user = user
+                    anon.is_revoked = False
+                    anon.request_id = request_id or anon.request_id
+                    anon.save()
+                return anon
+            except IntegrityError:
+                user_row = DeviceService._user_row(
+                    bundle_id=bundle_id,
+                    device_id=device_id,
+                    user=user,
+                    for_update=True,
+                )
+                if user_row is None:
+                    raise
+                user_row.is_revoked = False
+                user_row.request_id = request_id or user_row.request_id
+                user_row.save()
+                return user_row
 
-        return TrustedDevice.objects.create(
-            bundle_id=bundle_id,
-            device_id=device_id,
-            user=user,
-            is_revoked=False,
-            request_id=request_id or "",
-        )
+        try:
+            with transaction.atomic():
+                return TrustedDevice.objects.create(
+                    bundle_id=bundle_id,
+                    device_id=device_id,
+                    user=user,
+                    is_revoked=False,
+                    request_id=request_id or "",
+                )
+        except IntegrityError:
+            user_row = DeviceService._user_row(
+                bundle_id=bundle_id,
+                device_id=device_id,
+                user=user,
+                for_update=True,
+            )
+            if user_row is None:
+                raise
+            user_row.is_revoked = False
+            user_row.request_id = request_id or user_row.request_id
+            user_row.save()
+            return user_row
 
     @staticmethod
     def register_device(

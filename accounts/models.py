@@ -1,6 +1,5 @@
 from django.contrib.auth.models import User
 from django.db import models
-from django.db.models import Q
 
 
 class AccountProfile(models.Model):
@@ -27,8 +26,8 @@ class TrustedDevice(models.Model):
     """
 
     user = models.ForeignKey(User, null=True, blank=True, related_name="trusted_devices", on_delete=models.SET_NULL, db_comment="关联 Django User；NULL=匿名冷启动画像，非 NULL=该用户设备行（与匿名行并存，不改绑匿名行）")
-    bundle_id = models.CharField(max_length=255, db_index=True, default="", db_comment="应用维度分组键，与 device_id 组成唯一约束（可与 bundle_identifier 相同或业务自定义）")
-    device_id = models.CharField(max_length=255, db_index=True, db_comment="客户端安装级稳定设备标识（如 Keychain UUID），与 bundle_id 唯一")
+    bundle_id = models.CharField(max_length=255, db_index=True, default="", db_comment="应用维度分组键；用户设备行与 device_id、user 共同唯一")
+    device_id = models.CharField(max_length=255, db_index=True, db_comment="客户端安装级稳定设备标识（如 Keychain UUID）；允许同一安装保留多个用户历史行")
     push_token = models.CharField(max_length=512, blank=True, default="", db_comment="APNs/FCM 等设备推送令牌（十六进制或供应商格式），可空")
     notifications_enabled = models.BooleanField(default=False, db_comment="用户是否在系统设置中允许本应用通知（客户端上报）")
     app_version = models.CharField(max_length=50, blank=True, default="", db_comment="面向用户的应用版本号（如 Marketing 版本）")
@@ -58,13 +57,7 @@ class TrustedDevice(models.Model):
         verbose_name_plural = "可信设备"
         constraints = [
             models.UniqueConstraint(
-                fields=["bundle_id", "device_id"],
-                condition=Q(user__isnull=True),
-                name="uniq_bundle_device_anonymous",
-            ),
-            models.UniqueConstraint(
                 fields=["bundle_id", "device_id", "user"],
-                condition=Q(user__isnull=False),
                 name="uniq_bundle_device_user_bound",
             ),
         ]
@@ -117,13 +110,7 @@ class AccountDeviceSession(models.Model):
         db_table_comment = "账号设备登录会话：单用户单 ACTIVE，供 token 校验与 APNs 投递。"
         verbose_name = "设备登录会话"
         verbose_name_plural = "设备登录会话"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["user"],
-                condition=Q(status="active"),
-                name="uniq_active_device_session_per_user",
-            ),
-        ]
+        constraints = []
 
 
 class LoginAudit(models.Model):

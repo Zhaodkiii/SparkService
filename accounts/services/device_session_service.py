@@ -45,7 +45,9 @@ class DeviceSessionService:
         raise APIError(msg, code=code, status_code=401)
 
     @staticmethod
-    def _get_or_create_trusted_device(*, user, bundle_id: str, device_id: str) -> TrustedDevice:
+    def _get_or_create_trusted_device(
+        *, user, bundle_id: str, device_id: str, request_id: str = ""
+    ) -> TrustedDevice:
         bundle_id = (bundle_id or "").strip()
         device_id = (device_id or "").strip()
         if not bundle_id or not device_id:
@@ -57,6 +59,7 @@ class DeviceSessionService:
             user=user,
             bundle_id=bundle_id,
             device_id=device_id,
+            request_id=request_id,
         )
 
     @staticmethod
@@ -171,20 +174,21 @@ class DeviceSessionService:
     def activate_session_on_login(*, user, bundle_id: str, device_id: str, request_id: str = "") -> AccountDeviceSession:
         bundle_id = (bundle_id or "").strip()
         device_id = (device_id or "").strip()
+        trusted_device = DeviceSessionService._get_or_create_trusted_device(
+            user=user,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+        )
+        trusted_device.is_revoked = False
+        trusted_device.save(update_fields=["is_revoked", "last_seen"])
+
         DeviceSessionService._revoke_same_installation_other_users(
             bundle_id=bundle_id,
             device_id=device_id,
             except_user=user,
             request_id=request_id,
         )
-
-        trusted_device = DeviceSessionService._get_or_create_trusted_device(
-            user=user,
-            bundle_id=bundle_id,
-            device_id=device_id,
-        )
-        trusted_device.is_revoked = False
-        trusted_device.save(update_fields=["is_revoked", "last_seen"])
 
         active_sessions = list(
             AccountDeviceSession.objects.select_for_update()
