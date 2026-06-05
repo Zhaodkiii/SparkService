@@ -142,7 +142,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('scenario', models.CharField(choices=[('chat', 'Chat'), ('embedding', 'Embedding'), ('voice', 'Voice'), ('medical_structured_extraction', 'Medical Structured Extraction'), ('medical_document_type_recognition', 'Medical Document Type Recognition'), ('medical_case_extraction', 'Medical Case Extraction'), ('health_exam_extraction', 'Health Exam Extraction'), ('medical_report_extraction', 'Medical Report Extraction'), ('prescription_extraction', 'Prescription Extraction'), ('medication_extraction', 'Medication Extraction'), ('medicine_box_extraction', 'Medicine Box Extraction'), ('optimization_text', 'Optimization Text'), ('optimization_visual', 'Optimization Visual'), ('context_folding', 'Context Folding'), ('router', 'Router'), ('model_config', 'Model Config'), ('report_interpretation', 'Report Interpretation')], db_comment='场景key', db_index=True, max_length=64)),
                 ('identity', models.CharField(choices=[('model', 'Model'), ('agent', 'Agent')], db_comment='model或agent', default='model', max_length=16)),
-                ('display_name', models.CharField(db_comment='场景内展示名称；agent可配置业务名称如报告解读助手', max_length=128)),
+                ('display_name', models.CharField(blank=True, db_comment='场景内展示名称；agent可配置业务名称如报告解读助手', default='', max_length=128)),
                 ('temperature', models.FloatField(db_comment='生成温度', default=0.2)),
                 ('max_tokens', models.IntegerField(db_comment='最大输出token', default=2048)),
                 ('position', models.IntegerField(db_comment='场景内排序', db_index=True, default=0)),

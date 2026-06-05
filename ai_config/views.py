@@ -192,7 +192,7 @@ class AIBootstrapConfigView(APIView):
                 # - systemProvision / briefDescription / aiToolScenarios：优先当前启用试用策略的 TrialModelPolicyItem，否则 AIScenarioModelBinding
                 model_data = {
                     "name": row_name,
-                    "display_name": row.display_name,
+                    "display_name": row.display_name or model.display_name or model.name,
                     "identity": row.identity,
                     "baseModelName": model.name if is_agent else None,
                     "company": model.company,

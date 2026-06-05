@@ -12,7 +12,8 @@
 | `AI-CONFIG-000004` | 登录自动 Pro 发放仅限中国设备 | 已实现 | `TrustedDevice` 增加国家登记；登录成功后仅中国设备立即自动发放 Pro |
 | `AI-CONFIG-000005` | 同一设备换用户首次登录自动 Pro 发放修复 | 已实现 | 同一安装上 A1 退出后 B1/C1 首次登录也应按用户维度发放 15 天 Pro |
 | `AI-CONFIG-000006` | 场景下支持同一基座模型配置多个智能体 | 已实现 | 后台同场景允许添加多个同底模 agent；bootstrap 返回 agent 唯一名和 baseModelName |
-| `AI-CONFIG-000007` | 场景模型绑定增加显示名称 | 新需求/待实现 | `AIScenarioModelBinding` 增加必填显示名称；后台表单维护；bootstrap 使用绑定显示名称 |
+| `AI-CONFIG-000007` | 场景模型绑定增加显示名称 | 新需求/待实现 | `AIScenarioModelBinding` 增加可选显示名称；后台表单维护；bootstrap 优先使用绑定显示名称，无值时使用原模型显示名称 |
+| `AI-CONFIG-000008` | 修复场景绑定显示名称数据库迁移缺失导致 bootstrap 500 | 已实现 | `AIScenarioModelBinding.display_name` 兼容已部署数据库的增量迁移、历史数据回填、发布前 schema 校验 |
 
 ## 工单 `AI-CONFIG-000001`：中国大陆用户才展示 Pro 试用申请入口
 
@@ -1422,12 +1423,14 @@ A：属于 `AIScenarioModelBinding`，不属于 `AIModelCatalog`。
 
 ### Q：服务端需要增加什么字段？
 
-A：在 `AIScenarioModelBinding` 增加必填显示名称字段：
+A：在 `AIScenarioModelBinding` 增加可选显示名称字段：
 
 ```python
 class AIScenarioModelBinding(TimeStampedModel):
     display_name = models.CharField(
         max_length=128,
+        blank=True,
+        default="",
         verbose_name="显示名称",
         help_text="场景内展示名称；agent 可配置为报告解读助手、用药建议助手等业务名称",
     )
@@ -1435,10 +1438,10 @@ class AIScenarioModelBinding(TimeStampedModel):
 
 字段规则：
 
-1. 必填，不允许空字符串。
+1. 可为空，允许空字符串。
 2. 建议 `max_length=128`，避免后台配置过长影响客户端列表。
 3. 不作为唯一约束字段；允许不同 agent 使用相同展示名，但后台可提示运营人员避免重复。
-4. 迁移已有数据时，可用 `AIModelCatalog.display_name` 回填，避免历史绑定行为空。
+4. 迁移已有数据时不强制回填；业务输出时优先使用 `AIScenarioModelBinding.display_name`，没有配置时使用 `AIModelCatalog.display_name`。
 
 ### 4. Bootstrap 返回设计
 
@@ -1450,14 +1453,14 @@ A：三者职责必须拆开：
 | --- | --- | --- | --- |
 | `name` | 客户端唯一 ID / 选择 ID | `model.name` | `agent-{binding.id}-{model.id}-{model.name}` |
 | `baseModelName` | agent 调用的真实底层模型名 | `null` | `model.name` |
-| `display_name` | 客户端和后台展示名 | `binding.display_name` | `binding.display_name` |
+| `display_name` | 客户端和后台展示名 | `binding.display_name`，为空时用 `model.display_name` | `binding.display_name`，为空时用 `model.display_name` |
 
-服务端 bootstrap 组装时不能再使用 `model.display_name` 作为返回展示名，应统一使用 `AIScenarioModelBinding.display_name`：
+服务端 bootstrap 组装时需要优先使用 `AIScenarioModelBinding.display_name`；如果场景绑定没有配置显示名称，则使用原模型目录的 `model.display_name` 兜底：
 
 ```python
 model_data = {
     "name": row.bootstrap_name(),
-    "display_name": row.display_name,
+    "display_name": row.display_name or model.display_name or model.name,
     "identity": row.identity,
     "baseModelName": model.name if is_agent else None,
     ...
@@ -1468,7 +1471,7 @@ model_data = {
 
 ### Q：后台创建/编辑场景绑定需要如何调整？
 
-A：`AIScenarioModelsView.vue` 的创建/编辑弹窗需要增加“显示名称”字段，并设为必填。
+A：`AIScenarioModelsView.vue` 的创建/编辑弹窗需要增加“显示名称”字段，但不强制填写。
 
 页面位置：
 
@@ -1478,11 +1481,11 @@ SparkService/backoffice-web/src/views/AIScenarioModelsView.vue:45-130
 
 交互规则：
 
-1. 新建绑定时必须填写显示名称。
+1. 新建绑定时可以不填写显示名称。
 2. 编辑绑定时可修改显示名称。
 3. 列表建议展示“显示名称 / 类型 / 基座模型 / 智能体名 / 默认 / 排序 / 激活”等信息。
-4. 当选择基座模型后，前端可以把输入框 placeholder 设为模型目录展示名，但不能静默替用户提交空值。
-5. agent 行的“智能体名”仍展示派生唯一名；“显示名称”展示运营配置名。
+4. 当选择基座模型后，前端可以把输入框 placeholder 设为模型目录展示名；用户不填写时提交空值，由服务端 bootstrap 使用模型目录显示名兜底。
+5. agent 行的“智能体名”仍展示派生唯一名；“显示名称”展示运营配置名，没有运营配置名时展示原模型显示名。
 
 ### 6. API 与序列化设计
 
@@ -1491,7 +1494,7 @@ SparkService/backoffice-web/src/views/AIScenarioModelsView.vue:45-130
 A：`AdminAIScenarioModelBindingSerializer` 需要纳入 `display_name`：
 
 1. `fields` 增加 `display_name`。
-2. create/update 校验 `display_name` 非空。
+2. create/update 不校验 `display_name` 非空，只做长度与去首尾空格处理。
 3. 返回列表时带出 `display_name`，供后台表格展示。
 4. 不要用 `display_name` 参与 agent 唯一性判断。
 5. 普通 `identity=model` 的重复校验仍按 `scenario + model + identity=model` 保持。
@@ -1500,28 +1503,155 @@ A：`AdminAIScenarioModelBindingSerializer` 需要纳入 `display_name`：
 
 | 端 | 文件 | 改动内容 |
 | --- | --- | --- |
-| 服务端 | `SparkService/ai_config/models.py` | `AIScenarioModelBinding` 增加 `display_name` 必填字段 |
-| 服务端 | `SparkService/ai_config/migrations/*` | 增加字段并回填已有绑定行显示名称 |
-| 服务端 | `SparkService/ai_config/views.py` | bootstrap 返回 `display_name=row.display_name` |
-| 服务端 | `SparkService/backoffice/serializers.py` | 后台场景绑定 serializer 增加 `display_name` 字段与非空校验 |
+| 服务端 | `SparkService/ai_config/models.py` | `AIScenarioModelBinding` 增加 `display_name` 可选字段 |
+| 服务端 | `SparkService/ai_config/migrations/*` | 增加可空/默认空字符串字段；不强制历史行回填 |
+| 服务端 | `SparkService/ai_config/views.py` | bootstrap 返回 `display_name=row.display_name or model.display_name` |
+| 服务端 | `SparkService/backoffice/serializers.py` | 后台场景绑定 serializer 增加 `display_name` 字段，允许为空 |
 | 服务端 | `SparkService/backoffice/views.py` | 创建/编辑场景绑定沿用 serializer；审计日志建议记录显示名称 |
-| 服务端 | `SparkService/ai_config/tests.py` | 增加 bootstrap 使用绑定显示名称的测试 |
-| 服务端 | `SparkService/backoffice/tests.py` | 增加后台创建/编辑绑定显示名称必填测试 |
+| 服务端 | `SparkService/ai_config/tests.py` | 增加 bootstrap 优先使用绑定显示名称、为空时使用模型显示名称的测试 |
+| 服务端 | `SparkService/backoffice/tests.py` | 增加后台创建/编辑绑定允许显示名称为空的测试 |
 | 管理端前端 | `SparkService/backoffice-web/src/api/modules/ai.ts` | `AIScenarioModelBinding` 类型增加 `display_name` |
-| 管理端前端 | `SparkService/backoffice-web/src/views/AIScenarioModelsView.vue` | 表格与弹窗增加显示名称；提交时必填 |
+| 管理端前端 | `SparkService/backoffice-web/src/views/AIScenarioModelsView.vue` | 表格与弹窗增加显示名称；允许为空并展示模型显示名兜底 |
 
 ### 8. 验收标准
 
-1. 后台创建场景模型绑定时，“显示名称”为空不能提交。
+1. 后台创建场景模型绑定时，“显示名称”为空也可以提交。
 2. 后台编辑场景模型绑定时，可以修改显示名称。
-3. 后台列表能看到绑定显示名称。
+3. 后台列表能看到绑定显示名称；未配置时展示原模型显示名称作为兜底。
 4. 同场景同基座模型创建多个 agent 时，可以分别配置不同显示名称。
-5. bootstrap 返回的 `display_name` 使用 `AIScenarioModelBinding.display_name`，不再使用 `AIModelCatalog.display_name`。
+5. bootstrap 返回的 `display_name` 优先使用 `AIScenarioModelBinding.display_name`；没有配置时使用 `AIModelCatalog.display_name`。
 6. agent 的 `name` 仍保持 `agent-{binding.id}-{model.id}-{model.name}`，不能被显示名称替代。
 7. agent 的 `baseModelName` 仍返回基座模型 `model.name`。
-8. 普通 model 绑定也返回绑定行显示名称。
-9. 已有绑定行迁移后显示名称不为空。
+8. 普通 model 绑定也按“绑定显示名称优先、模型显示名称兜底”的规则返回。
+9. 已有绑定行迁移后允许 `display_name` 为空，但 bootstrap 对客户端返回的展示名不能为空。
 10. 客户端无需新增解码字段；继续使用现有 `display_name` 展示即可。
+
+## 工单 `AI-CONFIG-000008`：修复场景绑定显示名称数据库迁移缺失导致 bootstrap 500
+
+### 1. 问题背景
+
+### Q：这次报错是不是设备登记接口的问题？
+
+A：不是。日志里 `/api/v1/device/register/` 已经返回 200，真正失败的是随后客户端冷启动拉取 AI 配置：
+
+```text
+GET /api/v1/ai/config/bootstrap/?platform=ios&client_version=1.5.1
+```
+
+服务端返回 500，根错误为：
+
+```text
+pymysql.err.OperationalError: (1054, "Unknown column 'ai_config_aiscenariomodelbinding.display_name' in 'field list'")
+```
+
+也就是说，业务代码已经按 `AI-CONFIG-000007` 开始读取 `AIScenarioModelBinding.display_name`，但当前 MySQL 表 `ai_config_aiscenariomodelbinding` 没有 `display_name` 字段，导致 bootstrap 查询阶段直接崩溃。
+
+### 2. 根因分析
+
+### Q：为什么代码里有字段，数据库里却没有？
+
+A：当前问题本质是“模型字段变更没有通过可落地的增量迁移同步到已存在数据库”。
+
+需要重点检查：
+
+1. `SparkService/ai_config/models.py` 已新增 `AIScenarioModelBinding.display_name`。
+2. `SparkService/ai_config/views.py` 的 bootstrap 组装已经读取 `row.display_name`。
+3. 后台 serializer、前端表单、测试都已经围绕 `display_name` 改造。
+4. 但 `SparkService/ai_config/migrations/0001_initial.py` 如果是在字段新增后被直接修改，已部署数据库不会重新执行这个历史迁移。
+5. 已经执行过 `0001_initial` 的数据库，不会因为 `0001_initial.py` 文件内容变化而自动新增列。
+
+因此，单纯修改初始迁移不能修复线上或本地已有库，必须补一个面向存量库的增量迁移。
+
+### 3. 修复目标
+
+### Q：这个工单要修复什么？
+
+A：目标是让 `AI-CONFIG-000007` 的 `display_name` 字段在所有数据库状态下都能稳定落地：
+
+1. 已部署数据库缺少 `display_name` 时，执行迁移后自动补列。
+2. 已有绑定行允许显示名称为空，不强制回填。
+3. 新库从零迁移不出现重复加列。
+4. bootstrap 不再因为缺字段返回 500。
+5. 发布前能检查 schema 与 Django model 是否一致。
+
+### 4. 数据库迁移方案
+
+### Q：应该如何写迁移？
+
+A：推荐新增兼容迁移，例如：
+
+```text
+SparkService/ai_config/migrations/0002_ensure_scenario_model_binding_display_name.py
+```
+
+迁移需要考虑当前仓库状态可能已经把 `display_name` 写进了 `0001_initial.py`。为了避免新库重复加列、旧库缺列，建议采用数据库兼容型迁移：
+
+1. 检查 `ai_config_aiscenariomodelbinding` 是否存在 `display_name` 列。
+2. 如果不存在，执行 `ALTER TABLE` 增加 `display_name`。
+3. 对历史数据不强制回填；字段可保持空字符串。
+4. 最终保证 bootstrap 输出给客户端的展示名非空，而不是要求数据库字段非空。
+5. Django migration state 不能和 `models.py` 重复声明字段，避免 fresh migrate 时状态冲突。
+
+展示名兜底规则建议：
+
+| 场景 | bootstrap 输出 display_name |
+| --- | --- |
+| `AIScenarioModelBinding.display_name` 非空 | bootstrap 使用 `binding.display_name` |
+| `AIScenarioModelBinding.display_name` 为空，`AIModelCatalog.display_name` 非空 | bootstrap 使用 `model.display_name` |
+| `AIScenarioModelBinding.display_name` 与 `AIModelCatalog.display_name` 都为空 | bootstrap 使用 `model.name` |
+| 关联模型异常缺失 | 使用 `binding-{id}` 兜底，并记录日志或后续巡检 |
+
+注意：不能只在 Python 业务层用 `getattr(row, "display_name", ...)` 做兜底，因为 ORM 查询阶段已经会把缺失列放进 SELECT，数据库会先抛 `Unknown column`。
+
+### 5. 发布前校验
+
+### Q：如何避免类似问题再次上线才发现？
+
+A：发布前增加数据库 schema 校验步骤：
+
+```sql
+SHOW COLUMNS FROM ai_config_aiscenariomodelbinding LIKE 'display_name';
+```
+
+并检查字段是否存在；显示名称允许为空，但需要确认 bootstrap 输出可兜底：
+
+```sql
+SELECT COUNT(*)
+FROM ai_config_aiscenariomodelbinding
+WHERE display_name IS NULL OR display_name = '';
+```
+
+服务端发布流程需要执行：
+
+```bash
+python manage.py makemigrations --check --dry-run
+python manage.py migrate
+python manage.py check
+```
+
+如果 bootstrap 是客户端启动关键接口，建议把 `/api/v1/ai/config/bootstrap/` 加入发布后冒烟测试，确保返回 200 且每个模型项返回给客户端的 `display_name` 都有值。
+
+### 6. 涉及文件
+
+| 端 | 文件 | 改动内容 |
+| --- | --- | --- |
+| 服务端 | `SparkService/ai_config/models.py` | 确认 `AIScenarioModelBinding.display_name` 与迁移状态一致 |
+| 服务端 | `SparkService/ai_config/migrations/0002_ensure_scenario_model_binding_display_name.py` | 新增兼容存量库的增量迁移，缺列时补列；字段允许为空 |
+| 服务端 | `SparkService/ai_config/views.py` | bootstrap 使用 `row.display_name or model.display_name or model.name`；不建议用运行时兜底掩盖 schema 缺列问题 |
+| 服务端 | `SparkService/ai_config/tests.py` | 增加 bootstrap 包含绑定显示名称、为空时使用模型显示名称且不返回 500 的测试 |
+| 服务端 | `SparkService/backoffice/tests.py` | 增加已有绑定显示名称可空、后台创建允许为空的测试 |
+| 运维/发布 | 部署脚本或发布清单 | 增加 migrate、schema 校验、bootstrap 冒烟测试 |
+
+### 7. 验收标准
+
+1. 已存在数据库执行迁移后，`ai_config_aiscenariomodelbinding.display_name` 字段存在。
+2. 已存在绑定行迁移后允许 `display_name` 为空。
+3. fresh database 从零迁移不出现重复加列或 migration state 冲突。
+4. `/api/v1/ai/config/bootstrap/?platform=ios&client_version=1.5.1` 返回 200。
+5. bootstrap 返回给客户端的模型项包含非空 `display_name`；绑定显示名称为空时使用原模型显示名称兜底，agent 的 `name` 仍保持技术唯一名。
+6. `python manage.py makemigrations --check --dry-run` 不再提示模型与迁移不一致。
+7. `python manage.py migrate` 和 `python manage.py check` 均通过。
+8. 发布后日志不再出现 `Unknown column 'ai_config_aiscenariomodelbinding.display_name'`。
 
 ## 全局注意事项
 

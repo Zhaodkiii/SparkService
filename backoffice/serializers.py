@@ -382,7 +382,7 @@ def _resolve_provider_for_catalog_model(model_obj: AIModelCatalog):
 class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
     model = serializers.SlugRelatedField(slug_field="name", queryset=AIModelCatalog.objects.filter(is_active=True))
     model_id = serializers.IntegerField(read_only=True)
-    display_name = serializers.CharField(max_length=128, trim_whitespace=False)
+    display_name = serializers.CharField(max_length=128, required=False, allow_blank=True, trim_whitespace=False)
     bootstrap_name = serializers.SerializerMethodField()
     endpoint = serializers.SerializerMethodField()
     provider_company = serializers.SerializerMethodField()
@@ -422,10 +422,7 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
         return _normalize_string_list(value, "related_task_codes")
 
     def validate_display_name(self, value):
-        text = "" if value is None else str(value).strip()
-        if not text:
-            raise serializers.ValidationError("display_name_required")
-        return text
+        return "" if value is None else str(value).strip()
 
     def _resolve_provider(self, obj: AIScenarioModelBinding):
         return _resolve_provider_for_catalog_model(obj.model)

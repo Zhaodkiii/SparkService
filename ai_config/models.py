@@ -107,7 +107,12 @@ class AIScenarioModelBinding(models.Model):
     scenario = models.CharField(max_length=64, choices=ScenarioKey.choices, db_index=True, db_comment="场景key")
     identity = models.CharField(max_length=16, choices=IdentityKind.choices, default=IdentityKind.MODEL, db_comment="model或agent")
     model = models.ForeignKey("ai_config.AIModelCatalog", on_delete=models.PROTECT, related_name="scenario_bindings", db_comment="目录模型")
-    display_name = models.CharField(max_length=128, db_comment="场景内展示名称；agent可配置业务名称如报告解读助手")
+    display_name = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        db_comment="场景内展示名称；agent可配置业务名称如报告解读助手",
+    )
     temperature = models.FloatField(default=0.2, db_comment="生成温度")
     max_tokens = models.IntegerField(default=2048, db_comment="最大输出token")
     position = models.IntegerField(default=0, db_index=True, db_comment="场景内排序")

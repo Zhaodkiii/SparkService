@@ -209,3 +209,14 @@ class AIBootstrapMultiAgentTests(APITestCase):
         self.assertEqual(by_name[self.agent_one.bootstrap_name()]["display_name"], "报告解读助手")
         self.assertEqual(by_name[self.agent_two.bootstrap_name()]["display_name"], "用药建议助手")
         self.assertNotEqual(by_name[self.agent_one.bootstrap_name()]["display_name"], self.catalog_model.display_name)
+
+    def test_bootstrap_falls_back_to_catalog_display_name_when_binding_display_name_empty(self):
+        self.agent_one.display_name = ""
+        self.agent_one.save(update_fields=["display_name"])
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/ai/config/bootstrap/")
+        self.assertEqual(response.status_code, 200)
+
+        by_name = {row["name"]: row for row in response.json()["data"]["scenarios"]["chat"]["models"]}
+        self.assertEqual(by_name[self.agent_one.bootstrap_name()]["display_name"], self.catalog_model.display_name)

@@ -273,7 +273,7 @@ class AdminAIScenarioMultiAgentTests(TestCase):
         self.assertEqual(first.data["data"]["display_name"], "报告解读助手")
         self.assertEqual(second.data["data"]["display_name"], "用药建议助手")
 
-    def test_create_binding_requires_display_name(self):
+    def test_create_binding_allows_empty_display_name(self):
         response = self.client.post(
             f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
             {
@@ -287,8 +287,8 @@ class AdminAIScenarioMultiAgentTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("display_name_required", str(response.data))
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["data"]["display_name"], "")
 
     def test_update_binding_display_name(self):
         create_resp = self.client.post(

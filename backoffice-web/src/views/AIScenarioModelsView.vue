@@ -9,7 +9,9 @@
   </a-space>
 
   <a-table :data-source="bindings" row-key="id" :pagination="false" :loading="loading">
-    <a-table-column title="显示名称" data-index="display_name" />
+    <a-table-column title="显示名称" key="display_name">
+      <template #default="{ record }">{{ displayNameForBinding(record) }}</template>
+    </a-table-column>
     <a-table-column title="基座模型" data-index="model" />
     <a-table-column title="智能体名" key="agent_name">
       <template #default="{ record }">
@@ -46,7 +48,7 @@
 
   <a-modal v-model:open="modalOpen" :title="isCreate ? '添加模型' : '编辑模型'" @ok="submit" :confirm-loading="saving" width="520px">
     <a-form layout="vertical">
-      <a-form-item label="显示名称" required extra="场景内展示名称；智能体可配置为报告解读助手、用药建议助手等">
+      <a-form-item label="显示名称" extra="可选；不填写时使用原模型显示名称">
         <a-input
           v-model:value="form.display_name"
           allow-clear
@@ -198,6 +200,16 @@ function agentBootstrapName(row: AIScenarioModelBinding) {
   return derivedAgentBootstrapName(row);
 }
 
+function modelDisplayName(modelName: string) {
+  const catalog = catalogRows.value.find((row) => row.name === modelName);
+  return catalog?.display_name || modelName;
+}
+
+function displayNameForBinding(row: AIScenarioModelBinding) {
+  const configured = String(row.display_name ?? '').trim();
+  return configured || modelDisplayName(row.model);
+}
+
 function scenarioLabel(key: string) {
   const map: Record<string, string> = {
     chat: '对话',
@@ -235,8 +247,7 @@ const displayNamePlaceholder = computed(() => {
   if (!modelName) {
     return '例如：报告解读助手';
   }
-  const catalog = catalogRows.value.find((row) => row.name === modelName);
-  return catalog ? `例如：${catalog.display_name}` : '例如：报告解读助手';
+  return `不填写时使用：${modelDisplayName(modelName)}`;
 });
 
 const smallTaskOptions = computed(() =>
@@ -363,10 +374,6 @@ async function submit() {
       return;
     }
     const displayName = String(form.display_name ?? '').trim();
-    if (!displayName) {
-      message.warning('请填写显示名称');
-      return;
-    }
     const tools = normalizeStringArray(form.ai_tool_scenarios);
     if (isCreate.value) {
       await createScenarioBinding(scenarioKey.value, {
