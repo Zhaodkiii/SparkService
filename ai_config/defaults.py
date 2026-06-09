@@ -34,6 +34,7 @@ DEFAULT_SCENARIOS = {
     "router": dict(_DEFAULT_CHAT),
     "model_config": dict(_DEFAULT_EMBED),
     "report_interpretation": dict(_DEFAULT_CHAT),
+    "nutrition_intake_extraction": dict(_DEFAULT_CHAT),
 }
 
 DEFAULT_API_KEYS = []

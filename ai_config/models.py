@@ -23,6 +23,7 @@ class ScenarioKey(models.TextChoices):
     ROUTER = "router"
     MODEL_CONFIG = "model_config"
     REPORT_INTERPRETATION = "report_interpretation"
+    NUTRITION_INTAKE_EXTRACTION = "nutrition_intake_extraction"
 
 
 class IdentityKind(models.TextChoices):

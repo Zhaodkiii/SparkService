@@ -133,6 +133,7 @@ INSTALLED_APPS = [
     'ai_config',
     'chat_sync',
     'medical',
+    'nutrition',
     'task_system',
     'file_manager',
     'app_version',
@@ -519,6 +520,7 @@ LOGGING = {
             "propagate": False,
         },
         "medical.flow": {"handlers": ["console", "medical_flow_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
+        "nutrition.api": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "medical.api_io": {
             "handlers": ["console", "medical_api_io_file"],
             "level": LOG_LEVEL,

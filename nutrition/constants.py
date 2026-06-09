@@ -1,0 +1,32 @@
+"""饮食营养模块常量：业务类型、默认目标与错误码。"""
+
+NUTRITION_BUSINESS_TYPE_MEAL_RECORD = "nutrition_meal_record"
+NUTRITION_BUSINESS_TYPE_FOOD_ITEM = "nutrition_food_item"
+NUTRITION_BUSINESS_TYPE_RECIPE = "nutrition_recipe"
+NUTRITION_BUSINESS_TYPE_APPLE_HEALTH_INTAKE_IMPORT = "nutrition_apple_health_intake_import"
+
+NUTRITION_FAVORITE_TARGET_FOOD_ITEM = "nutrition_food_item"
+NUTRITION_FAVORITE_TARGET_RECIPE = "nutrition_recipe"
+
+DEFAULT_DAILY_GOAL = {
+    "energy_kcal": 1995,
+    "protein_g": 97,
+    "carbohydrate_g": 243,
+    "fat_g": 64,
+}
+
+DEFAULT_MEAL_DISTRIBUTION = {
+    "breakfast": 0.30,
+    "lunch": 0.40,
+    "dinner": 0.25,
+    "snack": 0.05,
+}
+
+DEFAULT_GOAL_TYPE = "maintain"
+
+NUTRITION_ERROR_MEMBER_PERMISSION_DENIED = 40301
+NUTRITION_ERROR_RECORD_NOT_FOUND = 40401
+NUTRITION_ERROR_RECOGNITION_FAILED = 40001
+NUTRITION_ERROR_INVALID_BARCODE = 40002
+NUTRITION_ERROR_TARGET_MISSING = 40003
+NUTRITION_ERROR_DUPLICATE_APPLE_HEALTH_SAMPLE = 40901

@@ -46,7 +46,14 @@ def member_id_for_business(business_type: str, business_id) -> int | None:
         "surgery": Surgery,
         "follow_up": FollowUp,
     }
-    model = model_map.get((business_type or "").strip())
+    from nutrition.models import NutritionAppleHealthIntakeImport, NutritionEnergyBurnRecord, NutritionMealRecord
+
+    nutrition_model_map = {
+        "nutrition_meal_record": NutritionMealRecord,
+        "nutrition_apple_health_intake_import": NutritionAppleHealthIntakeImport,
+        "nutrition_energy_burn_record": NutritionEnergyBurnRecord,
+    }
+    model = model_map.get((business_type or "").strip()) or nutrition_model_map.get((business_type or "").strip())
     if model is None:
         return None
     return (

@@ -33,6 +33,7 @@ class AIBootstrapConfigViewTests(APITestCase):
         "router",
         "model_config",
         "report_interpretation",
+        "nutrition_intake_extraction",
     }
     MEDICAL_PLACEHOLDER_SCENARIOS = {
         "medical_structured_extraction",
