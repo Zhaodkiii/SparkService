@@ -223,7 +223,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Shanghai'
 
 USE_I18N = True
 
@@ -490,6 +490,17 @@ LOGGING = {
             "level": LOG_LEVEL,
             "filters": ["request_id"],
         },
+        "nutrition_api_io_file": {
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "nutrition_api_io.log",
+            "log_root": str(LOG_ROOT),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
         "file_manager_file": {
             "class": "common.logging.DateFolderTimedRotatingFileHandler",
             "filename": "file_manager.log",
@@ -521,6 +532,11 @@ LOGGING = {
         },
         "medical.flow": {"handlers": ["console", "medical_flow_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "nutrition.api": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": False},
+        "nutrition.api_io": {
+            "handlers": ["console", "nutrition_api_io_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
         "medical.api_io": {
             "handlers": ["console", "medical_api_io_file"],
             "level": LOG_LEVEL,
