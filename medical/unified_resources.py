@@ -31,6 +31,8 @@ MEDICAL_UNIFIED_ALLOWED_QUERY_PARAMS: dict[str, frozenset[str]] = {
     "medicine-boxes": frozenset({"member_id", "medicine_type", "expire_before", "low_stock"}),
     "prescriptions": frozenset({"member_id", "medical_case_id", "status"}),
     "medication-plans": frozenset({"member_id", "medical_case_id", "medicine_box_id", "prescription_id", "status"}),
+    # medication-records scheduled_from: inclusive lower bound (scheduled_at >= scheduled_from)
+    # medication-records scheduled_to: exclusive upper bound (scheduled_at < scheduled_to)
     "medication-records": frozenset({"member_id", "plan_id", "status", "scheduled_from", "scheduled_to"}),
 }
 

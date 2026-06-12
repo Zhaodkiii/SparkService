@@ -58,6 +58,10 @@ from medical.services.member_invite_service import InviteError
 from medical.services.member_invite_delivery import create_invite_and_notify, DeliveryResult
 from medical.services import member_share_ticket as share_ticket_service
 from medical.services.medicine_cabinet_service import family_medicine_cabinet_queryset
+from medical.services.medication_record_query import (
+    apply_medication_record_scheduled_range,
+    parse_medication_record_scheduled_range,
+)
 from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
 from file_manager.serializers import ManagedFileAttachmentOutSerializer
@@ -1062,24 +1066,26 @@ class MedicationRecordViewSet(WrappedModelViewSet):
     queryset = MedicationRecord.objects.select_related("member", "plan", "plan__medicine_box").all()
     serializer_class = MedicationRecordSerializer
 
+    def list(self, request, *args, **kwargs):
+        _, range_error = parse_medication_record_scheduled_range(request.query_params)
+        if range_error is not None:
+            return range_error
+        return super().list(request, *args, **kwargs)
+
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
         plan_id = self.request.query_params.get("plan_id")
         status_value = self.request.query_params.get("status")
-        scheduled_from = self.request.query_params.get("scheduled_from")
-        scheduled_to = self.request.query_params.get("scheduled_to")
         if member_id:
             queryset = queryset.filter(member_id=member_id)
         if plan_id:
             queryset = queryset.filter(plan_id=plan_id)
         if status_value:
             queryset = queryset.filter(status=status_value)
-        if scheduled_from:
-            queryset = queryset.filter(scheduled_at__gte=scheduled_from)
-        if scheduled_to:
-            queryset = queryset.filter(scheduled_at__lte=scheduled_to)
-        return queryset
+
+        scheduled_range, _ = parse_medication_record_scheduled_range(self.request.query_params)
+        return apply_medication_record_scheduled_range(queryset, scheduled_range)
 
     def perform_update(self, serializer):
         with transaction.atomic():
