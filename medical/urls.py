@@ -15,6 +15,7 @@ from medical.views import (
     MemberCompleteDataAPI,
     MedicalAttachmentBatchBindView,
     MedicationPlanWorkflowSaveView,
+    PrescriptionBatchWorkflowSaveView,
     MedicationPlanViewSet,
     MedicationRecordViewSet,
     MedExamDetailViewSet,
@@ -82,6 +83,7 @@ urlpatterns = [
     path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),  # 工作流：保存体检报告
     path("workflows/medical-reports/create/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-create"),  # 工作流：创建检查/检验报告
     path("workflows/medication-plans/save/", MedicationPlanWorkflowSaveView.as_view(), name="medical-workflow-medication-plan-save"),  # 工作流：保存用药计划（可含药箱）
+    path("workflows/prescriptions/batch-save/", PrescriptionBatchWorkflowSaveView.as_view(), name="medical-workflow-prescription-batch-save"),  # 工作流：批量保存处方（不创建病历）
     path("workflows/symptoms/create/", SymptomWorkflowCreateView.as_view(), name="medical-workflow-symptom-create"),  # 工作流：创建症状
     path("workflows/visits/create/", VisitWorkflowCreateView.as_view(), name="medical-workflow-visit-create"),  # 工作流：创建就诊
     path("workflows/surgeries/create/", SurgeryWorkflowCreateView.as_view(), name="medical-workflow-surgery-create"),  # 工作流：创建手术

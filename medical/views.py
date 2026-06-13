@@ -1146,6 +1146,8 @@ class MemberCompleteDataAPI(APIView):
             MedicalCase.objects.filter(is_deleted=False, member_id=member_id)
             .prefetch_related(
                 "symptoms",
+                "prescriptions__plans",
+                "medication_plans",
             )
             .order_by("-created_at")
         )
@@ -1231,6 +1233,15 @@ class MemberCompleteDataAPI(APIView):
         for c in medical_cases:
             symptom_names = [s.name for s in c.symptoms.all()]
             drug_names = []
+            for prescription in c.prescriptions.all():
+                for plan in prescription.plans.all():
+                    dn = (plan.drug_name or "").strip()
+                    if dn and dn not in drug_names:
+                        drug_names.append(dn)
+            for plan in c.medication_plans.all():
+                dn = (plan.drug_name or "").strip()
+                if dn and dn not in drug_names:
+                    drug_names.append(dn)
             medical_cases_payload.append(
                 {
                     "id": c.id,
@@ -1505,33 +1516,37 @@ class _WorkflowBaseAPIView(APIView):
         for idx, raw_item in enumerate(items):
             item = dict(raw_item or {})
             item_file_ids = self._pop_file_ids(item, "file_ids", "source_file_ids")
-            box_source = dict(item.get("medicine_box") or {})
-            medicine_name = (
-                box_source.get("medicine_name")
-                or item.get("drug_name")
-                or _("Unnamed medicine")
-            )
+            medicine_box = None
+            medicine_name = item.get("drug_name") or _("Unnamed medicine")
 
-            box_payload = {
-                "member": member.id,
-                "medicine_type": box_source.get("medicine_type"),
-                "medicine_name": medicine_name,
-                "brand_name": box_source.get("brand_name") or "",
-                "dosage_form": box_source.get("dosage_form") or "",
-                "strength": box_source.get("strength") or "",
-                "dose_unit": box_source.get("dose_unit") or item.get("dose_unit") or "片",
-                "total_quantity": box_source.get("total_quantity"),
-                "expire_date": box_source.get("expire_date"),
-                "notes": self._value(box_source, "notes") or "",
-                "extra": {**(box_source.get("extra") or {}), "source": "typed_upload"},
-            }
-            box_serializer = MedicineBoxSerializer(data=box_payload, context={"request": request})
-            validation_error = self._validate_or_error(box_serializer)
-            if validation_error is not None:
-                return None, validation_error
-            medicine_box = box_serializer.save(user=request.user)
+            box_source = item.get("medicine_box")
+            if isinstance(box_source, dict):
+                medicine_name = (
+                    box_source.get("medicine_name")
+                    or item.get("drug_name")
+                    or _("Unnamed medicine")
+                )
 
-            dose_unit = item.get("dose_unit") or medicine_box.dose_unit or "片"
+                box_payload = {
+                    "member": member.id,
+                    "medicine_type": box_source.get("medicine_type"),
+                    "medicine_name": medicine_name,
+                    "brand_name": box_source.get("brand_name") or "",
+                    "dosage_form": box_source.get("dosage_form") or "",
+                    "strength": box_source.get("strength") or "",
+                    "dose_unit": box_source.get("dose_unit") or item.get("dose_unit") or "片",
+                    "total_quantity": box_source.get("total_quantity"),
+                    "expire_date": box_source.get("expire_date"),
+                    "notes": self._value(box_source, "notes") or "",
+                    "extra": {**(box_source.get("extra") or {}), "source": "typed_upload"},
+                }
+                box_serializer = MedicineBoxSerializer(data=box_payload, context={"request": request})
+                validation_error = self._validate_or_error(box_serializer)
+                if validation_error is not None:
+                    return None, validation_error
+                medicine_box = box_serializer.save(user=request.user)
+
+            dose_unit = item.get("dose_unit") or (medicine_box.dose_unit if medicine_box else None) or "片"
             dose_per_time = item.get("dose_per_time") or (
                 f"{item.get('dose_value')} {dose_unit}".strip()
                 if item.get("dose_value") else ""
@@ -1544,7 +1559,7 @@ class _WorkflowBaseAPIView(APIView):
             plan_payload = {
                 "member": member.id,
                 "medical_case": medical_case.id if medical_case else None,
-                "medicine_box": medicine_box.id,
+                "medicine_box": medicine_box.id if medicine_box else None,
                 "prescription": prescription.id if prescription else None,
                 "drug_name": item.get("drug_name") or medicine_name,
                 "dose_per_time": dose_per_time,
@@ -1568,13 +1583,100 @@ class _WorkflowBaseAPIView(APIView):
                 return None, validation_error
             plan = plan_serializer.save(user=request.user)
             self._bind_files(request.user, "medication_plan", plan.id, item_file_ids)
-            created.append({"medicine_box_id": medicine_box.id, "medication_plan_id": plan.id})
+            created.append({
+                "medicine_box_id": medicine_box.id if medicine_box else None,
+                "medication_plan_id": plan.id,
+            })
 
         if created and file_ids:
             business_type = "prescription_batch" if prescription else "medication_plan"
             business_id = prescription.id if prescription else created[0]["medication_plan_id"]
             self._bind_files(request.user, business_type, business_id, file_ids)
         return created, None
+
+    def _save_prescriptions_batch(
+        self,
+        *,
+        request,
+        member,
+        prescription_payloads,
+        medical_case=None,
+        prescription_source="prescription_batch_save",
+    ):
+        result = {
+            "prescription_ids": [],
+            "medicine_box_ids": [],
+            "medication_plan_ids": [],
+        }
+        if not isinstance(prescription_payloads, list) or not prescription_payloads:
+            return result, error_response(
+                msg={"prescriptions": [_("no prescription items")]},
+                code=-1,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for prescription_payload in prescription_payloads:
+            payload = dict(prescription_payload or {})
+            file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
+            items = payload.get("medication_plans") or []
+
+            case_id = payload.get("medical_case")
+            if case_id is None and medical_case is not None:
+                case_id = medical_case.id
+            plan_case = None
+            if case_id:
+                try:
+                    plan_case = MedicalCase.objects.get(
+                        id=case_id,
+                        is_deleted=False,
+                        member_id=member.id,
+                    )
+                except MedicalCase.DoesNotExist:
+                    return result, error_response(
+                        msg={"medical_case": [_("invalid medical_case")]},
+                        code=-1,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            prescription_data = {
+                "member": member.id,
+                "medical_case": case_id,
+                "prescriber_name": payload.get("prescriber_name", ""),
+                "institution_name": payload.get("institution_name", ""),
+                "prescribed_at": self._normalize_nullable_datetime(payload.get("prescribed_at")),
+                "diagnosis": payload.get("diagnosis", ""),
+                "prescription_no": payload.get("prescription_no"),
+                "status": payload.get("status", Prescription.Status.ACTIVE),
+                "extra": {**(payload.get("extra") or {}), "source": prescription_source},
+            }
+            prescription_serializer = PrescriptionSerializer(
+                data=prescription_data,
+                context={"request": request},
+            )
+            validation_error = self._validate_or_error(prescription_serializer)
+            if validation_error is not None:
+                return result, validation_error
+            prescription = prescription_serializer.save(user=request.user)
+            self._bind_files(request.user, "prescription_batch", prescription.id, file_ids)
+            result["prescription_ids"].append(prescription.id)
+
+            created, validation_error = self._create_medication_plan_bundle(
+                request=request,
+                member=member,
+                items=items,
+                medical_case=plan_case,
+                prescription=prescription,
+                file_ids=[],
+            )
+            if validation_error is not None:
+                return result, validation_error
+            for row in created or []:
+                if row.get("medicine_box_id") is not None:
+                    result["medicine_box_ids"].append(row["medicine_box_id"])
+                result["medication_plan_ids"].append(row["medication_plan_id"])
+
+        return result, None
+
 
 class MedicalCaseWorkflowSaveView(_WorkflowBaseAPIView):
     @transaction.atomic
@@ -1932,6 +2034,50 @@ class MedicationPlanWorkflowSaveView(_WorkflowBaseAPIView):
         )
 
 
+class PrescriptionBatchWorkflowSaveView(_WorkflowBaseAPIView):
+    """批量保存处方识别结果：每条处方同步创建 Prescription + MedicineBox + MedicationPlan，不创建病历。"""
+
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data.copy()
+        member_id = payload.get("member")
+        if not member_id:
+            return error_response(
+                msg={"member": [_("member is required")]},
+                code=-1,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            binding = MemberPermissionGate.require_write(user=request.user, member_id=member_id)
+        except PermissionError:
+            return error_response(
+                msg="permission_denied",
+                code=-1,
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        result, validation_error = self._save_prescriptions_batch(
+            request=request,
+            member=binding.member,
+            prescription_payloads=payload.get("prescriptions") or [],
+            medical_case=None,
+            prescription_source="prescription_batch_save",
+        )
+        if validation_error is not None:
+            return validation_error
+
+        return success_response(
+            {
+                "member_id": binding.member.id,
+                **result,
+            },
+            msg="saved",
+            code=0,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
 class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
     """
     一次性创建完整医疗记录（组合创建 API）。
@@ -2118,42 +2264,15 @@ class CombinedMedicalCreateAPIView(_WorkflowBaseAPIView):
         # ---------- prescriptions / medication_plans（批量，可选）----------
         prescription_payloads = data.get("prescriptions") or []
         if isinstance(prescription_payloads, list) and prescription_payloads:
-            result["prescription_ids"] = []
-            result["medicine_box_ids"] = []
-            result["medication_plan_ids"] = []
-            for prescription_payload in prescription_payloads:
-                payload = dict(prescription_payload or {})
-                file_ids = self._pop_file_ids(payload, "source_file_ids", "file_ids")
-                items = payload.get("medication_plans") or []
-                prescription_data = {
-                    "member": member_id,
-                    "medical_case": case_id,
-                    "prescriber_name": payload.get("prescriber_name", ""),
-                    "institution_name": payload.get("institution_name", ""),
-                    "prescribed_at": self._normalize_nullable_datetime(payload.get("prescribed_at")),
-                    "diagnosis": payload.get("diagnosis", ""),
-                    "prescription_no": payload.get("prescription_no"),
-                    "status": payload.get("status", Prescription.Status.ACTIVE),
-                    "extra": {**(payload.get("extra") or {}), "source": "combined_create"},
-                }
-                prescription_serializer = PrescriptionSerializer(data=prescription_data, context={"request": request})
-                prescription_serializer.is_valid(raise_exception=True)
-                prescription = prescription_serializer.save(user=request.user)
-                self._bind_files(request.user, "prescription_batch", prescription.id, file_ids)
-                result["prescription_ids"].append(prescription.id)
-
-                created, validation_error = self._create_medication_plan_bundle(
-                    request=request,
-                    member=member_obj,
-                    items=items,
-                    medical_case=case_obj,
-                    prescription=prescription,
-                    file_ids=[],
-                )
-                if validation_error is not None:
-                    return validation_error
-                for row in created or []:
-                    result["medicine_box_ids"].append(row["medicine_box_id"])
-                    result["medication_plan_ids"].append(row["medication_plan_id"])
+            batch_result, validation_error = self._save_prescriptions_batch(
+                request=request,
+                member=member_obj,
+                prescription_payloads=prescription_payloads,
+                medical_case=case_obj,
+                prescription_source="combined_create",
+            )
+            if validation_error is not None:
+                return validation_error
+            result.update(batch_result)
 
         return Response(result, status=status.HTTP_201_CREATED)
