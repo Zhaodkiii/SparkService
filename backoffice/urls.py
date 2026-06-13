@@ -47,6 +47,26 @@ from backoffice.views import (
     AdminUserRoleAssignView,
     AdminUserStatusView,
 )
+from backoffice.conversation_views import (
+    AdminConversationBlockDetailView,
+    AdminConversationMessageDebugView,
+    AdminConversationMessageListView,
+    AdminConversationThreadListView,
+    AdminConversationUserListView,
+    AdminConversationUserSummaryView,
+)
+from backoffice.medical_data_views import (
+    AdminMedicalDataAttachmentDownloadView,
+    AdminMedicalDataGlobalStatsView,
+    AdminMedicalDataMemberCompleteDataView,
+    AdminMedicalDataMemberQualityFlagsView,
+    AdminMedicalDataMemberTimelineView,
+    AdminMedicalDataResourceDetailView,
+    AdminMedicalDataResourceListView,
+    AdminMedicalDataSharedRelationsView,
+    AdminMedicalDataUserListView,
+    AdminMedicalDataUserMembersView,
+)
 
 urlpatterns = [
     path("auth/login/", AdminAuthLoginView.as_view(), name="admin-auth-login"),
@@ -94,4 +114,56 @@ urlpatterns = [
     path("rbac/roles/<int:role_id>/permissions/", AdminRolePermissionAssignView.as_view(), name="admin-rbac-role-permission-assign"),
     path("rbac/permissions/", AdminPermissionListCreateView.as_view(), name="admin-rbac-permission-list-create"),
     path("audit/logs/", AdminAuditLogListView.as_view(), name="admin-audit-log-list"),
+    path("conversations/users/", AdminConversationUserListView.as_view(), name="admin-conversation-user-list"),
+    path("conversations/users/<int:user_id>/summary/", AdminConversationUserSummaryView.as_view(), name="admin-conversation-user-summary"),
+    path("conversations/users/<int:user_id>/threads/", AdminConversationThreadListView.as_view(), name="admin-conversation-thread-list"),
+    path("conversations/users/<int:user_id>/threads/<uuid:thread_id>/messages/", AdminConversationMessageListView.as_view(), name="admin-conversation-message-list"),
+    path(
+        "conversations/users/<int:user_id>/threads/<uuid:thread_id>/messages/<int:message_db_id>/debug/",
+        AdminConversationMessageDebugView.as_view(),
+        name="admin-conversation-message-debug",
+    ),
+    path(
+        "conversations/users/<int:user_id>/threads/<uuid:thread_id>/blocks/<uuid:block_id>/detail/",
+        AdminConversationBlockDetailView.as_view(),
+        name="admin-conversation-block-detail",
+    ),
+    path("medical-data/stats/global/", AdminMedicalDataGlobalStatsView.as_view(), name="admin-medical-data-global-stats"),
+    path("medical-data/users/", AdminMedicalDataUserListView.as_view(), name="admin-medical-data-user-list"),
+    path("medical-data/users/<int:user_id>/members/", AdminMedicalDataUserMembersView.as_view(), name="admin-medical-data-user-members"),
+    path(
+        "medical-data/users/<int:user_id>/members/<int:member_id>/timeline/",
+        AdminMedicalDataMemberTimelineView.as_view(),
+        name="admin-medical-data-member-timeline",
+    ),
+    path(
+        "medical-data/users/<int:user_id>/members/<int:member_id>/quality-flags/",
+        AdminMedicalDataMemberQualityFlagsView.as_view(),
+        name="admin-medical-data-member-quality-flags",
+    ),
+    path(
+        "medical-data/users/<int:user_id>/members/<int:member_id>/complete-data/",
+        AdminMedicalDataMemberCompleteDataView.as_view(),
+        name="admin-medical-data-member-complete",
+    ),
+    path(
+        "medical-data/users/<int:user_id>/members/<int:member_id>/shared-relations/",
+        AdminMedicalDataSharedRelationsView.as_view(),
+        name="admin-medical-data-shared-relations",
+    ),
+    path(
+        "medical-data/users/<int:user_id>/members/<int:member_id>/<str:resource_type>/",
+        AdminMedicalDataResourceListView.as_view(),
+        name="admin-medical-data-resource-list",
+    ),
+    path(
+        "medical-data/resources/<str:resource_type>/<int:resource_id>/",
+        AdminMedicalDataResourceDetailView.as_view(),
+        name="admin-medical-data-resource-detail",
+    ),
+    path(
+        "medical-data/attachments/<int:file_id>/download/",
+        AdminMedicalDataAttachmentDownloadView.as_view(),
+        name="admin-medical-data-attachment-download",
+    ),
 ]

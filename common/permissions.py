@@ -12,6 +12,14 @@ class AdminOnlyPermission(BasePermission):
         return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser))
 
 
+class SuperAdminOnlyPermission(BasePermission):
+    """Only Django superuser may access (system administrator)."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.is_superuser)
+
+
 class AdminCodePermission(AdminOnlyPermission):
     """
     Fine-grained RBAC on top of staff/superuser gate.

@@ -123,9 +123,32 @@ const tabs = reactive<TabItem[]>([{ key: '/dashboard', title: '仪表盘', closa
   },
   { code: 'menu:rbac', name: '权限管理', path: '/rbac', children: [] },
   { code: 'menu:audit', name: '审计日志', path: '/audit', children: [] },
+  {
+    code: 'menu:conversations',
+    name: '对话',
+    path: '/conversations',
+    children: [{ code: 'menu:conversations:users', name: '用户对话', path: '/conversations/users', children: [] }],
+  },
+  {
+    code: 'menu:medical_data',
+    name: '医疗数据',
+    path: '/medical-data',
+    children: [
+      { code: 'menu:medical_data:users', name: '用户医疗数据', path: '/medical-data/users', children: [] },
+      { code: 'menu:medical_data:quality', name: '数据质检', path: '/medical-data/quality', children: [] },
+      { code: 'menu:medical_data:attachments', name: '附件与识别', path: '/medical-data/attachments', children: [] },
+      { code: 'menu:medical_data:analytics', name: '医疗数据统计', path: '/medical-data/analytics', children: [] },
+    ],
+  },
 ];
 
-const menus = computed(() => (auth.menus.length ? auth.menus : fallbackMenus));
+const menus = computed(() => {
+  const source = auth.menus.length ? auth.menus : fallbackMenus;
+  if (auth.user?.is_superuser) {
+    return source;
+  }
+  return source.filter((item) => item.code !== 'menu:conversations');
+});
 
 const menuItems = computed(() =>
   menus.value.map((item) => ({
@@ -164,6 +187,12 @@ watch(
     if (path.startsWith('/users/')) {
       openKeys.value = ['/users'];
     }
+    if (path.startsWith('/conversations/')) {
+      openKeys.value = ['/conversations'];
+    }
+    if (path.startsWith('/medical-data/')) {
+      openKeys.value = ['/medical-data'];
+    }
   },
   { immediate: true },
 );
@@ -175,6 +204,14 @@ function onMenuClick(info: { key: string }) {
   }
   if (info.key === '/version') {
     router.push('/version/configs');
+    return;
+  }
+  if (info.key === '/conversations') {
+    router.push('/conversations/users');
+    return;
+  }
+  if (info.key === '/medical-data') {
+    router.push('/medical-data/users');
     return;
   }
   router.push(info.key);

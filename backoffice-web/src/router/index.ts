@@ -27,6 +27,10 @@ router.beforeEach(async (to) => {
     }
   }
 
+  if (to.meta.superAdminOnly && !auth.user?.is_superuser) {
+    return '/dashboard';
+  }
+
   return true;
 });
 
