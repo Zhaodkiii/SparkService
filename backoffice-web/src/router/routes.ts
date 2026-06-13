@@ -12,14 +12,14 @@ export const constantRoutes: RouteRecordRaw[] = [
     component: () => import('../layouts/AdminLayout.vue'),
     children: [
       { path: '', redirect: '/dashboard' },
-      { path: '/dashboard', name: 'Dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '仪表盘' } },
+      { path: '/dashboard', name: 'Dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '仪表盘', keepAlive: true } },
       { path: '/tasks', name: 'Tasks', component: () => import('../views/TasksDashboardView.vue'), meta: { title: '异步任务看板' } },
       { path: '/tasks/manager', name: 'TasksManager', component: () => import('../views/TasksManagerView.vue'), meta: { title: '异步任务管理' } },
       { path: '/users', name: 'Users', component: () => import('../views/UsersView.vue'), meta: { title: '用户管理' } },
       { path: '/users/devices', name: 'Devices', component: () => import('../views/DevicesView.vue'), meta: { title: '设备管理' } },
       { path: '/users/deactivations', name: 'Deactivations', component: () => import('../views/DeactivationsView.vue'), meta: { title: '注销管理' } },
-      { path: '/conversations/users', name: 'ConversationUsers', component: () => import('../views/ConversationUsersView.vue'), meta: { title: '用户对话', superAdminOnly: true } },
-      { path: '/conversations/users/:userId', name: 'ConversationUserThreads', component: () => import('../views/ConversationUserThreadsView.vue'), meta: { title: '用户会话详情', superAdminOnly: true } },
+      { path: '/conversations/users', name: 'ConversationUsers', component: () => import('../views/ConversationUsersView.vue'), meta: { title: '用户对话', superAdminOnly: true, keepAlive: true } },
+      { path: '/conversations/users/:userId', name: 'ConversationUserThreads', component: () => import('../views/ConversationUserThreadsView.vue'), meta: { title: '用户会话详情', superAdminOnly: true, keepAlive: true } },
       { path: '/medical-data/users', name: 'MedicalDataUsers', component: () => import('../views/MedicalDataUsersView.vue'), meta: { title: '用户医疗数据' } },
       { path: '/medical-data/users/:userId', name: 'MedicalDataUserMembers', component: () => import('../views/MedicalDataUserMembersView.vue'), meta: { title: '用户成员医疗数据' } },
       {

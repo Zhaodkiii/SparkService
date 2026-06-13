@@ -120,9 +120,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, inject, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { message } from 'ant-design-vue';
+import { updateTabTitleKey } from '../composables/useAdminTabs';
 import ConversationCopyButton from '../components/conversations/ConversationCopyButton.vue';
 import ConversationDebugViewer from '../components/conversations/ConversationDebugViewer.vue';
 import ConversationMessageTimeline from '../components/conversations/ConversationMessageTimeline.vue';
@@ -147,6 +148,7 @@ import { formatDateTime } from '../utils/datetime';
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const updateTabTitle = inject(updateTabTitleKey, null);
 const isSuperAdmin = computed(() => !!auth.user?.is_superuser);
 const userId = computed(() => Number(route.params.userId));
 
@@ -199,6 +201,9 @@ let activeMessageRequestId = 0;
 
 async function loadSummary() {
   summary.value = await fetchConversationUserSummary(userId.value);
+  if (summary.value) {
+    updateTabTitle?.(route.fullPath, `${summary.value.user.username} · 会话详情`);
+  }
 }
 
 async function loadThreads() {

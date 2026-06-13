@@ -40,16 +40,25 @@
         </a-tabs>
       </div>
       <a-layout-content class="content-area">
-        <router-view />
+        <router-view v-slot="{ Component, route: currentRoute }">
+          <keep-alive :max="20">
+            <component
+              :is="Component"
+              v-if="Component"
+              :key="tabCacheKey(currentRoute.fullPath)"
+            />
+          </keep-alive>
+        </router-view>
       </a-layout-content>
     </a-layout>
   </a-layout>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, provide, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import { updateTabTitleKey } from '../composables/useAdminTabs';
 
 interface TabItem {
   key: string;
@@ -65,6 +74,20 @@ const auth = useAuthStore();
 const activeKey = computed(() => route.path);
 const openKeys = ref<string[]>([]);
 const tabs = reactive<TabItem[]>([{ key: '/dashboard', title: '仪表盘', closable: false }]);
+const routeCacheVersion = reactive<Record<string, number>>({});
+
+function tabCacheKey(path: string) {
+  return `${path}::${routeCacheVersion[path] ?? 0}`;
+}
+
+function updateTabTitle(path: string, title: string) {
+  const tab = tabs.find((item) => item.key === path);
+  if (tab) {
+    tab.title = title;
+  }
+}
+
+provide(updateTabTitleKey, updateTabTitle);
 
   const fallbackMenus = [
   { code: 'menu:dashboard', name: '仪表盘', path: '/dashboard', children: [] },
@@ -231,6 +254,7 @@ function onTabEdit(targetKey: string | MouseEvent | KeyboardEvent, action: 'add'
     return;
   }
   tabs.splice(index, 1);
+  routeCacheVersion[key] = (routeCacheVersion[key] ?? 0) + 1;
 
   if (route.path === key) {
     const fallback = tabs[index - 1] || tabs[index] || tabs[0];
