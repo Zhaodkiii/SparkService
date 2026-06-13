@@ -1520,12 +1520,49 @@ class _WorkflowBaseAPIView(APIView):
             medicine_name = item.get("drug_name") or _("Unnamed medicine")
 
             box_source = item.get("medicine_box")
-            if isinstance(box_source, dict):
+            existing_box_id = item.get("medicine_box_id")
+            if existing_box_id not in (None, ""):
+                if isinstance(box_source, dict):
+                    return None, error_response(
+                        msg={"medicine_box_id": [_("cannot combine medicine_box and medicine_box_id")]},
+                        code=-1,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+                try:
+                    existing_box_id = int(existing_box_id)
+                except (TypeError, ValueError):
+                    return None, error_response(
+                        msg={"medicine_box_id": [_("invalid medicine_box_id")]},
+                        code=-1,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+                accessible_ids = set(
+                    family_medicine_cabinet_queryset(
+                        user=request.user,
+                        entry_member_id=member.id,
+                    ).values_list("id", flat=True)
+                )
+                if existing_box_id not in accessible_ids:
+                    return None, error_response(
+                        msg={"medicine_box_id": [_("invalid medicine_box_id")]},
+                        code=-1,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+                try:
+                    medicine_box = MedicineBox.objects.get(id=existing_box_id, is_deleted=False)
+                except MedicineBox.DoesNotExist:
+                    return None, error_response(
+                        msg={"medicine_box_id": [_("invalid medicine_box_id")]},
+                        code=-1,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+            elif isinstance(box_source, dict):
                 medicine_name = (
                     box_source.get("medicine_name")
                     or item.get("drug_name")
                     or _("Unnamed medicine")
                 )
+                box_file_ids = self._pop_file_ids(box_source, "file_ids", "source_file_ids")
 
                 box_payload = {
                     "member": member.id,
@@ -1540,6 +1577,8 @@ class _WorkflowBaseAPIView(APIView):
                     "notes": self._value(box_source, "notes") or "",
                     "extra": {**(box_source.get("extra") or {}), "source": "typed_upload"},
                 }
+                if box_file_ids:
+                    box_payload["file_ids"] = box_file_ids
                 box_serializer = MedicineBoxSerializer(data=box_payload, context={"request": request})
                 validation_error = self._validate_or_error(box_serializer)
                 if validation_error is not None:

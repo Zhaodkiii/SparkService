@@ -22,3 +22,23 @@ def family_medicine_cabinet_queryset(*, user: User, entry_member_id: int) -> Que
         .select_related("member")
         .order_by("-updated_at", "-id")
     )
+
+
+def medicine_box_in_family_cabinet(*, user: User, entry_member_id: int, medicine_box: MedicineBox) -> bool:
+    """判断药盒是否属于入口成员可见的家庭药箱范围（允许跨成员绑定）。"""
+    return family_medicine_cabinet_queryset(user=user, entry_member_id=entry_member_id).filter(
+        id=medicine_box.id
+    ).exists()
+
+
+def medicine_box_accessible_for_member(*, medicine_box: MedicineBox, member: Member) -> bool:
+    """同一家庭创建者名下药盒可绑定到任意成员用药计划（含公共药盒）。"""
+    if medicine_box.member_id == member.id:
+        return True
+    owner_id = member.user_id
+    if medicine_box.member_id is None:
+        return medicine_box.user_id == owner_id
+    box_member = medicine_box.member
+    if box_member is None:
+        return False
+    return box_member.user_id == owner_id

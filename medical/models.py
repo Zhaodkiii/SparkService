@@ -669,8 +669,11 @@ class MedicationPlan(MedicalBaseModel):
     def clean(self):
         if self.medical_case_id and self.medical_case.member_id != self.member_id:
             raise ValidationError({"medical_case": _("medical_case does not belong to current member")})
-        if self.medicine_box_id and self.medicine_box.member_id != self.member_id:
-            raise ValidationError({"medicine_box": _("medicine_box does not belong to current member")})
+        if self.medicine_box_id:
+            from medical.services.medicine_cabinet_service import medicine_box_accessible_for_member
+
+            if not medicine_box_accessible_for_member(medicine_box=self.medicine_box, member=self.member):
+                raise ValidationError({"medicine_box": _("medicine_box does not belong to current member")})
         if self.prescription_id and self.prescription.member_id != self.member_id:
             raise ValidationError({"prescription": _("prescription does not belong to current member")})
         if self.end_date and self.start_date and self.end_date < self.start_date:

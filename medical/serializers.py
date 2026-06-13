@@ -23,6 +23,7 @@ from medical.models import (
     Visit,
 )
 from medical.services import member_binding_service as binding_service
+from medical.services.medicine_cabinet_service import medicine_box_in_family_cabinet
 
 
 class FlexibleDateField(serializers.DateField):
@@ -614,7 +615,18 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
         def check_owner(obj, field_name):
             if obj is None:
                 return
-            if member is not None and getattr(obj, "member_id", None) != member.id:
+            obj_member_id = getattr(obj, "member_id", None)
+            if field_name == "medicine_box":
+                if member is not None and obj_member_id is not None and obj_member_id != member.id:
+                    if request and medicine_box_in_family_cabinet(
+                        user=request.user,
+                        entry_member_id=member.id,
+                        medicine_box=obj,
+                    ):
+                        return
+                    raise serializers.ValidationError({field_name: [_("object.member mismatch with plan.member")]})
+                return
+            if member is not None and obj_member_id != member.id:
                 raise serializers.ValidationError({field_name: [_("object.member mismatch with plan.member")]})
 
         check_owner(medicine_box, "medicine_box")

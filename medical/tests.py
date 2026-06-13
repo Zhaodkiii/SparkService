@@ -328,6 +328,162 @@ class PrescriptionBatchWorkflowSaveAPITests(APITestCase):
         self.assertIsNone(plans[0].medicine_box_id)
         self.assertEqual(plans[1].medicine_box_id, body["medicine_box_ids"][0])
 
+    def test_batch_save_binds_medicine_box_file_ids(self):
+        member = Member.objects.create(user=self.user, name="测试成员")
+        UserMemberBinding.objects.create(user=self.user, member=member, relationship="self")
+        box_file = ManagedFile.objects.create(user=self.user, original_name="medicine-box.jpg")
+        plan_file = ManagedFile.objects.create(user=self.user, original_name="medication-plan.jpg")
+
+        payload = {
+            "member": member.id,
+            "prescriptions": [
+                {
+                    "institution_name": "苏州大学附属第四医院",
+                    "diagnosis": "结膜炎",
+                    "medication_plans": [
+                        {
+                            "drug_name": "盐酸氮卓斯汀滴眼液（爱赛平）",
+                            "dose_per_time": "1滴",
+                            "dose_unit": "滴",
+                            "frequency_type": "daily",
+                            "frequency_text": "每日两次",
+                            "start_date": "2026-06-13",
+                            "file_ids": [plan_file.id],
+                            "medicine_box": {
+                                "medicine_name": "盐酸氮卓斯汀滴眼液（爱赛平）",
+                                "brand_name": "爱赛平",
+                                "dosage_form": "滴眼液",
+                                "strength": "6ml:3mg (0.05%)",
+                                "dose_unit": "滴",
+                                "file_ids": [box_file.id],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        response = self.client.post(
+            "/api/v1/medical/workflows/prescriptions/batch-save/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        body = response.json()["data"]
+        medicine_box = MedicineBox.objects.get(id=body["medicine_box_ids"][0])
+        plan = MedicationPlan.objects.get(id=body["medication_plan_ids"][0])
+
+        self.assertTrue(
+            ManagedFileBusinessRelation.objects.filter(
+                business_type="medicine_box",
+                business_id=medicine_box.id,
+                file_id=box_file.id,
+            ).exists()
+        )
+        self.assertTrue(
+            ManagedFileBusinessRelation.objects.filter(
+                business_type="medication_plan",
+                business_id=plan.id,
+                file_id=plan_file.id,
+            ).exists()
+        )
+
+    def test_batch_save_binds_existing_medicine_box_by_id(self):
+        member = Member.objects.create(user=self.user, name="测试成员")
+        UserMemberBinding.objects.create(user=self.user, member=member, relationship="self")
+        existing_box = MedicineBox.objects.create(
+            user=self.user,
+            member=member,
+            medicine_name="阿莫西林胶囊",
+            brand_name="阿莫西林",
+            dosage_form="胶囊",
+            strength="0.25g x 24 粒",
+            dose_unit="粒",
+            total_quantity=12,
+        )
+
+        payload = {
+            "member": member.id,
+            "prescriptions": [
+                {
+                    "institution_name": "测试医院",
+                    "diagnosis": "感染",
+                    "medication_plans": [
+                        {
+                            "drug_name": "阿莫西林胶囊",
+                            "dose_per_time": "2 粒",
+                            "dose_unit": "粒",
+                            "frequency_type": "daily",
+                            "frequency_text": "每日三次",
+                            "start_date": "2026-06-13",
+                            "medicine_box_id": existing_box.id,
+                        }
+                    ],
+                }
+            ],
+        }
+
+        response = self.client.post(
+            "/api/v1/medical/workflows/prescriptions/batch-save/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        body = response.json()["data"]
+        self.assertEqual(body["medicine_box_ids"], [existing_box.id])
+        self.assertEqual(MedicineBox.objects.filter(user=self.user).count(), 1)
+
+        plan = MedicationPlan.objects.get(id=body["medication_plan_ids"][0])
+        self.assertEqual(plan.medicine_box_id, existing_box.id)
+
+    def test_batch_save_binds_family_cabinet_medicine_box_from_other_member(self):
+        member_a = Member.objects.create(user=self.user, name="成员A")
+        member_b = Member.objects.create(user=self.user, name="成员B")
+        UserMemberBinding.objects.create(user=self.user, member=member_a, relationship="self")
+        UserMemberBinding.objects.create(user=self.user, member=member_b, relationship="child")
+        existing_box = MedicineBox.objects.create(
+            user=self.user,
+            member=member_a,
+            medicine_name="普拉洛芬滴眼液（普南扑灵）",
+            dosage_form="滴眼液",
+            dose_unit="滴",
+        )
+
+        payload = {
+            "member": member_b.id,
+            "prescriptions": [
+                {
+                    "institution_name": "苏州大学附属第四医院",
+                    "diagnosis": "结膜炎",
+                    "medication_plans": [
+                        {
+                            "drug_name": "普拉洛芬滴眼液（普南扑灵）",
+                            "dose_per_time": "1滴",
+                            "dose_unit": "滴",
+                            "frequency_type": "daily",
+                            "frequency_text": "每日四次",
+                            "start_date": "2026-06-13",
+                            "medicine_box_id": existing_box.id,
+                        }
+                    ],
+                }
+            ],
+        }
+
+        response = self.client.post(
+            "/api/v1/medical/workflows/prescriptions/batch-save/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        body = response.json()["data"]
+        plan = MedicationPlan.objects.get(id=body["medication_plan_ids"][0])
+        self.assertEqual(plan.member_id, member_b.id)
+        self.assertEqual(plan.medicine_box_id, existing_box.id)
+
     def test_combined_create_binds_files_to_each_matched_business_type(self):
         files = {
             key: ManagedFile.objects.create(user=self.user, original_name=f"{key}.jpg")
