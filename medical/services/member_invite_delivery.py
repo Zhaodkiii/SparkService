@@ -14,6 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from accounts.infrastructure.email_provider import EmailProvider
@@ -116,6 +117,7 @@ def create_invite_and_notify(
 # Invite creation (supports anonymous contact)
 # ---------------------------------------------------------------------------
 
+@transaction.atomic
 def _create_invite_flexible(
     *,
     member: Member,
@@ -157,6 +159,22 @@ def _create_invite_flexible(
         resolved_role = UserMemberBinding.Role.EDITOR
 
     masked = _mask_contact(channel, target_contact)
+    existing = (
+        MemberShareInvite.objects.select_for_update()
+        .filter(
+            member=member,
+            inviter_user=inviter,
+            target_user__isnull=True,
+            channel=channel,
+            role=resolved_role,
+            target_contact=masked,
+            status=MemberShareInvite.Status.PENDING,
+        )
+        .first()
+    )
+    if existing:
+        return existing
+
     return MemberShareInvite.objects.create(
         member=member,
         inviter_user=inviter,

@@ -473,6 +473,15 @@ class MemberShareInviteCreateView(APIView):
         except Member.DoesNotExist:
             return error_response(msg="member_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
 
+        from accounts.services.device_session_service import DeviceSessionService
+
+        claims = (
+            DeviceSessionService._claims_from_validated_token(request.auth)
+            if request.auth is not None
+            else {}
+        )
+        bundle_id = (claims.get("bundle_id") or "").strip()
+
         normalized_contact = ""
         lookup_contact = phone_raw if channel == MemberShareInvite.Channel.PHONE else contact
         try:
@@ -480,6 +489,7 @@ class MemberShareInviteCreateView(APIView):
                 channel=channel,
                 contact=lookup_contact,
                 country_code=country_code,
+                bundle_id=bundle_id,
             )
         except APIError:
             return error_response(msg="phone_invalid", code=-1, status_code=status.HTTP_400_BAD_REQUEST)

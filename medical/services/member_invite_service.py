@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -9,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import SocialIdentity
+from accounts.models import AccountDeviceSession, SocialIdentity
 from accounts.services.phone_number_service import PhoneNumberService
 from common.exceptions import APIError
 from medical.models import Member, MemberShareInvite, UserMemberBinding
@@ -19,6 +20,7 @@ from medical.services.member_permission_levels import resolve_share_role_from_re
 
 INVITE_TTL = timedelta(days=7)
 MAX_PENDING_INVITES_PER_INVITER_PER_DAY = 20
+logger = logging.getLogger("medical.invite")
 
 
 class InviteError(ValueError):
@@ -57,19 +59,50 @@ def normalize_phone_for_lookup(*, phone: str, country_code: str = "") -> str:
     return PhoneNumberService.normalize_e164(f"{cc}{digits}")
 
 
+def _user_belongs_to_bundle(*, user: User, bundle_id: str) -> bool:
+    """确认用户在当前 App bundle 下存在有效身份（SocialIdentity 或设备会话）。"""
+    normalized_bundle_id = (bundle_id or "").strip()
+    if not normalized_bundle_id:
+        return False
+    if SocialIdentity.objects.filter(user=user, bundle_id=normalized_bundle_id).exists():
+        return True
+    return AccountDeviceSession.objects.filter(user=user, bundle_id=normalized_bundle_id).exists()
+
+
+def _normalize_email_for_lookup(contact: str) -> str:
+    return (contact or "").strip().lower()
+
+
 def resolve_user_by_contact(
     *,
     channel: str,
     contact: str,
     country_code: str = "",
+    bundle_id: str = "",
 ) -> tuple[User | None, str]:
-    """按联系方式解析用户；返回 (user, normalized_contact)。"""
+    """按联系方式解析用户；返回 (user, normalized_contact)。必须按 bundle_id 隔离，禁止跨 App 命中。"""
+    normalized_bundle_id = (bundle_id or "").strip()
     normalized = (contact or "").strip()
     if not normalized:
         return None, ""
 
     if channel == MemberShareInvite.Channel.EMAIL:
-        return User.objects.filter(email__iexact=normalized).first(), normalized
+        normalized = _normalize_email_for_lookup(normalized)
+        if not normalized_bundle_id:
+            return None, normalized
+
+        candidate = User.objects.filter(email__iexact=normalized).first()
+        if candidate and _user_belongs_to_bundle(user=candidate, bundle_id=normalized_bundle_id):
+            logger.info(
+                "member_invite.contact_matched",
+                extra={
+                    "channel": channel,
+                    "bundle_id": normalized_bundle_id,
+                    "matched_user_id": candidate.id,
+                },
+            )
+            return candidate, normalized
+        return None, normalized
 
     if channel == MemberShareInvite.Channel.PHONE:
         try:
@@ -77,8 +110,12 @@ def resolve_user_by_contact(
         except APIError:
             return None, normalized
 
+        if not normalized_bundle_id:
+            return None, e164
+
         identity = (
             SocialIdentity.objects.filter(
+                bundle_id=normalized_bundle_id,
                 provider=SocialIdentity.Provider.PHONE,
                 provider_uid=e164,
             )
@@ -86,6 +123,14 @@ def resolve_user_by_contact(
             .first()
         )
         if identity:
+            logger.info(
+                "member_invite.contact_matched",
+                extra={
+                    "channel": channel,
+                    "bundle_id": normalized_bundle_id,
+                    "matched_user_id": identity.user_id,
+                },
+            )
             return identity.user, e164
 
         return None, e164
@@ -162,19 +207,6 @@ def create_invite(
     if sent_today >= MAX_PENDING_INVITES_PER_INVITER_PER_DAY:
         raise InviteError("invite_rate_limited")
 
-    existing = (
-        MemberShareInvite.objects.select_for_update()
-        .filter(
-            member=member,
-            inviter_user=inviter,
-            target_user=target_user,
-            status=MemberShareInvite.Status.PENDING,
-        )
-        .first()
-    )
-    if existing:
-        return existing
-
     resolved_role = resolve_invite_role(role)
     if resolved_role not in (
         UserMemberBinding.Role.VIEWER,
@@ -184,6 +216,21 @@ def create_invite(
         resolved_role = UserMemberBinding.Role.EDITOR
 
     masked = _mask_contact(channel, target_contact or target_user.email or "")
+    existing = (
+        MemberShareInvite.objects.select_for_update()
+        .filter(
+            member=member,
+            inviter_user=inviter,
+            target_user=target_user,
+            channel=channel,
+            role=resolved_role,
+            target_contact=masked,
+            status=MemberShareInvite.Status.PENDING,
+        )
+        .first()
+    )
+    if existing:
+        return existing
     return MemberShareInvite.objects.create(
         member=member,
         inviter_user=inviter,
