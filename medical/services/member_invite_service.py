@@ -10,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import AccountDeviceSession, SocialIdentity
+from accounts.models import SocialIdentity
 from accounts.services.phone_number_service import PhoneNumberService
 from common.exceptions import APIError
 from medical.models import Member, MemberShareInvite, UserMemberBinding
@@ -59,14 +59,26 @@ def normalize_phone_for_lookup(*, phone: str, country_code: str = "") -> str:
     return PhoneNumberService.normalize_e164(f"{cc}{digits}")
 
 
-def _user_belongs_to_bundle(*, user: User, bundle_id: str) -> bool:
-    """确认用户在当前 App bundle 下存在有效身份（SocialIdentity 或设备会话）。"""
+def _resolve_user_by_email(*, normalized_email: str, bundle_id: str) -> User | None:
+    """按邮箱解析用户：先查 auth_user.email 候选，再用 SocialIdentity.bundle_id 确认当前 App 用户。"""
     normalized_bundle_id = (bundle_id or "").strip()
-    if not normalized_bundle_id:
-        return False
-    if SocialIdentity.objects.filter(user=user, bundle_id=normalized_bundle_id).exists():
-        return True
-    return AccountDeviceSession.objects.filter(user=user, bundle_id=normalized_bundle_id).exists()
+    if not normalized_bundle_id or not normalized_email:
+        return None
+
+    candidate_ids = list(User.objects.filter(email__iexact=normalized_email).values_list("id", flat=True))
+    if not candidate_ids:
+        return None
+
+    identity = (
+        SocialIdentity.objects.filter(
+            user_id__in=candidate_ids,
+            bundle_id=normalized_bundle_id,
+        )
+        .select_related("user")
+        .order_by("id")
+        .first()
+    )
+    return identity.user if identity else None
 
 
 def _normalize_email_for_lookup(contact: str) -> str:
@@ -91,8 +103,8 @@ def resolve_user_by_contact(
         if not normalized_bundle_id:
             return None, normalized
 
-        candidate = User.objects.filter(email__iexact=normalized).first()
-        if candidate and _user_belongs_to_bundle(user=candidate, bundle_id=normalized_bundle_id):
+        candidate = _resolve_user_by_email(normalized_email=normalized, bundle_id=normalized_bundle_id)
+        if candidate:
             logger.info(
                 "member_invite.contact_matched",
                 extra={

@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 
-from accounts.models import AccountDeviceSession, SocialIdentity, TrustedDevice
+from accounts.models import SocialIdentity
 from medical.models import Member, MemberShareInvite, UserMemberBinding
 from medical.services import member_binding_service as binding_service
 from medical.services.member_invite_delivery import DeliveryResult
@@ -181,23 +181,18 @@ class MemberInviteBundleIsolationTests(APITestCase):
         self.assertEqual(normalized, PHONE_E164)
         self.assertIsNone(matched)
 
-    def test_email_matches_only_when_user_has_bundle_identity(self):
+    def test_email_matches_only_when_user_has_bundle_social_identity(self):
         email = "shared@example.com"
         user = User.objects.create_user(
             username="health_email_user",
             email=email,
             password="pass12345",
         )
-        device = TrustedDevice.objects.create(
-            bundle_id=BUNDLE_HEALTH,
-            device_id="health-device",
+        SocialIdentity.objects.create(
             user=user,
-        )
-        AccountDeviceSession.objects.create(
-            user=user,
-            trusted_device=device,
             bundle_id=BUNDLE_HEALTH,
-            device_id="health-device",
+            provider=SocialIdentity.Provider.APPLE,
+            provider_uid="apple.health.shared@example.com",
         )
 
         matched_health, normalized = resolve_user_by_contact(
@@ -213,6 +208,74 @@ class MemberInviteBundleIsolationTests(APITestCase):
         self.assertEqual(normalized, email)
         self.assertEqual(matched_health, user)
         self.assertIsNone(matched_aera)
+
+    def test_duplicate_email_prefers_user_with_bundle_social_identity(self):
+        email = "97621528@qq.com"
+        admin_user = User.objects.create_user(
+            username="Zhaodk",
+            email=email,
+            password="pass12345",
+        )
+        admin_user.is_staff = True
+        admin_user.save(update_fields=["is_staff"])
+        health_user = User.objects.create_user(
+            username="apple_000082",
+            email=email,
+            password="pass12345",
+        )
+        SocialIdentity.objects.create(
+            user=health_user,
+            bundle_id=BUNDLE_HEALTH,
+            provider=SocialIdentity.Provider.APPLE,
+            provider_uid="000082.58f2a98183e84bfbb26777c41c443af9.1112",
+        )
+
+        matched, normalized = resolve_user_by_contact(
+            channel="email",
+            contact=email,
+            bundle_id=BUNDLE_HEALTH,
+        )
+        self.assertEqual(normalized, email)
+        self.assertEqual(matched, health_user)
+        self.assertNotEqual(matched, admin_user)
+
+    def test_email_cross_bundle_matches_respective_social_identity_users(self):
+        email = "crossbundle@example.com"
+        health_user = User.objects.create_user(
+            username="health_cross",
+            email=email,
+            password="pass12345",
+        )
+        aera_user = User.objects.create_user(
+            username="aera_cross",
+            email=email,
+            password="pass12345",
+        )
+        SocialIdentity.objects.create(
+            user=health_user,
+            bundle_id=BUNDLE_HEALTH,
+            provider=SocialIdentity.Provider.APPLE,
+            provider_uid="apple.health.cross",
+        )
+        SocialIdentity.objects.create(
+            user=aera_user,
+            bundle_id=BUNDLE_AERA,
+            provider=SocialIdentity.Provider.APPLE,
+            provider_uid="apple.aera.cross",
+        )
+
+        matched_health, _ = resolve_user_by_contact(
+            channel="email",
+            contact=email,
+            bundle_id=BUNDLE_HEALTH,
+        )
+        matched_aera, _ = resolve_user_by_contact(
+            channel="email",
+            contact=email,
+            bundle_id=BUNDLE_AERA,
+        )
+        self.assertEqual(matched_health, health_user)
+        self.assertEqual(matched_aera, aera_user)
 
     def test_email_without_bundle_identity_returns_null(self):
         email = "orphan@example.com"
