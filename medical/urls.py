@@ -19,6 +19,7 @@ from medical.views import (
     MedicationPlanViewSet,
     MedicationRecordViewSet,
     MedicationReminderEnabledPlansAPI,
+    MedicationReminderLocalAuthorizationAPI,
     MemberNotificationOwnershipAPI,
     MedExamDetailViewSet,
     MedicalCaseViewSet,
@@ -81,6 +82,7 @@ urlpatterns = [
     path("member-bindings/<int:pk>/transfer-owner/", MemberBindingTransferOwnerView.as_view(), name="medical-member-binding-transfer-owner"),  # 转移成员 Owner
     path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),  # 成员医疗数据汇总（首页/列表快照）
     path("medication-reminders/enabled-plans/", MedicationReminderEnabledPlansAPI.as_view(), name="medical-medication-reminder-enabled-plans"),
+    path("medication-reminders/local-authorizations/<int:plan_id>/", MedicationReminderLocalAuthorizationAPI.as_view(), name="medical-medication-reminder-local-authorization"),
     path("members/<int:member_id>/notification-ownership/", MemberNotificationOwnershipAPI.as_view(), name="medical-member-notification-ownership"),
     path("medicine-cabinet/summary/", FamilyMedicineCabinetSummaryAPI.as_view(), name="medical-medicine-cabinet-summary"),  # 家庭药箱汇总（按入口成员推导创建者范围）
     path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),  # 工作流：保存病例文档

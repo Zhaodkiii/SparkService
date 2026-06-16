@@ -65,6 +65,12 @@ from medical.services.medication_record_query import (
 from medical.services.medication_plan_notification_hooks import (
     schedule_medication_plan_health_notification,
 )
+from medical.services.medication_reminder_authorization_service import (
+    disable_local_authorization,
+    load_authorization_context,
+    serialize_authorization_context,
+    upsert_local_authorization,
+)
 from medical.services.medication_reminder_service import (
     build_enabled_plans_response,
     build_member_notification_ownership,
@@ -1222,6 +1228,66 @@ class MemberNotificationOwnershipAPI(APIView):
             request.user.id,
             member_id,
             data.get("has_other_self_owner"),
+        )
+        return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class MedicationReminderLocalAuthorizationAPI(APIView):
+    """计划级本机提醒授权：当前用户是否允许为某个非本人服药计划创建本地提醒。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, plan_id: int):
+        try:
+            context = load_authorization_context(user=request.user, plan_id=plan_id)
+        except MedicationPlan.DoesNotExist:
+            return error_response(msg="medication_plan_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+
+        data = serialize_authorization_context(user=request.user, context=context)
+        return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+    def put(self, request, plan_id: int):
+        enabled = bool(request.data.get("enabled", True))
+        source = str(request.data.get("source") or "").strip()
+        try:
+            data = upsert_local_authorization(
+                user=request.user,
+                plan_id=plan_id,
+                enabled=enabled,
+                source=source,
+            )
+        except MedicationPlan.DoesNotExist:
+            return error_response(msg="medication_plan_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        logger.info(
+            "local-authorization put user_id=%s plan_id=%s enabled=%s exists=%s",
+            request.user.id,
+            plan_id,
+            data.get("enabled"),
+            data.get("exists"),
+        )
+        return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+    def delete(self, request, plan_id: int):
+        try:
+            data = disable_local_authorization(user=request.user, plan_id=plan_id)
+        except MedicationPlan.DoesNotExist:
+            return error_response(msg="medication_plan_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+
+        logger.info(
+            "local-authorization delete user_id=%s plan_id=%s enabled=%s exists=%s",
+            request.user.id,
+            plan_id,
+            data.get("enabled"),
+            data.get("exists"),
         )
         return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
 

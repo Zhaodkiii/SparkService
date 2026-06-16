@@ -684,6 +684,62 @@ class MedicationPlan(MedicalBaseModel):
         super().save(*args, **kwargs)
 
 
+class MedicationReminderLocalAuthorization(models.Model):
+    """计划级本机提醒授权：当前用户是否同意为某个非本人服药计划创建本地提醒。"""
+
+    user = models.ForeignKey(
+        User,
+        related_name="medication_reminder_local_authorizations",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="接收本机提醒的登录用户 ID",
+    )
+    member = models.ForeignKey(
+        Member,
+        related_name="medication_reminder_local_authorizations",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="服药计划所属成员 ID",
+    )
+    medication_plan = models.ForeignKey(
+        MedicationPlan,
+        related_name="local_authorizations",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="具体服药计划 ID",
+    )
+    enabled = models.BooleanField(default=True, db_index=True, db_comment="是否启用本机提醒授权")
+    source = models.CharField(max_length=64, blank=True, default="", db_comment="授权来源")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_comment="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, db_index=True, db_comment="更新时间")
+
+    class Meta:
+        db_table = "medical_medication_reminder_local_authorization"
+        db_table_comment = "计划级本机提醒授权：当前用户是否同意为非本人计划创建本地提醒。"
+        verbose_name = _("用药提醒本机授权")
+        verbose_name_plural = _("用药提醒本机授权")
+        ordering = ["-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "medication_plan"],
+                name="uniq_user_medication_plan_local_auth",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "enabled"]),
+            models.Index(fields=["member", "enabled"]),
+            models.Index(fields=["medication_plan", "enabled"]),
+        ]
+
+    def clean(self):
+        if self.medication_plan_id and self.member_id and self.medication_plan.member_id != self.member_id:
+            raise ValidationError({"member": _("member does not match medication_plan.member")})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
 class MedicationRecord(MedicalBaseModel):
     """服药记录：计划剂次的执行打卡事实表。"""
 
