@@ -62,6 +62,14 @@ from medical.services.medication_record_query import (
     apply_medication_record_scheduled_range,
     parse_medication_record_scheduled_range,
 )
+from medical.services.medication_plan_notification_hooks import (
+    schedule_medication_plan_health_notification,
+)
+from medical.services.medication_reminder_service import (
+    build_enabled_plans_response,
+    build_member_notification_ownership,
+    resolve_window_dates,
+)
 from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
 from file_manager.serializers import ManagedFileAttachmentOutSerializer
@@ -1025,6 +1033,28 @@ class MedicationPlanViewSet(WrappedModelViewSet):
     queryset = MedicationPlan.objects.select_related("member", "medical_case", "medicine_box", "prescription").all()
     serializer_class = MedicationPlanSerializer
 
+    def perform_create(self, serializer):
+        member = serializer.validated_data.get("member")
+        if member is not None:
+            self._ensure_member_create_access(member.id)
+        plan = serializer.save(user=self.request.user)
+        schedule_medication_plan_health_notification(
+            actor_user=self.request.user,
+            plan=plan,
+            created=True,
+        )
+
+    def perform_update(self, serializer):
+        member = serializer.validated_data.get("member") or getattr(serializer.instance, "member", None)
+        if member is not None:
+            self._ensure_member_edit_access(member.id)
+        plan = serializer.save()
+        schedule_medication_plan_health_notification(
+            actor_user=self.request.user,
+            plan=plan,
+            created=False,
+        )
+
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
@@ -1135,6 +1165,65 @@ class MedicationRecordViewSet(WrappedModelViewSet):
             next_total = 0
         box.total_quantity = next_total
         box.save(update_fields=["total_quantity", "updated_at"])
+
+
+class MedicationReminderEnabledPlansAPI(APIView):
+    """开启提醒用药计划聚合：仅服务客户端本地通知补全，不是通用用药计划列表。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date as date_cls
+
+        raw_start = request.query_params.get("window_start_date")
+        raw_end = request.query_params.get("window_end_date")
+        include_records = request.query_params.get("include_records", "true").lower() != "false"
+
+        start_date = None
+        end_date = None
+        try:
+            if raw_start:
+                start_date = date_cls.fromisoformat(raw_start[:10])
+            if raw_end:
+                end_date = date_cls.fromisoformat(raw_end[:10])
+        except ValueError:
+            return error_response(
+                msg="invalid_window_date",
+                code=-1,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        window = resolve_window_dates(window_start_date=start_date, window_end_date=end_date)
+        data = build_enabled_plans_response(
+            user=request.user,
+            window=window,
+            include_records=include_records,
+            request=request,
+        )
+        logger.info(
+            "enabled-plans user_id=%s members=%s",
+            request.user.id,
+            len(data.get("members") or []),
+        )
+        return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class MemberNotificationOwnershipAPI(APIView):
+    """成员通知归属：relationship=self 表示健康资料本人，与 role=owner/admin 管理权限不同。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, member_id: int):
+        data = build_member_notification_ownership(user=request.user, member_id=member_id)
+        if data is None:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        logger.info(
+            "notification-ownership user_id=%s member_id=%s has_other_self_owner=%s",
+            request.user.id,
+            member_id,
+            data.get("has_other_self_owner"),
+        )
+        return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class MemberCompleteDataAPI(APIView):
@@ -1631,6 +1720,11 @@ class _WorkflowBaseAPIView(APIView):
             if validation_error is not None:
                 return None, validation_error
             plan = plan_serializer.save(user=request.user)
+            schedule_medication_plan_health_notification(
+                actor_user=request.user,
+                plan=plan,
+                created=True,
+            )
             self._bind_files(request.user, "medication_plan", plan.id, item_file_ids)
             created.append({
                 "medicine_box_id": medicine_box.id if medicine_box else None,

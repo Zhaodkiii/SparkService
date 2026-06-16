@@ -18,6 +18,8 @@ from medical.views import (
     PrescriptionBatchWorkflowSaveView,
     MedicationPlanViewSet,
     MedicationRecordViewSet,
+    MedicationReminderEnabledPlansAPI,
+    MemberNotificationOwnershipAPI,
     MedExamDetailViewSet,
     MedicalCaseViewSet,
     MedicalCaseWorkflowSaveView,
@@ -78,6 +80,8 @@ urlpatterns = [
     path("member-bindings/<int:pk>/remove/", MemberBindingRemoveView.as_view(), name="medical-member-binding-remove"),  # 移除他人绑定（管理员）
     path("member-bindings/<int:pk>/transfer-owner/", MemberBindingTransferOwnerView.as_view(), name="medical-member-binding-transfer-owner"),  # 转移成员 Owner
     path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),  # 成员医疗数据汇总（首页/列表快照）
+    path("medication-reminders/enabled-plans/", MedicationReminderEnabledPlansAPI.as_view(), name="medical-medication-reminder-enabled-plans"),
+    path("members/<int:member_id>/notification-ownership/", MemberNotificationOwnershipAPI.as_view(), name="medical-member-notification-ownership"),
     path("medicine-cabinet/summary/", FamilyMedicineCabinetSummaryAPI.as_view(), name="medical-medicine-cabinet-summary"),  # 家庭药箱汇总（按入口成员推导创建者范围）
     path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),  # 工作流：保存病例文档
     path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),  # 工作流：保存体检报告
