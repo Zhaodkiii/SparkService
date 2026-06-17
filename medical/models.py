@@ -625,9 +625,9 @@ class MedicationPlan(MedicalBaseModel):
         db_comment="来源处方 ID",
     )
     drug_name = models.CharField(max_length=255, db_comment="药品名称（计划展示用）")
-    dose_per_time = models.CharField(max_length=64, db_comment="单次剂量文本")
+    dose_per_time = models.CharField(max_length=64, blank=True, default="", db_comment="单次剂量文本")
     dose_value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, db_comment="单次剂量数值")
-    dose_unit = models.CharField(max_length=32, default="片", db_comment="剂量单位")
+    dose_unit = models.CharField(max_length=32, blank=True, default="", db_comment="剂量单位")
     frequency_type = models.CharField(
         max_length=20,
         choices=FrequencyType.choices,
@@ -672,7 +672,10 @@ class MedicationPlan(MedicalBaseModel):
         if self.medicine_box_id:
             from medical.services.medicine_cabinet_service import medicine_box_accessible_for_member
 
-            if not medicine_box_accessible_for_member(medicine_box=self.medicine_box, member=self.member):
+            medicine_box = MedicineBox.objects.filter(pk=self.medicine_box_id).first()
+            if medicine_box is None:
+                self.medicine_box_id = None
+            elif not medicine_box_accessible_for_member(medicine_box=medicine_box, member=self.member):
                 raise ValidationError({"medicine_box": _("medicine_box does not belong to current member")})
         if self.prescription_id and self.prescription.member_id != self.member_id:
             raise ValidationError({"prescription": _("prescription does not belong to current member")})

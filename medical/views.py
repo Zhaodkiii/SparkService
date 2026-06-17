@@ -1231,27 +1231,53 @@ class MemberNotificationOwnershipAPI(APIView):
         )
         return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
 
-
 class MedicationReminderLocalAuthorizationAPI(APIView):
-    """计划级本机提醒授权：当前用户是否允许为某个非本人服药计划创建本地提醒。"""
+    """
+    服药计划本机本地提醒授权接口
+    业务说明：控制当前登录用户是否有权限，为他人的服药计划在本机推送系统服药通知
+    支持查询授权状态、开启/关闭授权、彻底取消授权三条接口
+    """
 
+    # 权限校验：仅登录用户可访问
     permission_classes = [IsAuthenticated]
 
     def get(self, request, plan_id: int):
+        """
+        GET 请求：查询指定服药计划的本机提醒授权信息
+        :param request: 请求对象，携带登录用户信息
+        :param plan_id: 目标服药计划ID
+        :return: 成功：返回授权序列化数据；失败：404计划不存在 / 403无访问权限
+        """
         try:
+            # 加载当前用户与目标计划的授权上下文（校验计划归属、用户访问权限）
             context = load_authorization_context(user=request.user, plan_id=plan_id)
         except MedicationPlan.DoesNotExist:
+            # 数据库无对应服药计划
             return error_response(msg="medication_plan_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
         except PermissionError:
+            # 用户无权查看该服药计划
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
 
+        # 将授权上下文转为前端可识别JSON数据
         data = serialize_authorization_context(user=request.user, context=context)
         return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
 
     def put(self, request, plan_id: int):
+        """
+        PUT 请求：新增/更新本机提醒授权状态
+        请求体参数：
+            enabled: bool 是否开启本机通知，默认True
+            source: str 操作来源页面/模块标记，用于日志追溯
+        :param request: 请求对象
+        :param plan_id: 目标服药计划ID
+        :return: 成功：返回更新后的授权数据；失败：404计划不存在 / 403无权限 / 400参数非法
+        """
+        # 读取前端传入开关状态，缺失则默认开启提醒
         enabled = bool(request.data.get("enabled", True))
+        # 读取操作来源标识，空值统一转为空字符串
         source = str(request.data.get("source") or "").strip()
         try:
+            # 新增或更新本地授权记录
             data = upsert_local_authorization(
                 user=request.user,
                 plan_id=plan_id,
@@ -1263,8 +1289,10 @@ class MedicationReminderLocalAuthorizationAPI(APIView):
         except PermissionError:
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
+            # 参数校验失败，返回具体错误文案
             return error_response(msg=str(exc), code=-1, status_code=status.HTTP_400_BAD_REQUEST)
 
+        # 记录更新授权操作日志：用户ID、计划ID、开关状态、记录是否已存在
         logger.info(
             "local-authorization put user_id=%s plan_id=%s enabled=%s exists=%s",
             request.user.id,
@@ -1275,13 +1303,21 @@ class MedicationReminderLocalAuthorizationAPI(APIView):
         return success_response(data, msg="success", code=0, status_code=status.HTTP_200_OK)
 
     def delete(self, request, plan_id: int):
+        """
+        DELETE 请求：永久关闭/删除本机提醒授权记录
+        :param request: 请求对象
+        :param plan_id: 目标服药计划ID
+        :return: 成功：返回处理后授权数据；失败：404计划不存在 / 403无权限
+        """
         try:
+            # 清除当前用户对该计划的本地通知授权
             data = disable_local_authorization(user=request.user, plan_id=plan_id)
         except MedicationPlan.DoesNotExist:
             return error_response(msg="medication_plan_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
         except PermissionError:
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
 
+        # 记录删除授权操作日志
         logger.info(
             "local-authorization delete user_id=%s plan_id=%s enabled=%s exists=%s",
             request.user.id,

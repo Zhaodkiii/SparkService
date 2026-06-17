@@ -575,8 +575,34 @@ class PrescriptionSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
         read_only_fields = ("id", "user", "created_at", "updated_at")
 
 
+class MedicationPlanMedicineBoxField(serializers.PrimaryKeyRelatedField):
+    """用药计划关联药箱：已软删除或无效 ID 视为解绑，不阻断保存。"""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("queryset", MedicineBox.objects.all())
+        kwargs.setdefault("required", False)
+        kwargs.setdefault("allow_null", True)
+        super().__init__(**kwargs)
+
+    def get_attribute(self, instance):
+        medicine_box_id = getattr(instance, "medicine_box_id", None)
+        if not medicine_box_id:
+            return None
+        return MedicineBox.objects.filter(pk=medicine_box_id).first()
+
+    def to_internal_value(self, data):
+        if data is None or data == "":
+            return None
+        try:
+            pk = int(data)
+        except (TypeError, ValueError):
+            return super().to_internal_value(data)
+        return MedicineBox.objects.filter(pk=pk).first()
+
+
 class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
     attachments_business_type = "medication_plan"
+    medicine_box = MedicationPlanMedicineBoxField()
 
     dose_value = serializers.DecimalField(
         max_digits=10,
@@ -585,6 +611,8 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
         allow_null=True,
         coerce_to_string=False,
     )
+    dose_per_time = serializers.CharField(max_length=64, required=False, allow_blank=True, default="")
+    dose_unit = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
 
     def validate_member(self, value):
         request = self.context.get("request")
@@ -597,8 +625,12 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
         merged = dict(attrs)
         instance = self.instance
         member = merged.get("member") or (getattr(instance, "member", None) if instance is not None else None)
+        if instance is not None and instance.medicine_box_id:
+            if "medicine_box" not in merged and not MedicineBox.objects.filter(pk=instance.medicine_box_id).exists():
+                attrs["medicine_box"] = None
+                merged["medicine_box"] = None
         medicine_box = merged.get("medicine_box") if "medicine_box" in merged else (
-            getattr(instance, "medicine_box", None) if instance is not None else None
+            self.fields["medicine_box"].get_attribute(instance) if instance is not None else None
         )
         prescription = merged.get("prescription") if "prescription" in merged else (
             getattr(instance, "prescription", None) if instance is not None else None

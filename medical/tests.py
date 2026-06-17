@@ -551,3 +551,169 @@ class PrescriptionBatchWorkflowSaveAPITests(APITestCase):
                     business_id=str(business_id),
                 ).exists()
             )
+
+
+class MedicationPlanOptionalDoseFieldsAPITests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="med_plan_optional_dose",
+            email="optional-dose@example.com",
+            password="test123456",
+        )
+        self.client.force_authenticate(self.user)
+        create_resp = self.client.post(
+            "/api/v1/medical/members/",
+            {"name": "测试成员", "gender": "male", "relationship": "self"},
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        self.member_id = create_resp.json()["data"]["id"]
+
+    def test_create_medication_plan_allows_blank_dose_fields(self):
+        payload = {
+            "member": self.member_id,
+            "drug_name": "v g哥哥",
+            "dose_per_time": "",
+            "dose_value": None,
+            "dose_unit": "",
+            "frequency_type": "daily",
+            "frequency_text": "每天",
+            "reminder_times": [{"time": "08:00"}],
+            "start_date": "2026-06-17",
+            "end_date": None,
+            "instructions": "",
+            "reminder_enabled": True,
+            "status": "active",
+            "extra": {},
+            "weekly_weekdays": [],
+            "every_n_days": None,
+            "medicine_box": None,
+            "prescription": None,
+            "medical_case": None,
+        }
+
+        response = self.client.post(
+            "/api/v1/medical/resources/?kind=medication-plans",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        plan = MedicationPlan.objects.get(id=response.json()["data"]["id"])
+        self.assertEqual(plan.dose_per_time, "")
+        self.assertEqual(plan.dose_unit, "")
+
+    def test_patch_medication_plan_clears_deleted_medicine_box_reference(self):
+        deleted_box = MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="斯皮仁诺",
+            dose_unit="",
+        )
+        deleted_box_id = deleted_box.id
+        deleted_box.soft_delete()
+
+        plan = MedicationPlan.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            drug_name="斯皮仁诺",
+            frequency_type="daily",
+            frequency_text="每天2次",
+            reminder_times=[{"time": "18:00"}, {"time": "18:40"}],
+            start_date="2025-12-26",
+            end_date="2025-12-28",
+            instructions="口服",
+            medicine_box_id=deleted_box_id,
+        )
+
+        payload = {
+            "member": self.member_id,
+            "drug_name": "斯皮仁诺",
+            "dose_per_time": "",
+            "dose_value": None,
+            "dose_unit": "",
+            "frequency_type": "daily",
+            "frequency_text": "每天2次",
+            "reminder_times": [{"time": "18:40"}, {"time": "18:00"}],
+            "start_date": "2025-12-26",
+            "end_date": "2025-12-28",
+            "instructions": "口服",
+            "reminder_enabled": True,
+            "status": "active",
+            "extra": {},
+            "weekly_weekdays": [],
+            "every_n_days": None,
+            "medicine_box": deleted_box_id,
+            "prescription": None,
+            "medical_case": None,
+        }
+
+        response = self.client.patch(
+            f"/api/v1/medical/resources/{plan.id}/?kind=medication-plans",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        body = response.json()["data"]
+        self.assertIsNone(body["medicine_box"])
+        plan.refresh_from_db()
+        self.assertIsNone(plan.medicine_box_id)
+
+    def test_get_medication_plan_with_deleted_medicine_box_returns_null(self):
+        deleted_box = MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="斯皮仁诺",
+        )
+        deleted_box_id = deleted_box.id
+        deleted_box.soft_delete()
+
+        plan = MedicationPlan.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            drug_name="斯皮仁诺",
+            frequency_type="daily",
+            frequency_text="每天2次",
+            reminder_times=[{"time": "18:00"}],
+            start_date="2025-12-26",
+            medicine_box_id=deleted_box_id,
+        )
+
+        response = self.client.get(
+            f"/api/v1/medical/resources/{plan.id}/?kind=medication-plans",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        self.assertIsNone(response.json()["data"]["medicine_box"])
+
+    def test_patch_medication_plan_clears_stale_medicine_box_without_payload_field(self):
+        deleted_box = MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="斯皮仁诺",
+        )
+        deleted_box_id = deleted_box.id
+        deleted_box.soft_delete()
+
+        plan = MedicationPlan.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            drug_name="斯皮仁诺",
+            frequency_type="daily",
+            frequency_text="每天2次",
+            reminder_times=[{"time": "18:00"}],
+            start_date="2025-12-26",
+            medicine_box_id=deleted_box_id,
+        )
+
+        response = self.client.patch(
+            f"/api/v1/medical/resources/{plan.id}/?kind=medication-plans",
+            {"frequency_text": "每天1次"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        plan.refresh_from_db()
+        self.assertIsNone(plan.medicine_box_id)
+        self.assertEqual(plan.frequency_text, "每天1次")

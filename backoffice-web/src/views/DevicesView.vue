@@ -18,7 +18,11 @@
     </a-table-column>
     <a-table-column title="设备ID" data-index="device_id" />
     <a-table-column title="Bundle" data-index="bundle_id" />
-    <a-table-column title="平台" data-index="platform" width="100" />
+    <a-table-column title="iOS 版本" data-index="system_version" width="100">
+      <template #default="{ record }">
+        {{ record.system_version || '-' }}
+      </template>
+    </a-table-column>
     <a-table-column title="型号" data-index="device_model" />
     <a-table-column title="最后在线" key="last_seen" width="180">
       <template #default="{ record }">
