@@ -1,4 +1,12 @@
-"""能量消耗记录与 Apple 健康同步。"""
+"""能量消耗记录与 Apple 健康同步。
+
+职责：
+- 能量消耗记录的 CRUD（手动录入、列表查询）
+- 客户端写入 HealthKit 后，将 HKSample UUID 回写到服务端记录
+- 批量导入 Apple Health 外部营养摄入与能量消耗（幂等：按 apple_health_id 去重）
+
+与 iOS 端 NutritionHealthKitSyncUseCase / NutritionEnergyBurnUseCase 对应。
+"""
 
 from __future__ import annotations
 
@@ -19,12 +27,14 @@ from nutrition.services.member_utils import is_self_primary_member
 
 
 def _derive_local_day(value: datetime) -> date:
+    """从带时区的 datetime 推导用户本地自然日，用于按「日历日」聚合与查询。"""
     if timezone.is_aware(value):
         return timezone.localtime(value).date()
     return value.date()
 
 
 def serialize_energy_burn(record: NutritionEnergyBurnRecord) -> dict[str, Any]:
+    """将 ORM 记录序列化为 API 响应 JSON 结构。"""
     return {
         "id": record.id,
         "member_id": record.member_id,
@@ -40,6 +50,7 @@ def serialize_energy_burn(record: NutritionEnergyBurnRecord) -> dict[str, Any]:
 
 
 def list_energy_burn_records(user: User, member_id: int, local_day: date) -> dict[str, Any]:
+    """查询某成员指定自然日的全部能量消耗记录，按 burned_at 倒序。"""
     records = NutritionEnergyBurnRecord.objects.filter(user=user, member_id=member_id, local_day=local_day).order_by("-burned_at", "-id")
     return {
         "member_id": member_id,
@@ -50,6 +61,7 @@ def list_energy_burn_records(user: User, member_id: int, local_day: date) -> dic
 
 @transaction.atomic
 def create_energy_burn_record(user: User, payload: dict[str, Any]) -> dict[str, Any]:
+    """创建一条能量消耗记录，默认 source 为 manual（本 App 手动录入）。"""
     burned_at = payload["burned_at"]
     record = NutritionEnergyBurnRecord.objects.create(
         user=user,
@@ -66,6 +78,7 @@ def create_energy_burn_record(user: User, payload: dict[str, Any]) -> dict[str, 
 
 
 def update_energy_burn_record(user: User, record_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """部分更新能量消耗记录；仅更新 payload 中出现的字段。记录不存在或已软删时返回 None。"""
     record = NutritionEnergyBurnRecord.objects.filter(id=record_id, user=user, is_deleted=False).first()
     if record is None:
         return None
@@ -87,6 +100,7 @@ def update_energy_burn_record(user: User, record_id: int, payload: dict[str, Any
 
 
 def delete_energy_burn_record(user: User, record_id: int) -> dict[str, Any] | None:
+    """软删除能量消耗记录。返回是否曾关联 HealthKit UUID，供客户端决定是否清理 HealthKit。"""
     record = NutritionEnergyBurnRecord.objects.filter(id=record_id, user=user, is_deleted=False).first()
     if record is None:
         return None
@@ -96,6 +110,13 @@ def delete_energy_burn_record(user: User, record_id: int) -> dict[str, Any] | No
 
 
 def write_intake_apple_health_id(user: User, intake_id: int, apple_health_id: str) -> dict[str, Any] | None:
+    """用餐记录中的单条营养素写入 HealthKit 后，回写 apple_health_id。
+
+    安全校验：
+    - intake 必须属于 meal_record 业务类型
+    - 对应用餐记录须属于当前 user 且未删除
+    - 成员须为本人（is_self_primary_member），否则返回 {"error": "not_self_member"}
+    """
     intake = NutritionIntake.objects.filter(id=intake_id, business_type=NUTRITION_BUSINESS_TYPE_MEAL_RECORD).first()
     if intake is None:
         return None
@@ -110,6 +131,7 @@ def write_intake_apple_health_id(user: User, intake_id: int, apple_health_id: st
 
 
 def write_energy_burn_apple_health_id(user: User, record_id: int, apple_health_id: str) -> dict[str, Any] | None:
+    """手动能量消耗写入 HealthKit 后，回写 apple_health_id。同样仅本人成员可操作。"""
     record = NutritionEnergyBurnRecord.objects.filter(id=record_id, user=user, is_deleted=False).first()
     if record is None:
         return None
@@ -122,6 +144,17 @@ def write_energy_burn_apple_health_id(user: User, record_id: int, apple_health_i
 
 @transaction.atomic
 def import_apple_health_intakes(user: User, member_id: int, samples: list[dict[str, Any]]) -> dict[str, Any]:
+    """批量导入 Apple Health 第三方 App 写入的饮食摄入样本。
+
+    流程（每条 sample）：
+    1. 本人成员校验
+    2. 按 (member_id, apple_health_id) 查重，已存在则记入 duplicates 并跳过
+    3. 创建 NutritionAppleHealthIntakeImport 主记录
+    4. 调用 create_standard_intakes 写入 energy/protein/carb/fat 等明细
+    5. 将该批次下所有 intake 的 apple_health_id 设为样本 UUID（便于追溯）
+
+    与 iOS fetchExternalIntakeSamples + importAppleHealthIntakes 对应。
+    """
     if not is_self_primary_member(user, member_id):
         return {"error": "not_self_member"}
 
@@ -150,6 +183,7 @@ def import_apple_health_intakes(user: User, member_id: int, samples: list[dict[s
             intakes,
             source="apple_health_import",
         )
+        # 同一 HealthKit 样本可能展开为多条 intake（能量/蛋白/碳水/脂肪），统一标记来源 UUID
         for intake_row in NutritionIntake.objects.filter(
             business_type=NUTRITION_BUSINESS_TYPE_APPLE_HEALTH_INTAKE_IMPORT,
             business_id=import_row.id,
@@ -163,6 +197,14 @@ def import_apple_health_intakes(user: User, member_id: int, samples: list[dict[s
 
 @transaction.atomic
 def import_apple_health_energy_burns(user: User, member_id: int, samples: list[dict[str, Any]]) -> dict[str, Any]:
+    """批量导入 Apple Health 活动消耗与基础代谢样本。
+
+    幂等键：member_id + apple_health_id（未软删记录）。
+    source 固定为 APPLE_HEALTH_IMPORT，与手动录入 MANUAL 区分。
+    activity_type 示例：active_energy / basal_energy（由 iOS 端传入）。
+
+    与 iOS fetchEnergyBurnSamples + importAppleHealthEnergyBurns 对应。
+    """
     if not is_self_primary_member(user, member_id):
         return {"error": "not_self_member"}
 

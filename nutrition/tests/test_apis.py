@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from medical.models import Member
+from medical.models import Member, UserMemberBinding
 from medical.services import member_binding_service as binding_service
 from nutrition.models import NutritionFoodItem
 from nutrition.services.seed_data import seed_system_foods
@@ -221,6 +221,65 @@ class NutritionAppleHealthImportAPITests(NutritionAPITestBase):
         self.assertEqual(burn_first.status_code, status.HTTP_201_CREATED)
         burn_second = self.client.post("/api/v1/nutrition/apple-health/energy-burn-imports/", burn_payload, format="json")
         self.assertEqual(burn_second.json()["code"], 40901)
+
+    def test_energy_burn_import_allows_shared_self_admin_binding(self):
+        owner = User.objects.create_user(username="nutrition_member_owner", password="test123456")
+        shared_member = Member.objects.create(user=owner, name="Shared Self", is_primary=True)
+        binding_service.create_owner_binding(user=owner, member=shared_member, relationship="brother")
+        UserMemberBinding.objects.create(
+            user=self.user,
+            member=shared_member,
+            relationship="本人",
+            role=UserMemberBinding.Role.ADMIN,
+            status=UserMemberBinding.Status.ACTIVE,
+            invited_by=owner,
+        )
+
+        payload = {
+            "member_id": shared_member.id,
+            "samples": [
+                {
+                    "apple_health_id": "HK-burn-shared-self-001",
+                    "burned_at": f"{self.date}T18:00:00+08:00",
+                    "energy_kcal": 123.45,
+                    "activity_type": "active_energy",
+                    "source": "apple_health_import",
+                }
+            ],
+        }
+
+        response = self.client.post("/api/v1/nutrition/apple-health/energy-burn-imports/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_energy_burn_import_rejects_shared_non_self_admin_binding(self):
+        owner = User.objects.create_user(username="nutrition_member_owner_non_self", password="test123456")
+        shared_member = Member.objects.create(user=owner, name="Shared Brother", is_primary=True)
+        binding_service.create_owner_binding(user=owner, member=shared_member, relationship="self")
+        UserMemberBinding.objects.create(
+            user=self.user,
+            member=shared_member,
+            relationship="哥哥",
+            role=UserMemberBinding.Role.ADMIN,
+            status=UserMemberBinding.Status.ACTIVE,
+            invited_by=owner,
+        )
+
+        payload = {
+            "member_id": shared_member.id,
+            "samples": [
+                {
+                    "apple_health_id": "HK-burn-shared-brother-001",
+                    "burned_at": f"{self.date}T18:00:00+08:00",
+                    "energy_kcal": 123.45,
+                    "activity_type": "active_energy",
+                    "source": "apple_health_import",
+                }
+            ],
+        }
+
+        response = self.client.post("/api/v1/nutrition/apple-health/energy-burn-imports/", payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.json()["msg"], "member_permission_denied")
 
     def test_intake_apple_health_id_writeback(self):
         created = self.create_meal_record()
