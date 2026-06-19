@@ -25,6 +25,9 @@ from nutrition.serializers import (
     FoodItemCreateSerializer,
     MealRecordCreateSerializer,
     MealRecordUpdateSerializer,
+    NutritionGoalSerializer,
+    NutritionGoalCalculationSerializer,
+    NutritionGoalUpsertSerializer,
     RecipeCreateSerializer,
 )
 from nutrition.services.dashboard_service import build_dashboard
@@ -39,7 +42,14 @@ from nutrition.services.energy_burn_service import (
     write_intake_apple_health_id,
 )
 from nutrition.services.food_recipe_service import create_custom_food, create_custom_recipe
-from nutrition.services.goal_service import resolve_goal_payload, resolve_meal_macro_targets
+from nutrition.services.goal_calculation_service import GoalCalculationInput, calculate_body_metrics, calculate_energy
+from nutrition.services.goal_service import (
+    GOAL_TARGET_SAFETY_VERSION,
+    get_active_goal,
+    resolve_goal_payload,
+    resolve_meal_macro_targets,
+    upsert_goal,
+)
 from nutrition.services.meal_record_service import create_meal_record, delete_meal_record, list_meal_records, list_meal_records_history, update_meal_record
 from nutrition.services.search_service import add_favorite, remove_favorite, search_items
 from nutrition.services.seed_data import SYSTEM_FOODS
@@ -191,6 +201,120 @@ class NutritionDefaultsPreviewAPIView(NutritionAPIView):
             build_defaults_etag_payload(request.user, member_id),
             data,
         )
+
+
+class NutritionGoalAPIView(NutritionAPIView):
+    def get(self, request):
+        member_id, err = self.parse_member_id(request)
+        if err:
+            return err
+        if perm := self.require_view(request, member_id):
+            return perm
+        goal = get_active_goal(request.user, member_id)
+        data = {
+            "member_id": member_id,
+            "goal": NutritionGoalSerializer(goal).data if goal else None,
+            "defaults": resolve_goal_payload(request.user, member_id),
+        }
+        self.log(request, "goal_get", member_id=member_id, goal_id=goal.id if goal else 0)
+        return self._cached_success_response(
+            request,
+            {"goal": [goal.id, goal.updated_at.isoformat()] if goal else None, "version": GOAL_TARGET_SAFETY_VERSION},
+            data,
+        )
+
+    def post(self, request):
+        serializer = NutritionGoalUpsertSerializer(data=request.data)
+        if not serializer.is_valid():
+            return error_response(msg="validation_error", code=-1, status_code=400, data=serializer.errors)
+        payload = serializer.validated_data
+        if perm := self.require_write(request, payload["member_id"]):
+            return perm
+        goal = upsert_goal(
+            request.user,
+            payload["member_id"],
+            goal_type=payload["goal_type"],
+            height_cm=payload.get("height_cm"),
+            current_weight_kg=payload.get("current_weight_kg"),
+            target_weight_kg=payload.get("target_weight_kg"),
+            biological_sex=payload.get("biological_sex", ""),
+            age_years=payload.get("age_years"),
+            activity_level=payload.get("activity_level", ""),
+            weekly_weight_delta_kg=payload.get("weekly_weight_delta_kg"),
+            bmr_kcal=payload.get("bmr_kcal"),
+            tdee_kcal=payload.get("tdee_kcal"),
+            energy_delta_kcal=payload.get("energy_delta_kcal"),
+            calculation_formula=payload.get("calculation_formula", ""),
+            calculation_version=payload.get("calculation_version", ""),
+            calculation_inputs=payload.get("calculation_inputs"),
+            is_energy_target_custom=payload.get("is_energy_target_custom", False),
+            weekend_energy_target_kcal=payload.get("weekend_energy_target_kcal"),
+            is_weekend_energy_enabled=payload.get("is_weekend_energy_enabled", False),
+            step_target=payload.get("step_target"),
+            daily_energy_target_kcal=payload.get("daily_energy_target_kcal"),
+            carbohydrate_target_g=payload.get("carbohydrate_target_g"),
+            protein_target_g=payload.get("protein_target_g"),
+            fat_target_g=payload.get("fat_target_g"),
+            meal_distribution=payload.get("meal_distribution"),
+            effective_from=payload.get("effective_from"),
+            is_active=payload.get("is_active", True),
+        )
+        self.log(request, "goal_upsert", member_id=payload["member_id"], goal_id=goal.id, goal_type=goal.goal_type)
+        return success_response(NutritionGoalSerializer(goal).data, status_code=status.HTTP_201_CREATED)
+
+
+class NutritionGoalCalculateEnergyAPIView(NutritionAPIView):
+    def post(self, request):
+        serializer = NutritionGoalCalculationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return error_response(msg="validation_error", code=-1, status_code=400, data=serializer.errors)
+        payload = serializer.validated_data
+        if perm := self.require_view(request, payload["member_id"]):
+            return perm
+        result = calculate_energy(_goal_calculation_input(request.user, payload))
+        missing_fields = result.get("calculation_inputs", {}).get("missing_fields", [])
+        self.log(
+            request,
+            "goal_calculate_energy",
+            member_id=payload["member_id"],
+            goal_type=payload.get("goal_type"),
+            missing_fields=",".join(missing_fields),
+        )
+        return success_response(result)
+
+
+class NutritionGoalCalculateBodyMetricsAPIView(NutritionAPIView):
+    def post(self, request):
+        serializer = NutritionGoalCalculationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return error_response(msg="validation_error", code=-1, status_code=400, data=serializer.errors)
+        payload = serializer.validated_data
+        if perm := self.require_view(request, payload["member_id"]):
+            return perm
+        result = calculate_body_metrics(_goal_calculation_input(request.user, payload))
+        self.log(
+            request,
+            "goal_calculate_body_metrics",
+            member_id=payload["member_id"],
+            goal_type=payload.get("goal_type"),
+            missing_fields=",".join(result["missing_fields"]),
+        )
+        return success_response(result)
+
+
+def _goal_calculation_input(user, payload):
+    return GoalCalculationInput(
+        user=user,
+        member_id=payload["member_id"],
+        goal_type=payload.get("goal_type") or "maintain",
+        activity_level=payload.get("activity_level") or "low",
+        current_weight_kg=payload.get("current_weight_kg"),
+        height_cm=payload.get("height_cm"),
+        biological_sex=payload.get("biological_sex"),
+        age_years=payload.get("age_years"),
+        weekly_weight_delta_kg=payload.get("weekly_weight_delta_kg"),
+        target_weight_kg=payload.get("target_weight_kg"),
+    )
 
 
 class NutritionDashboardAPIView(NutritionAPIView):

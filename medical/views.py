@@ -26,6 +26,8 @@ from medical.models import (
     MedicalCase,
     ModelChangeLog,
     Member,
+    MemberMedicalProfile,
+    MemberModuleSetting,
     MemberShareInvite,
     Prescription,
     Surgery,
@@ -45,6 +47,8 @@ from medical.serializers import (
     MedicalCaseSerializer,
     MemberBindingUpdateSerializer,
     MemberSerializer,
+    MemberMedicalProfileSerializer,
+    MemberModuleSettingSerializer,
     PrescriptionSerializer,
     SurgerySerializer,
     SymptomSerializer,
@@ -281,6 +285,33 @@ class MemberViewSet(WrappedModelViewSet):
             code=0,
             status_code=status.HTTP_200_OK,
         )
+
+
+class MemberMedicalProfileViewSet(WrappedModelViewSet):
+    queryset = MemberMedicalProfile.objects.all()
+    serializer_class = MemberMedicalProfileSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        member_id = self.request.query_params.get("member_id")
+        if member_id:
+            queryset = queryset.filter(member_id=member_id)
+        return queryset
+
+
+class MemberModuleSettingViewSet(WrappedModelViewSet):
+    queryset = MemberModuleSetting.objects.all()
+    serializer_class = MemberModuleSettingSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        member_id = self.request.query_params.get("member_id")
+        if member_id:
+            queryset = queryset.filter(member_id=member_id)
+        module_code = self.request.query_params.get("module_code")
+        if module_code:
+            queryset = queryset.filter(module_code=module_code)
+        return queryset
 
 
 class MemberBindingViewSet(viewsets.ViewSet):

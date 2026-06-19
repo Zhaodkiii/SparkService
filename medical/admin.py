@@ -11,6 +11,8 @@ from medical.models import (
     MedicalCase,
     ModelChangeLog,
     Member,
+    MemberMedicalProfile,
+    MemberModuleSetting,
     UserMemberBinding,
     Prescription,
     Surgery,
@@ -24,6 +26,20 @@ class MemberAdmin(admin.ModelAdmin):
     list_display = ("id", "name", "gender", "blood_type", "is_primary", "is_deleted", "updated_at")
     list_filter = ("gender", "is_primary", "is_deleted")
     search_fields = ("name", "blood_type", "notes")
+
+
+@admin.register(MemberMedicalProfile)
+class MemberMedicalProfileAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "is_deleted", "updated_at")
+    list_filter = ("is_deleted",)
+    search_fields = ("medication_notes", "notes")
+
+
+@admin.register(MemberModuleSetting)
+class MemberModuleSettingAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "module_code", "is_enabled", "is_completed", "display_order", "updated_at")
+    list_filter = ("module_code", "is_enabled", "is_completed", "is_deleted")
+    search_fields = ("summary_text",)
 
 
 @admin.register(UserMemberBinding)

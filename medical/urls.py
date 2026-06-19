@@ -29,6 +29,8 @@ from medical.views import (
     MemberBindingPermissionUpdateView,
     MemberBindingRoleUpdateView,
     MemberBindingTransferOwnerView,
+    MemberMedicalProfileViewSet,
+    MemberModuleSettingViewSet,
     MemberShareInviteAcceptView,
     MemberShareInviteCancelView,
     MemberShareInviteCreateView,
@@ -62,6 +64,8 @@ router.register("medicine-boxes", MedicineBoxViewSet, basename="medical-medicine
 router.register("prescriptions", PrescriptionViewSet, basename="medical-prescriptions")
 router.register("medication-plans", MedicationPlanViewSet, basename="medical-medication-plans")
 router.register("medication-records", MedicationRecordViewSet, basename="medical-medication-records")
+router.register("member-medical-profiles", MemberMedicalProfileViewSet, basename="medical-member-medical-profiles")
+router.register("member-module-settings", MemberModuleSettingViewSet, basename="medical-member-module-settings")
 router.register("resources", UnifiedMedicalResourceViewSet, basename="medical-unified-resources")
 
 urlpatterns = [

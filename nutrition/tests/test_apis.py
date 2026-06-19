@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -56,6 +58,83 @@ class NutritionDashboardAPITests(NutritionAPITestBase):
         breakfast = next(item for item in data["meals"] if item["meal_type"] == "breakfast")
         self.assertEqual(breakfast["record_count"], 1)
         self.assertIn("咖啡", breakfast["food_summary"])
+
+
+class NutritionGoalCalculationAPITests(NutritionAPITestBase):
+    def test_calculate_body_metrics_returns_unified_outputs(self):
+        self.member.gender = "male"
+        self.member.birth_date = date(1996, 3, 29)
+        self.member.save(update_fields=["gender", "birth_date", "updated_at"])
+        payload = {
+            "member_id": self.member.id,
+            "goal_type": "lose_weight",
+            "activity_level": "low",
+            "current_weight_kg": 65,
+            "target_weight_kg": 60,
+            "height_cm": 165,
+            "weekly_weight_delta_kg": -0.5,
+        }
+
+        response = self.client.post("/api/v1/nutrition/goals/calculate-body-metrics/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()["data"]
+        self.assertEqual(data["missing_fields"], [])
+        self.assertEqual(data["calculation_formula"], "mifflin_st_jeor")
+        self.assertEqual(data["bmi"]["category"], "normal")
+        self.assertEqual(data["calorie_intake"]["energy_delta_kcal"], -550.0)
+        self.assertGreater(data["calorie_intake"]["suggested_energy_kcal"], 1000)
+        self.assertIsNotNone(data["ideal_weight"]["min_kg"])
+        self.assertIsNotNone(data["calories_burned"]["estimated_daily_activity_kcal"])
+
+    def test_calculate_body_metrics_reports_missing_fields(self):
+        payload = {
+            "member_id": self.member.id,
+            "goal_type": "maintain",
+            "activity_level": "low",
+            "current_weight_kg": 65,
+        }
+
+        response = self.client.post("/api/v1/nutrition/goals/calculate-body-metrics/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()["data"]
+        self.assertIn("height_cm", data["missing_fields"])
+        self.assertIsNone(data["calorie_intake"])
+
+    def test_calculate_body_metrics_rejects_unreasonable_weekly_delta(self):
+        payload = {
+            "member_id": self.member.id,
+            "goal_type": "control_salt",
+            "activity_level": "high",
+            "current_weight_kg": 140,
+            "height_cm": 181,
+            "weekly_weight_delta_kg": 1000,
+        }
+
+        response = self.client.post("/api/v1/nutrition/goals/calculate-body-metrics/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["msg"], "validation_error")
+        self.assertIn("weekly_weight_delta_kg", response.json()["data"])
+
+    def test_goal_upsert_rejects_unreasonable_targets(self):
+        payload = {
+            "member_id": self.member.id,
+            "goal_type": "custom",
+            "weekly_weight_delta_kg": 0,
+            "daily_energy_target_kcal": 1103745.19,
+            "carbohydrate_target_g": 134441.14,
+            "protein_target_g": 53665.81,
+            "fat_target_g": 15737.05,
+            "meal_distribution": {"breakfast": 0.3, "lunch": 0.35, "dinner": 0.25, "snack": 0.1},
+        }
+
+        response = self.client.post("/api/v1/nutrition/goals/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.json()["msg"], "validation_error")
+        self.assertIn("daily_energy_target_kcal", response.json()["data"])
 
 
 class NutritionMealRecordAPITests(NutritionAPITestBase):

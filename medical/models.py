@@ -74,6 +74,63 @@ class Member(MedicalBaseModel):
         return self.name
 
 
+class MemberMedicalProfile(MedicalBaseModel):
+    """成员医疗维护档案：承载慢病、用药、体检关注项与症状随访摘要。"""
+
+    member = models.ForeignKey(Member, related_name="medical_profiles", on_delete=models.CASCADE, db_index=True)
+    chronic_conditions = models.JSONField(default=list, blank=True, db_comment="慢病档案标签列表，例如糖尿病、高血压、高血脂、痛风、脂肪肝、肾病")
+    long_term_medications = models.JSONField(default=list, blank=True, db_comment="长期用药名称或简称列表")
+    medication_notes = models.TextField(blank=True, default="", db_comment="用药提醒或用药说明补充")
+    exam_focus = models.JSONField(default=list, blank=True, db_comment="体检关注指标列表，例如血糖、血脂、尿酸、肝肾功能")
+    symptom_follow_up_focus = models.JSONField(default=list, blank=True, db_comment="症状与随访关注项列表")
+    notes = models.TextField(blank=True, default="", db_comment="医疗模块补充说明")
+    extra = models.JSONField(default=dict, blank=True, db_comment="医疗档案扩展字段")
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "member"], name="uniq_member_medical_profile"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "member"]),
+        ]
+
+    def __str__(self):
+        return f"medical_profile:member={self.member_id}"
+
+
+class MemberModuleSetting(MedicalBaseModel):
+    """成员首页模块开关与完成状态。"""
+
+    class ModuleCode(models.TextChoices):
+        MEDICAL = "medical", "medical"
+        NUTRITION = "nutrition", "nutrition"
+        DAILY_HEALTH = "daily_health", "daily_health"
+
+    member = models.ForeignKey(Member, related_name="module_settings", on_delete=models.CASCADE, db_index=True)
+    module_code = models.CharField(max_length=32, choices=ModuleCode.choices, db_index=True, db_comment="模块编码，例如 medical、nutrition、daily_health")
+    is_enabled = models.BooleanField(default=True, db_index=True, db_comment="是否启用该模块")
+    is_completed = models.BooleanField(default=False, db_index=True, db_comment="该模块是否已完成首次维护")
+    display_order = models.PositiveSmallIntegerField(default=0, db_index=True, db_comment="首页模块排序序号")
+    summary_text = models.CharField(max_length=255, blank=True, default="", db_comment="模块摘要文案，例如未设置、已完成体检关注项等")
+    detail_data = models.JSONField(default=dict, blank=True, db_comment="模块维护详情快照；用于后续回填与展示")
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True, db_comment="模块首次完成时间")
+    extra = models.JSONField(default=dict, blank=True, db_comment="模块配置扩展字段")
+
+    class Meta:
+        ordering = ["display_order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "member", "module_code"], name="uniq_member_module_setting"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "member", "module_code"]),
+            models.Index(fields=["member", "is_enabled", "display_order"]),
+        ]
+
+    def __str__(self):
+        return f"module_setting:member={self.member_id}:{self.module_code}"
+
+
 class UserMemberBinding(models.Model):
     """用户与成员的多对多绑定：关系、角色与状态。"""
 

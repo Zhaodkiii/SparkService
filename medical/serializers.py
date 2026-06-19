@@ -16,6 +16,8 @@ from medical.models import (
     MedicationRecord,
     MedicalCase,
     Member,
+    MemberMedicalProfile,
+    MemberModuleSetting,
     Prescription,
     Surgery,
     Symptom,
@@ -97,6 +99,61 @@ class MemberBindingUpdateSerializer(serializers.ModelSerializer):
         model = UserMemberBinding
         fields = ("relationship",)
         extra_kwargs = {"relationship": {"required": True}}
+
+
+class MemberMedicalProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MemberMedicalProfile
+        fields = (
+            "id",
+            "user",
+            "member",
+            "chronic_conditions",
+            "long_term_medications",
+            "medication_notes",
+            "exam_focus",
+            "symptom_follow_up_focus",
+            "notes",
+            "extra",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "user", "created_at", "updated_at")
+
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
+
+class MemberModuleSettingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MemberModuleSetting
+        fields = (
+            "id",
+            "user",
+            "member",
+            "module_code",
+            "is_enabled",
+            "is_completed",
+            "display_order",
+            "summary_text",
+            "detail_data",
+            "completed_at",
+            "extra",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "user", "created_at", "updated_at")
+
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
 
 
 def serialize_member_list_item(member: Member, binding: UserMemberBinding) -> dict:

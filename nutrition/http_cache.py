@@ -17,7 +17,7 @@ from nutrition.models import (
     NutritionIntake,
     NutritionMealRecord,
 )
-from nutrition.services.goal_service import get_active_goal
+from nutrition.services.goal_service import GOAL_TARGET_SAFETY_VERSION, get_active_goal
 
 
 def _record_rows(queryset) -> list[tuple[int, str]]:
@@ -39,8 +39,8 @@ def _intake_rows(*filters: Q) -> list[tuple[int, str]]:
 def build_defaults_etag_payload(user: User, member_id: int) -> dict:
     goal = get_active_goal(user, member_id)
     if goal is None:
-        return {"goal": None}
-    return {"goal": [goal.id, goal.updated_at.isoformat()]}
+        return {"goal": None, "version": GOAL_TARGET_SAFETY_VERSION}
+    return {"goal": [goal.id, goal.updated_at.isoformat()], "version": GOAL_TARGET_SAFETY_VERSION}
 
 
 def build_dashboard_etag_payload(user: User, member_id: int, local_day: date) -> dict:
@@ -80,6 +80,7 @@ def build_dashboard_etag_payload(user: User, member_id: int, local_day: date) ->
     goal = get_active_goal(user, member_id)
     goal_key = [goal.id, goal.updated_at.isoformat()] if goal else None
     return {
+        "version": GOAL_TARGET_SAFETY_VERSION,
         "meals": meal_rows,
         "imports": import_rows,
         "burns": burn_rows,

@@ -5,6 +5,9 @@ from nutrition.views import (
     NutritionAppleHealthIntakeImportAPIView,
     NutritionDashboardAPIView,
     NutritionDefaultsPreviewAPIView,
+    NutritionGoalAPIView,
+    NutritionGoalCalculateBodyMetricsAPIView,
+    NutritionGoalCalculateEnergyAPIView,
     NutritionEnergyBurnAppleHealthIdAPIView,
     NutritionEnergyBurnDetailAPIView,
     NutritionEnergyBurnListCreateAPIView,
@@ -23,6 +26,12 @@ urlpatterns = [
     path("health/", NutritionHealthAPIView.as_view(), name="nutrition-health"),
     # GET — 预览成员默认营养目标与餐次宏量分配（goal、meal_targets）
     path("defaults/", NutritionDefaultsPreviewAPIView.as_view(), name="nutrition-defaults"),
+    # GET/POST — 查询或保存成员营养目标
+    path("goals/", NutritionGoalAPIView.as_view(), name="nutrition-goals"),
+    # POST — 重新计算卡路里目标（BMR/TDEE/建议摄入）
+    path("goals/calculate-energy/", NutritionGoalCalculateEnergyAPIView.as_view(), name="nutrition-goals-calculate-energy"),
+    # POST — 统一身体指标与目标计算（BMI/理想体重/BMR/TDEE/消耗解释）
+    path("goals/calculate-body-metrics/", NutritionGoalCalculateBodyMetricsAPIView.as_view(), name="nutrition-goals-calculate-body-metrics"),
     # GET — 获取指定成员、指定日期的营养看板汇总（摄入、消耗、目标进度等）
     path("dashboard/", NutritionDashboardAPIView.as_view(), name="nutrition-dashboard"),
     # GET — 查询餐食记录（单日按 meal_type 筛选，或 date_from/date_to 历史范围）；POST — 创建餐食记录

@@ -288,12 +288,34 @@ class NutritionGoal(models.Model):
     class GoalType(models.TextChoices):
         MAINTAIN = "maintain", "maintain"
         LOSE_WEIGHT = "lose_weight", "lose_weight"
+        GAIN_WEIGHT = "gain_weight", "gain_weight"
         GAIN_MUSCLE = "gain_muscle", "gain_muscle"
+        BUILD_MUSCLE = "build_muscle", "build_muscle"
+        CONTROL_SUGAR = "control_sugar", "control_sugar"
+        CONTROL_SALT = "control_salt", "control_salt"
+        CONTROL_FAT = "control_fat", "control_fat"
         CUSTOM = "custom", "custom"
 
     user = models.ForeignKey(User, related_name="nutrition_goals", on_delete=models.CASCADE, db_index=True, db_comment="目标所属账号 ID")
     member = models.ForeignKey("medical.Member", related_name="nutrition_goals", on_delete=models.CASCADE, db_index=True, db_comment="目标归属成员 ID")
     goal_type = models.CharField(max_length=32, choices=GoalType.choices, default=GoalType.MAINTAIN, db_index=True, db_comment="目标类型，例如 maintain、lose_weight")
+    height_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, db_comment="身高快照，单位 cm；来自成员档案或目标补充页")
+    current_weight_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, db_comment="当前体重快照，单位 kg；用于目标计算")
+    target_weight_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, db_comment="目标体重，单位 kg")
+    biological_sex = models.CharField(max_length=16, blank=True, default="", db_comment="生理性别快照，例如 male/female/unknown")
+    age_years = models.IntegerField(null=True, blank=True, db_comment="年龄快照，由出生日期推导或用户补充")
+    activity_level = models.CharField(max_length=32, blank=True, default="", db_index=True, db_comment="活跃水平，例如 low、medium、high、very_high")
+    weekly_weight_delta_kg = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, db_comment="每周体重目标变化，单位 kg；减重为负，增重为正")
+    bmr_kcal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="最近一次计算得到的基础代谢，单位 kcal")
+    tdee_kcal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="最近一次计算得到的维持热量，单位 kcal")
+    energy_delta_kcal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="根据每周目标换算得到的每日热量差，单位 kcal")
+    calculation_formula = models.CharField(max_length=32, blank=True, default="", db_comment="最近一次计算公式名称，例如 mifflin_st_jeor")
+    calculation_version = models.CharField(max_length=32, blank=True, default="", db_comment="最近一次计算公式版本，例如 v1")
+    calculation_inputs = models.JSONField(default=dict, blank=True, db_comment="最近一次计算输入和风险快照")
+    is_energy_target_custom = models.BooleanField(default=False, db_index=True, db_comment="每日热量目标是否由用户手动覆盖")
+    weekend_energy_target_kcal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="周末热量目标，单位 kcal；第一期预留")
+    is_weekend_energy_enabled = models.BooleanField(default=False, db_index=True, db_comment="是否启用周末热量目标")
+    step_target = models.IntegerField(null=True, blank=True, db_comment="每日步数目标，第一期用于目标页展示和后续运动联动")
     daily_energy_target_kcal = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="每日热量目标，单位 kcal")
     carbohydrate_target_g = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="每日碳水化合物目标，单位 g")
     protein_target_g = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, db_comment="每日蛋白质目标，单位 g")

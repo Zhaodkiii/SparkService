@@ -31,6 +31,8 @@ MEDICAL_UNIFIED_ALLOWED_QUERY_PARAMS: dict[str, frozenset[str]] = {
     "medicine-boxes": frozenset({"member_id", "medicine_type", "expire_before", "low_stock"}),
     "prescriptions": frozenset({"member_id", "medical_case_id", "status"}),
     "medication-plans": frozenset({"member_id", "medical_case_id", "medicine_box_id", "prescription_id", "status"}),
+    "member-medical-profiles": frozenset({"member_id"}),
+    "member-module-settings": frozenset({"member_id", "module_code"}),
     # medication-records scheduled_from: inclusive lower bound (scheduled_at >= scheduled_from)
     # medication-records scheduled_to: exclusive upper bound (scheduled_at < scheduled_to)
     "medication-records": frozenset({"member_id", "plan_id", "status", "scheduled_from", "scheduled_to"}),
@@ -55,6 +57,8 @@ def _register_unified_resources() -> None:
         "medicine-boxes": medical_views.MedicineBoxViewSet,
         "prescriptions": medical_views.PrescriptionViewSet,
         "medication-plans": medical_views.MedicationPlanViewSet,
+        "member-medical-profiles": medical_views.MemberMedicalProfileViewSet,
+        "member-module-settings": medical_views.MemberModuleSettingViewSet,
         "medication-records": medical_views.MedicationRecordViewSet,
     }
 
