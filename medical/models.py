@@ -482,29 +482,30 @@ class MedExamDetail(models.Model):
         HEALTH_EXAM_REPORT = "health_exam_report"
         EXAMINATION_REPORT = "examination_report"
 
-    business_type = models.CharField(max_length=32, choices=BusinessType.choices, db_index=True)
-    business_id = models.PositiveBigIntegerField(db_index=True)
-    member = models.ForeignKey(Member, related_name="med_exam_details", on_delete=models.CASCADE, db_index=True)
-    category = models.CharField(max_length=128, blank=True, default="", db_index=True)
-    sub_category = models.CharField(max_length=128, blank=True, default="", db_index=True)
-    item_name = models.CharField(max_length=255)
-    item_code = models.CharField(max_length=64, blank=True, default="")
-    result_value = models.CharField(max_length=255, blank=True, default="")
-    unit = models.CharField(max_length=64, blank=True, default="")
-    reference_range = models.CharField(max_length=255, blank=True, default="")
-    flag = models.CharField(max_length=16, blank=True, default="")
-    result_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    modality = models.CharField(max_length=32, blank=True, default="")
-    body_part = models.CharField(max_length=128, blank=True, default="")
-    diagnosis = models.TextField(blank=True, null=True)
-    extra = models.JSONField(null=True, blank=True)
-    sort_order = models.PositiveIntegerField(default=0)
-    is_deleted = models.BooleanField(default=False, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    business_type = models.CharField(max_length=32, choices=BusinessType.choices, db_index=True, db_comment="业务类型：health_exam_report（体检报告）或 examination_report（检查/检验报告）")
+    business_id = models.PositiveBigIntegerField(db_index=True, db_comment="关联报告主表 ID")
+    member = models.ForeignKey(Member, related_name="med_exam_details", on_delete=models.CASCADE, db_index=True, db_comment="所属家庭成员")
+    category = models.CharField(max_length=128, blank=True, default="", db_index=True, db_comment="指标大类，例如血常规、肝功能、血脂")
+    sub_category = models.CharField(max_length=128, blank=True, default="", db_index=True, db_comment="指标子类，例如白细胞、总胆红素")
+    item_name = models.CharField(max_length=255, db_comment="检查/检验项目名称")
+    item_code = models.CharField(max_length=64, blank=True, default="", db_comment="项目编码（LIS/HIS 标准码或机构内部码）")
+    result_value = models.CharField(max_length=255, blank=True, default="", db_comment="结果值（数值或文字描述）")
+    unit = models.CharField(max_length=64, blank=True, default="", db_comment="结果单位，例如 mmol/L、U/L")
+    reference_range = models.CharField(max_length=255, blank=True, default="", db_comment="参考范围，例如 3.9-6.1")
+    flag = models.CharField(max_length=16, blank=True, default="", db_comment="异常标记，例如 H（偏高）、L（偏低）、↑、↓")
+    result_at = models.DateTimeField(null=True, blank=True, db_index=True, db_comment="结果产生时间")
+    modality = models.CharField(max_length=32, blank=True, default="", db_comment="检查方式/模态，例如 CT、MRI、超声、实验室检验")
+    body_part = models.CharField(max_length=128, blank=True, default="", db_comment="检查部位，例如甲状腺、肝脏")
+    diagnosis = models.TextField(blank=True, null=True, db_comment="诊断或结论描述（影像/功能检查常用）")
+    extra = models.JSONField(null=True, blank=True, db_comment="扩展字段（OCR 原始片段、置信度等）")
+    sort_order = models.PositiveIntegerField(default=0, db_comment="同报告内明细排序序号")
+    is_deleted = models.BooleanField(default=False, db_index=True, db_comment="是否删除")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_comment="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, db_index=True, db_comment="更新时间")
 
     class Meta:
         db_table = "medical_med_exam_detail"
+        db_table_comment = "体检与临床检查共用的行级医技结果明细（指标行）。"
         ordering = ["sort_order", "-updated_at", "-id"]
         indexes = [
             models.Index(fields=["business_type", "business_id", "is_deleted"]),
