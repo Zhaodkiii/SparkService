@@ -27,6 +27,7 @@ from medical.models import (
     ModelChangeLog,
     Member,
     MemberMedicalProfile,
+    MemberMedicalKeyIndicatorRecord,
     MemberModuleSetting,
     MemberShareInvite,
     Prescription,
@@ -48,6 +49,7 @@ from medical.serializers import (
     MemberBindingUpdateSerializer,
     MemberSerializer,
     MemberMedicalProfileSerializer,
+    MemberMedicalKeyIndicatorRecordSerializer,
     MemberModuleSettingSerializer,
     PrescriptionSerializer,
     SurgerySerializer,
@@ -312,6 +314,56 @@ class MemberModuleSettingViewSet(WrappedModelViewSet):
         if module_code:
             queryset = queryset.filter(module_code=module_code)
         return queryset
+
+
+class MemberMedicalKeyIndicatorRecordViewSet(WrappedModelViewSet):
+    queryset = MemberMedicalKeyIndicatorRecord.objects.all()
+    serializer_class = MemberMedicalKeyIndicatorRecordSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        member_id = self.request.query_params.get("member_id")
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if member_id:
+            queryset = queryset.filter(member_id=member_id)
+        if date_from:
+            queryset = queryset.filter(recorded_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(recorded_at__date__lte=date_to)
+        return queryset.order_by("-recorded_at", "-updated_at", "-id")
+
+
+class MemberGuidanceStateAPI(APIView):
+    """医疗引导首页状态：返回成员、医疗画像、关键指标与模块开关摘要。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        member_id = request.query_params.get("member_id")
+        if not member_id:
+            return error_response(msg="member_id_required", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+        try:
+            binding = MemberPermissionGate.require_access(user=request.user, member_id=int(member_id))
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        except (TypeError, ValueError):
+            return error_response(msg="invalid_member_id", code=-1, status_code=status.HTTP_400_BAD_REQUEST)
+
+        member = binding.member
+        profile = MemberMedicalProfile.objects.filter(is_deleted=False, member_id=member.id).order_by("-updated_at", "-id").first()
+        key_record = MemberMedicalKeyIndicatorRecord.objects.filter(is_deleted=False, member_id=member.id).order_by("-recorded_at", "-updated_at", "-id").first()
+        module_setting = MemberModuleSetting.objects.filter(is_deleted=False, member_id=member.id, module_code=MemberModuleSetting.ModuleCode.MEDICAL).order_by("-updated_at", "-id").first()
+
+        payload = {
+            "member": serialize_member_list_item(member, binding),
+            "medical_profile": MemberMedicalProfileSerializer(profile, context={"request": request}).data if profile else None,
+            "latest_key_indicator_record": MemberMedicalKeyIndicatorRecordSerializer(key_record, context={"request": request}).data if key_record else None,
+            "latest_risk_assessment": None,
+            "latest_exam_plan": None,
+            "module_setting": MemberModuleSettingSerializer(module_setting, context={"request": request}).data if module_setting else None,
+        }
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class MemberBindingViewSet(viewsets.ViewSet):

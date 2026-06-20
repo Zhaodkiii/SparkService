@@ -17,6 +17,7 @@ from medical.models import (
     MedicalCase,
     Member,
     MemberMedicalProfile,
+    MemberMedicalKeyIndicatorRecord,
     MemberModuleSetting,
     Prescription,
     Surgery,
@@ -154,6 +155,112 @@ class MemberModuleSettingSerializer(serializers.ModelSerializer):
             if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
                 raise serializers.ValidationError(_("member does not belong to current user"))
         return value
+
+
+class MemberKeyIndicatorDetailWriteSerializer(serializers.Serializer):
+    category = serializers.CharField(required=False, allow_blank=True, default="")
+    sub_category = serializers.CharField(required=False, allow_blank=True, default="")
+    item_name = serializers.CharField()
+    item_code = serializers.CharField(required=False, allow_blank=True, default="")
+    result_value = serializers.CharField(required=False, allow_blank=True, default="")
+    unit = serializers.CharField(required=False, allow_blank=True, default="")
+    reference_range = serializers.CharField(required=False, allow_blank=True, default="")
+    flag = serializers.CharField(required=False, allow_blank=True, default="")
+    result_at = serializers.DateTimeField(required=False, allow_null=True)
+    modality = serializers.CharField(required=False, allow_blank=True, default="")
+    body_part = serializers.CharField(required=False, allow_blank=True, default="")
+    diagnosis = serializers.CharField(required=False, allow_blank=True, default="")
+    extra = serializers.DictField(required=False, default=dict)
+    sort_order = serializers.IntegerField(required=False, default=0)
+
+
+class MemberMedicalKeyIndicatorRecordSerializer(serializers.ModelSerializer):
+    details = MemberKeyIndicatorDetailWriteSerializer(many=True, required=False, write_only=True)
+    detail_rows = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = MemberMedicalKeyIndicatorRecord
+        fields = (
+            "id",
+            "user",
+            "member",
+            "source",
+            "scenario",
+            "recorded_at",
+            "qa_session_id",
+            "title",
+            "summary",
+            "extra",
+            "details",
+            "detail_rows",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "user", "created_at", "updated_at", "detail_rows")
+
+    def validate_member(self, value):
+        request = self.context.get("request")
+        if request and not request.user.is_staff:
+            if binding_service.get_active_binding(user=request.user, member_id=value.id) is None:
+                raise serializers.ValidationError(_("member does not belong to current user"))
+        return value
+
+    def get_detail_rows(self, instance):
+        rows = MedExamDetail.objects.filter(
+            business_type=MedExamDetail.BusinessType.KEY_INDICATOR,
+            business_id=instance.id,
+            is_deleted=False,
+        ).order_by("sort_order", "id")
+        return MedExamDetailSerializer(rows, many=True, context=self.context).data
+
+    def create(self, validated_data):
+        details = validated_data.pop("details", [])
+        instance = super().create(validated_data)
+        self._replace_details(instance, details)
+        return instance
+
+    def update(self, instance, validated_data):
+        details = validated_data.pop("details", None)
+        instance = super().update(instance, validated_data)
+        if details is not None:
+            self._replace_details(instance, details)
+        return instance
+
+    def _replace_details(self, instance, details):
+        existing = MedExamDetail.objects.filter(
+            business_type=MedExamDetail.BusinessType.KEY_INDICATOR,
+            business_id=instance.id,
+            is_deleted=False,
+        )
+        for row in existing:
+            row.is_deleted = True
+            row.save(update_fields=["is_deleted", "updated_at"])
+
+        payloads = []
+        for index, detail in enumerate(details):
+            payloads.append(
+                MedExamDetail(
+                    business_type=MedExamDetail.BusinessType.KEY_INDICATOR,
+                    business_id=instance.id,
+                    member=instance.member,
+                    category=detail.get("category", ""),
+                    sub_category=detail.get("sub_category", ""),
+                    item_name=detail["item_name"],
+                    item_code=detail.get("item_code", ""),
+                    result_value=detail.get("result_value", ""),
+                    unit=detail.get("unit", ""),
+                    reference_range=detail.get("reference_range", ""),
+                    flag=detail.get("flag", ""),
+                    result_at=detail.get("result_at") or instance.recorded_at,
+                    modality=detail.get("modality", ""),
+                    body_part=detail.get("body_part", ""),
+                    diagnosis=detail.get("diagnosis", ""),
+                    extra=detail.get("extra", {}),
+                    sort_order=detail.get("sort_order", index),
+                )
+            )
+        if payloads:
+            MedExamDetail.objects.bulk_create(payloads)
 
 
 def serialize_member_list_item(member: Member, binding: UserMemberBinding) -> dict:
@@ -461,7 +568,11 @@ class MedExamDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at")
 
     def validate_business_type(self, value):
-        allowed = {MedExamDetail.BusinessType.HEALTH_EXAM_REPORT, MedExamDetail.BusinessType.EXAMINATION_REPORT}
+        allowed = {
+            MedExamDetail.BusinessType.HEALTH_EXAM_REPORT,
+            MedExamDetail.BusinessType.EXAMINATION_REPORT,
+            MedExamDetail.BusinessType.KEY_INDICATOR,
+        }
         if value not in allowed:
             raise serializers.ValidationError(_("unsupported business_type"))
         return value

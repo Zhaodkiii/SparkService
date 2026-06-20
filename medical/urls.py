@@ -29,6 +29,8 @@ from medical.views import (
     MemberBindingPermissionUpdateView,
     MemberBindingRoleUpdateView,
     MemberBindingTransferOwnerView,
+    MemberGuidanceStateAPI,
+    MemberMedicalKeyIndicatorRecordViewSet,
     MemberMedicalProfileViewSet,
     MemberModuleSettingViewSet,
     MemberShareInviteAcceptView,
@@ -65,6 +67,7 @@ router.register("prescriptions", PrescriptionViewSet, basename="medical-prescrip
 router.register("medication-plans", MedicationPlanViewSet, basename="medical-medication-plans")
 router.register("medication-records", MedicationRecordViewSet, basename="medical-medication-records")
 router.register("member-medical-profiles", MemberMedicalProfileViewSet, basename="medical-member-medical-profiles")
+router.register("member-key-indicators", MemberMedicalKeyIndicatorRecordViewSet, basename="medical-member-key-indicators")
 router.register("member-module-settings", MemberModuleSettingViewSet, basename="medical-member-module-settings")
 router.register("resources", UnifiedMedicalResourceViewSet, basename="medical-unified-resources")
 
@@ -85,6 +88,7 @@ urlpatterns = [
     path("member-bindings/<int:pk>/remove/", MemberBindingRemoveView.as_view(), name="medical-member-binding-remove"),  # 移除他人绑定（管理员）
     path("member-bindings/<int:pk>/transfer-owner/", MemberBindingTransferOwnerView.as_view(), name="medical-member-binding-transfer-owner"),  # 转移成员 Owner
     path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),  # 成员医疗数据汇总（首页/列表快照）
+    path("member-guidance/", MemberGuidanceStateAPI.as_view(), name="medical-member-guidance"),
     path("medication-reminders/enabled-plans/", MedicationReminderEnabledPlansAPI.as_view(), name="medical-medication-reminder-enabled-plans"),
     path("medication-reminders/local-authorizations/<int:plan_id>/", MedicationReminderLocalAuthorizationAPI.as_view(), name="medical-medication-reminder-local-authorization"),
     path("members/<int:member_id>/notification-ownership/", MemberNotificationOwnershipAPI.as_view(), name="medical-member-notification-ownership"),

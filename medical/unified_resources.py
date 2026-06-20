@@ -36,6 +36,7 @@ MEDICAL_UNIFIED_ALLOWED_QUERY_PARAMS: dict[str, frozenset[str]] = {
     # medication-records scheduled_from: inclusive lower bound (scheduled_at >= scheduled_from)
     # medication-records scheduled_to: exclusive upper bound (scheduled_at < scheduled_to)
     "medication-records": frozenset({"member_id", "plan_id", "status", "scheduled_from", "scheduled_to"}),
+    "member-key-indicators": frozenset({"member_id", "date_from", "date_to"}),
 }
 
 
@@ -58,6 +59,7 @@ def _register_unified_resources() -> None:
         "prescriptions": medical_views.PrescriptionViewSet,
         "medication-plans": medical_views.MedicationPlanViewSet,
         "member-medical-profiles": medical_views.MemberMedicalProfileViewSet,
+        "member-key-indicators": medical_views.MemberMedicalKeyIndicatorRecordViewSet,
         "member-module-settings": medical_views.MemberModuleSettingViewSet,
         "medication-records": medical_views.MedicationRecordViewSet,
     }

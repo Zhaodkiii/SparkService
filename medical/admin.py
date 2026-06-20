@@ -12,6 +12,7 @@ from medical.models import (
     ModelChangeLog,
     Member,
     MemberMedicalProfile,
+    MemberMedicalKeyIndicatorRecord,
     MemberModuleSetting,
     UserMemberBinding,
     Prescription,
@@ -40,6 +41,13 @@ class MemberModuleSettingAdmin(admin.ModelAdmin):
     list_display = ("id", "member", "module_code", "is_enabled", "is_completed", "display_order", "updated_at")
     list_filter = ("module_code", "is_enabled", "is_completed", "is_deleted")
     search_fields = ("summary_text",)
+
+
+@admin.register(MemberMedicalKeyIndicatorRecord)
+class MemberMedicalKeyIndicatorRecordAdmin(admin.ModelAdmin):
+    list_display = ("id", "member", "source", "scenario", "recorded_at", "qa_session_id", "updated_at")
+    list_filter = ("source", "scenario", "is_deleted")
+    search_fields = ("title", "summary", "qa_session_id")
 
 
 @admin.register(UserMemberBinding)

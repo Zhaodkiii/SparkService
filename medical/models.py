@@ -131,6 +131,49 @@ class MemberModuleSetting(MedicalBaseModel):
         return f"module_setting:member={self.member_id}:{self.module_code}"
 
 
+class MemberMedicalKeyIndicatorRecord(MedicalBaseModel):
+    """成员关键健康指标记录主表。
+
+    承接医疗引导问答、随访和手动录入形成的一组关键指标，指标行明细复用 `MedExamDetail`。
+    """
+
+    class Source(models.TextChoices):
+        GUIDE_QA = "guide_qa", "guide_qa"
+        MANUAL = "manual", "manual"
+        AI_FOLLOW_UP = "ai_follow_up", "ai_follow_up"
+        REPORT_EXTRACTION = "report_extraction", "report_extraction"
+        DEVICE = "device", "device"
+
+    class Scenario(models.TextChoices):
+        MEDICAL_GUIDE = "medical_guide", "medical_guide"
+        FOLLOW_UP = "follow_up", "follow_up"
+        RISK_ASSESSMENT = "risk_assessment", "risk_assessment"
+        EXAM_PLAN = "exam_plan", "exam_plan"
+
+    member = models.ForeignKey(Member, related_name="key_indicator_records", on_delete=models.CASCADE, db_index=True, db_comment="所属成员")
+    source = models.CharField(max_length=32, choices=Source.choices, default=Source.MANUAL, db_index=True, db_comment="记录来源：问答引导、手动录入、AI随访、报告抽取、设备")
+    scenario = models.CharField(max_length=32, choices=Scenario.choices, default=Scenario.MEDICAL_GUIDE, db_index=True, db_comment="业务场景：医疗引导、随访、风险评估、体检计划")
+    recorded_at = models.DateTimeField(null=True, blank=True, db_index=True, db_comment="用户填写或测量时间")
+    qa_session_id = models.CharField(max_length=64, blank=True, default="", db_index=True, db_comment="问答流程会话 ID，用于回溯本次引导")
+    title = models.CharField(max_length=128, blank=True, default="", db_comment="记录标题，例如医疗引导关键指标")
+    summary = models.TextField(blank=True, default="", db_comment="记录摘要，例如血压偏高、尿酸偏高")
+    extra = models.JSONField(default=dict, blank=True, db_comment="扩展信息，例如原始问答、AI解释、设备来源")
+
+    class Meta:
+        db_table = "medical_member_key_indicator_record"
+        db_table_comment = "成员关键健康指标记录主表，一次问答/随访/手动录入可关联多条指标明细。"
+        ordering = ["-recorded_at", "-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "member", "recorded_at"]),
+            models.Index(fields=["member", "source", "recorded_at"]),
+            models.Index(fields=["member", "scenario", "recorded_at"]),
+            models.Index(fields=["qa_session_id"]),
+        ]
+
+    def __str__(self):
+        return f"key_indicator_record:member={self.member_id}:{self.recorded_at or self.updated_at}"
+
+
 class UserMemberBinding(models.Model):
     """用户与成员的多对多绑定：关系、角色与状态。"""
 
@@ -481,6 +524,7 @@ class MedExamDetail(models.Model):
     class BusinessType(models.TextChoices):
         HEALTH_EXAM_REPORT = "health_exam_report"
         EXAMINATION_REPORT = "examination_report"
+        KEY_INDICATOR = "key_indicator"
 
     business_type = models.CharField(max_length=32, choices=BusinessType.choices, db_index=True, db_comment="业务类型：health_exam_report（体检报告）或 examination_report（检查/检验报告）")
     business_id = models.PositiveBigIntegerField(db_index=True, db_comment="关联报告主表 ID")
