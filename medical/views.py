@@ -858,6 +858,52 @@ class SymptomViewSet(WrappedModelViewSet):
             queryset = queryset.filter(medical_case_id=medical_case_id)
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        symptom = serializer.instance
+        from medical.services.member_medical_profile_service import build_symptom_mutation_payload
+
+        payload = build_symptom_mutation_payload(
+            user=request.user,
+            member_id=symptom.member_id,
+            symptom=symptom,
+            deleted=False,
+        )
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        symptom = serializer.instance
+        from medical.services.member_medical_profile_service import build_symptom_mutation_payload
+
+        payload = build_symptom_mutation_payload(
+            user=request.user,
+            member_id=symptom.member_id,
+            symptom=symptom,
+            deleted=False,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        member_id = instance.member_id
+        self.perform_destroy(instance)
+        from medical.services.member_medical_profile_service import build_symptom_mutation_payload
+
+        payload = build_symptom_mutation_payload(
+            user=request.user,
+            member_id=member_id,
+            symptom=None,
+            deleted=True,
+        )
+        return success_response(payload, msg="deleted", code=0, status_code=status.HTTP_200_OK)
+
 
 class VisitViewSet(WrappedModelViewSet):
     queryset = Visit.objects.select_related("member", "medical_case").all()
@@ -1722,6 +1768,25 @@ class _WorkflowBaseAPIView(APIView):
             return trimmed
         return value
 
+    def _resolve_member(self, request, payload):
+        member_id = payload.get("member")
+        if not member_id:
+            return None, error_response(
+                msg={"member": [_("member is required")]},
+                code=-1,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            binding = MemberPermissionGate.require_write(user=request.user, member_id=member_id)
+        except PermissionError:
+            return None, error_response(
+                msg="permission_denied",
+                code=-1,
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        return binding.member, None
+
     def _resolve_member_and_case(self, request, payload, default_case_title: str):
         member_id = payload.get("member")
         if not member_id:
@@ -2145,13 +2210,29 @@ class SymptomWorkflowCreateView(_WorkflowBaseAPIView):
     def post(self, request):
         payload = request.data.copy()
         file_ids = payload.pop("file_ids", [])
-        member, medical_case, resolve_error = self._resolve_member_and_case(request, payload, default_case_title="症状记录")
+        member, resolve_error = self._resolve_member(request, payload)
         if resolve_error is not None:
             return resolve_error
 
+        medical_case = None
+        medical_case_id = payload.get("medical_case")
+        if medical_case_id not in (None, ""):
+            try:
+                medical_case = MedicalCase.objects.get(
+                    id=medical_case_id,
+                    is_deleted=False,
+                    member_id=member.id,
+                )
+            except MedicalCase.DoesNotExist:
+                return error_response(
+                    msg={"medical_case": [_("invalid medical_case")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
         symptom_payload = {
             "member": member.id,
-            "medical_case": medical_case.id,
+            "medical_case": medical_case.id if medical_case else None,
             "name": payload.get("name"),
             "code": payload.get("code", ""),
             "severity": payload.get("severity", ""),
@@ -2160,7 +2241,10 @@ class SymptomWorkflowCreateView(_WorkflowBaseAPIView):
             "duration_unit": payload.get("duration_unit", ""),
             "body_part": payload.get("body_part", ""),
             "notes": payload.get("notes", ""),
-            "extra": payload.get("extra", {}),
+            "extra": {
+                **(payload.get("extra") or {}),
+                "source": (payload.get("extra") or {}).get("source") or "manual",
+            },
         }
         serializer = SymptomSerializer(data=symptom_payload, context={"request": request})
         validation_error = self._validate_or_error(serializer)
@@ -2168,7 +2252,15 @@ class SymptomWorkflowCreateView(_WorkflowBaseAPIView):
             return validation_error
         obj = serializer.save(user=request.user)
         self._bind_files(request.user, "symptom", obj.id, file_ids)
-        return success_response(serializer.data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+        from medical.services.member_medical_profile_service import build_symptom_mutation_payload
+
+        response_payload = build_symptom_mutation_payload(
+            user=request.user,
+            member_id=member.id,
+            symptom=obj,
+            deleted=False,
+        )
+        return success_response(response_payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
 class VisitWorkflowCreateView(_WorkflowBaseAPIView):

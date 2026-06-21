@@ -347,7 +347,14 @@ class Symptom(MedicalBaseModel):
     """病例症状条目。支持结构化持续时间与解剖部位检索。"""
 
     member = models.ForeignKey(Member, related_name="symptoms", on_delete=models.CASCADE, db_index=True)
-    medical_case = models.ForeignKey(MedicalCase, related_name="symptoms", on_delete=models.CASCADE, db_index=True)
+    medical_case = models.ForeignKey(
+        MedicalCase,
+        related_name="symptoms",
+        on_delete=models.CASCADE,
+        db_index=True,
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=128)
     code = models.CharField(max_length=64, blank=True, default="")
     severity = models.CharField(max_length=32, blank=True, default="")
