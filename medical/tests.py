@@ -3,7 +3,16 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from file_manager.models import ManagedFile, ManagedFileBusinessRelation
-from medical.models import MedicalCase, MedicationPlan, MedicineBox, Member, Prescription, UserMemberBinding
+from medical.models import (
+    MedicalCase,
+    MedicationPlan,
+    MedicineBox,
+    Member,
+    MemberMedicalProfile,
+    MemberModuleSetting,
+    Prescription,
+    UserMemberBinding,
+)
 
 User = get_user_model()
 
@@ -173,6 +182,39 @@ class MemberCompleteDataAPITests(APITestCase):
         body = response.json()["data"]
         case_payload = next(item for item in body["medical_cases"] if item["id"] == medical_case.id)
         self.assertEqual(case_payload["medications"], ["普拉洛芬滴眼液"])
+
+    def test_complete_data_includes_member_medical_profile_and_module_settings(self):
+        member = Member.objects.create(user=self.user, name="汇总成员", gender="female")
+        UserMemberBinding.objects.create(user=self.user, member=member, relationship="self")
+        profile = MemberMedicalProfile.objects.create(
+            user=self.user,
+            member=member,
+            chronic_conditions=["高血压"],
+            extra={"height_cm": "160", "weight_kg": "60", "sedentary_level": "medium"},
+        )
+        MemberModuleSetting.objects.create(
+            user=self.user,
+            member=member,
+            module_code=MemberModuleSetting.ModuleCode.MEDICAL,
+            is_enabled=True,
+            is_completed=False,
+            display_order=10,
+        )
+
+        response = self.client.get(f"/api/v1/medical/members/{member.id}/complete-data/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = response.json()["data"]
+        self.assertIn("member_medical_profile", body)
+        self.assertIn("member_module_settings", body)
+        self.assertEqual(body["member_medical_profile"]["id"], profile.id)
+        self.assertIn("guidance_sections", body["member_medical_profile"])
+        self.assertEqual(len(body["member_medical_profile"]["guidance_sections"]), 5)
+        self.assertEqual(body["member_module_settings"][0]["module_code"], "medical")
+        self.assertNotIn("medical_guidance", body)
+        self.assertIn("nutrition_goal_state", body)
+        self.assertEqual(body["nutrition_goal_state"]["member_id"], member.id)
+        self.assertIn("defaults", body["nutrition_goal_state"])
 
     def test_combined_create_does_not_accept_legacy_prescription_alias(self):
         payload = {

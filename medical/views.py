@@ -355,9 +355,34 @@ class MemberGuidanceStateAPI(APIView):
         key_record = MemberMedicalKeyIndicatorRecord.objects.filter(is_deleted=False, member_id=member.id).order_by("-recorded_at", "-updated_at", "-id").first()
         module_setting = MemberModuleSetting.objects.filter(is_deleted=False, member_id=member.id, module_code=MemberModuleSetting.ModuleCode.MEDICAL).order_by("-updated_at", "-id").first()
 
+        from medical.services.member_medical_profile_service import (
+            build_member_medical_guidance_projection,
+            enrich_member_medical_profile_payload,
+        )
+
+        symptoms = Symptom.objects.filter(is_deleted=False, member_id=member.id).order_by("-updated_at", "-created_at", "-id")
+        medication_plans = MedicationPlan.objects.filter(is_deleted=False, member_id=member.id).order_by("-start_date", "-updated_at", "-id")
+        surgeries = Surgery.objects.filter(is_deleted=False, member_id=member.id).order_by("-performed_at", "-updated_at", "-id")
+        health_exam_reports = HealthExamReport.objects.filter(is_deleted=False, member_id=member.id).order_by("-exam_date", "-updated_at")
+        examination_reports = ExaminationReport.objects.filter(is_deleted=False, member_id=member.id).order_by("-performed_at", "-updated_at")
+
+        guidance_projection = build_member_medical_guidance_projection(
+            member=member,
+            profile=profile,
+            symptoms=symptoms,
+            medication_plans=medication_plans,
+            surgeries=surgeries,
+            health_exam_reports=health_exam_reports,
+            examination_reports=examination_reports,
+        )
+        profile_payload = None
+        if profile is not None:
+            base_profile = MemberMedicalProfileSerializer(profile, context={"request": request}).data
+            profile_payload = enrich_member_medical_profile_payload(base_profile, guidance_projection)
+
         payload = {
             "member": serialize_member_list_item(member, binding),
-            "medical_profile": MemberMedicalProfileSerializer(profile, context={"request": request}).data if profile else None,
+            "medical_profile": profile_payload,
             "latest_key_indicator_record": MemberMedicalKeyIndicatorRecordSerializer(key_record, context={"request": request}).data if key_record else None,
             "latest_risk_assessment": None,
             "latest_exam_plan": None,
@@ -1622,6 +1647,20 @@ class MemberCompleteDataAPI(APIView):
             "-completed_at", "-updated_at", "-id"
         )
 
+        member_medical_profile = (
+            MemberMedicalProfile.objects.filter(is_deleted=False, member_id=member_id)
+            .order_by("-updated_at", "-id")
+            .first()
+        )
+        member_module_settings = MemberModuleSetting.objects.filter(
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("display_order", "id")
+
+        from nutrition.services.goal_service import build_member_nutrition_goal_state_payload, get_active_goal
+
+        nutrition_goal = get_active_goal(request.user, member_id)
+
         etag = self._build_complete_etag(
             request=request,
             member=member,
@@ -1636,6 +1675,9 @@ class MemberCompleteDataAPI(APIView):
             visits=visits,
             surgeries=surgeries,
             follow_ups=follow_ups,
+            member_medical_profile=member_medical_profile,
+            member_module_settings=member_module_settings,
+            nutrition_goal=nutrition_goal,
         )
         if self._is_not_modified(request, etag):
             response = success_response(None, msg="not_modified", code=0, status_code=status.HTTP_304_NOT_MODIFIED)
@@ -1723,12 +1765,47 @@ class MemberCompleteDataAPI(APIView):
         surgeries_payload = SurgerySerializer(surgeries, many=True).data
         follow_ups_payload = FollowUpSerializer(follow_ups, many=True).data
 
+        from medical.services.member_medical_profile_service import (
+            build_member_medical_guidance_projection,
+            enrich_member_medical_profile_payload,
+        )
+
+        guidance_projection = build_member_medical_guidance_projection(
+            member=member,
+            profile=member_medical_profile,
+            symptoms=symptoms,
+            medication_plans=medication_plans,
+            surgeries=surgeries,
+            health_exam_reports=health_exam_reports,
+            examination_reports=examination_reports,
+        )
+        profile_payload = None
+        if member_medical_profile is not None:
+            base_profile = MemberMedicalProfileSerializer(
+                member_medical_profile,
+                context={"request": request},
+            ).data
+            profile_payload = enrich_member_medical_profile_payload(base_profile, guidance_projection)
+        module_settings_payload = MemberModuleSettingSerializer(
+            member_module_settings,
+            many=True,
+            context={"request": request},
+        ).data
+
+        nutrition_goal_state_payload = build_member_nutrition_goal_state_payload(
+            user=request.user,
+            member_id=member_id,
+        )
+
         member_data = MemberSerializer(member, context={"request": request}).data
         member_data["relationship"] = binding.relationship
 
         payload = {
             "member_id": member_id,
             "member": member_data,
+            "member_medical_profile": profile_payload,
+            "member_module_settings": module_settings_payload,
+            "nutrition_goal_state": nutrition_goal_state_payload,
             "medical_cases": medical_cases_payload,
             "health_exam_reports": health_payload,
             "examination_reports": exam_payload,
@@ -1769,6 +1846,9 @@ class MemberCompleteDataAPI(APIView):
         visits,
         surgeries,
         follow_ups,
+        member_medical_profile=None,
+        member_module_settings=None,
+        nutrition_goal=None,
     ):
         case_ids = [str(pk) for pk in medical_cases.values_list("id", flat=True)]
         hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
@@ -1793,6 +1873,14 @@ class MemberCompleteDataAPI(APIView):
 
         attachments_fingerprint = relation_fingerprint(request.user, relation_specs)
 
+        profile_fingerprint = None
+        if member_medical_profile is not None:
+            profile_fingerprint = (member_medical_profile.id, member_medical_profile.updated_at)
+        module_settings_fingerprint = list(member_module_settings.values_list("id", "updated_at")) if member_module_settings is not None else []
+        nutrition_goal_fingerprint = None
+        if nutrition_goal is not None:
+            nutrition_goal_fingerprint = (nutrition_goal.id, nutrition_goal.updated_at)
+
         payload = {
             "path": request.path,
             "user_id": request.user.id,
@@ -1809,6 +1897,9 @@ class MemberCompleteDataAPI(APIView):
                 "visits": list(visits.values_list("id", "updated_at")),
                 "surgeries": list(surgeries.values_list("id", "updated_at")),
                 "follow_ups": list(follow_ups.values_list("id", "updated_at")),
+                "member_medical_profile": profile_fingerprint,
+                "member_module_settings": module_settings_fingerprint,
+                "nutrition_goal_state": nutrition_goal_fingerprint,
                 "attachments": attachments_fingerprint,
             },
         }

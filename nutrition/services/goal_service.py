@@ -70,6 +70,18 @@ def resolve_meal_distribution(user: User, member_id: int) -> dict[str, Decimal]:
     return distribution
 
 
+def build_member_nutrition_goal_state_payload(*, user: User, member_id: int) -> dict[str, Any]:
+    """构建与 GET /api/v1/nutrition/goals/ 一致的目标状态，供 complete-data 聚合返回。"""
+    from nutrition.serializers import NutritionGoalSerializer
+
+    goal = get_active_goal(user, member_id)
+    return {
+        "member_id": member_id,
+        "goal": NutritionGoalSerializer(goal).data if goal else None,
+        "defaults": resolve_goal_payload(user, member_id),
+    }
+
+
 def resolve_goal_payload(user: User, member_id: int) -> dict[str, Any]:
     daily = resolve_daily_goal(user, member_id)
     goal = get_active_goal(user, member_id)
