@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth.models import User
 
-from medical.models import MemberMedicalProfile, Symptom
+from medical.models import MedicationPlan, MemberMedicalProfile, Symptom
 
 
 def extract_symptom_focus_names(symptoms) -> list[str]:
@@ -77,6 +77,124 @@ def build_symptom_mutation_payload(
     payload = {
         "deleted": deleted,
         "symptom": SymptomSerializer(symptom).data if symptom is not None else None,
+        "summary": summary,
+        "member_profile": MemberMedicalProfileSerializer(profile).data if profile is not None else None,
+    }
+    return payload
+
+
+ACTIVE_MEDICATION_PLAN_STATUSES = ("active", "paused")
+
+
+def _medication_plan_dose_summary(plan: MedicationPlan) -> str:
+    dose = (plan.dose_per_time or "").strip()
+    if dose:
+        return dose
+    if plan.dose_value is not None and (plan.dose_unit or "").strip():
+        normalized = str(plan.dose_value).rstrip("0").rstrip(".")
+        return f"{normalized}{plan.dose_unit.strip()}"
+    return ""
+
+
+def build_medication_plan_summary(plan: MedicationPlan) -> str:
+    parts: list[str] = []
+    dose = _medication_plan_dose_summary(plan)
+    if dose:
+        parts.append(dose)
+    frequency = (plan.frequency_text or "").strip()
+    if frequency:
+        parts.append(frequency)
+    if plan.status == MedicationPlan.Status.PAUSED:
+        parts.append("已暂停")
+    elif plan.reminder_enabled and isinstance(plan.reminder_times, list):
+        times = [str(item.get("time", "")).strip() for item in plan.reminder_times if isinstance(item, dict)]
+        times = [time for time in times if time]
+        if times:
+            parts.append(f"{times[0]}提醒")
+    return " · ".join(parts)
+
+
+def medication_plan_to_focus_item(plan: MedicationPlan) -> dict:
+    return {
+        "drug_name": (plan.drug_name or "").strip(),
+        "summary": build_medication_plan_summary(plan),
+        "status": plan.status,
+        "reminder_enabled": bool(plan.reminder_enabled),
+        "source_plan_id": plan.id,
+    }
+
+
+def build_medication_focus_summary(focus_items: list[dict]) -> str:
+    if not focus_items:
+        return "暂无长期用药"
+    lines: list[str] = []
+    for item in focus_items:
+        drug_name = (item.get("drug_name") or "").strip()
+        if not drug_name:
+            continue
+        summary = (item.get("summary") or "").strip()
+        lines.append(f"{drug_name} · {summary}" if summary else drug_name)
+    return " / ".join(lines) if lines else "暂无长期用药"
+
+
+def recompute_medication_focus(*, user: User, member_id: int) -> tuple[MemberMedicalProfile | None, list[dict], str]:
+    plans = list(
+        MedicationPlan.objects.filter(
+            member_id=member_id,
+            is_deleted=False,
+            status__in=ACTIVE_MEDICATION_PLAN_STATUSES,
+        )
+    )
+    active_plans = sorted(
+        plans,
+        key=lambda plan: (
+            0 if plan.status == MedicationPlan.Status.ACTIVE else 1,
+            0 if plan.reminder_enabled else 1,
+            -(plan.start_date.toordinal() if plan.start_date else 0),
+            -(plan.updated_at.timestamp() if plan.updated_at else 0),
+            -plan.id,
+        ),
+    )
+
+    focus_items = [medication_plan_to_focus_item(plan) for plan in active_plans if (plan.drug_name or "").strip()]
+    summary = build_medication_focus_summary(focus_items)
+
+    profile = (
+        MemberMedicalProfile.objects.filter(user=user, member_id=member_id, is_deleted=False)
+        .order_by("-updated_at", "-id")
+        .first()
+    )
+
+    if profile is None:
+        if not focus_items:
+            return None, focus_items, summary
+        profile = MemberMedicalProfile.objects.create(
+            user=user,
+            member_id=member_id,
+            medication_focus=focus_items,
+        )
+        return profile, focus_items, summary
+
+    if profile.medication_focus != focus_items:
+        profile.medication_focus = focus_items
+        profile.save(update_fields=["medication_focus", "updated_at"])
+
+    return profile, focus_items, summary
+
+
+def build_medication_mutation_payload(
+    *,
+    user: User,
+    member_id: int,
+    medication_plan=None,
+    deleted: bool = False,
+) -> dict:
+    profile, _focus_items, summary = recompute_medication_focus(user=user, member_id=member_id)
+    from medical.serializers import MemberMedicalProfileSerializer, MedicationPlanSerializer
+
+    payload = {
+        "deleted": deleted,
+        "medication_plan": MedicationPlanSerializer(medication_plan).data if medication_plan is not None else None,
         "summary": summary,
         "member_profile": MemberMedicalProfileSerializer(profile).data if profile is not None else None,
     }

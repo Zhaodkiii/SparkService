@@ -1236,6 +1236,52 @@ class MedicationPlanViewSet(WrappedModelViewSet):
         }
         return build_etag(payload)
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        plan = serializer.instance
+        from medical.services.member_medical_profile_service import build_medication_mutation_payload
+
+        payload = build_medication_mutation_payload(
+            user=request.user,
+            member_id=plan.member_id,
+            medication_plan=plan,
+            deleted=False,
+        )
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        plan = serializer.instance
+        from medical.services.member_medical_profile_service import build_medication_mutation_payload
+
+        payload = build_medication_mutation_payload(
+            user=request.user,
+            member_id=plan.member_id,
+            medication_plan=plan,
+            deleted=False,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        member_id = instance.member_id
+        self.perform_destroy(instance)
+        from medical.services.member_medical_profile_service import build_medication_mutation_payload
+
+        payload = build_medication_mutation_payload(
+            user=request.user,
+            member_id=member_id,
+            medication_plan=None,
+            deleted=True,
+        )
+        return success_response(payload, msg="deleted", code=0, status_code=status.HTTP_200_OK)
+
 
 class MedicationRecordViewSet(WrappedModelViewSet):
     queryset = MedicationRecord.objects.select_related("member", "plan", "plan__medicine_box").all()

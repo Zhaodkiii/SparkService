@@ -79,8 +79,11 @@ class MemberMedicalProfile(MedicalBaseModel):
 
     member = models.ForeignKey(Member, related_name="medical_profiles", on_delete=models.CASCADE, db_index=True)
     chronic_conditions = models.JSONField(default=list, blank=True, db_comment="慢病档案标签列表，例如糖尿病、高血压、高血脂、痛风、脂肪肝、肾病")
-    long_term_medications = models.JSONField(default=list, blank=True, db_comment="长期用药名称或简称列表")
-    medication_notes = models.TextField(blank=True, default="", db_comment="用药提醒或用药说明补充")
+    medication_focus = models.JSONField(
+        default=list,
+        blank=True,
+        db_comment="成员长期用药摘要投影，由有效 MedicationPlan 服务端重算",
+    )
     exam_focus = models.JSONField(default=list, blank=True, db_comment="体检关注指标列表，例如血糖、血脂、尿酸、肝肾功能")
     symptom_follow_up_focus = models.JSONField(default=list, blank=True, db_comment="症状与随访关注项列表")
     notes = models.TextField(blank=True, default="", db_comment="医疗模块补充说明")

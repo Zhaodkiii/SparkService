@@ -33,7 +33,7 @@ class MemberAdmin(admin.ModelAdmin):
 class MemberMedicalProfileAdmin(admin.ModelAdmin):
     list_display = ("id", "member", "is_deleted", "updated_at")
     list_filter = ("is_deleted",)
-    search_fields = ("medication_notes", "notes")
+    search_fields = ("notes",)
 
 
 @admin.register(MemberModuleSetting)

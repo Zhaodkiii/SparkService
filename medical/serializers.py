@@ -110,8 +110,7 @@ class MemberMedicalProfileSerializer(serializers.ModelSerializer):
             "user",
             "member",
             "chronic_conditions",
-            "long_term_medications",
-            "medication_notes",
+            "medication_focus",
             "exam_focus",
             "symptom_follow_up_focus",
             "notes",
@@ -119,7 +118,7 @@ class MemberMedicalProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "created_at", "updated_at", "medication_focus", "symptom_follow_up_focus")
 
     def validate_member(self, value):
         request = self.context.get("request")
