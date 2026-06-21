@@ -75,14 +75,47 @@ class Member(MedicalBaseModel):
 
 
 class MemberMedicalProfile(MedicalBaseModel):
-    """成员医疗维护档案：承载慢病、用药、体检关注项与症状随访摘要。"""
+    """成员医疗维护档案：承载慢病、过敏、家族病史、生活方式、用药、体检关注项与症状随访摘要。"""
 
     member = models.ForeignKey(Member, related_name="medical_profiles", on_delete=models.CASCADE, db_index=True)
     chronic_conditions = models.JSONField(default=list, blank=True, db_comment="慢病档案标签列表，例如糖尿病、高血压、高血脂、痛风、脂肪肝、肾病")
+    allergies = models.JSONField(default=list, blank=True, db_comment="过敏源标签列表，例如青霉素、海鲜、花粉")
+    allergy_details = models.JSONField(
+        default=dict,
+        blank=True,
+        db_comment="过敏明细，键为过敏源名称，值含 category/severity/reactions/notes",
+    )
+    allergy_history = models.TextField(blank=True, default="", db_comment="过敏史补充说明")
+    family_history = models.JSONField(
+        default=list,
+        blank=True,
+        db_comment="家族病史记录列表，每项含 disease/relative/category/diagnosed_age/notes",
+    )
+    smoking_profile = models.JSONField(
+        default=dict,
+        blank=True,
+        db_comment="吸烟档案：status/count/history_duration/quit_duration",
+    )
+    drinking_profile = models.JSONField(
+        default=dict,
+        blank=True,
+        db_comment="饮酒档案：status/count/history_duration/quit_duration/types",
+    )
+    exercise_profile = models.JSONField(
+        default=dict,
+        blank=True,
+        db_comment="运动档案：frequency/intensity/types/duration_minutes",
+    )
+    sleep_hours = models.FloatField(null=True, blank=True, db_comment="平均睡眠时长（小时）")
     medication_focus = models.JSONField(
         default=list,
         blank=True,
         db_comment="成员长期用药摘要投影，由有效 MedicationPlan 服务端重算",
+    )
+    surgery_focus = models.JSONField(
+        default=list,
+        blank=True,
+        db_comment="成员手术史摘要投影，由有效 Surgery 服务端重算",
     )
     exam_focus = models.JSONField(default=list, blank=True, db_comment="体检关注指标列表，例如血糖、血脂、尿酸、肝肾功能")
     symptom_follow_up_focus = models.JSONField(default=list, blank=True, db_comment="症状与随访关注项列表")
@@ -404,7 +437,14 @@ class Surgery(MedicalBaseModel):
     """手术/操作记录。包含质控字段与外部系统幂等标识。"""
 
     member = models.ForeignKey(Member, related_name="surgeries", on_delete=models.CASCADE, db_index=True)
-    medical_case = models.ForeignKey(MedicalCase, related_name="surgeries", on_delete=models.CASCADE, db_index=True)
+    medical_case = models.ForeignKey(
+        MedicalCase,
+        related_name="surgeries",
+        on_delete=models.CASCADE,
+        db_index=True,
+        null=True,
+        blank=True,
+    )
     procedure_name = models.CharField(max_length=255)
     procedure_code = models.CharField(max_length=64, blank=True, default="")
     site = models.CharField(max_length=128, blank=True, default="")

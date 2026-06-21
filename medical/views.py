@@ -934,6 +934,52 @@ class SurgeryViewSet(WrappedModelViewSet):
             queryset = queryset.filter(medical_case_id=medical_case_id)
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        surgery = serializer.instance
+        from medical.services.member_medical_profile_service import build_surgery_mutation_payload
+
+        payload = build_surgery_mutation_payload(
+            user=request.user,
+            member_id=surgery.member_id,
+            surgery=surgery,
+            deleted=False,
+        )
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        surgery = serializer.instance
+        from medical.services.member_medical_profile_service import build_surgery_mutation_payload
+
+        payload = build_surgery_mutation_payload(
+            user=request.user,
+            member_id=surgery.member_id,
+            surgery=surgery,
+            deleted=False,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        member_id = instance.member_id
+        self.perform_destroy(instance)
+        from medical.services.member_medical_profile_service import build_surgery_mutation_payload
+
+        payload = build_surgery_mutation_payload(
+            user=request.user,
+            member_id=member_id,
+            surgery=None,
+            deleted=True,
+        )
+        return success_response(payload, msg="deleted", code=0, status_code=status.HTTP_200_OK)
+
 
 class FollowUpViewSet(WrappedModelViewSet):
     queryset = FollowUp.objects.select_related("member", "medical_case").all()
@@ -2343,23 +2389,48 @@ class SurgeryWorkflowCreateView(_WorkflowBaseAPIView):
     def post(self, request):
         payload = request.data.copy()
         file_ids = payload.pop("file_ids", [])
-        member, medical_case, resolve_error = self._resolve_member_and_case(request, payload, default_case_title="手术记录")
+        member, resolve_error = self._resolve_member(request, payload)
         if resolve_error is not None:
             return resolve_error
 
+        medical_case = None
+        medical_case_id = payload.get("medical_case")
+        if medical_case_id not in (None, ""):
+            try:
+                medical_case = MedicalCase.objects.get(
+                    id=medical_case_id,
+                    is_deleted=False,
+                    member_id=member.id,
+                )
+            except MedicalCase.DoesNotExist:
+                return error_response(
+                    msg={"medical_case": [_("invalid medical_case")]},
+                    code=-1,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+        performed_at = self._normalize_nullable_datetime(payload.get("performed_at"))
+        extra = dict(payload.get("extra") or {})
+        if performed_at and isinstance(performed_at, str) and not performed_at[:1].isdigit():
+            extra.setdefault("performed_at_text", performed_at)
+            performed_at = None
+
         surgery_payload = {
             "member": member.id,
-            "medical_case": medical_case.id,
+            "medical_case": medical_case.id if medical_case else None,
             "procedure_name": payload.get("procedure_name"),
             "procedure_code": payload.get("procedure_code", ""),
             "site": payload.get("site", ""),
-            "performed_at": self._normalize_nullable_datetime(payload.get("performed_at")),
+            "performed_at": performed_at,
             "surgeon": payload.get("surgeon", ""),
             "anesthesia_type": payload.get("anesthesia_type", ""),
             "incision_level": payload.get("incision_level", ""),
             "asa_class": payload.get("asa_class", ""),
             "notes": payload.get("notes", ""),
-            "extra": payload.get("extra", {}),
+            "extra": {
+                **extra,
+                "source": extra.get("source") or "manual",
+            },
         }
         serializer = SurgerySerializer(data=surgery_payload, context={"request": request})
         validation_error = self._validate_or_error(serializer)
@@ -2367,7 +2438,15 @@ class SurgeryWorkflowCreateView(_WorkflowBaseAPIView):
             return validation_error
         obj = serializer.save(user=request.user)
         self._bind_files(request.user, "surgery", obj.id, file_ids)
-        return success_response(serializer.data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+        from medical.services.member_medical_profile_service import build_surgery_mutation_payload
+
+        response_payload = build_surgery_mutation_payload(
+            user=request.user,
+            member_id=member.id,
+            surgery=obj,
+            deleted=False,
+        )
+        return success_response(response_payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
 class FollowUpWorkflowCreateView(_WorkflowBaseAPIView):

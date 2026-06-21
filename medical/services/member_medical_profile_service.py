@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth.models import User
 
-from medical.models import MedicationPlan, MemberMedicalProfile, Symptom
+from medical.models import MedicationPlan, MemberMedicalProfile, Surgery, Symptom
 
 
 def extract_symptom_focus_names(symptoms) -> list[str]:
@@ -195,6 +195,112 @@ def build_medication_mutation_payload(
     payload = {
         "deleted": deleted,
         "medication_plan": MedicationPlanSerializer(medication_plan).data if medication_plan is not None else None,
+        "summary": summary,
+        "member_profile": MemberMedicalProfileSerializer(profile).data if profile is not None else None,
+    }
+    return payload
+
+
+def _surgery_time_text(surgery: Surgery) -> str:
+    if surgery.performed_at:
+        return f"{surgery.performed_at.year}年{surgery.performed_at.month}月"
+    extra = surgery.extra or {}
+    for key in ("performed_at_text", "surgery_time"):
+        value = (extra.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def build_surgery_summary_line(surgery: Surgery) -> str:
+    parts: list[str] = []
+    time_text = _surgery_time_text(surgery)
+    if time_text:
+        parts.append(time_text)
+    site = (surgery.site or "").strip()
+    if site:
+        parts.append(site)
+    extra = surgery.extra or {}
+    hospital = (extra.get("hospital_name") or "").strip()
+    if hospital:
+        parts.append(hospital)
+    recovery = (extra.get("recovery_status") or "").strip()
+    if recovery:
+        parts.append(recovery)
+    return " · ".join(parts)
+
+
+def surgery_to_focus_item(surgery: Surgery) -> dict:
+    performed_at = surgery.performed_at.isoformat() if surgery.performed_at else None
+    return {
+        "procedure_name": (surgery.procedure_name or "").strip(),
+        "summary": build_surgery_summary_line(surgery),
+        "performed_at": performed_at,
+        "site": (surgery.site or "").strip(),
+        "source_surgery_id": surgery.id,
+    }
+
+
+def build_surgery_focus_summary(focus_items: list[dict]) -> str:
+    if not focus_items:
+        return "无手术史"
+    lines: list[str] = []
+    for item in focus_items:
+        name = (item.get("procedure_name") or "").strip()
+        if not name:
+            continue
+        summary = (item.get("summary") or "").strip()
+        lines.append(f"{name} · {summary}" if summary else name)
+    return " / ".join(lines) if lines else "无手术史"
+
+
+def recompute_surgery_focus(*, user: User, member_id: int) -> tuple[MemberMedicalProfile | None, list[dict], str]:
+    surgeries = list(
+        Surgery.objects.filter(member_id=member_id, is_deleted=False).order_by(
+            "-performed_at",
+            "-updated_at",
+            "-id",
+        )
+    )
+    focus_items = [surgery_to_focus_item(row) for row in surgeries if (row.procedure_name or "").strip()]
+    summary = build_surgery_focus_summary(focus_items)
+
+    profile = (
+        MemberMedicalProfile.objects.filter(user=user, member_id=member_id, is_deleted=False)
+        .order_by("-updated_at", "-id")
+        .first()
+    )
+
+    if profile is None:
+        if not focus_items:
+            return None, focus_items, summary
+        profile = MemberMedicalProfile.objects.create(
+            user=user,
+            member_id=member_id,
+            surgery_focus=focus_items,
+        )
+        return profile, focus_items, summary
+
+    if profile.surgery_focus != focus_items:
+        profile.surgery_focus = focus_items
+        profile.save(update_fields=["surgery_focus", "updated_at"])
+
+    return profile, focus_items, summary
+
+
+def build_surgery_mutation_payload(
+    *,
+    user: User,
+    member_id: int,
+    surgery=None,
+    deleted: bool = False,
+) -> dict:
+    profile, _focus_items, summary = recompute_surgery_focus(user=user, member_id=member_id)
+    from medical.serializers import MemberMedicalProfileSerializer, SurgerySerializer
+
+    payload = {
+        "deleted": deleted,
+        "surgery": SurgerySerializer(surgery).data if surgery is not None else None,
         "summary": summary,
         "member_profile": MemberMedicalProfileSerializer(profile).data if profile is not None else None,
     }
