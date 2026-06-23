@@ -1657,6 +1657,23 @@ class MemberCompleteDataAPI(APIView):
             member_id=member_id,
         ).order_by("display_order", "id")
 
+        from medical.models import MemberMedicalExamPlan, MemberMedicalKeyIndicatorRecord
+        from task_system.models import Task
+
+        exam_plans = MemberMedicalExamPlan.objects.filter(
+            is_deleted=False,
+            member_id=member_id,
+        ).order_by("-updated_at", "-id")
+        exam_plan_key_indicators = MemberMedicalKeyIndicatorRecord.objects.filter(
+            is_deleted=False,
+            member_id=member_id,
+            scenario=MemberMedicalKeyIndicatorRecord.Scenario.EXAM_PLAN,
+        ).order_by("-updated_at", "-id")
+        exam_follow_up_tasks = Task.objects.filter(
+            member_id=member_id,
+            business_type="medical_exam_follow_up",
+        ).order_by("-updated_at", "-id")
+
         from nutrition.services.goal_service import build_member_nutrition_goal_state_payload, get_active_goal
 
         nutrition_goal = get_active_goal(request.user, member_id)
@@ -1678,6 +1695,9 @@ class MemberCompleteDataAPI(APIView):
             member_medical_profile=member_medical_profile,
             member_module_settings=member_module_settings,
             nutrition_goal=nutrition_goal,
+            exam_plans=exam_plans,
+            exam_plan_key_indicators=exam_plan_key_indicators,
+            exam_follow_up_tasks=exam_follow_up_tasks,
         )
         if self._is_not_modified(request, etag):
             response = success_response(None, msg="not_modified", code=0, status_code=status.HTTP_304_NOT_MODIFIED)
@@ -1849,6 +1869,9 @@ class MemberCompleteDataAPI(APIView):
         member_medical_profile=None,
         member_module_settings=None,
         nutrition_goal=None,
+        exam_plans=None,
+        exam_plan_key_indicators=None,
+        exam_follow_up_tasks=None,
     ):
         case_ids = [str(pk) for pk in medical_cases.values_list("id", flat=True)]
         hex_ids = [str(pk) for pk in health_exam_reports.values_list("id", flat=True)]
@@ -1901,6 +1924,13 @@ class MemberCompleteDataAPI(APIView):
                 "member_module_settings": module_settings_fingerprint,
                 "nutrition_goal_state": nutrition_goal_fingerprint,
                 "attachments": attachments_fingerprint,
+                "exam_plans": list(exam_plans.values_list("id", "updated_at")) if exam_plans is not None else [],
+                "exam_plan_key_indicators": list(exam_plan_key_indicators.values_list("id", "updated_at"))
+                if exam_plan_key_indicators is not None
+                else [],
+                "exam_follow_up_tasks": list(exam_follow_up_tasks.values_list("id", "updated_at"))
+                if exam_follow_up_tasks is not None
+                else [],
             },
         }
         return build_etag(payload)

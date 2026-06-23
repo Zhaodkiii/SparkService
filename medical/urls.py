@@ -1,6 +1,12 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from medical.exam_archive_views import (
+    MemberExamArchiveAIPlanAPI,
+    MemberExamArchiveConfirmedAbnormalItemsAPI,
+    MemberExamArchiveEvidenceAPI,
+    MemberExamArchivePreviewAbnormalItemsAPI,
+)
 from medical.unified_resources import UnifiedMedicalResourceViewSet
 from medical.views import (
     CombinedMedicalCreateAPIView,
@@ -88,6 +94,26 @@ urlpatterns = [
     path("member-bindings/<int:pk>/remove/", MemberBindingRemoveView.as_view(), name="medical-member-binding-remove"),  # 移除他人绑定（管理员）
     path("member-bindings/<int:pk>/transfer-owner/", MemberBindingTransferOwnerView.as_view(), name="medical-member-binding-transfer-owner"),  # 转移成员 Owner
     path("members/<int:member_id>/complete-data/", MemberCompleteDataAPI.as_view(), name="medical-member-complete-data"),  # 成员医疗数据汇总（首页/列表快照）
+    path(
+        "members/<int:member_id>/exam-archive/preview-abnormal-items/",
+        MemberExamArchivePreviewAbnormalItemsAPI.as_view(),
+        name="medical-exam-archive-preview-abnormal-items",
+    ),
+    path(
+        "members/<int:member_id>/exam-archive/confirmed-abnormal-items/",
+        MemberExamArchiveConfirmedAbnormalItemsAPI.as_view(),
+        name="medical-exam-archive-confirmed-abnormal-items",
+    ),
+    path(
+        "members/<int:member_id>/exam-archive/evidence/",
+        MemberExamArchiveEvidenceAPI.as_view(),
+        name="medical-exam-archive-evidence",
+    ),
+    path(
+        "members/<int:member_id>/exam-archive/ai-plan/",
+        MemberExamArchiveAIPlanAPI.as_view(),
+        name="medical-exam-archive-ai-plan",
+    ),
     path("member-guidance/", MemberGuidanceStateAPI.as_view(), name="medical-member-guidance"),
     path("medication-reminders/enabled-plans/", MedicationReminderEnabledPlansAPI.as_view(), name="medical-medication-reminder-enabled-plans"),
     path("medication-reminders/local-authorizations/<int:plan_id>/", MedicationReminderLocalAuthorizationAPI.as_view(), name="medical-medication-reminder-local-authorization"),

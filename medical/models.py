@@ -210,6 +210,72 @@ class MemberMedicalKeyIndicatorRecord(MedicalBaseModel):
         return f"key_indicator_record:member={self.member_id}:{self.recorded_at or self.updated_at}"
 
 
+class MemberMedicalExamPlan(MedicalBaseModel):
+    """成员 AI/手动体检计划事实源。"""
+
+    class Source(models.TextChoices):
+        AI_REPORT = "ai_report", "ai_report"
+        AI_BASELINE = "ai_baseline", "ai_baseline"
+        MANUAL = "manual", "manual"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "draft"
+        CONFIRMED = "confirmed", "confirmed"
+        ARCHIVED = "archived", "archived"
+
+    member = models.ForeignKey(
+        Member,
+        related_name="medical_exam_plans",
+        on_delete=models.CASCADE,
+        db_index=True,
+        db_comment="所属成员",
+    )
+    source = models.CharField(
+        max_length=32,
+        choices=Source.choices,
+        db_index=True,
+        db_comment="来源：报告AI、基线AI、手动",
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.CONFIRMED,
+        db_index=True,
+        db_comment="计划状态",
+    )
+    source_report = models.ForeignKey(
+        "HealthExamReport",
+        related_name="generated_exam_plans",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_comment="来源体检报告",
+    )
+    title = models.CharField(max_length=128, db_comment="计划标题")
+    must_items = models.JSONField(default=list, blank=True, db_comment="必做体检项目")
+    recommended_items = models.JSONField(default=list, blank=True, db_comment="建议增加项目")
+    follow_up_items = models.JSONField(default=list, blank=True, db_comment="近期随访复查项目")
+    rationale = models.JSONField(default=list, blank=True, db_comment="生成依据说明")
+    risk_notice = models.TextField(blank=True, default="", db_comment="医疗风险提示")
+    ai_trace_id = models.CharField(max_length=64, blank=True, default="", db_index=True, db_comment="AI 调用链路 ID")
+    prompt_version = models.CharField(max_length=32, blank=True, default="", db_comment="Prompt 版本")
+    model_name = models.CharField(max_length=128, blank=True, default="", db_comment="实际使用模型")
+    extra = models.JSONField(default=dict, blank=True, db_comment="扩展信息")
+
+    class Meta:
+        db_table = "medical_member_exam_plan"
+        db_table_comment = "成员体检计划：AI 或手动生成的下一次体检/排查清单。"
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["member", "status", "is_deleted"]),
+            models.Index(fields=["member", "source", "is_deleted"]),
+            models.Index(fields=["ai_trace_id"]),
+        ]
+
+    def __str__(self):
+        return f"exam_plan:member={self.member_id}:{self.title}"
+
+
 class UserMemberBinding(models.Model):
     """用户与成员的多对多绑定：关系、角色与状态。"""
 
