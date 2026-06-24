@@ -129,6 +129,13 @@ class MemberMedicalProfileSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "user", "created_at", "updated_at", "medication_focus", "surgery_focus", "symptom_follow_up_focus")
 
+    def to_representation(self, instance):
+        payload = super().to_representation(instance)
+        for key in ("smoking_profile", "drinking_profile", "exercise_profile"):
+            if payload.get(key) == {}:
+                payload.pop(key, None)
+        return payload
+
     def validate_member(self, value):
         request = self.context.get("request")
         if request and not request.user.is_staff:

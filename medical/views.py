@@ -315,6 +315,35 @@ class MemberModuleSettingViewSet(WrappedModelViewSet):
             queryset = queryset.filter(module_code=module_code)
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        member = serializer.validated_data["member"]
+        self._ensure_member_create_access(member.id)
+
+        payload = dict(serializer.validated_data)
+        module_code = payload.pop("module_code")
+        payload.update({
+            "is_deleted": False,
+            "deleted_at": None,
+        })
+
+        instance, created = MemberModuleSetting.all_objects.update_or_create(
+            user=request.user,
+            member=member,
+            module_code=module_code,
+            defaults=payload,
+        )
+
+        response_serializer = self.get_serializer(instance)
+        return success_response(
+            response_serializer.data,
+            msg="created" if created else "updated",
+            code=0,
+            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
 
 class MemberMedicalKeyIndicatorRecordViewSet(WrappedModelViewSet):
     queryset = MemberMedicalKeyIndicatorRecord.objects.all()

@@ -216,6 +216,44 @@ class MemberCompleteDataAPITests(APITestCase):
         self.assertEqual(body["nutrition_goal_state"]["member_id"], member.id)
         self.assertIn("defaults", body["nutrition_goal_state"])
 
+    def test_member_module_setting_duplicate_post_updates_existing_record(self):
+        member = Member.objects.create(user=self.user, name="模块成员")
+        UserMemberBinding.objects.create(user=self.user, member=member, relationship="self")
+        existing = MemberModuleSetting.objects.create(
+            user=self.user,
+            member=member,
+            module_code=MemberModuleSetting.ModuleCode.MEDICAL,
+            is_enabled=True,
+            is_completed=False,
+            display_order=0,
+            summary_text="初始摘要",
+            detail_data={},
+            extra={},
+        )
+
+        payload = {
+            "member": member.id,
+            "module_code": "medical",
+            "is_enabled": True,
+            "is_completed": True,
+            "display_order": 2,
+            "summary_text": "更新后摘要",
+            "detail_data": {"source": "retry"},
+            "extra": {"scene": "medical"},
+        }
+
+        response = self.client.post("/api/v1/medical/member-module-settings/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(MemberModuleSetting.objects.filter(user=self.user, member=member, module_code="medical").count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.id, response.json()["data"]["id"])
+        self.assertTrue(existing.is_completed)
+        self.assertEqual(existing.display_order, 2)
+        self.assertEqual(existing.summary_text, "更新后摘要")
+        self.assertEqual(existing.detail_data, {"source": "retry"})
+        self.assertEqual(existing.extra, {"scene": "medical"})
+
     def test_combined_create_does_not_accept_legacy_prescription_alias(self):
         payload = {
             "member": {
