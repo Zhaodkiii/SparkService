@@ -797,3 +797,56 @@ class MedicationPlanOptionalDoseFieldsAPITests(APITestCase):
         plan.refresh_from_db()
         self.assertIsNone(plan.medicine_box_id)
         self.assertEqual(plan.frequency_text, "每天1次")
+
+    def test_create_as_needed_plan_reuses_existing_medicine_box_plan(self):
+        box = MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="头孢呋辛酯片",
+            dose_unit="0.25g",
+        )
+        existing = MedicationPlan.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_box=box,
+            drug_name="头孢呋辛酯片",
+            dose_unit="0.25g",
+            frequency_type="daily",
+            frequency_text="As needed",
+            reminder_times=[],
+            start_date="2026-06-24",
+            reminder_enabled=False,
+            status=MedicationPlan.Status.ACTIVE,
+        )
+
+        payload = {
+            "member": self.member_id,
+            "medicine_box": box.id,
+            "drug_name": "头孢呋辛酯片",
+            "dose_per_time": "",
+            "dose_value": None,
+            "dose_unit": "0.25g",
+            "frequency_type": "daily",
+            "frequency_text": "As needed",
+            "reminder_times": [],
+            "start_date": "2026-06-24",
+            "end_date": None,
+            "instructions": "",
+            "reminder_enabled": False,
+            "status": MedicationPlan.Status.AS_NEEDED,
+            "extra": {},
+            "weekly_weekdays": [],
+            "every_n_days": None,
+            "prescription": None,
+            "medical_case": None,
+        }
+
+        response = self.client.post(
+            "/api/v1/medical/resources/?kind=medication-plans",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        self.assertEqual(response.json()["data"]["medication_plan"]["id"], existing.id)
+        self.assertEqual(MedicationPlan.objects.filter(medicine_box=box).count(), 1)

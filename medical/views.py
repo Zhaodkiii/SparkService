@@ -1339,6 +1339,34 @@ class MedicationPlanViewSet(WrappedModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        validated = serializer.validated_data
+        status_value = validated.get("status")
+        member = validated.get("member")
+        medicine_box = validated.get("medicine_box")
+
+        # 按需用药：同一成员 + 同一药箱已有关联计划时，复用最新计划，不重复创建。
+        if (
+            status_value == MedicationPlan.Status.AS_NEEDED
+            and member is not None
+            and medicine_box is not None
+        ):
+            from medical.services.medication_plan_as_needed_service import find_reusable_as_needed_plan
+            from medical.services.member_medical_profile_service import build_medication_mutation_payload
+
+            existing = find_reusable_as_needed_plan(
+                member_id=member.id,
+                medicine_box_id=medicine_box.id,
+            )
+            if existing is not None:
+                payload = build_medication_mutation_payload(
+                    user=request.user,
+                    member_id=existing.member_id,
+                    medication_plan=existing,
+                    deleted=False,
+                )
+                return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
+
         self.perform_create(serializer)
         plan = serializer.instance
         from medical.services.member_medical_profile_service import build_medication_mutation_payload

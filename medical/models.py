@@ -807,6 +807,7 @@ class MedicationPlan(MedicalBaseModel):
         PAUSED = "paused", "已暂停"
         COMPLETED = "completed", "已完成"
         CANCELLED = "cancelled", "已取消"
+        AS_NEEDED = "as_needed", "按需用药"
 
     member = models.ForeignKey(
         Member,
