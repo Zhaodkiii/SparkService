@@ -1060,6 +1060,32 @@ def _attachments_payload(user, business_type: str, business_id: int):
     ).data
 
 
+def _workflow_payload_text(payload, *keys, default=""):
+    """Return the first non-empty string value for any of the given payload keys."""
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return default
+
+
+def _workflow_imaging_pathology_impression(detail_rows):
+    """影像/病理：拼接全部 details.diagnosis 作为报告结论。"""
+    if not isinstance(detail_rows, (list, tuple)):
+        return ""
+    parts = []
+    for detail in detail_rows:
+        if not isinstance(detail, dict):
+            continue
+        text = (detail.get("diagnosis") or "").strip()
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
+
+
 def _report_row_payload(serializer, instance):
     row = dict(serializer.to_representation(instance))
     row.pop("raw_ocr", None)
@@ -2413,22 +2439,70 @@ class MedicalReportWorkflowSaveView(_WorkflowBaseAPIView):
         file_ids = payload.pop("file_ids", [])
         detail_rows = payload.pop("details", [])
 
+        content = _workflow_payload_text(
+            payload,
+            "content",
+            "findings",
+            "impression",
+        )
+        findings = _workflow_payload_text(payload, "findings", default=content)
+        # 影像/病理：impression 拼接全部 details.diagnosis；否则走 payload.impression → content。
+        category = (payload.get("category") or "").lower()
+        if category in ("imaging", "pathology"):
+            detail_diagnoses = _workflow_imaging_pathology_impression(detail_rows)
+            impression = detail_diagnoses or _workflow_payload_text(payload, "impression", default=content)
+        else:
+            impression = _workflow_payload_text(payload, "impression", default=content)
+        report_date = (
+            payload.get("performed_at")
+            or payload.get("performedAt")
+            or payload.get("reported_at")
+            or payload.get("reportedAt")
+            or payload.get("date")
+        )
+
         report_payload = {
             "user": request.user.id,
             "member": payload.get("member"),
-            "medical_record": payload.get("medical_case"),
+            "medical_record": payload.get("medical_record")
+            or payload.get("medical_case")
+            or payload.get("medicalCase"),
             "category": payload.get("category", "") or "medical_report",
-            "sub_category": "",
-            "item_name": payload.get("title", "") or "医疗报告",
-            "performed_at": payload.get("date"),
-            "reported_at": payload.get("date"),
-            "organization_name": payload.get("organization_name") or payload.get("hospital", "") or "",
-            "department_name": "",
-            "doctor_name": payload.get("doctor_name") or payload.get("doctor", "") or "",
-            "findings": payload.get("content", "") or "",
-            "impression": payload.get("content", "") or "",
+            "sub_category": payload.get("sub_category") or payload.get("subCategory", "") or "",
+            "item_name": _workflow_payload_text(
+                payload,
+                "item_name",
+                "itemName",
+                "title",
+                default="医疗报告",
+            ),
+            "performed_at": report_date,
+            "reported_at": (
+                payload.get("reported_at")
+                or payload.get("reportedAt")
+                or report_date
+            ),
+            "organization_name": _workflow_payload_text(
+                payload,
+                "organization_name",
+                "organizationName",
+                "hospital",
+            ),
+            "department_name": _workflow_payload_text(
+                payload,
+                "department_name",
+                "departmentName",
+            ),
+            "doctor_name": _workflow_payload_text(
+                payload,
+                "doctor_name",
+                "doctorName",
+                "doctor",
+            ),
+            "findings": findings,
+            "impression": impression,
             "source": ExaminationReport.Source.OCR,
-            "raw_ocr": {"text": payload.get("content", "") or ""},
+            "raw_ocr": {"text": content},
             "status": ExaminationReport.Status.DRAFT,
             "extra": {"source": "typed_upload"},
         }
@@ -2445,19 +2519,21 @@ class MedicalReportWorkflowSaveView(_WorkflowBaseAPIView):
                 "business_id": report.id,
                 "member": report.member_id,
                 "category": detail.get("category", "") or report.category,
-                "sub_category": detail.get("sub_category", ""),
-                "item_name": detail.get("item_name", "") or report.item_name,
-                "item_code": detail.get("item_code", ""),
-                "result_value": detail.get("result_value", ""),
+                "sub_category": detail.get("sub_category") or detail.get("subCategory", ""),
+                "item_name": detail.get("item_name") or detail.get("itemName", "") or report.item_name,
+                "item_code": detail.get("item_code") or detail.get("itemCode", ""),
+                "result_value": detail.get("result_value") or detail.get("resultValue", ""),
                 "unit": detail.get("unit", ""),
-                "reference_range": detail.get("reference_range", ""),
+                "reference_range": detail.get("reference_range") or detail.get("referenceRange", ""),
                 "flag": detail.get("flag", ""),
-                "result_at": detail.get("result_at", report.reported_at),
+                "result_at": detail.get("result_at")
+                or detail.get("resultAt")
+                or report.reported_at,
                 "modality": detail.get("modality", ""),
-                "body_part": detail.get("body_part", ""),
+                "body_part": detail.get("body_part") or detail.get("bodyPart", ""),
                 "diagnosis": detail.get("diagnosis", ""),
                 "extra": detail.get("extra", {}),
-                "sort_order": detail.get("sort_order", idx),
+                "sort_order": detail.get("sort_order", detail.get("sortOrder", idx)),
             }
             detail_serializer = MedExamDetailSerializer(data=detail_payload)
             validation_error = self._validate_or_error(detail_serializer)
