@@ -160,6 +160,73 @@ class MemberBindingAPITests(APITestCase):
         self.assertEqual(download_resp.status_code, status.HTTP_200_OK)
         self.assertTrue(download_resp.json()["data"]["url"])
 
+    def test_bound_guest_cannot_delete_others_report_attachment(self):
+        ticket_resp = self.client.post(
+            f"/api/v1/medical/members/{self.member_id}/share-ticket/",
+            {"channel": "qr", "role": "editor"},
+            format="json",
+        )
+        ticket = ticket_resp.json()["data"]["share_ticket"]
+        member = Member.objects.get(pk=self.member_id)
+        report = HealthExamReport.objects.create(
+            user=self.owner,
+            member=member,
+            institution_name="删除附件机构",
+            report_no="DEL-001",
+        )
+        file_record = ManagedFile.objects.create(
+            user=self.owner,
+            original_name="delete-me.pdf",
+            mime_type="application/pdf",
+            file_size=512,
+            object_key="medical/test/delete-me.pdf",
+        )
+        bind_file_to_business(self.owner, file_record, "health_exam_report", report.id)
+
+        self.client.force_authenticate(self.guest)
+        accept_resp = self.client.post(
+            "/api/v1/medical/member-share-ticket/accept/",
+            {"share_ticket": ticket, "relationship": "son"},
+            format="json",
+        )
+        self.assertEqual(accept_resp.status_code, status.HTTP_200_OK)
+
+        delete_resp = self.client.delete(f"/api/v1/files/{file_record.id}/")
+        self.assertEqual(delete_resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(delete_resp.json()["msg"], "file_permission_denied")
+        file_record.refresh_from_db()
+        self.assertFalse(file_record.is_deleted)
+
+    def test_stranger_cannot_delete_report_attachment(self):
+        member = Member.objects.get(pk=self.member_id)
+        report = HealthExamReport.objects.create(
+            user=self.owner,
+            member=member,
+            institution_name="权限机构",
+            report_no="DENY-001",
+        )
+        file_record = ManagedFile.objects.create(
+            user=self.owner,
+            original_name="protected.pdf",
+            mime_type="application/pdf",
+            file_size=256,
+            object_key="medical/test/protected.pdf",
+        )
+        bind_file_to_business(self.owner, file_record, "health_exam_report", report.id)
+
+        stranger = User.objects.create_user(username="stranger2", email="s2@example.com", password="pass12345")
+        self.client.force_authenticate(stranger)
+        delete_resp = self.client.delete(f"/api/v1/files/{file_record.id}/")
+        self.assertEqual(delete_resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(delete_resp.json()["msg"], "file_permission_denied")
+        file_record.refresh_from_db()
+        self.assertFalse(file_record.is_deleted)
+
+    def test_delete_missing_file_returns_not_found(self):
+        delete_resp = self.client.delete("/api/v1/files/999999/")
+        self.assertEqual(delete_resp.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(delete_resp.json()["msg"], "file_not_found")
+
     def test_viewer_cannot_save_medication_plan_workflow(self):
         ticket_resp = self.client.post(
             f"/api/v1/medical/members/{self.member_id}/share-ticket/",

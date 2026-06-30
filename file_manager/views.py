@@ -282,10 +282,20 @@ class ManagedFileDeleteView(APIView):
     def delete(self, request, file_id):
         start_time = time.perf_counter()
         logger.info("文件删除请求", extra={"user_id": request.user.id, "file_id": file_id})
-        file_record = ManagedFile.objects.filter(id=file_id, user=request.user, is_deleted=False).first()
+        file_record = (
+            ManagedFile.objects.filter(id=file_id, is_deleted=False)
+            .prefetch_related("business_relations")
+            .first()
+        )
         if not file_record:
             logger.warning("文件删除失败：文件不存在", extra={"user_id": request.user.id, "file_id": file_id})
             return error_response(msg="file_not_found", code=4040, status_code=status.HTTP_404_NOT_FOUND)
+        if file_record.user_id != request.user.id:
+            logger.warning(
+                "文件删除失败：无权限",
+                extra={"user_id": request.user.id, "file_id": file_id, "owner_id": file_record.user_id},
+            )
+            return error_response(msg="file_permission_denied", code=4030, status_code=status.HTTP_403_FORBIDDEN)
 
         file_record.soft_delete()
         duration_ms = int((time.perf_counter() - start_time) * 1000)
