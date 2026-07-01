@@ -21,17 +21,24 @@ function refreshAccessToken(): Promise<void> {
     if (!refresh) {
       throw new Error('no_refresh_token');
     }
-    const { data } = await axios.post<{ access: string; refresh?: string | null }>(
+    const { data } = await axios.post<{
+      access?: string;
+      access_token?: string;
+      refresh?: string | null;
+      refresh_token?: string | null;
+    }>(
       `${baseURL}/api/v1/auth/token/refresh/`,
       { refresh },
       { timeout: 15000 },
     );
-    if (!data?.access) {
+    const access = data?.access ?? data?.access_token;
+    if (!access) {
       throw new Error('refresh_no_access');
     }
-    localStorage.setItem('admin_access_token', data.access);
-    if (data.refresh) {
-      localStorage.setItem('admin_refresh_token', data.refresh);
+    localStorage.setItem('admin_access_token', access);
+    const rotatedRefresh = data?.refresh ?? data?.refresh_token;
+    if (rotatedRefresh) {
+      localStorage.setItem('admin_refresh_token', rotatedRefresh);
     }
   })().finally(() => {
     refreshPromise = null;

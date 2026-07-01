@@ -24,8 +24,8 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: (state) => !!state.accessToken,
   },
   actions: {
-    async login(username: string, password: string) {
-      const data = await adminLogin(username, password);
+    async login(username: string, password: string, rememberMe = false) {
+      const data = await adminLogin(username, password, rememberMe);
       this.accessToken = data.access;
       this.refreshToken = data.refresh;
       this.user = data.user;

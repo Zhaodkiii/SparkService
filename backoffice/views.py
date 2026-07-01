@@ -19,7 +19,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
-from rest_framework.serializers import Serializer, CharField
+from rest_framework.serializers import BooleanField, CharField, Serializer
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
@@ -98,16 +98,57 @@ User = get_user_model()
 BASE_DIR = Path(__file__).resolve().parent.parent
 RUN_DIR = BASE_DIR / "run"
 LOG_DIR = BASE_DIR / "logs"
-ADMIN_LOGIN_TOKEN_LIFETIME = timedelta(days=1)
+ADMIN_LOGIN_TOKEN_LIFETIME_DEFAULT = timedelta(days=1)
+ADMIN_LOGIN_TOKEN_LIFETIME_REMEMBER = timedelta(days=30)
+ADMIN_TOKEN_LIFETIME_CLAIM = "admin_token_lifetime_seconds"
 
 
 class AdminAccessToken(AccessToken):
-    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME
+    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME_DEFAULT
+
+    def set_exp(
+        self,
+        claim: str = "exp",
+        from_time=None,
+        lifetime=None,
+    ) -> None:
+        if lifetime is None and ADMIN_TOKEN_LIFETIME_CLAIM in self.payload:
+            lifetime = timedelta(seconds=int(self.payload[ADMIN_TOKEN_LIFETIME_CLAIM]))
+        super().set_exp(claim=claim, from_time=from_time, lifetime=lifetime)
 
 
 class AdminRefreshToken(RefreshToken):
-    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME
+    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME_DEFAULT
     access_token_class = AdminAccessToken
+
+    def set_exp(
+        self,
+        claim: str = "exp",
+        from_time=None,
+        lifetime=None,
+    ) -> None:
+        if lifetime is None and ADMIN_TOKEN_LIFETIME_CLAIM in self.payload:
+            lifetime = timedelta(seconds=int(self.payload[ADMIN_TOKEN_LIFETIME_CLAIM]))
+        super().set_exp(claim=claim, from_time=from_time, lifetime=lifetime)
+
+    @property
+    def access_token(self) -> AdminAccessToken:
+        access = self.access_token_class()
+        no_copy = self.no_copy_claims
+        for claim, value in self.payload.items():
+            if claim in no_copy:
+                continue
+            access[claim] = value
+        access.set_exp(from_time=self.current_time)
+        return access
+
+
+def issue_admin_login_tokens(user, *, remember_me: bool = False) -> AdminRefreshToken:
+    lifetime = ADMIN_LOGIN_TOKEN_LIFETIME_REMEMBER if remember_me else ADMIN_LOGIN_TOKEN_LIFETIME_DEFAULT
+    refresh = AdminRefreshToken.for_user(user)
+    refresh[ADMIN_TOKEN_LIFETIME_CLAIM] = int(lifetime.total_seconds())
+    refresh.set_exp(from_time=refresh.current_time, lifetime=lifetime)
+    return refresh
 
 
 def _read_pid(pid_file: Path) -> int | None:
@@ -437,6 +478,7 @@ def _get_celery_runtime_status() -> dict:
 class AdminLoginSerializer(Serializer):
     username = CharField(max_length=150)
     password = CharField(max_length=128)
+    remember_me = BooleanField(required=False, default=False)
 
 
 class AdminAuthLoginView(APIView):
@@ -448,6 +490,7 @@ class AdminAuthLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         username = serializer.validated_data["username"]
         password = serializer.validated_data["password"]
+        remember_me = serializer.validated_data.get("remember_me", False)
 
         user = authenticate(request=request, username=username, password=password)
         if user is None or not user.is_active:
@@ -458,7 +501,7 @@ class AdminAuthLoginView(APIView):
             write_audit_log(request, action="admin.login.denied", resource_type="auth", status_code=403)
             return error_response(msg="not_admin_user", code=40301, status_code=status.HTTP_403_FORBIDDEN)
 
-        token = AdminRefreshToken.for_user(user)
+        token = issue_admin_login_tokens(user, remember_me=remember_me)
         payload = {
             "access": str(token.access_token),
             "refresh": str(token),

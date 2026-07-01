@@ -14,8 +14,12 @@ export interface ProfileResponse {
   menus: MenuNode[];
 }
 
-export function adminLogin(username: string, password: string) {
-  return http.post<unknown, LoginResponse>('/api/admin/v1/auth/login/', { username, password });
+export function adminLogin(username: string, password: string, rememberMe = false) {
+  return http.post<unknown, LoginResponse>('/api/admin/v1/auth/login/', {
+    username,
+    password,
+    remember_me: rememberMe,
+  });
 }
 
 export function fetchAdminProfile() {

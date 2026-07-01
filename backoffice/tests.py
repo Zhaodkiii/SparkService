@@ -60,6 +60,49 @@ class BackofficePermissionTests(TestCase):
         self.assertEqual(access["exp"] - access["iat"], 24 * 60 * 60)
         self.assertEqual(refresh["exp"] - refresh["iat"], 24 * 60 * 60)
 
+    def test_admin_login_remember_me_30_days(self):
+        response = self.client.post(
+            "/api/admin/v1/auth/login/",
+            {"username": "staff_user", "password": "pass1234", "remember_me": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        access = AccessToken(response.data["data"]["access"])
+        refresh = RefreshToken(response.data["data"]["refresh"])
+        self.assertEqual(access["exp"] - access["iat"], 30 * 24 * 60 * 60)
+        self.assertEqual(refresh["exp"] - refresh["iat"], 30 * 24 * 60 * 60)
+
+    def test_admin_login_remember_me_does_not_bypass_admin_check(self):
+        response = self.client.post(
+            "/api/admin/v1/auth/login/",
+            {"username": "normal_user", "password": "pass1234", "remember_me": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_login_remember_me_refresh_within_lifetime(self):
+        login_response = self.client.post(
+            "/api/admin/v1/auth/login/",
+            {"username": "staff_user", "password": "pass1234", "remember_me": True},
+            format="json",
+        )
+        self.assertEqual(login_response.status_code, 200)
+        refresh_token = login_response.data["data"]["refresh"]
+
+        refresh_response = self.client.post(
+            "/api/v1/auth/token/refresh/",
+            {"refresh": refresh_token},
+            format="json",
+        )
+        self.assertEqual(refresh_response.status_code, 200)
+        payload = refresh_response.data
+        access_token = payload.get("access_token") or payload.get("access")
+        self.assertTrue(access_token)
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+        profile_response = self.client.get("/api/admin/v1/auth/profile/")
+        self.assertEqual(profile_response.status_code, 200)
+
     def test_user_status_update_writes_audit(self):
         self.client.force_authenticate(user=self.staff_user)
         response = self.client.post(

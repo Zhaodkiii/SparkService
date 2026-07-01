@@ -8,6 +8,9 @@
         <a-form-item label="密码" name="password" :rules="[{ required: true, message: '请输入密码' }]">
           <a-input-password v-model:value="form.password" />
         </a-form-item>
+        <a-form-item name="rememberMe">
+          <a-checkbox v-model:checked="form.rememberMe">30 天免密登录</a-checkbox>
+        </a-form-item>
         <a-button type="primary" html-type="submit" :loading="loading" block>登录</a-button>
       </a-form>
     </a-card>
@@ -27,12 +30,13 @@ const loading = ref(false);
 const form = reactive({
   username: '',
   password: '',
+  rememberMe: false,
 });
 
 async function onSubmit() {
   try {
     loading.value = true;
-    await auth.login(form.username, form.password);
+    await auth.login(form.username, form.password, form.rememberMe);
     message.success('登录成功');
     router.replace('/dashboard');
   } catch (error: any) {
