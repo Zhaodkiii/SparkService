@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 一键重启：先停止后端/前端，再重新启动
+# 一键重启：先停止后端/管理前端/分享前端，再重新启动
 
 set -euo pipefail
 
@@ -10,11 +10,12 @@ source "$SCRIPT_DIR/_common.sh"
 ensure_dirs
 require_prereqs
 
-echo "正在重启后台管理本地环境 ..."
+echo "正在重启 SparkService 本地开发环境 ..."
 stop_all
 sleep 1
 start_backend
 start_frontend
+start_share_web
 print_status
 
 echo "重启完成。"

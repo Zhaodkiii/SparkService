@@ -1,9 +1,10 @@
-# 后台管理 · 本地一键启停
+# SparkService · 本地一键启停
 
 | 服务 | 地址 |
 |------|------|
 | Django API | http://127.0.0.1:2026/ |
 | 管理前端 | http://localhost:6018/ |
+| 分享前端 | http://localhost:1998/ |
 
 ## 命令
 
@@ -19,3 +20,4 @@ cd /Users/hua/Downloads/Reference/SparkService
 
 - `scripts/后台管理/logs/backend.log`
 - `scripts/后台管理/logs/frontend.log`
+- `scripts/后台管理/logs/share-web.log`

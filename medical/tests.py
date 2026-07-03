@@ -1,4 +1,7 @@
+from datetime import date, datetime, timedelta
+
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -7,6 +10,7 @@ from medical.models import (
     MedicalCase,
     MedicationPlan,
     MedicineBox,
+    MedicalShareRecord,
     Member,
     MemberMedicalProfile,
     MemberModuleSetting,
@@ -279,6 +283,196 @@ class MemberCompleteDataAPITests(APITestCase):
         self.assertEqual(Prescription.objects.count(), 0)
         self.assertEqual(MedicineBox.objects.count(), 0)
         self.assertEqual(MedicationPlan.objects.count(), 0)
+
+
+class MedicalShareAPITests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="share_tester",
+            email="share@example.com",
+            password="test123456",
+        )
+        self.client.force_authenticate(self.user)
+
+    def _create_case(self, *, title="发现乳腺结节1天"):
+        member = Member.objects.create(user=self.user, name="张小美", gender="female", birth_date=date(1986, 5, 1))
+        UserMemberBinding.objects.create(user=self.user, member=member, relationship="self")
+        medical_case = MedicalCase.objects.create(
+            user=self.user,
+            member=member,
+            title=title,
+            hospital_name="苏州大学附属第一医院",
+            diagnosis_summary="乳房结节 N63.x01",
+            status=MedicalCase.Status.SUBMITTED,
+        )
+        return member, medical_case
+
+    def test_create_medical_case_share_success(self):
+        member, medical_case = self._create_case()
+
+        response = self.client.post(
+            "/api/v1/medical/shares/",
+            {"business_type": "medical_case", "business_id": medical_case.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.content)
+        body = response.json()["data"]
+        self.assertTrue(body["share_code"])
+        self.assertTrue(body["share_url"].startswith("https://share.dreamwhale.top/s/"))
+        self.assertEqual(body["business_type"], "medical_case")
+        self.assertEqual(body["business_id"], medical_case.id)
+        record = MedicalShareRecord.objects.get(share_code=body["share_code"])
+        self.assertEqual(record.member_id, member.id)
+        self.assertEqual(record.status, MedicalShareRecord.Status.ACTIVE)
+
+    def test_create_share_reuses_active_record(self):
+        _, medical_case = self._create_case()
+
+        first = self.client.post(
+            "/api/v1/medical/shares/",
+            {"business_type": "medical_case", "business_id": medical_case.id},
+            format="json",
+        )
+        second = self.client.post(
+            "/api/v1/medical/shares/",
+            {"business_type": "medical_case", "business_id": medical_case.id},
+            format="json",
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.content)
+        self.assertEqual(second.status_code, status.HTTP_200_OK, second.content)
+        self.assertEqual(MedicalShareRecord.objects.count(), 1)
+        self.assertEqual(first.json()["data"]["share_code"], second.json()["data"]["share_code"])
+
+    def test_create_share_denied_without_member_edit_permission(self):
+        member = Member.objects.create(user=self.user, name="李雷")
+        UserMemberBinding.objects.create(
+            user=self.user,
+            member=member,
+            relationship="brother",
+            role=UserMemberBinding.Role.VIEWER,
+        )
+        medical_case = MedicalCase.objects.create(
+            user=self.user,
+            member=member,
+            title="只读病例",
+            diagnosis_summary="测试",
+        )
+
+        response = self.client.post(
+            "/api/v1/medical/shares/",
+            {"business_type": "medical_case", "business_id": medical_case.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.content)
+
+    def test_public_share_returns_medical_case_timeline(self):
+        member, medical_case = self._create_case()
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="medical_case",
+            business_id=medical_case.id,
+            share_code="AbC123xYz789",
+            title=medical_case.title,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+        from medical.models import ExaminationReport, FollowUp, Surgery, Symptom, Visit
+
+        Symptom.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            name="乳房疼痛",
+            severity="轻度",
+            notes="间歇性",
+        )
+        Visit.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            visit_type="outpatient",
+            visited_at=timezone.make_aware(datetime(2025, 10, 25, 9, 0, 0)),
+            department="乳腺外科",
+            doctor_name="王医生",
+            visit_no="V-001",
+            notes="建议复查",
+        )
+        Surgery.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            procedure_name="乳腺穿刺",
+            performed_at=timezone.make_aware(datetime(2025, 10, 26, 10, 0, 0)),
+        )
+        FollowUp.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            status="scheduled",
+            method="复诊",
+            outcome="待随访",
+            next_action="复查超声",
+        )
+        ExaminationReport.objects.create(
+            user=self.user,
+            member=member,
+            medical_record=medical_case,
+            category="imaging",
+            sub_category="超声",
+            item_name="超声诊断报告单",
+            findings="双侧乳腺回声不均",
+            impression="BI-RADS 3类",
+            raw_ocr={"secret": "should-not-leak"},
+        )
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        body = response.json()["data"]
+        self.assertEqual(body["member"]["display_name"], "张**")
+        self.assertEqual(body["share"]["share_code"], share.share_code)
+        self.assertTrue(body["timeline"])
+        examination = next(item for item in body["timeline"] if item["kind"] == "examination")
+        self.assertNotIn("raw_ocr", examination)
+
+    def test_public_share_expired(self):
+        member, medical_case = self._create_case()
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="medical_case",
+            business_id=medical_case.id,
+            share_code="ExpiredShare001",
+            title=medical_case.title,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_410_GONE, response.content)
+
+    def test_public_share_business_deleted(self):
+        member, medical_case = self._create_case()
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="medical_case",
+            business_id=medical_case.id,
+            share_code="DeletedShare001",
+            title=medical_case.title,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+        medical_case.soft_delete()
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_410_GONE, response.content)
 
 
 class PrescriptionBatchWorkflowSaveAPITests(APITestCase):

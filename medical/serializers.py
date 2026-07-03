@@ -15,6 +15,7 @@ from medical.models import (
     MedicationPlan,
     MedicationRecord,
     MedicalCase,
+    MedicalShareRecord,
     Member,
     MemberMedicalProfile,
     MemberMedicalKeyIndicatorRecord,
@@ -100,6 +101,41 @@ class MemberBindingUpdateSerializer(serializers.ModelSerializer):
         model = UserMemberBinding
         fields = ("relationship",)
         extra_kwargs = {"relationship": {"required": True}}
+
+
+class MedicalShareCreateSerializer(serializers.Serializer):
+    business_type = serializers.ChoiceField(choices=MedicalShareRecord.BusinessType.choices)
+    business_id = serializers.IntegerField(min_value=1)
+
+
+class MedicalShareRecordSerializer(serializers.ModelSerializer):
+    share_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MedicalShareRecord
+        fields = (
+            "id",
+            "user",
+            "member",
+            "business_type",
+            "business_id",
+            "share_code",
+            "title",
+            "status",
+            "expires_at",
+            "last_accessed_at",
+            "access_count",
+            "extra",
+            "created_at",
+            "updated_at",
+            "share_url",
+        )
+        read_only_fields = fields
+
+    def get_share_url(self, instance):
+        from medical.services.medical_share_service import share_web_url
+
+        return share_web_url(instance.share_code)
 
 
 class MemberMedicalProfileSerializer(serializers.ModelSerializer):

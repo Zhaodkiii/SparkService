@@ -45,6 +45,9 @@ from medical.views import (
     MemberShareInviteDetailView,
     MemberShareInviteRejectView,
     MemberShareTicketAcceptAPI,
+    MedicalShareAttachmentDownloadAPI,
+    MedicalShareCreateAPI,
+    MedicalSharePublicDetailAPI,
     MemberShareTicketCreateAPI,
     MemberShareTicketResolveAPI,
     MemberViewSet,
@@ -83,6 +86,13 @@ urlpatterns = [
     path("members/<int:member_id>/share-ticket/", MemberShareTicketCreateAPI.as_view(), name="medical-member-share-ticket"),  # 生成成员分享票据（二维码/附近分享）
     path("member-share-ticket/resolve/", MemberShareTicketResolveAPI.as_view(), name="medical-member-share-ticket-resolve"),  # 解析分享票据预览
     path("member-share-ticket/accept/", MemberShareTicketAcceptAPI.as_view(), name="medical-member-share-ticket-accept"),  # 接受分享票据建立绑定
+    path("shares/", MedicalShareCreateAPI.as_view(), name="medical-share-create"),  # 创建病例公开分享记录
+    path("shares/public/<str:share_code>/", MedicalSharePublicDetailAPI.as_view(), name="medical-share-public-detail"),  # 公开病例分享详情
+    path(
+        "shares/public/<str:share_code>/attachments/<int:attachment_id>/",
+        MedicalShareAttachmentDownloadAPI.as_view(),
+        name="medical-share-public-attachment",
+    ),  # 公开附件短时下载入口
     path("members/<int:member_id>/invites/", MemberShareInviteCreateView.as_view(), name="medical-member-share-invite-create"),  # 创建成员分享邀请
     path("member-invites/pending/", PendingMemberInvitesView.as_view(), name="medical-member-invites-pending"),  # 当前用户待处理邀请列表
     path("member-invites/<int:invite_id>/", MemberShareInviteDetailView.as_view(), name="medical-member-invite-detail"),  # 邀请详情

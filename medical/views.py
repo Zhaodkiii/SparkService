@@ -3,13 +3,15 @@ from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.core import signing
+from django.http import HttpResponseRedirect
 from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import status, viewsets
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -25,6 +27,7 @@ from medical.models import (
     MedExamDetail,
     MedicalCase,
     ModelChangeLog,
+    MedicalShareRecord,
     Member,
     MemberMedicalProfile,
     MemberMedicalKeyIndicatorRecord,
@@ -47,6 +50,8 @@ from medical.serializers import (
     MedExamDetailSerializer,
     MedicalCaseSerializer,
     MemberBindingUpdateSerializer,
+    MedicalShareCreateSerializer,
+    MedicalShareRecordSerializer,
     MemberSerializer,
     MemberMedicalProfileSerializer,
     MemberMedicalKeyIndicatorRecordSerializer,
@@ -59,6 +64,7 @@ from medical.serializers import (
     serialize_member_list_item,
 )
 from medical.services import member_binding_service as binding_service
+from medical.services import medical_share_service as share_service
 from medical.services import member_invite_service as invite_service
 from medical.services.member_invite_service import InviteError
 from medical.services.member_invite_delivery import create_invite_and_notify, DeliveryResult
@@ -85,6 +91,7 @@ from medical.services.medication_reminder_service import (
 from file_manager.business_relations import bind_file_to_business, bind_files_to_business, files_for_business, relation_fingerprint
 from file_manager.models import ManagedFile
 from file_manager.serializers import ManagedFileAttachmentOutSerializer
+from file_manager.url_utils import managed_file_download_url
 
 logger = logging.getLogger("medical.flow")
 
@@ -554,6 +561,140 @@ class MemberShareTicketAcceptAPI(APIView):
         )
         item = serialize_member_list_item(member, binding)
         return success_response(item, msg="accepted", code=0, status_code=status.HTTP_200_OK)
+
+
+class MedicalSharePublicThrottle(AnonRateThrottle):
+    rate = "60/min"
+
+
+class MedicalShareCreateAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = MedicalShareCreateSerializer(data=request.data or {})
+        serializer.is_valid(raise_exception=True)
+        business_type = serializer.validated_data["business_type"]
+        business_id = serializer.validated_data["business_id"]
+
+        if business_type == MedicalShareRecord.BusinessType.MEDICAL_CASE:
+            try:
+                medical_case = MedicalCase.objects.select_related("member").get(
+                    pk=business_id,
+                    is_deleted=False,
+                )
+            except MedicalCase.DoesNotExist:
+                return error_response(msg="business_not_found", code=40402, status_code=status.HTTP_404_NOT_FOUND)
+
+            try:
+                MemberPermissionGate.require_edit(user=request.user, member_id=medical_case.member_id)
+            except PermissionError:
+                return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+
+            try:
+                record, created = share_service.create_or_reuse_share_record(
+                    user=request.user,
+                    member=medical_case.member,
+                    business_type=business_type,
+                    business_id=medical_case.id,
+                    title=medical_case.title or "",
+                )
+            except share_service.MedicalShareError as exc:
+                return error_response(msg=str(exc), code=40002, status_code=status.HTTP_400_BAD_REQUEST)
+
+            payload = MedicalShareRecordSerializer(record, context={"request": request}).data
+            return success_response(
+                {
+                    "share_code": record.share_code,
+                    "share_url": payload["share_url"],
+                    "business_type": record.business_type,
+                    "business_id": record.business_id,
+                    "expires_at": record.expires_at,
+                    "status": record.status,
+                    "created": created,
+                },
+                msg="created" if created else "success",
+                code=0,
+                status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            )
+
+        return error_response(msg="invalid_business_type", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+class MedicalSharePublicDetailAPI(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [MedicalSharePublicThrottle]
+
+    def get(self, request, share_code: str):
+        record = share_service.get_share_record_or_none(share_code)
+        if record is None:
+            return error_response(msg="share_not_found", code=40401, status_code=status.HTTP_404_NOT_FOUND)
+        if record.status == MedicalShareRecord.Status.REVOKED:
+            return error_response(msg="share_revoked", code=41002, status_code=status.HTTP_410_GONE)
+        if record.expires_at <= timezone.now():
+            return error_response(msg="share_expired", code=41001, status_code=status.HTTP_410_GONE)
+
+        try:
+            payload = share_service.build_public_share_payload(record)
+        except share_service.MedicalShareError as exc:
+            msg = str(exc)
+            if msg == "business_deleted":
+                return error_response(msg=msg, code=41003, status_code=status.HTTP_410_GONE)
+            return error_response(msg=msg, code=40003, status_code=status.HTTP_400_BAD_REQUEST)
+
+        share_service.touch_share_record(record)
+        response = success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class MedicalShareAttachmentDownloadAPI(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [MedicalSharePublicThrottle]
+
+    def get(self, request, share_code: str, attachment_id: int):
+        token = (request.query_params.get("token") or "").strip()
+        if not token:
+            return error_response(msg="token_required", code=40011, status_code=status.HTTP_400_BAD_REQUEST)
+
+        record = share_service.get_share_record_or_none(share_code)
+        if record is None:
+            return error_response(msg="share_not_found", code=40401, status_code=status.HTTP_404_NOT_FOUND)
+        if record.status == MedicalShareRecord.Status.REVOKED or record.expires_at <= timezone.now():
+            return error_response(msg="share_expired", code=41001, status_code=status.HTTP_410_GONE)
+
+        try:
+            share_service.verify_attachment_token(
+                share_code=share_code,
+                attachment_id=attachment_id,
+                token=token,
+            )
+        except signing.BadSignature:
+            return error_response(msg="token_invalid", code=40012, status_code=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            file_obj = (
+                ManagedFile.objects.filter(
+                    id=attachment_id,
+                    is_deleted=False,
+                    business_relations__business_type=record.business_type,
+                    business_relations__business_id=str(record.business_id),
+                )
+                .distinct()
+                .first()
+            )
+            if file_obj is None:
+                raise ManagedFile.DoesNotExist
+        except ManagedFile.DoesNotExist:
+            return error_response(msg="attachment_not_found", code=40403, status_code=status.HTTP_404_NOT_FOUND)
+
+        file_url = managed_file_download_url(file_obj)
+        if not file_url:
+            return error_response(msg="attachment_unavailable", code=40404, status_code=status.HTTP_404_NOT_FOUND)
+
+        share_service.touch_share_record(record)
+        return HttpResponseRedirect(file_url)
 
 
 def _invite_member_summary(member: Member) -> dict:

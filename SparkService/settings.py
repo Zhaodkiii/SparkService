@@ -73,6 +73,10 @@ ALIYUN_OSS_REGION = (os.getenv("ALIYUN_OSS_REGION") or "").strip() or "cn-hangzh
 ALIYUN_OSS_ENDPOINT = (os.getenv("ALIYUN_OSS_ENDPOINT") or "").strip()
 ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600"))
 
+# 公开病例分享站点根地址：`share-web` 用于拼接公开链接与附件短链。
+MEDICAL_SHARE_WEB_BASE_URL = (os.getenv("MEDICAL_SHARE_WEB_BASE_URL") or "https://share.dreamwhale.top").strip()
+MEDICAL_SHARE_DOWNLOAD_URL = (os.getenv("MEDICAL_SHARE_DOWNLOAD_URL") or "https://www.dreamhua.top/").strip()
+
 # Aliyun SMS（通知）
 ALIYUN_SMS_ACCESS_KEY_ID = (os.getenv("ALIYUN_SMS_ACCESS_KEY_ID") or "").strip()
 ALIYUN_SMS_ACCESS_KEY_SECRET = (os.getenv("ALIYUN_SMS_ACCESS_KEY_SECRET") or "").strip()
@@ -284,7 +288,8 @@ CORS_ALLOWED_ORIGINS = [
         "http://localhost:5173,http://127.0.0.1:5173,"
         "http://localhost:5174,http://127.0.0.1:5174,"
         "http://localhost:5175,http://127.0.0.1:5175,"
-        "http://localhost:6018,http://127.0.0.1:6018",
+        "http://localhost:6018,http://127.0.0.1:6018,"
+        "https://share.dreamwhale.top,http://share.dreamwhale.top",
     ).split(",")
     if item.strip()
 ]

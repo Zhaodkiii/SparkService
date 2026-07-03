@@ -412,6 +412,56 @@ class MemberShareInviteDeliveryLog(models.Model):
         return f"delivery:invite={self.invite_id}:{self.channel}:{self.status}"
 
 
+class MedicalShareRecord(models.Model):
+    """医疗业务公开分享记录。
+
+    首期只支持病例分享，后续可扩展到检验、体检、处方等业务类型。
+    """
+
+    class BusinessType(models.TextChoices):
+        MEDICAL_CASE = "medical_case", "medical_case"
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "active"
+        REVOKED = "revoked", "revoked"
+
+    user = models.ForeignKey(
+        User,
+        related_name="medical_share_records",
+        on_delete=models.CASCADE,
+        db_index=True,
+    )
+    member = models.ForeignKey(
+        Member,
+        related_name="medical_share_records",
+        on_delete=models.CASCADE,
+        db_index=True,
+    )
+    business_type = models.CharField(max_length=64, choices=BusinessType.choices, db_index=True)
+    business_id = models.PositiveBigIntegerField(db_index=True)
+    share_code = models.CharField(max_length=32, unique=True, db_index=True)
+    title = models.CharField(max_length=255, blank=True, default="")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    last_accessed_at = models.DateTimeField(null=True, blank=True)
+    access_count = models.PositiveIntegerField(default=0)
+    extra = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "medical_share_record"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "business_type", "business_id", "status", "expires_at"]),
+            models.Index(fields=["member", "business_type", "business_id"]),
+            models.Index(fields=["expires_at", "status"]),
+        ]
+
+    def __str__(self):
+        return f"share:{self.share_code}:{self.business_type}:{self.business_id}:{self.status}"
+
+
 class MedicalCase(MedicalBaseModel):
     """门诊/住院病历叙事主档（聚合根）。
 
