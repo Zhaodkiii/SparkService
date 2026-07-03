@@ -157,6 +157,6 @@ export async function loadShareCase(shareCode: string): Promise<ApiEnvelope<Shar
   return data;
 }
 
-export function fileDisplayName(file: ShareAttachment): string {
-  return file.original_name?.trim() || `附件${file.id}`;
+export function attachmentDisplayName(index: number): string {
+  return `附件${index + 1}`;
 }

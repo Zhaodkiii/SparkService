@@ -244,7 +244,7 @@ def build_public_share_payload(record: MedicalShareRecord) -> dict:
         "title": "下载 App 查看和管理完整健康档案",
         "description": "当前链接已经进入公开分享页。你可以下载 Spark App 继续查看完整病例、管理成员和上传更多资料。",
         "button_text": "下载 App",
-        "url": getattr(settings, "MEDICAL_SHARE_DOWNLOAD_URL", "") or "https://www.dreamhua.top/",
+        "url": getattr(settings, "MEDICAL_SHARE_DOWNLOAD_URL", "") or "https://apps.apple.com/cn/app/id6751417431",
     }
     return {
         "share": share_payload,
@@ -257,7 +257,6 @@ def build_public_share_payload(record: MedicalShareRecord) -> dict:
 
 def _build_case_timeline(share_code: str, case: MedicalCase) -> list[dict]:
     case_id = case.id
-    nested_plan_ids: set[int] = set()
     events: list[dict] = []
 
     prescriptions = list(
@@ -265,11 +264,16 @@ def _build_case_timeline(share_code: str, case: MedicalCase) -> list[dict]:
         .select_related("member")
         .order_by("-prescribed_at", "-updated_at", "-id")
     )
+    prescription_ids = [prescription.id for prescription in prescriptions]
+    medication_plan_filters = Q(is_deleted=False, medical_case_id=case_id)
+    if prescription_ids:
+        medication_plan_filters |= Q(is_deleted=False, prescription_id__in=prescription_ids)
     medication_plans = list(
-        MedicationPlan.objects.filter(is_deleted=False, medical_case_id=case_id)
+        MedicationPlan.objects.filter(medication_plan_filters)
         .select_related("medicine_box", "prescription")
         .order_by("-start_date", "-updated_at", "-id")
     )
+    nested_plan_ids: set[int] = set()
     symptom_rows = list(Symptom.objects.filter(is_deleted=False, medical_case_id=case_id).order_by("-created_at", "-updated_at", "-id"))
     visit_rows = list(Visit.objects.filter(is_deleted=False, medical_case_id=case_id).order_by("-visited_at", "-updated_at", "-id"))
     surgery_rows = list(Surgery.objects.filter(is_deleted=False, medical_case_id=case_id).order_by("-performed_at", "-updated_at", "-id"))

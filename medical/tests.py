@@ -439,6 +439,60 @@ class MedicalShareAPITests(APITestCase):
         examination = next(item for item in body["timeline"] if item["kind"] == "examination")
         self.assertNotIn("raw_ocr", examination)
 
+    def test_public_share_includes_medication_plans_linked_through_prescription(self):
+        member, medical_case = self._create_case()
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="medical_case",
+            business_id=medical_case.id,
+            share_code="PlanShare001",
+            title=medical_case.title,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+        prescription = Prescription.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            institution_name="苏州大学附属第四医院",
+            diagnosis="高血压",
+            prescriber_name="王医生",
+            prescribed_at=timezone.make_aware(datetime(2025, 6, 27, 9, 0, 0)),
+        )
+        MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            prescription=prescription,
+            drug_name="阿托伐他汀钙片",
+            dose_per_time="20mg（1片）",
+            frequency_type="daily",
+            frequency_text="每晚一次",
+            start_date=date(2025, 6, 27),
+        )
+        MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=None,
+            prescription=prescription,
+            drug_name="替米沙坦片",
+            dose_per_time="40mg（1片）",
+            frequency_type="daily",
+            frequency_text="每日一次",
+            start_date=date(2025, 6, 28),
+        )
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        body = response.json()["data"]
+        prescription_event = next(item for item in body["timeline"] if item["kind"] == "prescription")
+        medication_events = [item for item in body["timeline"] if item["kind"] == "medication"]
+        self.assertEqual(len(prescription_event["nested_medication_plans"]), 2)
+        self.assertEqual([plan["drug_name"] for plan in prescription_event["nested_medication_plans"]], ["替米沙坦片", "阿托伐他汀钙片"])
+        self.assertEqual(medication_events, [])
+
     def test_public_share_expired(self):
         member, medical_case = self._create_case()
         share = MedicalShareRecord.objects.create(

@@ -75,7 +75,7 @@ ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600
 
 # 公开病例分享站点根地址：`share-web` 用于拼接公开链接与附件短链。
 MEDICAL_SHARE_WEB_BASE_URL = (os.getenv("MEDICAL_SHARE_WEB_BASE_URL") or "https://share.dreamwhale.top").strip()
-MEDICAL_SHARE_DOWNLOAD_URL = (os.getenv("MEDICAL_SHARE_DOWNLOAD_URL") or "https://www.dreamhua.top/").strip()
+MEDICAL_SHARE_DOWNLOAD_URL = (os.getenv("MEDICAL_SHARE_DOWNLOAD_URL") or "https://apps.apple.com/cn/app/id6751417431").strip()
 
 # Aliyun SMS（通知）
 ALIYUN_SMS_ACCESS_KEY_ID = (os.getenv("ALIYUN_SMS_ACCESS_KEY_ID") or "").strip()
