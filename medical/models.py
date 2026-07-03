@@ -415,11 +415,16 @@ class MemberShareInviteDeliveryLog(models.Model):
 class MedicalShareRecord(models.Model):
     """医疗业务公开分享记录。
 
-    首期只支持病例分享，后续可扩展到检验、体检、处方等业务类型。
+    支持病例、体检、检查、处方、服药计划、药箱等业务类型的公开分享记录。
     """
 
     class BusinessType(models.TextChoices):
         MEDICAL_CASE = "medical_case", "medical_case"
+        HEALTH_EXAM_REPORT = "health_exam_report", "health_exam_report"
+        EXAMINATION_REPORT = "examination_report", "examination_report"
+        PRESCRIPTION = "prescription", "prescription"
+        MEDICATION_PLAN = "medication_plan", "medication_plan"
+        MEDICINE_BOX = "medicine_box", "medicine_box"
 
     class Status(models.TextChoices):
         ACTIVE = "active", "active"

@@ -7,8 +7,12 @@ from rest_framework.test import APITestCase
 
 from file_manager.models import ManagedFile, ManagedFileBusinessRelation
 from medical.models import (
+    ExaminationReport,
+    HealthExamReport,
+    MedExamDetail,
     MedicalCase,
     MedicationPlan,
+    MedicationRecord,
     MedicineBox,
     MedicalShareRecord,
     Member,
@@ -307,6 +311,51 @@ class MedicalShareAPITests(APITestCase):
         )
         return member, medical_case
 
+    def _create_health_exam_report(self, member: Member) -> HealthExamReport:
+        return HealthExamReport.objects.create(
+            user=self.user,
+            member=member,
+            institution_name="仁和体检中心",
+            report_no="HE-2026-001",
+            exam_date=date(2026, 4, 12),
+            summary="血脂偏高",
+            status=HealthExamReport.Status.COMPLETED,
+        )
+
+    def _create_examination_report(self, member: Member, medical_case: MedicalCase) -> ExaminationReport:
+        return ExaminationReport.objects.create(
+            user=self.user,
+            member=member,
+            medical_record=medical_case,
+            category="imaging",
+            sub_category="超声",
+            item_name="乳腺超声诊断报告单",
+            findings="双侧乳腺回声不均",
+            impression="BI-RADS 3类",
+        )
+
+    def _create_prescription(self, member: Member, medical_case: MedicalCase | None = None) -> Prescription:
+        return Prescription.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            institution_name="苏州大学附属第四医院",
+            diagnosis="高血压",
+            prescriber_name="王医生",
+            prescribed_at=timezone.make_aware(datetime(2025, 6, 27, 9, 0, 0)),
+        )
+
+    def _create_medicine_box(self, member: Member) -> MedicineBox:
+        return MedicineBox.objects.create(
+            user=self.user,
+            member=member,
+            medicine_name="阿托伐他汀钙片",
+            brand_name="立普妥",
+            dosage_form="片剂",
+            strength="20mg",
+            dose_unit="片",
+        )
+
     def test_create_medical_case_share_success(self):
         member, medical_case = self._create_case()
 
@@ -344,6 +393,56 @@ class MedicalShareAPITests(APITestCase):
         self.assertEqual(second.status_code, status.HTTP_200_OK, second.content)
         self.assertEqual(MedicalShareRecord.objects.count(), 1)
         self.assertEqual(first.json()["data"]["share_code"], second.json()["data"]["share_code"])
+
+    def test_create_share_supports_multiple_business_types(self):
+        member, medical_case = self._create_case()
+        health_exam = self._create_health_exam_report(member)
+        examination = self._create_examination_report(member, medical_case)
+        prescription = self._create_prescription(member, medical_case)
+        plan = MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            prescription=prescription,
+            drug_name="阿托伐他汀钙片",
+            dose_per_time="20mg（1片）",
+            frequency_type="daily",
+            frequency_text="每晚一次",
+            start_date=date(2025, 6, 27),
+        )
+        box = self._create_medicine_box(member)
+        linked_plan = MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            medicine_box=box,
+            drug_name="阿托伐他汀钙片",
+            dose_per_time="20mg（1片）",
+            frequency_type="daily",
+            frequency_text="每晚一次",
+            start_date=date(2025, 6, 27),
+        )
+
+        cases = [
+            ("health_exam_report", health_exam.id),
+            ("examination_report", examination.id),
+            ("prescription", prescription.id),
+            ("medication_plan", plan.id),
+            ("medicine_box", box.id),
+        ]
+
+        for business_type, business_id in cases:
+            with self.subTest(business_type=business_type):
+                response = self.client.post(
+                    "/api/v1/medical/shares/",
+                    {"business_type": business_type, "business_id": business_id},
+                    format="json",
+                )
+                self.assertIn(response.status_code, {status.HTTP_201_CREATED, status.HTTP_200_OK}, response.content)
+                body = response.json()["data"]
+                self.assertEqual(body["business_type"], business_type)
+                self.assertEqual(body["business_id"], business_id)
+                self.assertTrue(body["share_code"])
+                self.assertTrue(body["share_url"].startswith("https://share.dreamwhale.top/s/"))
 
     def test_create_share_denied_without_member_edit_permission(self):
         member = Member.objects.create(user=self.user, name="李雷")
@@ -438,6 +537,115 @@ class MedicalShareAPITests(APITestCase):
         self.assertTrue(body["timeline"])
         examination = next(item for item in body["timeline"] if item["kind"] == "examination")
         self.assertNotIn("raw_ocr", examination)
+
+    def test_public_share_returns_health_exam_detail_payload(self):
+        member = Member.objects.create(user=self.user, name="张小美", gender="female")
+        UserMemberBinding.objects.create(user=self.user, member=member, relationship="self")
+        report = self._create_health_exam_report(member)
+        MedExamDetail.objects.create(
+            business_type="health_exam_report",
+            business_id=report.id,
+            member=member,
+            category="血脂",
+            sub_category="胆固醇",
+            item_name="总胆固醇",
+            result_value="5.8",
+            unit="mmol/L",
+            reference_range="0-5.2",
+            flag="high",
+            sort_order=1,
+        )
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="health_exam_report",
+            business_id=report.id,
+            share_code="HealthShare001",
+            title=report.institution_name,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        body = response.json()["data"]
+        self.assertEqual(body["report"]["institution_name"], report.institution_name)
+        self.assertEqual(len(body["med_exam_details"]), 1)
+        self.assertEqual(body["med_exam_details"][0]["item_name"], "总胆固醇")
+
+    def test_public_share_returns_prescription_payload(self):
+        member, medical_case = self._create_case()
+        prescription = self._create_prescription(member, medical_case)
+        MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            medical_case=medical_case,
+            prescription=prescription,
+            drug_name="阿托伐他汀钙片",
+            dose_per_time="20mg（1片）",
+            frequency_type="daily",
+            frequency_text="每晚一次",
+            start_date=date(2025, 6, 27),
+        )
+        MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            prescription=prescription,
+            drug_name="替米沙坦片",
+            dose_per_time="40mg（1片）",
+            frequency_type="daily",
+            frequency_text="每日一次",
+            start_date=date(2025, 6, 28),
+        )
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="prescription",
+            business_id=prescription.id,
+            share_code="PrescriptionShare001",
+            title=prescription.institution_name,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        body = response.json()["data"]
+        self.assertEqual(body["prescription"]["id"], prescription.id)
+        self.assertEqual(len(body["medication_plans"]), 2)
+
+    def test_public_share_returns_medicine_box_payload(self):
+        member, _medical_case = self._create_case()
+        box = self._create_medicine_box(member)
+        MedicationPlan.objects.create(
+            user=self.user,
+            member=member,
+            medicine_box=box,
+            drug_name="阿托伐他汀钙片",
+            dose_per_time="20mg（1片）",
+            frequency_type="daily",
+            frequency_text="每晚一次",
+            start_date=date(2025, 6, 27),
+        )
+        share = MedicalShareRecord.objects.create(
+            user=self.user,
+            member=member,
+            business_type="medicine_box",
+            business_id=box.id,
+            share_code="MedicineBoxShare001",
+            title=box.medicine_name,
+            status=MedicalShareRecord.Status.ACTIVE,
+            expires_at=timezone.now() + timedelta(days=10),
+        )
+
+        response = self.client.get(f"/api/v1/medical/shares/public/{share.share_code}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.content)
+        body = response.json()["data"]
+        self.assertEqual(body["medicine_box"]["medicine_name"], box.medicine_name)
+        self.assertEqual(len(body["linked_medication_plans"]), 1)
 
     def test_public_share_includes_medication_plans_linked_through_prescription(self):
         member, medical_case = self._create_case()

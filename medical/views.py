@@ -575,49 +575,45 @@ class MedicalShareCreateAPI(APIView):
         serializer.is_valid(raise_exception=True)
         business_type = serializer.validated_data["business_type"]
         business_id = serializer.validated_data["business_id"]
-
-        if business_type == MedicalShareRecord.BusinessType.MEDICAL_CASE:
-            try:
-                medical_case = MedicalCase.objects.select_related("member").get(
-                    pk=business_id,
-                    is_deleted=False,
-                )
-            except MedicalCase.DoesNotExist:
+        try:
+            target = share_service._resolve_share_target(business_type, business_id)
+        except share_service.MedicalShareError as exc:
+            msg = str(exc)
+            if msg == "business_deleted":
                 return error_response(msg="business_not_found", code=40402, status_code=status.HTTP_404_NOT_FOUND)
+            return error_response(msg="invalid_business_type", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
 
-            try:
-                MemberPermissionGate.require_edit(user=request.user, member_id=medical_case.member_id)
-            except PermissionError:
-                return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+        try:
+            MemberPermissionGate.require_edit(user=request.user, member_id=target.member.id)
+        except PermissionError:
+            return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
 
-            try:
-                record, created = share_service.create_or_reuse_share_record(
-                    user=request.user,
-                    member=medical_case.member,
-                    business_type=business_type,
-                    business_id=medical_case.id,
-                    title=medical_case.title or "",
-                )
-            except share_service.MedicalShareError as exc:
-                return error_response(msg=str(exc), code=40002, status_code=status.HTTP_400_BAD_REQUEST)
-
-            payload = MedicalShareRecordSerializer(record, context={"request": request}).data
-            return success_response(
-                {
-                    "share_code": record.share_code,
-                    "share_url": payload["share_url"],
-                    "business_type": record.business_type,
-                    "business_id": record.business_id,
-                    "expires_at": record.expires_at,
-                    "status": record.status,
-                    "created": created,
-                },
-                msg="created" if created else "success",
-                code=0,
-                status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        try:
+            record, created = share_service.create_or_reuse_share_record(
+                user=request.user,
+                member=target.member,
+                business_type=business_type,
+                business_id=business_id,
+                title=target.title or "",
             )
+        except share_service.MedicalShareError as exc:
+            return error_response(msg=str(exc), code=40002, status_code=status.HTTP_400_BAD_REQUEST)
 
-        return error_response(msg="invalid_business_type", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+        payload = MedicalShareRecordSerializer(record, context={"request": request}).data
+        return success_response(
+            {
+                "share_code": record.share_code,
+                "share_url": payload["share_url"],
+                "business_type": record.business_type,
+                "business_id": record.business_id,
+                "expires_at": record.expires_at,
+                "status": record.status,
+                "created": created,
+            },
+            msg="created" if created else "success",
+            code=0,
+            status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class MedicalSharePublicDetailAPI(APIView):

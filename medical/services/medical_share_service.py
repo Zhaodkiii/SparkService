@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Iterable
 
 from django.conf import settings
@@ -18,9 +19,11 @@ from medical.models import (
     ExaminationReport,
     FollowUp,
     HealthExamReport,
+    MedExamDetail,
     MedicalCase,
     MedicalShareRecord,
     MedicationPlan,
+    MedicationRecord,
     MedicineBox,
     Member,
     Prescription,
@@ -44,7 +47,14 @@ def share_web_url(share_code: str) -> str:
 
 
 def _supported_business_types() -> set[str]:
-    return {MedicalShareRecord.BusinessType.MEDICAL_CASE}
+    return {
+        MedicalShareRecord.BusinessType.MEDICAL_CASE,
+        MedicalShareRecord.BusinessType.HEALTH_EXAM_REPORT,
+        MedicalShareRecord.BusinessType.EXAMINATION_REPORT,
+        MedicalShareRecord.BusinessType.PRESCRIPTION,
+        MedicalShareRecord.BusinessType.MEDICATION_PLAN,
+        MedicalShareRecord.BusinessType.MEDICINE_BOX,
+    }
 
 
 def _generate_share_code(length: int = 16) -> str:
@@ -102,6 +112,15 @@ def _attachment_queryset(business_type: str, business_id: int):
         .distinct()
         .order_by("-created_at", "-id")
     )
+
+
+def _download_app_payload() -> dict:
+    return {
+        "title": "下载 App 查看和管理完整健康档案",
+        "description": "当前链接已经进入公开分享页。你可以下载 Spark App 继续查看完整病例、管理成员和上传更多资料。",
+        "button_text": "下载 App",
+        "url": getattr(settings, "MEDICAL_SHARE_DOWNLOAD_URL", "") or "https://apps.apple.com/cn/app/id6751417431",
+    }
 
 
 def _serialize_attachment(share_code: str, file_obj: ManagedFile) -> dict:
@@ -195,21 +214,163 @@ def get_share_record_or_none(share_code: str) -> MedicalShareRecord | None:
 
 
 def build_public_share_payload(record: MedicalShareRecord) -> dict:
-    if record.business_type != MedicalShareRecord.BusinessType.MEDICAL_CASE:
-        raise MedicalShareError("unsupported_business_type")
+    target = _resolve_share_target(record.business_type, record.business_id)
+    member = target.member
+    share_payload = {
+        "share_code": record.share_code,
+        "business_type": record.business_type,
+        "business_id": record.business_id,
+        "status": record.status,
+        "expires_at": record.expires_at,
+        "title": record.title or target.title,
+        "share_url": share_web_url(record.share_code),
+    }
+    member_payload = {
+        "id": member.id,
+        "display_name": _mask_display_name(member.name),
+        "gender": member.gender,
+        "age_text": _age_text(member.birth_date),
+    }
 
-    try:
-        case = MedicalCase.objects.select_related("member").get(
-            pk=record.business_id,
-            member_id=record.member_id,
-            is_deleted=False,
-        )
-    except MedicalCase.DoesNotExist as exc:
-        raise MedicalShareError("business_deleted") from exc
+    if record.business_type == MedicalShareRecord.BusinessType.MEDICAL_CASE:
+        case = target.obj
+        case_payload = _serialize_case(case, record.share_code)
+        return {
+            "share": share_payload,
+            "member": member_payload,
+            "case": case_payload,
+            "resource": case_payload,
+            "timeline": _build_case_timeline(record.share_code, case),
+            "download_app": _download_app_payload(),
+        }
 
-    member = case.member
+    if record.business_type == MedicalShareRecord.BusinessType.HEALTH_EXAM_REPORT:
+        report = target.obj
+        report_payload = _serialize_health_exam_report(report, record.share_code)
+        return {
+            "share": share_payload,
+            "member": member_payload,
+            "report": report_payload,
+            "resource": report_payload,
+            "med_exam_details": _serialize_med_exam_details("health_exam_report", report.id),
+            "linked_medical_case": _serialize_linked_medical_case(report.medical_case if hasattr(report, "medical_case") else None),
+            "download_app": _download_app_payload(),
+        }
+
+    if record.business_type == MedicalShareRecord.BusinessType.EXAMINATION_REPORT:
+        report = target.obj
+        report_payload = _serialize_examination_report(report, record.share_code)
+        return {
+            "share": share_payload,
+            "member": member_payload,
+            "report": report_payload,
+            "resource": report_payload,
+            "med_exam_details": _serialize_med_exam_details("examination_report", report.id),
+            "linked_medical_case": _serialize_linked_medical_case(report.medical_record if hasattr(report, "medical_record") else None),
+            "download_app": _download_app_payload(),
+        }
+
+    if record.business_type == MedicalShareRecord.BusinessType.PRESCRIPTION:
+        prescription = target.obj
+        prescription_payload = _serialize_prescription(prescription, record.share_code)
+        medication_plans = _serialize_prescription_plans(record.share_code, prescription)
+        return {
+            "share": share_payload,
+            "member": member_payload,
+            "prescription": prescription_payload,
+            "resource": prescription_payload,
+            "medication_plans": medication_plans,
+            "linked_medical_case": _serialize_linked_medical_case(prescription.medical_case if hasattr(prescription, "medical_case") else None),
+            "download_app": _download_app_payload(),
+        }
+
+    if record.business_type == MedicalShareRecord.BusinessType.MEDICATION_PLAN:
+        plan = target.obj
+        plan_payload = _serialize_medication_plan(plan, record.share_code)
+        return {
+            "share": share_payload,
+            "member": member_payload,
+            "medication_plan": plan_payload,
+            "resource": plan_payload,
+            "linked_medical_case": _serialize_linked_medical_case(plan.medical_case if hasattr(plan, "medical_case") else None),
+            "linked_prescription": _serialize_linked_prescription(plan.prescription if hasattr(plan, "prescription") else None, record.share_code),
+            "linked_medicine_box": _serialize_linked_medicine_box(plan.medicine_box if hasattr(plan, "medicine_box") else None),
+            "medication_records": _serialize_medication_records(plan.id),
+            "download_app": _download_app_payload(),
+        }
+
+    if record.business_type == MedicalShareRecord.BusinessType.MEDICINE_BOX:
+        box = target.obj
+        box_payload = _serialize_medicine_box(box, record.share_code)
+        return {
+            "share": share_payload,
+            "member": member_payload,
+            "medicine_box": box_payload,
+            "resource": box_payload,
+            "linked_medication_plans": _serialize_box_plans(record.share_code, box),
+            "download_app": _download_app_payload(),
+        }
+
+    raise MedicalShareError("unsupported_business_type")
+
+
+def _resolve_share_target(business_type: str, business_id: int):
+    if business_type == MedicalShareRecord.BusinessType.MEDICAL_CASE:
+        try:
+            case = MedicalCase.objects.select_related("member").get(pk=business_id, is_deleted=False)
+        except MedicalCase.DoesNotExist as exc:
+            raise MedicalShareError("business_deleted") from exc
+        return SimpleNamespace(member=case.member, title=case.title or case.hospital_name or "病例", obj=case)
+
+    if business_type == MedicalShareRecord.BusinessType.HEALTH_EXAM_REPORT:
+        try:
+            report = HealthExamReport.objects.select_related("member").get(pk=business_id, is_deleted=False)
+        except HealthExamReport.DoesNotExist as exc:
+            raise MedicalShareError("business_deleted") from exc
+        title = report.institution_name or report.report_no or "体检报告"
+        return SimpleNamespace(member=report.member, title=title, obj=report)
+
+    if business_type == MedicalShareRecord.BusinessType.EXAMINATION_REPORT:
+        try:
+            report = ExaminationReport.objects.select_related("member", "medical_record").get(pk=business_id, is_deleted=False)
+        except ExaminationReport.DoesNotExist as exc:
+            raise MedicalShareError("business_deleted") from exc
+        title = report.item_name or report.category or "检查报告"
+        return SimpleNamespace(member=report.member, title=title, obj=report)
+
+    if business_type == MedicalShareRecord.BusinessType.PRESCRIPTION:
+        try:
+            prescription = Prescription.objects.select_related("member", "medical_case").get(pk=business_id, is_deleted=False)
+        except Prescription.DoesNotExist as exc:
+            raise MedicalShareError("business_deleted") from exc
+        title = prescription.institution_name or prescription.prescriber_name or prescription.prescription_no or "处方"
+        return SimpleNamespace(member=prescription.member, title=title, obj=prescription)
+
+    if business_type == MedicalShareRecord.BusinessType.MEDICATION_PLAN:
+        try:
+            plan = MedicationPlan.objects.select_related("member", "medical_case", "medicine_box", "prescription").get(pk=business_id, is_deleted=False)
+        except MedicationPlan.DoesNotExist as exc:
+            raise MedicalShareError("business_deleted") from exc
+        title = plan.drug_name or "服药计划"
+        return SimpleNamespace(member=plan.member, title=title, obj=plan)
+
+    if business_type == MedicalShareRecord.BusinessType.MEDICINE_BOX:
+        try:
+            box = MedicineBox.objects.select_related("member").get(pk=business_id, is_deleted=False)
+        except MedicineBox.DoesNotExist as exc:
+            raise MedicalShareError("business_deleted") from exc
+        title = box.medicine_name or "药品"
+        member = box.member or Member.objects.select_related("user").filter(user_id=box.user_id).order_by("-is_primary", "-updated_at", "-id").first()
+        if member is None:
+            raise MedicalShareError("business_deleted")
+        return SimpleNamespace(member=member, title=title, obj=box)
+
+    raise MedicalShareError("unsupported_business_type")
+
+
+def _serialize_case(case: MedicalCase, share_code: str) -> dict:
     attachments = _attachment_queryset("medical_case", case.id)
-    medical_case_payload = {
+    return {
         "id": case.id,
         "title": case.title,
         "record_type": case.record_type,
@@ -220,39 +381,202 @@ def build_public_share_payload(record: MedicalShareRecord) -> dict:
         "age_at_visit": case.age_at_visit,
         "created_at": case.created_at,
         "updated_at": case.updated_at,
-        "attachments": [_serialize_attachment(record.share_code, file_obj) for file_obj in attachments],
+        "attachments": [_serialize_attachment(share_code, file_obj) for file_obj in attachments],
         "extra": case.extra,
     }
 
-    timeline = _build_case_timeline(record.share_code, case)
-    member_payload = {
-        "id": member.id,
-        "display_name": _mask_display_name(member.name),
-        "gender": member.gender,
-        "age_text": _age_text(member.birth_date),
-    }
-    share_payload = {
-        "share_code": record.share_code,
-        "business_type": record.business_type,
-        "business_id": record.business_id,
-        "status": record.status,
-        "expires_at": record.expires_at,
-        "title": record.title or case.title,
-        "share_url": share_web_url(record.share_code),
-    }
-    download_app_payload = {
-        "title": "下载 App 查看和管理完整健康档案",
-        "description": "当前链接已经进入公开分享页。你可以下载 Spark App 继续查看完整病例、管理成员和上传更多资料。",
-        "button_text": "下载 App",
-        "url": getattr(settings, "MEDICAL_SHARE_DOWNLOAD_URL", "") or "https://apps.apple.com/cn/app/id6751417431",
-    }
+
+def _serialize_health_exam_report(report: HealthExamReport, share_code: str) -> dict:
     return {
-        "share": share_payload,
-        "member": member_payload,
-        "case": medical_case_payload,
-        "timeline": timeline,
-        "download_app": download_app_payload,
+        "id": report.id,
+        "institution_name": report.institution_name,
+        "report_no": report.report_no,
+        "exam_date": report.exam_date,
+        "exam_type": report.exam_type,
+        "summary": report.summary,
+        "source": report.source,
+        "status": report.status,
+        "created_at": report.created_at,
+        "updated_at": report.updated_at,
+        "attachments": [_serialize_attachment(share_code, item) for item in _attachment_queryset("health_exam_report", report.id)],
+        "extra": report.extra,
     }
+
+
+def _serialize_examination_report(report: ExaminationReport, share_code: str) -> dict:
+    return {
+        "id": report.id,
+        "medical_record": report.medical_record_id,
+        "category": report.category,
+        "sub_category": report.sub_category,
+        "item_name": report.item_name,
+        "performed_at": report.performed_at,
+        "reported_at": report.reported_at,
+        "organization_name": report.organization_name,
+        "department_name": report.department_name,
+        "doctor_name": report.doctor_name,
+        "findings": report.findings,
+        "impression": report.impression,
+        "source": report.source,
+        "status": report.status,
+        "created_at": report.created_at,
+        "updated_at": report.updated_at,
+        "attachments": [_serialize_attachment(share_code, item) for item in _attachment_queryset("examination_report", report.id)],
+        "extra": report.extra,
+    }
+
+
+def _serialize_prescription(prescription: Prescription, share_code: str) -> dict:
+    return {
+        "id": prescription.id,
+        "title": prescription.institution_name or prescription.prescriber_name or prescription.prescription_no or "处方",
+        "diagnosis": prescription.diagnosis,
+        "prescribed_at": prescription.prescribed_at,
+        "status": prescription.status,
+        "attachments": [_serialize_attachment(share_code, item) for item in _attachment_queryset("prescription", prescription.id)],
+    }
+
+
+def _serialize_medication_plan(plan: MedicationPlan, share_code: str) -> dict:
+    medicine_box = getattr(plan, "medicine_box", None)
+    return {
+        "id": plan.id,
+        "drug_name": plan.drug_name,
+        "dose_per_time": plan.dose_per_time,
+        "frequency_text": plan.frequency_text,
+        "start_date": plan.start_date,
+        "status": plan.status,
+        "box_name": medicine_box.medicine_name if medicine_box else None,
+        "instructions": plan.instructions,
+        "attachments": [_serialize_attachment(share_code, item) for item in _attachment_queryset("medication_plan", plan.id)],
+    }
+
+
+def _serialize_med_exam_details(business_type: str, business_id: int) -> list[dict]:
+    rows = (
+        MedExamDetail.objects.filter(is_deleted=False, business_type=business_type, business_id=business_id)
+        .order_by("sort_order", "-updated_at", "-id")
+    )
+    return [
+        {
+            "id": row.id,
+            "business_type": row.business_type,
+            "business_id": row.business_id,
+            "member": row.member_id,
+            "category": row.category,
+            "sub_category": row.sub_category,
+            "item_name": row.item_name,
+            "item_code": row.item_code,
+            "result_value": row.result_value,
+            "unit": row.unit,
+            "reference_range": row.reference_range,
+            "flag": row.flag,
+            "result_at": row.result_at,
+            "modality": row.modality,
+            "body_part": row.body_part,
+            "diagnosis": row.diagnosis,
+            "extra": row.extra,
+            "sort_order": row.sort_order,
+            "updated_at": row.updated_at,
+        }
+        for row in rows
+    ]
+
+
+def _serialize_linked_medical_case(case: MedicalCase | None) -> dict | None:
+    if case is None:
+        return None
+    return {
+        "id": case.id,
+        "title": case.title,
+        "hospital_name": case.hospital_name,
+        "record_type": case.record_type,
+        "status": case.status,
+        "status_badge_text": _status_badge_text(case.status),
+        "diagnosis_summary": case.diagnosis_summary,
+        "age_at_visit": case.age_at_visit,
+        "created_at": case.created_at,
+        "updated_at": case.updated_at,
+    }
+
+
+def _serialize_linked_prescription(prescription: Prescription | None, share_code: str) -> dict | None:
+    if prescription is None:
+        return None
+    return {
+        "id": prescription.id,
+        "title": prescription.institution_name or prescription.prescriber_name or prescription.prescription_no or "处方",
+        "diagnosis": prescription.diagnosis,
+        "prescribed_at": prescription.prescribed_at,
+        "status": prescription.status,
+        "attachments": [_serialize_attachment(share_code, item) for item in _attachment_queryset("prescription", prescription.id)],
+    }
+
+
+def _serialize_linked_medicine_box(box: MedicineBox | None) -> dict | None:
+    if box is None:
+        return None
+    return {
+        "id": box.id,
+        "medicine_name": box.medicine_name,
+        "medicine_type": box.medicine_type,
+        "brand_name": box.brand_name,
+        "dosage_form": box.dosage_form,
+        "strength": box.strength,
+        "dose_unit": box.dose_unit,
+        "total_quantity": box.total_quantity,
+        "expire_date": box.expire_date,
+        "notes": box.notes,
+        "updated_at": box.updated_at,
+    }
+
+
+def _serialize_medicine_box(box: MedicineBox, share_code: str) -> dict:
+    return {
+        "id": box.id,
+        "medicine_name": box.medicine_name,
+        "medicine_type": box.medicine_type,
+        "brand_name": box.brand_name,
+        "dosage_form": box.dosage_form,
+        "strength": box.strength,
+        "dose_unit": box.dose_unit,
+        "total_quantity": box.total_quantity,
+        "expire_date": box.expire_date,
+        "notes": box.notes,
+        "created_at": box.created_at,
+        "updated_at": box.updated_at,
+        "attachments": [_serialize_attachment(share_code, item) for item in _attachment_queryset("medicine_box", box.id)],
+        "extra": box.extra,
+    }
+
+
+def _serialize_medication_records(plan_id: int) -> list[dict]:
+    rows = MedicationRecord.objects.filter(is_deleted=False, plan_id=plan_id).order_by("scheduled_at", "-updated_at", "-id")
+    return [
+        {
+            "id": row.id,
+            "scheduled_at": row.scheduled_at,
+            "taken_at": row.taken_at,
+            "status": row.status,
+            "planned_dose": row.planned_dose,
+            "actual_dose": row.actual_dose,
+            "dose_sequence": row.dose_sequence,
+            "timezone": row.timezone,
+            "notes": row.notes,
+            "updated_at": row.updated_at,
+        }
+        for row in rows
+    ]
+
+
+def _serialize_prescription_plans(share_code: str, prescription: Prescription) -> list[dict]:
+    plans = MedicationPlan.objects.filter(is_deleted=False, prescription_id=prescription.id).select_related("medicine_box", "prescription").order_by("-start_date", "-updated_at", "-id")
+    return [_serialize_medication_plan(plan, share_code) for plan in plans]
+
+
+def _serialize_box_plans(share_code: str, box: MedicineBox) -> list[dict]:
+    plans = MedicationPlan.objects.filter(is_deleted=False, medicine_box_id=box.id).select_related("medicine_box", "prescription").order_by("-start_date", "-updated_at", "-id")
+    return [_serialize_medication_plan(plan, share_code) for plan in plans]
 
 
 def _build_case_timeline(share_code: str, case: MedicalCase) -> list[dict]:
@@ -409,31 +733,6 @@ def _build_case_timeline(share_code: str, case: MedicalCase) -> list[dict]:
     return events
 
 
-def _serialize_prescription(prescription: Prescription, share_code: str) -> dict:
-    return {
-        "id": prescription.id,
-        "title": prescription.institution_name or prescription.prescriber_name or prescription.prescription_no or "处方",
-        "diagnosis": prescription.diagnosis,
-        "prescribed_at": prescription.prescribed_at,
-        "status": prescription.status,
-        "attachments": _timeline_attachments("prescription", prescription.id, share_code),
-    }
-
-
-def _serialize_medication_plan(plan: MedicationPlan, share_code: str) -> dict:
-    box_name = plan.medicine_box.medicine_name if plan.medicine_box else ""
-    return {
-        "id": plan.id,
-        "drug_name": plan.drug_name,
-        "dose_per_time": plan.dose_per_time,
-        "frequency_text": plan.frequency_text,
-        "start_date": plan.start_date,
-        "status": plan.status,
-        "box_name": box_name,
-        "attachments": _timeline_attachments("medication_plan", plan.id, share_code),
-    }
-
-
 def _serialize_medication_plan_event(plan: MedicationPlan, share_code: str) -> dict:
     title = plan.drug_name or "用药"
     detail = _detail_line([
@@ -452,23 +751,6 @@ def _serialize_medication_plan_event(plan: MedicationPlan, share_code: str) -> d
         "attachments": _timeline_attachments("medication_plan", plan.id, share_code),
         "medication_plan": _serialize_medication_plan(plan, share_code),
     }
-
-
-def _serialize_examination_report(report: ExaminationReport, share_code: str) -> dict:
-    return {
-        "id": report.id,
-        "category": report.category,
-        "sub_category": report.sub_category,
-        "item_name": report.item_name,
-        "findings": report.findings,
-        "impression": report.impression,
-        "performed_at": report.performed_at,
-        "reported_at": report.reported_at,
-        "status": report.status,
-        "attachments": _timeline_attachments("examination_report", report.id, share_code),
-    }
-
-
 def _serialize_symptom(symptom: Symptom, share_code: str) -> dict:
     return {
         "id": symptom.id,
