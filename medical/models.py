@@ -704,7 +704,7 @@ class MedExamDetail(models.Model):
     sub_category = models.CharField(max_length=128, blank=True, default="", db_index=True, db_comment="指标子类，例如白细胞、总胆红素")
     item_name = models.CharField(max_length=255, db_comment="检查/检验项目名称")
     item_code = models.CharField(max_length=64, blank=True, default="", db_comment="项目编码（LIS/HIS 标准码或机构内部码）")
-    result_value = models.CharField(max_length=255, blank=True, default="", db_comment="结果值（数值或文字描述）")
+    result_value = models.TextField(blank=True, default="", db_comment="结果值（数值或文字描述）")
     unit = models.CharField(max_length=64, blank=True, default="", db_comment="结果单位，例如 mmol/L、U/L")
     reference_range = models.CharField(max_length=255, blank=True, default="", db_comment="参考范围，例如 3.9-6.1")
     flag = models.CharField(max_length=16, blank=True, default="", db_comment="异常标记，例如 H（偏高）、L（偏低）、↑、↓")
