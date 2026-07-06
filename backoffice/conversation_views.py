@@ -4,7 +4,8 @@ from datetime import datetime
 
 from django.contrib.auth import get_user_model
 from django.core.paginator import Paginator
-from django.db.models import BooleanField, Case, Count, Exists, Max, OuterRef, Q, Subquery, Value, When
+from django.db.models import BooleanField, Case, Count, Exists, IntegerField, Max, OuterRef, Q, Subquery, Value, When
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -57,47 +58,24 @@ class AdminConversationUserListView(APIView):
     permission_classes = [SuperAdminOnlyPermission]
 
     def get(self, request):
-        latest_assistant = (
-            ChatMessage.objects.filter(user_id=OuterRef("pk"), role=ChatMessage.Role.ASSISTANT)
-            .order_by("-created_at", "-id")
+        latest_message = ChatMessage.objects.filter(user_id=OuterRef("pk")).order_by("-created_at", "-id")
+        user_messages = ChatMessage.objects.filter(user_id=OuterRef("pk"))
+        user_threads = ChatThread.objects.filter(user_id=OuterRef("pk"))
+
+        message_count_sq = user_messages.order_by().values("user_id").annotate(count=Count("id")).values("count")[:1]
+        user_message_count_sq = (
+            user_messages.filter(role=ChatMessage.Role.USER)
+            .order_by()
+            .values("user_id")
+            .annotate(count=Count("id"))
+            .values("count")[:1]
         )
-        latest_thread = ChatThread.objects.filter(id=OuterRef("last_thread_id")).values("title")[:1]
+        thread_count_sq = user_threads.order_by().values("user_id").annotate(count=Count("id")).values("count")[:1]
 
         queryset = (
-            User.objects.filter(chat_messages__isnull=False)
-            .distinct()
+            User.objects.filter(Exists(user_messages))
             .annotate(
-                thread_count=Count("chat_threads", distinct=True),
-                active_thread_count=Count(
-                    "chat_threads",
-                    filter=Q(chat_threads__is_deleted=False),
-                    distinct=True,
-                ),
-                deleted_thread_count=Count(
-                    "chat_threads",
-                    filter=Q(chat_threads__is_deleted=True),
-                    distinct=True,
-                ),
-                message_count=Count("chat_messages", distinct=True),
-                tombstone_count=Count(
-                    "chat_messages",
-                    filter=Q(chat_messages__tombstone=True),
-                    distinct=True,
-                ),
-                user_message_count=Count(
-                    "chat_messages",
-                    filter=Q(chat_messages__role=ChatMessage.Role.USER),
-                    distinct=True,
-                ),
-                assistant_message_count=Count(
-                    "chat_messages",
-                    filter=Q(chat_messages__role=ChatMessage.Role.ASSISTANT),
-                    distinct=True,
-                ),
-                last_conversation_at=Max("chat_messages__created_at"),
-                last_model_name=Subquery(latest_assistant.values("model_name")[:1]),
-                last_thread_id=Subquery(latest_assistant.values("thread_id")[:1]),
-                last_thread_title=Subquery(latest_thread),
+                last_conversation_at=Subquery(latest_message.values("created_at")[:1]),
             )
         )
 
@@ -119,8 +97,12 @@ class AdminConversationUserListView(APIView):
         model_name = (request.query_params.get("model_name") or "").strip()
         if model_name:
             queryset = queryset.filter(
-                chat_messages__role=ChatMessage.Role.ASSISTANT,
-                chat_messages__model_name__icontains=model_name,
+                Exists(
+                    user_messages.filter(
+                        role=ChatMessage.Role.ASSISTANT,
+                        model_name__icontains=model_name,
+                    )
+                )
             )
 
         is_active = request.query_params.get("is_active")
@@ -129,12 +111,24 @@ class AdminConversationUserListView(APIView):
 
         has_user_message = request.query_params.get("has_user_message")
         if has_user_message == "true":
-            queryset = queryset.filter(user_message_count__gt=0)
+            queryset = queryset.filter(Exists(user_messages.filter(role=ChatMessage.Role.USER)))
         elif has_user_message == "false":
-            queryset = queryset.filter(user_message_count=0)
+            queryset = queryset.filter(~Exists(user_messages.filter(role=ChatMessage.Role.USER)))
 
         min_message_count = request.query_params.get("min_message_count")
         max_message_count = request.query_params.get("max_message_count")
+        needs_message_count = (
+            (min_message_count and min_message_count.isdigit())
+            or (max_message_count and max_message_count.isdigit())
+            or (request.query_params.get("ordering") or "").strip() in {"message_count", "-message_count"}
+        )
+        if needs_message_count:
+            queryset = queryset.annotate(
+                message_count=Coalesce(
+                    Subquery(message_count_sq, output_field=IntegerField()),
+                    Value(0),
+                )
+            )
         if min_message_count and min_message_count.isdigit():
             queryset = queryset.filter(message_count__gte=int(min_message_count))
         if max_message_count and max_message_count.isdigit():
@@ -142,6 +136,18 @@ class AdminConversationUserListView(APIView):
 
         min_thread_count = request.query_params.get("min_thread_count")
         max_thread_count = request.query_params.get("max_thread_count")
+        needs_thread_count = (
+            (min_thread_count and min_thread_count.isdigit())
+            or (max_thread_count and max_thread_count.isdigit())
+            or (request.query_params.get("ordering") or "").strip() in {"thread_count", "-thread_count"}
+        )
+        if needs_thread_count:
+            queryset = queryset.annotate(
+                thread_count=Coalesce(
+                    Subquery(thread_count_sq, output_field=IntegerField()),
+                    Value(0),
+                )
+            )
         if min_thread_count and min_thread_count.isdigit():
             queryset = queryset.filter(thread_count__gte=int(min_thread_count))
         if max_thread_count and max_thread_count.isdigit():
@@ -164,47 +170,79 @@ class AdminConversationUserListView(APIView):
         }
         if ordering not in allowed:
             ordering = "-last_conversation_at"
+        if ordering in {"user_message_count", "-user_message_count"}:
+            queryset = queryset.annotate(
+                user_message_count=Coalesce(
+                    Subquery(user_message_count_sq, output_field=IntegerField()),
+                    Value(0),
+                )
+            )
         queryset = queryset.order_by(ordering, "-id")
 
-        stats_user_ids = queryset.values("id")
-        message_stats = ChatMessage.objects.filter(user_id__in=stats_user_ids).aggregate(
+        page_obj, page_size, paginator = _paginate(queryset, request)
+        page_users = list(page_obj.object_list)
+        page_user_ids = [user.id for user in page_users]
+
+        message_stats_by_user = {
+            row["user_id"]: row
+            for row in ChatMessage.objects.filter(user_id__in=page_user_ids)
+            .values("user_id")
+            .annotate(
+                message_count=Count("id"),
+                tombstone_count=Count("id", filter=Q(tombstone=True)),
+                user_message_count=Count("id", filter=Q(role=ChatMessage.Role.USER)),
+                assistant_message_count=Count("id", filter=Q(role=ChatMessage.Role.ASSISTANT)),
+                last_conversation_at=Max("created_at"),
+            )
+        }
+        thread_stats_by_user = {
+            row["user_id"]: row
+            for row in ChatThread.objects.filter(user_id__in=page_user_ids)
+            .values("user_id")
+            .annotate(
+                thread_count=Count("id"),
+                active_thread_count=Count("id", filter=Q(is_deleted=False)),
+                deleted_thread_count=Count("id", filter=Q(is_deleted=True)),
+            )
+        }
+        latest_assistant_by_user = {}
+        for message in (
+            ChatMessage.objects.filter(user_id__in=page_user_ids, role=ChatMessage.Role.ASSISTANT)
+            .select_related("thread")
+            .order_by("user_id", "-created_at", "-id")
+        ):
+            latest_assistant_by_user.setdefault(message.user_id, message)
+
+        page_message_stats = ChatMessage.objects.filter(user_id__in=page_user_ids).aggregate(
             message_count=Count("id"),
             user_message_count=Count("id", filter=Q(role=ChatMessage.Role.USER)),
             assistant_message_count=Count("id", filter=Q(role=ChatMessage.Role.ASSISTANT)),
         )
-        thread_stats = ChatThread.objects.filter(user_id__in=stats_user_ids).aggregate(
+        page_thread_stats = ChatThread.objects.filter(user_id__in=page_user_ids).aggregate(
             thread_count=Count("id"),
             deleted_thread_count=Count("id", filter=Q(is_deleted=True)),
         )
-        stats = {
-            "user_count": queryset.count(),
-            "thread_count": thread_stats.get("thread_count") or 0,
-            "message_count": message_stats.get("message_count") or 0,
-            "user_message_count": message_stats.get("user_message_count") or 0,
-            "assistant_message_count": message_stats.get("assistant_message_count") or 0,
-            "deleted_thread_count": thread_stats.get("deleted_thread_count") or 0,
-        }
-
-        page_obj, page_size, paginator = _paginate(queryset, request)
         rows = []
-        for user in page_obj.object_list:
+        for user in page_users:
+            user_message_stats = message_stats_by_user.get(user.id, {})
+            user_thread_stats = thread_stats_by_user.get(user.id, {})
+            latest_assistant_message = latest_assistant_by_user.get(user.id)
+            last_conversation_at = user_message_stats.get("last_conversation_at")
             rows.append(
                 serialize_conversation_user(
                     user,
                     annotations={
-                        "thread_count": user.thread_count,
-                        "active_thread_count": user.active_thread_count,
-                        "deleted_thread_count": user.deleted_thread_count,
-                        "message_count": user.message_count,
-                        "tombstone_count": user.tombstone_count,
-                        "user_message_count": user.user_message_count,
-                        "assistant_message_count": user.assistant_message_count,
-                        "last_conversation_at": user.last_conversation_at.isoformat()
-                        if user.last_conversation_at
-                        else None,
-                        "last_thread_id": user.last_thread_id,
-                        "last_thread_title": user.last_thread_title or "",
-                        "last_model_name": user.last_model_name or "",
+                        "thread_count": user_thread_stats.get("thread_count") or 0,
+                        "active_thread_count": user_thread_stats.get("active_thread_count") or 0,
+                        "deleted_thread_count": user_thread_stats.get("deleted_thread_count") or 0,
+                        "message_count": user_message_stats.get("message_count") or 0,
+                        "tombstone_count": user_message_stats.get("tombstone_count") or 0,
+                        "user_message_count": user_message_stats.get("user_message_count") or 0,
+                        "assistant_message_count": user_message_stats.get("assistant_message_count") or 0,
+                        "last_conversation_at": last_conversation_at.isoformat() if last_conversation_at else None,
+                        "last_thread_id": latest_assistant_message.thread_id if latest_assistant_message else None,
+                        "last_thread_title": latest_assistant_message.thread.title if latest_assistant_message else "",
+                        "last_model_name": latest_assistant_message.model_name if latest_assistant_message else "",
                     },
                 )
             )
@@ -220,12 +258,12 @@ class AdminConversationUserListView(APIView):
         payload = {
             "items": rows,
             "stats": {
-                "user_count": stats.get("user_count") or 0,
-                "thread_count": stats.get("thread_count") or 0,
-                "message_count": stats.get("message_count") or 0,
-                "user_message_count": stats.get("user_message_count") or 0,
-                "assistant_message_count": stats.get("assistant_message_count") or 0,
-                "deleted_thread_count": stats.get("deleted_thread_count") or 0,
+                "user_count": paginator.count,
+                "thread_count": page_thread_stats.get("thread_count") or 0,
+                "message_count": page_message_stats.get("message_count") or 0,
+                "user_message_count": page_message_stats.get("user_message_count") or 0,
+                "assistant_message_count": page_message_stats.get("assistant_message_count") or 0,
+                "deleted_thread_count": page_thread_stats.get("deleted_thread_count") or 0,
             },
             "pagination": {
                 "page": page_obj.number,

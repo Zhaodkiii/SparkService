@@ -49,8 +49,8 @@
     </a-collapse>
 
     <div v-if="stats" class="stats-bar">
-      有对话用户 {{ stats.user_count }} | 会话 {{ stats.thread_count }} | 用户发送 {{ stats.user_message_count }} | AI 回复
-      {{ stats.assistant_message_count }} | 已删除会话 {{ stats.deleted_thread_count }}
+      有对话用户 {{ stats.user_count }} | 当前页会话 {{ stats.thread_count }} | 当前页用户发送 {{ stats.user_message_count }} | 当前页 AI 回复
+      {{ stats.assistant_message_count }} | 当前页已删除会话 {{ stats.deleted_thread_count }}
     </div>
 
     <a-table :data-source="rows" row-key="user_id" :pagination="false" :loading="loading" :scroll="{ x: 1500 }">

@@ -91,6 +91,8 @@ class ChatMessage(models.Model):
         indexes = [
             models.Index(fields=["user", "server_updated_at", "id"], name="idx_chat_msg_user_sync"),
             models.Index(fields=["thread", "created_at", "id"], name="idx_chat_msg_thread_created"),
+            models.Index(fields=["user", "role", "-created_at", "-id"], name="idx_chat_msg_user_role_time"),
+            models.Index(fields=["user", "-created_at", "-id"], name="idx_chat_msg_user_time"),
         ]
 
 
