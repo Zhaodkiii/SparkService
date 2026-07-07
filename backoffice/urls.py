@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from backoffice.views import (
     AdminAITrialActionView,
@@ -72,6 +72,7 @@ urlpatterns = [
     path("auth/login/", AdminAuthLoginView.as_view(), name="admin-auth-login"),
     path("auth/profile/", AdminAuthProfileView.as_view(), name="admin-auth-profile"),
     path("dashboard/overview/", AdminDashboardOverviewView.as_view(), name="admin-dashboard-overview"),
+    path("content/", include("content.admin_urls")),
     path("tasks/dashboard/", AdminAsyncTaskDashboardView.as_view(), name="admin-tasks-dashboard"),
     path("tasks/manager/status/", AdminAsyncTaskManagerStatusView.as_view(), name="admin-tasks-manager-status"),
     path("tasks/manager/<str:action>/", AdminAsyncTaskManagerControlView.as_view(), name="admin-tasks-manager-control"),

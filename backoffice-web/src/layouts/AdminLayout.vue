@@ -163,6 +163,21 @@ provide(updateTabTitleKey, updateTabTitle);
       { code: 'menu:medical_data:analytics', name: '医疗数据统计', path: '/medical-data/analytics', children: [] },
     ],
   },
+  {
+    code: 'menu:articles',
+    name: '文章模块',
+    path: '/articles',
+    children: [
+      { code: 'menu:articles:overview', name: '文章总览', path: '/articles/overview', children: [] },
+      { code: 'menu:articles:list', name: '文章管理', path: '/articles/list', children: [] },
+      { code: 'menu:articles:categories', name: '分类管理', path: '/articles/categories', children: [] },
+      { code: 'menu:articles:tags', name: '标签管理', path: '/articles/tags', children: [] },
+      { code: 'menu:articles:locales', name: '多语言管理', path: '/articles/locales', children: [] },
+      { code: 'menu:articles:analytics', name: '阅读数据', path: '/articles/analytics', children: [] },
+      { code: 'menu:articles:compliance', name: '来源合规', path: '/articles/compliance', children: [] },
+      { code: 'menu:articles:recycle_bin', name: '回收站', path: '/articles/recycle-bin', children: [] },
+    ],
+  },
 ];
 
 const menus = computed(() => {
@@ -216,6 +231,9 @@ watch(
     if (path.startsWith('/medical-data/')) {
       openKeys.value = ['/medical-data'];
     }
+    if (path.startsWith('/articles/')) {
+      openKeys.value = ['/articles'];
+    }
   },
   { immediate: true },
 );
@@ -235,6 +253,10 @@ function onMenuClick(info: { key: string }) {
   }
   if (info.key === '/medical-data') {
     router.push('/medical-data/users');
+    return;
+  }
+  if (info.key === '/articles') {
+    router.push('/articles/overview');
     return;
   }
   router.push(info.key);

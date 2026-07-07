@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 停止 SparkService 本地开发环境（后端 + 管理前端 + 分享前端）
+# 停止 SparkService 本地开发环境（后端 + 管理前端 + 开放前端）
 
 set -euo pipefail
 

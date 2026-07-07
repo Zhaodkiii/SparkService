@@ -1,0 +1,137 @@
+.markdown-content {
+  font-size: 17px;
+  line-height: 1.85;
+  color: #222;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  margin: 1.6em 0 0.6em;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #111;
+}
+
+.markdown-content h1 {
+  font-size: 1.35em;
+}
+
+.markdown-content h2 {
+  font-size: 1.25em;
+}
+
+.markdown-content h3 {
+  font-size: 1.15em;
+}
+
+.markdown-content h4 {
+  font-size: 1.05em;
+}
+
+.markdown-content p {
+  margin: 0.9em 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 0.9em 0;
+  padding-left: 1.5em;
+}
+
+.markdown-content li {
+  margin: 0.35em 0;
+}
+
+.markdown-content blockquote {
+  margin: 1em 0;
+  padding: 12px 16px;
+  border-left: 4px solid #1677ff;
+  background: #f0f5ff;
+  color: #444;
+  border-radius: 0 8px 8px 0;
+}
+
+.markdown-content blockquote p {
+  margin: 0;
+}
+
+.markdown-content .table-scroll {
+  margin: 1em 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.markdown-content table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 10px 12px;
+  border: 1px solid #e8e8e8;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.markdown-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1em auto;
+  border-radius: 8px;
+}
+
+.markdown-content code {
+  padding: 2px 6px;
+  font-size: 0.9em;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.markdown-content pre {
+  margin: 1em 0;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.6;
+  background: #f5f5f5;
+  border-radius: 8px;
+}
+
+.markdown-content pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-content a {
+  color: #1677ff;
+  word-break: break-all;
+}
+
+.markdown-content hr {
+  margin: 2em 0;
+  border: none;
+  border-top: 1px solid #eee;
+}
+
+@media (max-width: 480px) {
+  .markdown-content {
+    font-size: 16px;
+    line-height: 1.8;
+  }
+}

@@ -7,6 +7,18 @@ from pathlib import Path
 from common.request_context import request_id_var
 
 
+def _json_safe(value):
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        if isinstance(value, dict):
+            return {str(k): _json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [_json_safe(item) for item in value]
+        return str(value)
+
+
 class RequestIdFilter(logging.Filter):
     """
     Inject request_id from contextvars into every log record.
@@ -56,7 +68,7 @@ class JsonFormatter(logging.Formatter):
             "content_type",
         ):
             if hasattr(record, key):
-                payload[key] = getattr(record, key)
+                payload[key] = _json_safe(getattr(record, key))
 
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
@@ -93,7 +105,7 @@ class JsonFormatter(logging.Formatter):
             if value is None:
                 continue
             if key not in payload:
-                payload[key] = value
+                payload[key] = _json_safe(value)
 
         # Keep output clean for downstream tooling.
         payload = {k: v for k, v in payload.items() if v is not None}
