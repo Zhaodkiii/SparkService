@@ -45,11 +45,14 @@ def _normalize_string_list(value, field_name: str):
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
+    display_name = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
             "id",
             "username",
+            "display_name",
             "email",
             "is_active",
             "is_staff",
@@ -57,6 +60,12 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "date_joined",
             "last_login",
         )
+
+    def get_display_name(self, obj):
+        name = (getattr(obj, "first_name", None) or "").strip()
+        if name:
+            return name
+        return obj.username
 
 
 def _compute_last_used_at(user):

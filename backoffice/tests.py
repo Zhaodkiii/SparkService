@@ -255,6 +255,36 @@ class BackofficePermissionTests(TestCase):
             last_used = parse_datetime(last_used)
         self.assertEqual(last_used.replace(microsecond=0), refresh_time.replace(microsecond=0))
 
+    def test_user_list_returns_display_name(self):
+        self.target_user.first_name = "哈哈哈哈 Dream"
+        self.target_user.save(update_fields=["first_name"])
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/")
+        self.assertEqual(response.status_code, 200)
+        row = next(item for item in response.data["data"]["items"] if item["id"] == self.target_user.id)
+        self.assertEqual(row["display_name"], "哈哈哈哈 Dream")
+        self.assertEqual(row["username"], "target_user")
+
+    def test_user_detail_returns_display_name(self):
+        self.target_user.first_name = "哈哈哈哈 Dream"
+        self.target_user.save(update_fields=["first_name"])
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f"/api/admin/v1/users/{self.target_user.id}/detail/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["user"]["display_name"], "哈哈哈哈 Dream")
+
+    def test_user_list_search_by_display_name(self):
+        self.target_user.first_name = "哈哈哈哈 Dream"
+        self.target_user.save(update_fields=["first_name"])
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/", {"q": "哈哈哈哈"})
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["data"]["items"]}
+        self.assertIn(self.target_user.id, ids)
+
 
 class AdminAIScenarioMultiAgentTests(TestCase):
     def setUp(self):

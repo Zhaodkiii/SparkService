@@ -122,7 +122,44 @@ class LoginService:
         return User.objects.filter(username__iexact=identifier).first()
 
     @staticmethod
-    def _create_apple_user(*, subject: str, chosen_email: str, chosen_name: str):
+    def _normalize_apple_full_name(full_name: str) -> str:
+        return (full_name or "").strip()
+
+    @staticmethod
+    def _resolve_user_display_name(*, user, fallback_email: str = "") -> str:
+        name = (getattr(user, "first_name", None) or "").strip()
+        if name:
+            return name
+        email = (getattr(user, "email", None) or fallback_email or "").strip()
+        if email:
+            if "@" in email:
+                prefix = email.split("@", 1)[0].strip()
+                return prefix or email
+            return email
+        return "Apple User"
+
+    @staticmethod
+    def _maybe_backfill_apple_first_name(*, user, full_name: str) -> bool:
+        normalized = LoginService._normalize_apple_full_name(full_name)
+        if not normalized:
+            return False
+        current = (getattr(user, "first_name", None) or "").strip()
+        if current:
+            return False
+        user.first_name = normalized
+        user.save(update_fields=["first_name"])
+        return True
+
+    @staticmethod
+    def _audit_client_full_name(full_name: str) -> dict[str, Any]:
+        normalized = LoginService._normalize_apple_full_name(full_name)
+        payload: dict[str, Any] = {"client_full_name_present": bool(normalized)}
+        if normalized:
+            payload["client_full_name"] = normalized[:64]
+        return payload
+
+    @staticmethod
+    def _create_apple_user(*, subject: str, chosen_email: str, full_name: str):
         User = get_user_model()
         username_base = f"apple_{subject[:16]}"
         username = username_base
@@ -133,8 +170,12 @@ class LoginService:
 
         user = User.objects.create(username=username, email=chosen_email, is_active=True)
         user.set_unusable_password()
-        user.first_name = chosen_name
-        user.save(update_fields=["password", "first_name", "is_active"])
+        update_fields = ["password", "is_active"]
+        normalized_name = LoginService._normalize_apple_full_name(full_name)
+        if normalized_name:
+            user.first_name = normalized_name
+            update_fields.append("first_name")
+        user.save(update_fields=update_fields)
         return user
 
     @staticmethod
@@ -307,7 +348,6 @@ class LoginService:
         email_from_token = (payload.get("email") or "").strip().lower()
         email_from_client = (email or "").strip().lower()
         chosen_email = email_from_token or email_from_client or f"apple_{subject[:12]}@privaterelay.appleid.com"
-        chosen_name = (full_name or "").strip() or "Apple User"
 
         User = get_user_model()
         created_user = False
@@ -318,6 +358,7 @@ class LoginService:
                 if email_from_token and user.email.lower() != email_from_token:
                     user.email = email_from_token
                     user.save(update_fields=["email"])
+                LoginService._maybe_backfill_apple_first_name(user=user, full_name=full_name)
             else:
                 # 命中已注销（inactive）账号：按“新注册”流程创建新用户并重绑 Apple identity。
                 flow_logger.info(
@@ -333,7 +374,7 @@ class LoginService:
                 user = LoginService._create_apple_user(
                     subject=subject,
                     chosen_email=chosen_email,
-                    chosen_name=chosen_name,
+                    full_name=full_name,
                 )
                 identity.user = user
                 identity.save(update_fields=["user", "updated_at"])
@@ -362,7 +403,7 @@ class LoginService:
             user = LoginService._create_apple_user(
                 subject=subject,
                 chosen_email=chosen_email,
-                chosen_name=chosen_name,
+                full_name=full_name,
             )
 
             # 并发首登下，唯一约束可能被并发请求同时命中；冲突时回退读取已创建记录。
@@ -384,6 +425,7 @@ class LoginService:
                     raise APIError("apple_identity_bind_failed", code=50032, status_code=500)
                 user = identity.user
                 created_user = False
+                LoginService._maybe_backfill_apple_first_name(user=user, full_name=full_name)
             flow_logger.info(
                 "Apple 渠道用户首次注册成功",
                 extra={
@@ -409,6 +451,7 @@ class LoginService:
                 "email": email_from_token,
                 "email_verified": payload.get("email_verified"),
                 "apple_user_identifier": user_identifier or "",
+                **LoginService._audit_client_full_name(full_name),
             },
             request_id=request_id or "",
         )
@@ -432,7 +475,7 @@ class LoginService:
             ),
         )
         result["email"] = user.email or chosen_email
-        result["display_name"] = (user.first_name or chosen_name).strip() or "Apple User"
+        result["display_name"] = LoginService._resolve_user_display_name(user=user, fallback_email=chosen_email)
         result["is_new_user"] = created_user
         result["deactivation_cancelled"] = cancel_result
         flow_logger.info(
@@ -480,14 +523,10 @@ class LoginService:
         else:
             sign_in_method = "apple"
 
-        display_name = (getattr(user, "first_name", None) or "").strip()
-        if not display_name:
-            display_name = "Apple User"
-
         return {
             "user_id": user.id,
             "email": user.email or "",
-            "display_name": display_name,
+            "display_name": LoginService._resolve_user_display_name(user=user),
             "is_pro": TrialService.is_pro_user(user=user),
             "is_new_user": False,
             "sign_in_method": sign_in_method,

@@ -21,6 +21,7 @@ export interface MenuNode {
 export interface AdminUser {
   id: number;
   username: string;
+  display_name: string;
   email: string;
   is_active: boolean;
   is_staff: boolean;

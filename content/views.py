@@ -1,12 +1,16 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.paginator import Paginator
+from django.conf import settings
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
 from backoffice.audit import write_audit_log
+from common.http_cache import build_etag, etag_matches
 from common.permissions import AdminCodePermission, AdminOnlyPermission
 from common.response import error_response, success_response
 from content.models import ContentArticle, ContentArticleVersion, ContentCategory, ContentTag
@@ -46,6 +50,31 @@ def validation_error_response(exc):
     return error_response(msg=detail, code=40001, status_code=status.HTTP_400_BAD_REQUEST)
 
 
+def public_cache_max_age(request) -> int:
+    default_max_age = max(int(getattr(settings, "CONTENT_PUBLIC_CACHE_MAX_AGE", 86400)), 0)
+    raw = request.headers.get("X-Cache-Max-Age") or request.query_params.get("cache_max_age")
+    if raw in (None, ""):
+        return default_max_age
+    try:
+        requested = int(raw)
+    except (TypeError, ValueError):
+        return default_max_age
+    return min(max(requested, 0), default_max_age)
+
+
+def public_cached_success_response(request, data, msg: str = "success"):
+    # 客户端科普页 GET 接口使用 ETag 协商缓存，命中时返回 304 空响应。
+    payload = {"code": 0, "msg": msg, "data": data}
+    etag = build_etag(payload)
+    if etag_matches(request.headers.get("If-None-Match"), etag):
+        response = HttpResponse(status=status.HTTP_304_NOT_MODIFIED)
+    else:
+        response = success_response(data, msg=msg)
+    response["ETag"] = etag
+    response["Cache-Control"] = f"public, max-age={public_cache_max_age(request)}, must-revalidate"
+    return response
+
+
 class AdminContentOverviewView(APIView):
     permission_classes = [AdminOnlyPermission]
 
@@ -54,6 +83,24 @@ class AdminContentOverviewView(APIView):
         data["popular_articles"] = AdminContentArticleListSerializer(data["popular_articles"], many=True).data
         data["recent_articles"] = AdminContentArticleListSerializer(data["recent_articles"], many=True).data
         return success_response(data)
+
+
+class AdminContentArticleSqlExportView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        params = request.query_params
+        sql = ContentArticleService.build_export_sql(
+            since=params.get("since") or None,
+            until=params.get("until") or None,
+            locale=params.get("locale") or None,
+            status_val=params.get("status"),
+        )
+        ts = timezone.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"articles_{ts}.sql"
+        response = HttpResponse(sql, content_type="application/sql; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class AdminContentArticleListCreateView(APIView):
@@ -345,7 +392,8 @@ class PublicContentArticleListView(APIView):
         page, page_size = page_params(request)
         paginator = Paginator(queryset, page_size)
         page_obj = paginator.get_page(page)
-        return success_response({"items": PublicContentArticleListSerializer(page_obj.object_list, many=True).data, "pagination": build_pagination(page_obj, page_size)})
+        payload = {"items": PublicContentArticleListSerializer(page_obj.object_list, many=True).data, "pagination": build_pagination(page_obj, page_size)}
+        return public_cached_success_response(request, payload)
 
 
 class PublicContentArticleDetailView(APIView):
@@ -356,7 +404,7 @@ class PublicContentArticleDetailView(APIView):
             article = ContentArticleService.get_public_article_by_slug(slug, request.query_params.get("locale") or "zh-CN")
         except ContentArticle.DoesNotExist:
             return error_response(msg="not_found", code=40401, status_code=status.HTTP_404_NOT_FOUND)
-        return success_response(PublicContentArticleDetailSerializer(article).data)
+        return public_cached_success_response(request, PublicContentArticleDetailSerializer(article).data)
 
 
 class PublicContentArticleDetailByIDView(APIView):
@@ -368,14 +416,14 @@ class PublicContentArticleDetailByIDView(APIView):
             article = ContentArticleService.get_public_article_by_id(article_id, locale)
         except ContentArticle.DoesNotExist:
             return error_response(msg="not_found", code=40401, status_code=status.HTTP_404_NOT_FOUND)
-        return success_response(PublicContentArticleDetailSerializer(article).data)
+        return public_cached_success_response(request, PublicContentArticleDetailSerializer(article).data)
 
 
 class PublicContentCategoryListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return success_response(ContentCategoryService.list_tree(include_inactive=False))
+        return public_cached_success_response(request, ContentCategoryService.list_tree(include_inactive=False))
 
 
 class PublicContentTagListView(APIView):
@@ -383,7 +431,7 @@ class PublicContentTagListView(APIView):
 
     def get(self, request):
         locale = request.query_params.get("locale") or "zh-CN"
-        return success_response(ContentTagSerializer(ContentTagService.list_public_tags(locale), many=True).data)
+        return public_cached_success_response(request, ContentTagSerializer(ContentTagService.list_public_tags(locale), many=True).data)
 
 
 class PublicContentArticleViewEventView(APIView):
@@ -428,4 +476,4 @@ class PublicContentArticleShareLinkView(APIView):
         article = get_object_or_404(ContentArticle, id=article_id, deleted_at__isnull=True, status=ContentArticle.Status.PUBLISHED)
         payload = ContentArticleService.generate_share_link(article)
         payload.update({"title": article.title, "summary": article.summary, "cover_image": article.cover_image})
-        return success_response(payload)
+        return public_cached_success_response(request, payload)

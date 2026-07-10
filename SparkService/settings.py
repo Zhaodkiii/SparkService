@@ -82,6 +82,7 @@ CONTENT_TRUSTED_ASSET_HOSTS = [
     for item in os.getenv("CONTENT_TRUSTED_ASSET_HOSTS", "").split(",")
     if item.strip()
 ]
+CONTENT_PUBLIC_CACHE_MAX_AGE = int(os.getenv("CONTENT_PUBLIC_CACHE_MAX_AGE", "86400"))
 
 # Aliyun SMS（通知）
 ALIYUN_SMS_ACCESS_KEY_ID = (os.getenv("ALIYUN_SMS_ACCESS_KEY_ID") or "").strip()

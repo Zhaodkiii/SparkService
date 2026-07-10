@@ -1,6 +1,6 @@
 <template>
   <a-space style="margin-bottom: 16px">
-    <a-input-search v-model:value="query.q" placeholder="用户名/邮箱" enter-button @search="load" style="width: 280px" />
+    <a-input-search v-model:value="query.q" placeholder="显示名称 / 账号标识 / 邮箱" enter-button @search="load" style="width: 320px" />
     <a-select v-model:value="query.is_active" style="width: 140px" @change="load">
       <a-select-option value="">全部状态</a-select-option>
       <a-select-option value="true">启用</a-select-option>
@@ -10,7 +10,8 @@
 
   <a-table :data-source="rows" :pagination="false" row-key="id" :loading="loading">
     <a-table-column title="ID" data-index="id" />
-    <a-table-column title="用户名" data-index="username" />
+    <a-table-column title="显示名称" data-index="display_name" />
+    <a-table-column title="账号标识" data-index="username" />
     <a-table-column title="邮箱" data-index="email" />
     <a-table-column title="状态" key="status">
       <template #default="{ record }">
@@ -45,7 +46,8 @@
   <AdminDetailModal v-model:open="detailModal.open" title="用户详情" :loading="detailModal.loading">
     <a-descriptions v-if="detailModal.data" bordered :column="2" size="small">
       <a-descriptions-item label="用户 ID">{{ detailModal.data.user.id }}</a-descriptions-item>
-      <a-descriptions-item label="用户名">{{ detailModal.data.user.username }}</a-descriptions-item>
+      <a-descriptions-item label="显示名称">{{ detailModal.data.user.display_name || '-' }}</a-descriptions-item>
+      <a-descriptions-item label="账号标识">{{ detailModal.data.user.username }}</a-descriptions-item>
       <a-descriptions-item label="邮箱">{{ detailModal.data.user.email || '-' }}</a-descriptions-item>
       <a-descriptions-item label="状态">
         <a-tag :color="detailModal.data.user.is_active ? 'green' : 'red'">

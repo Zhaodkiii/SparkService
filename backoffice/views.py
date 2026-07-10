@@ -571,7 +571,11 @@ class AdminUserListView(APIView):
         )
         query = (request.query_params.get("q") or "").strip()
         if query:
-            queryset = queryset.filter(Q(username__icontains=query) | Q(email__icontains=query))
+            queryset = queryset.filter(
+                Q(username__icontains=query)
+                | Q(email__icontains=query)
+                | Q(first_name__icontains=query)
+            )
 
         is_active = request.query_params.get("is_active")
         if is_active in {"true", "false"}:

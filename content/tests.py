@@ -126,3 +126,83 @@ class ContentArticleApiTests(TestCase):
         )
         resp = self.client.post(f"/api/admin/v1/content/articles/{article.id}/publish/", {}, format="json")
         self.assertEqual(resp.status_code, 400)
+
+    def test_public_article_list_supports_pagination_and_etag(self):
+        for index in range(3):
+            ContentArticle.objects.create(
+                title=f"科普文章 {index}",
+                slug=f"article-{index}",
+                locale="zh-CN",
+                summary="摘要",
+                content="# 内容",
+                author=self.user,
+                category=self.category,
+                status=ContentArticle.Status.PUBLISHED,
+                visibility=ContentArticle.Visibility.PUBLIC,
+                source_url="https://example.com/source",
+                published_at=timezone.now(),
+            )
+
+        self.client.force_authenticate(user=None)
+        resp = self.client.get("/api/v1/content/articles/?locale=zh-CN&page=1&page_size=2")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("ETag", resp)
+        self.assertIn("max-age=86400", resp["Cache-Control"])
+        self.assertEqual(len(resp.data["data"]["items"]), 2)
+        self.assertEqual(resp.data["data"]["pagination"]["page"], 1)
+        self.assertEqual(resp.data["data"]["pagination"]["page_size"], 2)
+        self.assertEqual(resp.data["data"]["pagination"]["total"], 3)
+        self.assertEqual(resp.data["data"]["pagination"]["total_pages"], 2)
+        self.assertTrue(resp.data["data"]["pagination"]["has_next"])
+        self.assertEqual(resp.data["data"]["pagination"]["next_page"], 2)
+
+        cached_resp = self.client.get(
+            "/api/v1/content/articles/?locale=zh-CN&page=1&page_size=2",
+            HTTP_IF_NONE_MATCH=resp["ETag"],
+        )
+        self.assertEqual(cached_resp.status_code, 304)
+        self.assertEqual(cached_resp["ETag"], resp["ETag"])
+        self.assertIn("max-age=86400", cached_resp["Cache-Control"])
+        self.assertEqual(cached_resp.content, b"")
+
+        client_ttl_resp = self.client.get(
+            "/api/v1/content/articles/?locale=zh-CN&page=1&page_size=2",
+            HTTP_X_CACHE_MAX_AGE="3600",
+        )
+        self.assertIn("max-age=3600", client_ttl_resp["Cache-Control"])
+
+    def test_public_categories_support_etag(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.get("/api/v1/content/categories/?locale=zh-CN")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("ETag", resp)
+        self.assertIn("max-age=86400", resp["Cache-Control"])
+
+        cached_resp = self.client.get("/api/v1/content/categories/?locale=zh-CN", HTTP_IF_NONE_MATCH=resp["ETag"])
+        self.assertEqual(cached_resp.status_code, 304)
+        self.assertEqual(cached_resp.content, b"")
+
+    def test_public_article_detail_by_id_supports_etag(self):
+        article = ContentArticle.objects.create(
+            title="详情缓存文章",
+            slug="detail-cache",
+            locale="zh-CN",
+            summary="摘要",
+            content="# 内容",
+            author=self.user,
+            category=self.category,
+            status=ContentArticle.Status.PUBLISHED,
+            visibility=ContentArticle.Visibility.PUBLIC,
+            source_url="https://example.com/source",
+            published_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=None)
+        resp = self.client.get(f"/api/v1/content/articles/{article.id}/?locale=zh-CN")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("ETag", resp)
+        self.assertIn("max-age=86400", resp["Cache-Control"])
+
+        cached_resp = self.client.get(f"/api/v1/content/articles/{article.id}/?locale=zh-CN", HTTP_IF_NONE_MATCH=resp["ETag"])
+        self.assertEqual(cached_resp.status_code, 304)
+        self.assertEqual(cached_resp.content, b"")

@@ -111,6 +111,17 @@ export function fetchArticleOverview() {
   return http.get<unknown, ArticleOverview>('/api/admin/v1/content/overview/');
 }
 
+export function exportArticlesSql(params: {
+  since?: string;
+  until?: string;
+  locale?: string;
+}) {
+  return http.get<unknown, Blob>('/api/admin/v1/content/articles/export-sql/', {
+    params,
+    responseType: 'blob',
+  });
+}
+
 export function fetchArticles(params: Record<string, unknown>) {
   return http.get<unknown, PageResponse<ArticleRow>>('/api/admin/v1/content/articles/', { params });
 }

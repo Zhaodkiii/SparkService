@@ -1,3 +1,4 @@
+import json
 import re
 import secrets
 import string
@@ -6,7 +7,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count, F, Max, Q, Sum
 from django.utils import timezone
 
@@ -42,7 +43,73 @@ def build_pagination(page_obj, page_size: int) -> dict:
         "page_size": page_size,
         "total": page_obj.paginator.count,
         "total_pages": page_obj.paginator.num_pages,
+        "has_next": page_obj.has_next(),
+        "has_previous": page_obj.has_previous(),
+        "next_page": page_obj.next_page_number() if page_obj.has_next() else None,
+        "previous_page": page_obj.previous_page_number() if page_obj.has_previous() else None,
     }
+
+
+def _sql_vendor() -> str:
+    return connection.vendor
+
+
+def _sql_quote_identifier(name: str) -> str:
+    vendor = _sql_vendor()
+    if vendor == "mysql":
+        return f"`{name}`"
+    return f'"{name}"'
+
+
+def _sql_escape_str(value) -> str:
+    if value is None:
+        return "NULL"
+    text = str(value).replace("'", "''")
+    return f"'{text}'"
+
+
+def _sql_fmt_int(value) -> str:
+    if value is None:
+        return "NULL"
+    return str(int(value))
+
+
+def _sql_fmt_bool(value) -> str:
+    if _sql_vendor() == "mysql":
+        return "1" if value else "0"
+    return "TRUE" if value else "FALSE"
+
+
+def _sql_fmt_dt(value) -> str:
+    if value is None:
+        return "NULL"
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value, timezone.get_current_timezone())
+    return _sql_escape_str(value.isoformat(sep=" ", timespec="seconds"))
+
+
+def _sql_fmt_json(value) -> str:
+    if value is None:
+        return "NULL"
+    return _sql_escape_str(json.dumps(value, ensure_ascii=False))
+
+
+def _sql_insert_prefix(table: str, columns: list[str]) -> str:
+    table_name = _sql_quote_identifier(table)
+    column_list = ", ".join(_sql_quote_identifier(column) for column in columns)
+    if _sql_vendor() == "mysql":
+        return f"INSERT IGNORE INTO {table_name} ({column_list}) VALUES "
+    return f"INSERT INTO {table_name} ({column_list}) VALUES "
+
+
+def _sql_insert_suffix() -> str:
+    if _sql_vendor() == "postgresql":
+        return " ON CONFLICT (id) DO NOTHING;"
+    return ";"
+
+
+def _sql_values_row(values: list[str]) -> str:
+    return f"({', '.join(values)})"
 
 
 def trusted_asset_hosts() -> list[str]:
@@ -368,6 +435,197 @@ class ContentArticleService:
             "app_scheme_url": app_scheme_url,
             "universal_link_url": universal_link_url,
         }
+
+    @staticmethod
+    def build_export_sql(*, since=None, until=None, locale=None, status_val=None) -> str:
+        queryset = (
+            ContentArticle.objects.filter(deleted_at__isnull=True)
+            .select_related("category")
+            .prefetch_related("tags", "article_tag_links")
+            .order_by("id")
+        )
+        if status_val not in (None, ""):
+            queryset = queryset.filter(status=int(status_val))
+        else:
+            queryset = queryset.filter(status=ContentArticle.Status.PUBLISHED)
+        if locale:
+            queryset = queryset.filter(locale=locale.strip())
+        if since:
+            queryset = queryset.filter(published_at__gte=since)
+        if until:
+            queryset = queryset.filter(published_at__lte=until)
+
+        articles = list(queryset)
+        category_ids = {article.category_id for article in articles if article.category_id}
+        tag_ids: set[int] = set()
+        for article in articles:
+            tag_ids.update(article.tags.values_list("id", flat=True))
+
+        categories = list(ContentCategory.objects.filter(id__in=category_ids).order_by("id"))
+        tags = list(ContentTag.objects.filter(id__in=tag_ids).order_by("id"))
+        article_ids = [article.id for article in articles]
+        article_tags = list(ContentArticleTag.objects.filter(article_id__in=article_ids).order_by("id"))
+
+        lines: list[str] = [
+            "-- SparkService Article SQL Export",
+            f"-- Generated: {timezone.now().isoformat(sep=' ', timespec='seconds')}",
+            f"-- Articles: {len(articles)}  Categories: {len(categories)}  Tags: {len(tags)}  ArticleTags: {len(article_tags)}",
+            "-- NOTE: author_id / last_editor_id reference accounts_user.id",
+            "--       Ensure those user rows exist on the target database first.",
+            "",
+            "BEGIN;",
+            "",
+        ]
+
+        category_columns = [
+            "id",
+            "name",
+            "slug",
+            "parent_id",
+            "description",
+            "sort_order",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        lines.append(f"-- content_categories ({len(categories)} rows)")
+        if categories:
+            prefix = _sql_insert_prefix("content_categories", category_columns)
+            for category in categories:
+                values = _sql_values_row(
+                    [
+                        _sql_fmt_int(category.id),
+                        _sql_escape_str(category.name),
+                        _sql_escape_str(category.slug),
+                        _sql_fmt_int(category.parent_id),
+                        _sql_escape_str(category.description),
+                        _sql_fmt_int(category.sort_order),
+                        _sql_fmt_bool(category.is_active),
+                        _sql_fmt_dt(category.created_at),
+                        _sql_fmt_dt(category.updated_at),
+                    ]
+                )
+                lines.append(f"{prefix}{values}{_sql_insert_suffix()}")
+        lines.append("")
+
+        tag_columns = [
+            "id",
+            "name",
+            "slug",
+            "description",
+            "article_count",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        lines.append(f"-- content_tags ({len(tags)} rows)")
+        if tags:
+            prefix = _sql_insert_prefix("content_tags", tag_columns)
+            for tag in tags:
+                values = _sql_values_row(
+                    [
+                        _sql_fmt_int(tag.id),
+                        _sql_escape_str(tag.name),
+                        _sql_escape_str(tag.slug),
+                        _sql_escape_str(tag.description),
+                        _sql_fmt_int(tag.article_count),
+                        _sql_fmt_bool(tag.is_active),
+                        _sql_fmt_dt(tag.created_at),
+                        _sql_fmt_dt(tag.updated_at),
+                    ]
+                )
+                lines.append(f"{prefix}{values}{_sql_insert_suffix()}")
+        lines.append("")
+
+        article_columns = [
+            "id",
+            "title",
+            "slug",
+            "locale",
+            "translation_group_id",
+            "summary",
+            "cover_image",
+            "content",
+            "content_format",
+            "author_id",
+            "last_editor_id",
+            "category_id",
+            "status",
+            "visibility",
+            "is_top",
+            "is_recommended",
+            "sort_order",
+            "view_count",
+            "read_count",
+            "reading_time_seconds",
+            "seo_title",
+            "seo_description",
+            "source_url",
+            "references_json",
+            "published_at",
+            "offline_at",
+            "created_at",
+            "updated_at",
+            "deleted_at",
+        ]
+        lines.append(f"-- content_articles ({len(articles)} rows)")
+        if articles:
+            prefix = _sql_insert_prefix("content_articles", article_columns)
+            for article in articles:
+                values = _sql_values_row(
+                    [
+                        _sql_fmt_int(article.id),
+                        _sql_escape_str(article.title),
+                        _sql_escape_str(article.slug),
+                        _sql_escape_str(article.locale),
+                        _sql_fmt_int(article.translation_group_id),
+                        _sql_escape_str(article.summary),
+                        _sql_escape_str(article.cover_image),
+                        _sql_escape_str(article.content),
+                        _sql_escape_str(article.content_format),
+                        _sql_fmt_int(article.author_id),
+                        _sql_fmt_int(article.last_editor_id),
+                        _sql_fmt_int(article.category_id),
+                        _sql_fmt_int(article.status),
+                        _sql_fmt_int(article.visibility),
+                        _sql_fmt_bool(article.is_top),
+                        _sql_fmt_bool(article.is_recommended),
+                        _sql_fmt_int(article.sort_order),
+                        _sql_fmt_int(article.view_count),
+                        _sql_fmt_int(article.read_count),
+                        _sql_fmt_int(article.reading_time_seconds),
+                        _sql_escape_str(article.seo_title),
+                        _sql_escape_str(article.seo_description),
+                        _sql_escape_str(article.source_url),
+                        _sql_fmt_json(article.references_json),
+                        _sql_fmt_dt(article.published_at),
+                        _sql_fmt_dt(article.offline_at),
+                        _sql_fmt_dt(article.created_at),
+                        _sql_fmt_dt(article.updated_at),
+                        _sql_fmt_dt(article.deleted_at),
+                    ]
+                )
+                lines.append(f"{prefix}{values}{_sql_insert_suffix()}")
+        lines.append("")
+
+        article_tag_columns = ["id", "article_id", "tag_id", "created_at"]
+        lines.append(f"-- content_article_tags ({len(article_tags)} rows)")
+        if article_tags:
+            prefix = _sql_insert_prefix("content_article_tags", article_tag_columns)
+            for link in article_tags:
+                values = _sql_values_row(
+                    [
+                        _sql_fmt_int(link.id),
+                        _sql_fmt_int(link.article_id),
+                        _sql_fmt_int(link.tag_id),
+                        _sql_fmt_dt(link.created_at),
+                    ]
+                )
+                lines.append(f"{prefix}{values}{_sql_insert_suffix()}")
+        lines.append("")
+        lines.append("COMMIT;")
+        lines.append("")
+        return "\n".join(lines)
 
     @staticmethod
     def overview() -> dict:
