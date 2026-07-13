@@ -27,6 +27,7 @@ SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,254}$")
 LOCALE_RE = re.compile(r"^[a-z]{2}(-[A-Z]{2})?$")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\(([^)]+)\)")
 ARTICLE_SLUG_ALPHABET = string.ascii_lowercase + string.digits
+PUBLIC_CONTENT_LOCALE = "zh-CN"
 
 
 def parse_bool(value):
@@ -174,7 +175,9 @@ class ContentArticleService:
             .prefetch_related("tags")
             .order_by("sort_order", "-published_at", "-id")
         )
-        locale = (params.get("locale") or "zh-CN").strip()
+        # 当前阶段公开端只返回中文内容，先不按 locale 做中英文分流。
+        # 后续接入多语言时，再把这里切回基于请求 locale 的过滤。
+        locale = PUBLIC_CONTENT_LOCALE
         queryset = queryset.filter(locale=locale)
         q = (params.get("q") or "").strip()
         if q:
@@ -243,9 +246,10 @@ class ContentArticleService:
 
     @staticmethod
     def get_public_article_by_slug(slug: str, locale: str):
+        # 当前阶段固定返回中文文章；locale 仅保留给后续多语言接入使用。
         return ContentArticle.objects.select_related("category").prefetch_related("tags").get(
             slug=slug,
-            locale=locale or "zh-CN",
+            locale=PUBLIC_CONTENT_LOCALE,
             deleted_at__isnull=True,
             status=ContentArticle.Status.PUBLISHED,
             visibility__in=[ContentArticle.Visibility.PUBLIC, ContentArticle.Visibility.UNLISTED],
@@ -259,8 +263,8 @@ class ContentArticleService:
             "status": ContentArticle.Status.PUBLISHED,
             "visibility__in": [ContentArticle.Visibility.PUBLIC, ContentArticle.Visibility.UNLISTED],
         }
-        if locale:
-            filters["locale"] = locale
+        # 公开端当前统一只取中文文章；这里先固定成中文，后续再恢复按 locale 命中。
+        filters["locale"] = PUBLIC_CONTENT_LOCALE
         return ContentArticle.objects.select_related("category").prefetch_related("tags").get(**filters)
 
     @staticmethod
@@ -749,12 +753,13 @@ class ContentTagService:
 
     @staticmethod
     def list_public_tags(locale: str = "zh-CN"):
+        # 公开端当前只展示中文文章关联的标签，避免英文/中文内容混查。
         return ContentTag.objects.filter(
             is_active=True,
             articles__deleted_at__isnull=True,
             articles__status=ContentArticle.Status.PUBLISHED,
             articles__visibility=ContentArticle.Visibility.PUBLIC,
-            articles__locale=locale,
+            articles__locale=PUBLIC_CONTENT_LOCALE,
         ).distinct().order_by("name", "id")
 
     @staticmethod

@@ -171,6 +171,60 @@ class ContentArticleApiTests(TestCase):
         )
         self.assertIn("max-age=3600", client_ttl_resp["Cache-Control"])
 
+    def test_public_articles_always_return_chinese_content_for_now(self):
+        zh_article = ContentArticle.objects.create(
+            title="中文科普文章",
+            slug="zh-article",
+            locale="zh-CN",
+            summary="中文摘要",
+            content="# 中文内容",
+            author=self.user,
+            category=self.category,
+            status=ContentArticle.Status.PUBLISHED,
+            visibility=ContentArticle.Visibility.PUBLIC,
+            source_url="https://example.com/zh-source",
+            published_at=timezone.now(),
+        )
+        en_article = ContentArticle.objects.create(
+            title="English Article",
+            slug="en-article",
+            locale="en-US",
+            summary="English summary",
+            content="# English content",
+            author=self.user,
+            category=self.category,
+            status=ContentArticle.Status.PUBLISHED,
+            visibility=ContentArticle.Visibility.PUBLIC,
+            source_url="https://example.com/en-source",
+            published_at=timezone.now(),
+        )
+        zh_tag = ContentTag.objects.create(name="中文标签", slug="zh-tag")
+        en_tag = ContentTag.objects.create(name="English Tag", slug="en-tag")
+        zh_article.tags.add(zh_tag)
+        en_article.tags.add(en_tag)
+
+        self.client.force_authenticate(user=None)
+        list_resp = self.client.get("/api/v1/content/articles/?locale=en-US&page=1&page_size=20")
+        self.assertEqual(list_resp.status_code, 200)
+        self.assertEqual(list_resp.data["data"]["pagination"]["total"], 1)
+        self.assertEqual([item["title"] for item in list_resp.data["data"]["items"]], ["中文科普文章"])
+
+        detail_by_slug_resp = self.client.get("/api/v1/content/articles/zh-article/?locale=en-US")
+        self.assertEqual(detail_by_slug_resp.status_code, 200)
+        self.assertEqual(detail_by_slug_resp.data["data"]["locale"], "zh-CN")
+        self.assertEqual(detail_by_slug_resp.data["data"]["title"], "中文科普文章")
+
+        detail_by_id_resp = self.client.get(f"/api/v1/content/articles/{zh_article.id}/?locale=en-US")
+        self.assertEqual(detail_by_id_resp.status_code, 200)
+        self.assertEqual(detail_by_id_resp.data["data"]["locale"], "zh-CN")
+        self.assertEqual(detail_by_id_resp.data["data"]["slug"], "zh-article")
+
+        tags_resp = self.client.get("/api/v1/content/tags/?locale=en-US")
+        self.assertEqual(tags_resp.status_code, 200)
+        tag_names = [item["name"] for item in tags_resp.data["data"]]
+        self.assertIn("中文标签", tag_names)
+        self.assertNotIn("English Tag", tag_names)
+
     def test_public_categories_support_etag(self):
         self.client.force_authenticate(user=None)
         resp = self.client.get("/api/v1/content/categories/?locale=zh-CN")

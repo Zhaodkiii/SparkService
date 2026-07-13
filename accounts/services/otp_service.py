@@ -11,12 +11,11 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from common.exceptions import APIError
-from accounts.infrastructure.email_provider import EmailProvider
-from accounts.infrastructure.sms_provider import AliyunSMSProvider
 from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
 from accounts.services.phone_number_service import PhoneNumberService
 from accounts.services.device_linking_service import DeviceLinkingService
 from accounts.services.device_session_service import DeviceSessionService
+from notification_center.services import NotificationCenterService
 from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
@@ -27,19 +26,13 @@ class OTPService:
     MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
     LOCKOUT_MINUTES = int(os.getenv("OTP_LOCKOUT_MINUTES", "10"))
     REQUEST_COOLDOWN_SECONDS = int(os.getenv("OTP_REQUEST_COOLDOWN_SECONDS", "30"))
-    SMS_DEV_FALLBACK_REASONS = {
-        "aliyun_sms_sdk_missing",
-        "aliyun_sms_template_not_configured",
-        "aliyun_sms_client_unavailable",
-    }
-
     @staticmethod
     def _hash_code(code: str) -> str:
         # Use a simple hash; for real systems use per-tenant salt and strong KDF.
         return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def request_email_otp(*, email: str, provider_uid: str, bundle_id: str, device_id: str, ip_address: str, request_id: str):
+    def request_email_otp(*, email: str, provider_uid: str, bundle_id: str, device_id: str, ip_address: str, request_id: str, scene: str = "login"):
         flow_logger.info(
             "auth.otp.request.service.begin",
             extra={"action": "auth.otp.request.service", "request_id": request_id, "bundle_id": bundle_id, "device_id": device_id},
@@ -63,7 +56,7 @@ class OTPService:
                 "auth.otp.request.service.failed",
                 extra={"action": "auth.otp.request.service", "request_id": request_id, "reason": "otp_requested_too_frequently"},
             )
-            raise APIError("OTP requested too frequently", code=42901, status_code=429)
+            raise OTPService._otp_request_rate_limited_error()
 
         otp_id = str(uuid.uuid4())
         code = f"{random.randint(0, 999999):06d}"
@@ -83,7 +76,38 @@ class OTPService:
             request_id=request_id or "",
         )
 
-        EmailProvider.send_otp(email=email, code=code, request_id=request_id or "", provider_uid=provider_uid or "")
+        scene_aliases = {
+            "login": "account.auth.login_otp_requested",
+            "registration": "account.auth.registration_otp_requested",
+            "identity_bind": "account.auth.identity_bind_otp_requested",
+            "identity_change": "account.auth.identity_change_otp_requested",
+            "password_reset": "account.auth.password_reset_otp_requested",
+        }
+        scene_key = scene_aliases.get((scene or "").strip(), scene or "account.auth.login_otp_requested")
+        ok, reason, provider_message_id = NotificationCenterService.send_email_otp(
+            email=email,
+            code=code,
+            request_id=request_id or "",
+            provider_uid=provider_uid or "",
+            bundle_id=bundle_id or "",
+            device_id=device_id or "",
+            ip_address=ip_address or "",
+            otp_id=otp_id,
+            expires_at=expires_at,
+            scene=scene_key,
+        )
+        if not ok:
+            flow_logger.warning(
+                "auth.otp.request.service.failed",
+                extra={
+                    "action": "auth.otp.request.service",
+                    "request_id": request_id,
+                    "otp_id": otp_id,
+                    "reason": reason,
+                    "provider_message_id": provider_message_id,
+                },
+            )
+            raise APIError("email_send_failed", code=50241, status_code=502, details={"reason": reason})
         flow_logger.info(
             "auth.otp.request.service.success",
             extra={"action": "auth.otp.request.service", "request_id": request_id, "otp_id": otp_id},
@@ -113,18 +137,85 @@ class OTPService:
         return username
 
     @staticmethod
-    def request_phone_otp(*, phone_number: str, provider_uid: str, bundle_id: str, device_id: str, ip_address: str, request_id: str):
+    def _provider_error_payload(reason: str, *, error_type: str) -> tuple[str, dict]:
+        raw_reason = (reason or "").strip()
+        return error_type, {
+            "error_type": error_type,
+            "reason": raw_reason or error_type,
+        }
+
+    @staticmethod
+    def _phone_otp_send_error(reason: str) -> APIError:
+        value = (reason or "").strip()
+        lowered = value.lower()
+        if "business_limit_control" in lowered or value == "otp_rate_limited":
+            msg, details = OTPService._provider_error_payload(value, error_type="sms_send_rate_limited")
+            return APIError(msg, code=42902, status_code=429, details=details)
+        if value in {"sms_send_unknown", "submit_unknown", "otp_rate_limit_unavailable"} or "timeout" in lowered:
+            msg, details = OTPService._provider_error_payload(value, error_type="sms_send_unknown")
+            return APIError(msg, code=50331, status_code=503, details=details)
+        msg, details = OTPService._provider_error_payload(value, error_type="sms_send_failed")
+        return APIError(msg, code=50231, status_code=502, details=details)
+
+    @staticmethod
+    def _otp_request_rate_limited_error() -> APIError:
+        return APIError(
+            "otp_requested_too_frequently",
+            code=42901,
+            status_code=429,
+            details={"error_type": "otp_requested_too_frequently", "reason": "otp_requested_too_frequently"},
+        )
+
+    @staticmethod
+    def _phone_region_not_supported_error(normalized_phone: str) -> APIError:
+        region_code, dial_code = PhoneNumberService.resolve_region(normalized_phone)
+        return APIError(
+            "phone_region_not_supported",
+            code=40033,
+            status_code=400,
+            details={
+                "error_type": "phone_region_not_supported",
+                "reason": "phone_region_not_supported",
+                "phone_region": region_code,
+                "dial_code": dial_code,
+                "supported_regions": PhoneNumberService._normalized_supported_sms_otp_regions(),
+                "supported_dial_codes": PhoneNumberService._normalized_supported_sms_otp_dial_codes(),
+            },
+        )
+
+    @staticmethod
+    def request_phone_otp(*, phone_number: str, provider_uid: str, bundle_id: str, device_id: str, ip_address: str, request_id: str, scene: str = "login", user_id: int | None = None, actor_user_id: int | None = None):
         flow_logger.info(
             "auth.phone_otp.request.service.begin",
             extra={"action": "auth.phone_otp.request.service", "request_id": request_id, "bundle_id": bundle_id, "device_id": device_id},
         )
         now = timezone.now()
         normalized_phone = PhoneNumberService.normalize_e164(phone_number)
+        normalized_bundle_id = (bundle_id or "").strip()
+        normalized_device_id = (device_id or "").strip()
+        scene_key = NotificationCenterService._normalize_scene_key(scene or "login")
+        region_code, dial_code = PhoneNumberService.resolve_region(normalized_phone)
+
+        if not PhoneNumberService.is_supported_sms_otp_region(normalized_phone):
+            flow_logger.warning(
+                "auth.phone_otp.request.service.failed",
+                extra={
+                    "action": "auth.phone_otp.request.service",
+                    "request_id": request_id,
+                    "reason": "phone_region_not_supported",
+                    "bundle_id": normalized_bundle_id,
+                    "device_id": normalized_device_id,
+                    "phone_region": region_code,
+                    "dial_code": dial_code,
+                    "phone_number": PhoneNumberService.masked_display(normalized_phone),
+                },
+            )
+            raise OTPService._phone_region_not_supported_error(normalized_phone)
 
         recent = (
             PhoneOTP.objects.filter(
                 phone_number=normalized_phone,
-                device_id=device_id or "",
+                device_id=normalized_device_id,
                 used_at__isnull=True,
                 expires_at__gt=now,
             )
@@ -136,7 +227,7 @@ class OTPService:
                 "auth.phone_otp.request.service.failed",
                 extra={"action": "auth.phone_otp.request.service", "request_id": request_id, "reason": "otp_requested_too_frequently"},
             )
-            raise APIError("OTP requested too frequently", code=42901, status_code=429)
+            raise OTPService._otp_request_rate_limited_error()
 
         otp_id = str(uuid.uuid4())
         is_whitelisted = normalized_phone in OTPService._normalized_whitelist_phones()
@@ -145,58 +236,123 @@ class OTPService:
         code_hash = OTPService._hash_code(code)
         expires_at = now + timedelta(minutes=OTPService.OTP_EXPIRATION_MINUTES)
 
-        PhoneOTP.objects.create(
+        resolved_user = None
+        resolved_identity = None
+        if scene_key == "account.lifecycle.deactivation_requested":
+            if user_id is None:
+                raise APIError("user_id_required_for_account_deactivation", code=40061, status_code=400)
+            if actor_user_id is None or int(actor_user_id) != int(user_id):
+                raise APIError("user_context_mismatch", code=40361, status_code=403)
+            identity = (
+                SocialIdentity.objects.select_related("user")
+                .filter(
+                    bundle_id=normalized_bundle_id,
+                    provider=SocialIdentity.Provider.PHONE,
+                    provider_uid=normalized_phone,
+                )
+                .first()
+            )
+            if identity is None or identity.user_id != int(user_id):
+                raise APIError("user_identity_mismatch", code=40901, status_code=409)
+            if not identity.user.is_active:
+                raise APIError("user_inactive", code=40103, status_code=401)
+            resolved_identity = identity
+            resolved_user = identity.user
+        else:
+            if user_id:
+                flow_logger.warning(
+                    "auth.phone_otp.request.user_id_ignored_for_login",
+                    extra={
+                        "action": "auth.phone_otp.request",
+                        "request_id": request_id,
+                        "bundle_id": normalized_bundle_id,
+                        "user_id": user_id,
+                    },
+                )
+            identity = (
+                SocialIdentity.objects.select_related("user")
+                .filter(
+                    bundle_id=normalized_bundle_id,
+                    provider=SocialIdentity.Provider.PHONE,
+                    provider_uid=normalized_phone,
+                )
+                .first()
+            )
+            if identity is not None:
+                if not identity.user.is_active:
+                    raise APIError("user_inactive", code=40103, status_code=401)
+                resolved_identity = identity
+                resolved_user = identity.user
+
+        otp = PhoneOTP.objects.create(
             otp_id=otp_id,
             phone_number=normalized_phone,
             code_hash=code_hash,
             expires_at=expires_at,
             provider_uid=provider_uid or "",
-            bundle_id=bundle_id or "",
-            device_id=device_id or "",
+            bundle_id=normalized_bundle_id,
+            device_id=normalized_device_id,
             ip_address=ip_address or "",
+            scene=scene_key,
+            requested_user=resolved_user,
+            resolved_identity=resolved_identity,
             request_id=request_id or "",
+            send_status=PhoneOTP.SendStatus.QUEUED,
         )
 
         if is_whitelisted:
+            PhoneOTP.objects.filter(id=otp.id).update(send_status=PhoneOTP.SendStatus.ACCEPTED)
             flow_logger.info(
                 "auth.phone_otp.request.service.whitelist_hit",
-                extra={"action": "auth.phone_otp.request.service", "request_id": request_id, "otp_id": otp_id, "phone_number": normalized_phone},
+                extra={"action": "auth.phone_otp.request.service", "request_id": request_id, "otp_id": otp_id},
             )
             return {"otp_id": otp_id, "expires_in": int((expires_at - now).total_seconds())}
 
-        ok, reason, provider_message_id = AliyunSMSProvider.send_login_code(
+        ok, reason, provider_message_id = NotificationCenterService.send_phone_otp(
             phone_number=normalized_phone,
             code=code,
+            request_id=request_id or "",
+            provider_uid=provider_uid or "",
+            bundle_id=normalized_bundle_id,
+            device_id=normalized_device_id,
+            ip_address=ip_address or "",
+            otp_id=otp_id,
+            expires_at=expires_at,
+            scene=scene_key,
+            user_id=resolved_user.id if resolved_user else None,
+            dispatch_sync=True,
         )
         if not ok:
-            if reason in OTPService.SMS_DEV_FALLBACK_REASONS:
-                flow_logger.warning(
-                    "auth.phone_otp.request.service.sms_dev_fallback",
-                    extra={
-                        "action": "auth.phone_otp.request.service",
-                        "request_id": request_id,
-                        "otp_id": otp_id,
-                        "phone_number": normalized_phone,
-                        "reason": reason,
-                    },
-                )
-            else:
-                flow_logger.warning(
-                    "auth.phone_otp.request.service.failed",
-                    extra={
-                        "action": "auth.phone_otp.request.service",
-                        "request_id": request_id,
-                        "otp_id": otp_id,
-                        "phone_number": normalized_phone,
-                        "reason": reason,
-                        "provider_message_id": provider_message_id,
-                    },
-                )
-                raise APIError("sms_send_failed", code=50231, status_code=502, details={"reason": reason})
+            now_failed = timezone.now()
+            update_fields = {
+                "send_status": PhoneOTP.SendStatus.SUBMIT_UNKNOWN if "unknown" in (reason or "").lower() else PhoneOTP.SendStatus.SUBMIT_FAILED,
+                "send_error_code": (reason or "sms_send_failed")[:128],
+                "send_error_message": reason or "sms_send_failed",
+                "invalidated_at": now_failed,
+            }
+            if str(provider_message_id).isdigit():
+                update_fields["notification_message_id"] = int(provider_message_id)
+            PhoneOTP.objects.filter(id=otp.id).update(**update_fields)
+            flow_logger.warning(
+                "auth.phone_otp.request.service.failed",
+                extra={
+                    "action": "auth.phone_otp.request.service",
+                    "request_id": request_id,
+                    "otp_id": otp_id,
+                    "reason": reason,
+                    "provider_message_id": provider_message_id,
+                },
+            )
+            raise OTPService._phone_otp_send_error(reason)
+
+        update_fields = {"send_status": PhoneOTP.SendStatus.ACCEPTED, "invalidated_at": None, "send_error_code": "", "send_error_message": ""}
+        if str(provider_message_id).isdigit():
+            update_fields["notification_message_id"] = int(provider_message_id)
+        PhoneOTP.objects.filter(id=otp.id).update(**update_fields)
 
         flow_logger.info(
             "auth.phone_otp.request.service.success",
-            extra={"action": "auth.phone_otp.request.service", "request_id": request_id, "otp_id": otp_id, "phone_number": normalized_phone},
+            extra={"action": "auth.phone_otp.request.service", "request_id": request_id, "otp_id": otp_id},
         )
         return {"otp_id": otp_id, "expires_in": int((expires_at - now).total_seconds())}
 
@@ -365,6 +521,10 @@ class OTPService:
             raise APIError("OTP already used", code=40041, status_code=400)
         if otp.expires_at <= now:
             raise APIError("OTP expired", code=40042, status_code=400)
+        if otp.invalidated_at is not None:
+            raise APIError("OTP unavailable", code=40045, status_code=400)
+        if otp.send_status in {PhoneOTP.SendStatus.QUEUED, PhoneOTP.SendStatus.SUBMIT_FAILED, PhoneOTP.SendStatus.SUBMIT_UNKNOWN}:
+            raise APIError("OTP SMS not sent", code=40046, status_code=400)
         if otp.locked_until and otp.locked_until > now:
             raise APIError("OTP temporarily locked", code=42311, status_code=423)
         if otp.bundle_id and normalized_bundle_id and otp.bundle_id != normalized_bundle_id:

@@ -5,6 +5,7 @@ from typing import Any
 from urllib.request import urlopen
 
 import jwt
+from django.conf import settings
 from django.core.cache import cache
 import logging
 
@@ -61,6 +62,7 @@ class AppleIdentityService:
 
         public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
         verify_errors: list[str] = []
+        leeway_seconds = int(getattr(settings, "APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS", 30))
 
         for aud in audiences:
             if not aud:
@@ -73,14 +75,42 @@ class AppleIdentityService:
                     audience=aud,
                     issuer=APPLE_ISSUER,
                     options={"require": ["exp", "iat", "iss", "aud", "sub"]},
+                    leeway=leeway_seconds,
                 )
                 flow_logger.info(
                     "Apple 身份令牌校验成功",
                     extra={"action": "auth.apple.identity.verify", "outcome": "success", "matched_audience": aud},
                 )
                 return payload, aud
-            except Exception as exc:  # noqa: BLE001
+            except jwt.InvalidAudienceError as exc:
                 verify_errors.append(str(exc))
+            except (jwt.ImmatureSignatureError, jwt.ExpiredSignatureError, jwt.InvalidIssuedAtError) as exc:
+                flow_logger.warning(
+                    "Apple 身份令牌校验失败：token 时间无效",
+                    extra={
+                        "action": "auth.apple.identity.verify",
+                        "outcome": "failed",
+                        "reason": "apple_token_time_invalid",
+                        "leeway_seconds": leeway_seconds,
+                    },
+                )
+                raise APIError(
+                    "apple_token_time_invalid",
+                    code=40125,
+                    status_code=401,
+                    details={"error": str(exc), "leeway_seconds": leeway_seconds},
+                ) from exc
+            except jwt.InvalidTokenError as exc:
+                flow_logger.warning(
+                    "Apple 身份令牌校验失败：token 无效",
+                    extra={"action": "auth.apple.identity.verify", "outcome": "failed", "reason": "apple_identity_token_invalid"},
+                )
+                raise APIError(
+                    "apple_identity_token_invalid",
+                    code=40126,
+                    status_code=401,
+                    details={"error": str(exc)},
+                ) from exc
 
         flow_logger.warning(
             "Apple 身份令牌校验失败：aud 不匹配",

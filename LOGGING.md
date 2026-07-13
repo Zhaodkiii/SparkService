@@ -7,7 +7,9 @@
 - `access.log`: per-request summary (method/path/status/duration)
 - `access_api_io.log`: accounts API request/response headers and bodies (same policy as `medical_api_io.log`)
 - `celery.log`: celery worker/beat logs
+- `notification_center.log`: notification center business logs, including SMS receipt queries and provider calls
 - `accounts.flow` events are written to both `access.log` and `app.log` for end-to-end business tracing
+- `notification_center` events are written to both `notification_center.log` and `app.log`
 
 ## Rotation
 - Handler: `TimedRotatingFileHandler`
@@ -19,3 +21,8 @@
 - This is intended for deep debugging in controlled environments.
 - API inbound/outbound logs (`accounts.api_io`) are written to `access_api_io.log` (and console), same layout as `medical.api_io` → `medical_api_io.log`.
 - You can temporarily disable API IO payload logs via `LOG_API_IO_ENABLED=false`.
+
+## Notification Center
+- `notification_center` logger writes to `notification_center.log`, `app.log`, and console.
+- `accounts.infrastructure.sms_provider` is explicitly routed to `notification_center.log`, `app.log`, and console because the current SMS adapter still lives under `accounts.infrastructure`.
+- QuerySendDetails logs use `begin/result/failed` messages and include `biz_id`, `phone_number`, `send_date`, `provider_request_id`, `provider_code`, `provider_status`, `normalized_status`, and `duration_ms` in the text message for local console debugging.

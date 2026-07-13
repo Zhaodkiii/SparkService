@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
 
@@ -184,6 +185,13 @@ class EmailOTP(models.Model):
 
 
 class PhoneOTP(models.Model):
+    class SendStatus(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        ACCEPTED = "accepted", "Accepted"
+        SUBMIT_FAILED = "submit_failed", "Submit Failed"
+        SUBMIT_UNKNOWN = "submit_unknown", "Submit Unknown"
+        UNKNOWN = "unknown", "Unknown"
+
     otp_id = models.CharField(max_length=64, unique=True, db_index=True)
     phone_number = models.CharField(max_length=32, db_index=True)
     code_hash = models.CharField(max_length=64, db_index=True)
@@ -196,8 +204,30 @@ class PhoneOTP(models.Model):
     bundle_id = models.CharField(max_length=128, blank=True, default="")
     device_id = models.CharField(max_length=128, blank=True, default="")
     ip_address = models.CharField(max_length=64, blank=True, default="")
+    scene = models.CharField(max_length=64, blank=True, default="login", db_index=True)
+    requested_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name="requested_phone_otps",
+        on_delete=models.SET_NULL,
+    )
+    resolved_identity = models.ForeignKey(
+        SocialIdentity,
+        null=True,
+        blank=True,
+        related_name="phone_otps",
+        on_delete=models.SET_NULL,
+    )
 
     request_id = models.CharField(max_length=64, blank=True, default="")
+    send_status = models.CharField(max_length=24, choices=SendStatus.choices, default=SendStatus.UNKNOWN, db_index=True)
+    notification_message_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
+    provider_request_id = models.CharField(max_length=255, blank=True, default="")
+    provider_biz_id = models.CharField(max_length=255, blank=True, default="")
+    send_error_code = models.CharField(max_length=128, blank=True, default="")
+    send_error_message = models.TextField(blank=True, default="")
+    invalidated_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -261,134 +291,3 @@ class AccountDeactivationAudit(models.Model):
     request_id = models.CharField(max_length=64, blank=True, default="")
     details = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
-
-class NotificationTemplate(models.Model):
-    name = models.CharField(max_length=128, unique=True, db_index=True)
-    description = models.CharField(max_length=255, blank=True, default="")
-    title_template = models.CharField(max_length=255, blank=True, default="")
-    body_template = models.TextField(blank=True, default="")
-    payload_template = models.JSONField(default=dict, blank=True)
-    default_channels = models.JSONField(default=list, blank=True)
-    is_active = models.BooleanField(default=True, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["is_active", "-updated_at"]),
-        ]
-
-    def __str__(self):
-        return f"notification_template:{self.id}:{self.name}"
-
-
-class NotificationCampaign(models.Model):
-    class Status(models.TextChoices):
-        QUEUED = "queued", "待发送"
-        SCHEDULED = "scheduled", "定时中"
-        RUNNING = "running", "发送中"
-        COMPLETED = "completed", "已完成"
-        FAILED = "failed", "失败"
-
-    name = models.CharField(max_length=128, blank=True, default="")
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED, db_index=True)
-    channels = models.JSONField(default=list, blank=True)
-    title = models.CharField(max_length=255, blank=True, default="")
-    body = models.TextField(blank=True, default="")
-    payload = models.JSONField(default=dict, blank=True)
-    filters = models.JSONField(default=dict, blank=True)
-    target_user_ids = models.JSONField(default=list, blank=True)
-    target_count = models.PositiveIntegerField(default=0)
-    success_count = models.PositiveIntegerField(default=0)
-    failure_count = models.PositiveIntegerField(default=0)
-    template = models.ForeignKey("NotificationTemplate", null=True, blank=True, related_name="campaigns", on_delete=models.SET_NULL)
-    created_by = models.ForeignKey(User, null=True, blank=True, related_name="notification_campaigns", on_delete=models.SET_NULL)
-    task_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
-    request_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
-    scheduled_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    started_at = models.DateTimeField(null=True, blank=True)
-    finished_at = models.DateTimeField(null=True, blank=True)
-    error_message = models.TextField(blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["-created_at"]),
-            models.Index(fields=["status", "-created_at"]),
-        ]
-
-    def __str__(self):
-        return f"notification_campaign:{self.id}:{self.status}"
-
-
-class NotificationMessage(models.Model):
-    """
-    后台通知发送记录（按渠道一条记录）。
-
-    - 一次后台“发送”操作可拆分为多条记录（APNs / Email / SMS）。
-    - APNs 记录中可通过 delivery_details 保存逐设备结果。
-    """
-
-    class Channel(models.TextChoices):
-        APNS = "apns", "APNs"
-        EMAIL = "email", "Email"
-        SMS = "sms", "SMS"
-
-    class Status(models.TextChoices):
-        SENT = "sent", "已发送"
-        FAILED = "failed", "发送失败"
-        PARTIAL = "partial", "部分成功"
-        SKIPPED = "skipped", "已跳过"
-
-    user = models.ForeignKey(
-        User,
-        related_name="notification_messages",
-        on_delete=models.CASCADE,
-    )
-    campaign = models.ForeignKey(
-        "NotificationCampaign",
-        null=True,
-        blank=True,
-        related_name="message_logs",
-        on_delete=models.SET_NULL,
-    )
-    channel = models.CharField(max_length=16, choices=Channel.choices, db_index=True)
-    status = models.CharField(max_length=16, choices=Status.choices, db_index=True, default=Status.SENT)
-
-    title = models.CharField(max_length=255, blank=True, default="")
-    body = models.TextField(blank=True, default="")
-    payload = models.JSONField(default=dict, blank=True)
-    delivery_details = models.JSONField(default=list, blank=True)
-
-    target_count = models.PositiveIntegerField(default=0)
-    success_count = models.PositiveIntegerField(default=0)
-    failure_count = models.PositiveIntegerField(default=0)
-
-    receiver_email = models.EmailField(blank=True, default="")
-    receiver_phone = models.CharField(max_length=32, blank=True, default="")
-    apns_topic = models.CharField(max_length=255, blank=True, default="")
-    provider_message_id = models.CharField(max_length=255, blank=True, default="")
-    error_message = models.TextField(blank=True, default="")
-
-    created_by = models.ForeignKey(
-        User,
-        null=True,
-        blank=True,
-        related_name="sent_notification_messages",
-        on_delete=models.SET_NULL,
-    )
-    request_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
-    sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["channel", "-created_at"]),
-            models.Index(fields=["user", "-created_at"]),
-        ]
-
-    def __str__(self):
-        return f"notification:{self.id}:{self.channel}:{self.status}:user={self.user_id}"

@@ -11,8 +11,15 @@
         @click="onMenuClick"
       >
         <template v-for="item in menuItems" :key="item.key">
-          <a-sub-menu v-if="item.children?.length" :key="item.key" :title="item.label">
-            <a-menu-item v-for="child in item.children" :key="child.key">{{ child.label }}</a-menu-item>
+          <a-sub-menu v-if="item.children?.length" :key="item.key">
+            <template #title>{{ item.label }}</template>
+            <template v-for="child in item.children" :key="child.key">
+              <a-sub-menu v-if="child.children?.length" :key="child.key">
+                <template #title>{{ child.label }}</template>
+                <a-menu-item v-for="grand in child.children" :key="grand.key">{{ grand.label }}</a-menu-item>
+              </a-sub-menu>
+              <a-menu-item v-else :key="child.key">{{ child.label }}</a-menu-item>
+            </template>
           </a-sub-menu>
           <a-menu-item v-else :key="item.key">{{ item.label }}</a-menu-item>
         </template>
@@ -75,6 +82,12 @@ const activeKey = computed(() => route.path);
 const openKeys = ref<string[]>([]);
 const tabs = reactive<TabItem[]>([{ key: '/dashboard', title: '仪表盘', closable: false }]);
 const routeCacheVersion = reactive<Record<string, number>>({});
+const notificationRecordPaths = new Set([
+  '/notifications/records/all',
+  '/notifications/apns',
+  '/notifications/sms',
+  '/notifications/email',
+]);
 
 function tabCacheKey(path: string) {
   return `${path}::${routeCacheVersion[path] ?? 0}`;
@@ -89,7 +102,7 @@ function updateTabTitle(path: string, title: string) {
 
 provide(updateTabTitleKey, updateTabTitle);
 
-  const fallbackMenus = [
+const fallbackMenus = [
   { code: 'menu:dashboard', name: '仪表盘', path: '/dashboard', children: [] },
   {
     code: 'menu:tasks',
@@ -115,12 +128,24 @@ provide(updateTabTitleKey, updateTabTitle);
     name: '通知中心',
     path: '/notifications',
     children: [
+      { code: 'menu:notifications:overview', name: '总览', path: '/notifications/overview', children: [] },
       { code: 'menu:notifications:users', name: '通知用户列表', path: '/notifications/users', children: [] },
       { code: 'menu:notifications:templates', name: '通知模板', path: '/notifications/templates', children: [] },
       { code: 'menu:notifications:campaigns', name: '发送活动', path: '/notifications/campaigns', children: [] },
-      { code: 'menu:notifications:apns', name: 'APNs发送记录', path: '/notifications/apns', children: [] },
-      { code: 'menu:notifications:sms', name: '短信发送记录', path: '/notifications/sms', children: [] },
-      { code: 'menu:notifications:email', name: '邮箱发送记录', path: '/notifications/email', children: [] },
+      {
+        code: 'menu:notifications:records',
+        name: '发送记录',
+        path: '/notifications/records',
+        children: [
+          { code: 'menu:notifications:records:all', name: '全渠道记录', path: '/notifications/records/all', children: [] },
+          { code: 'menu:notifications:records:apns', name: 'APNs 发送记录', path: '/notifications/apns', children: [] },
+          { code: 'menu:notifications:records:sms', name: '短信发送记录', path: '/notifications/sms', children: [] },
+          { code: 'menu:notifications:records:email', name: '邮箱发送记录', path: '/notifications/email', children: [] },
+        ],
+      },
+      { code: 'menu:notifications:suppressions', name: '异常与抑制', path: '/notifications/suppressions', children: [] },
+      { code: 'menu:notifications:analytics', name: '统计分析', path: '/notifications/analytics', children: [] },
+      { code: 'menu:notifications:channel_settings', name: '渠道设置', path: '/notifications/channel-settings', children: [] },
     ],
   },
   {
@@ -192,9 +217,41 @@ const menuItems = computed(() =>
   menus.value.map((item) => ({
     key: item.path,
     label: item.name,
-    children: (item.children || []).map((child) => ({ key: child.path, label: child.name })),
+    children: (item.children || []).map((child) => ({
+      key: child.path,
+      label: child.name,
+      children: (child.children || []).map((grand) => ({ key: grand.path, label: grand.name })),
+    })),
   })),
 );
+
+function resolveOpenKeys(path: string) {
+  if (path.startsWith('/ai-config/')) {
+    return ['/ai-config'];
+  }
+  if (path.startsWith('/notifications/')) {
+    return notificationRecordPaths.has(path) ? ['/notifications', '/notifications/records'] : ['/notifications'];
+  }
+  if (path.startsWith('/version/')) {
+    return ['/version'];
+  }
+  if (path === '/tasks' || path.startsWith('/tasks/')) {
+    return ['/tasks'];
+  }
+  if (path.startsWith('/users/')) {
+    return ['/users'];
+  }
+  if (path.startsWith('/conversations/')) {
+    return ['/conversations'];
+  }
+  if (path.startsWith('/medical-data/')) {
+    return ['/medical-data'];
+  }
+  if (path.startsWith('/articles/')) {
+    return ['/articles'];
+  }
+  return [];
+}
 
 watch(
   () => route.path,
@@ -210,30 +267,7 @@ watch(
         closable: path !== '/dashboard',
       });
     }
-    if (path.startsWith('/ai-config/')) {
-      openKeys.value = ['/ai-config'];
-    }
-    if (path.startsWith('/notifications/')) {
-      openKeys.value = ['/notifications'];
-    }
-    if (path.startsWith('/version/')) {
-      openKeys.value = ['/version'];
-    }
-    if (path === '/tasks' || path.startsWith('/tasks/')) {
-      openKeys.value = ['/tasks'];
-    }
-    if (path.startsWith('/users/')) {
-      openKeys.value = ['/users'];
-    }
-    if (path.startsWith('/conversations/')) {
-      openKeys.value = ['/conversations'];
-    }
-    if (path.startsWith('/medical-data/')) {
-      openKeys.value = ['/medical-data'];
-    }
-    if (path.startsWith('/articles/')) {
-      openKeys.value = ['/articles'];
-    }
+    openKeys.value = resolveOpenKeys(path);
   },
   { immediate: true },
 );

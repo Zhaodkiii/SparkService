@@ -94,6 +94,7 @@ urlpatterns = [
     path("notifications/campaigns/", AdminNotificationCampaignListView.as_view(), name="admin-notification-campaign-list"),
     path("notifications/logs/<str:channel>/", AdminNotificationLogListView.as_view(), name="admin-notification-log-list"),
     path("notifications/logs/detail/<int:log_id>/", AdminNotificationLogDetailView.as_view(), name="admin-notification-log-detail"),
+    path("notification-center/", include("notification_center.urls")),
     path("version/configs/", AdminAppVersionConfigListCreateView.as_view(), name="admin-version-config-list-create"),
     path("version/configs/<int:config_id>/", AdminAppVersionConfigDetailView.as_view(), name="admin-version-config-detail"),
     path("version/logs/", AdminVersionCheckLogListView.as_view(), name="admin-version-check-log-list"),

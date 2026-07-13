@@ -33,6 +33,11 @@ class DeviceSessionClaimsExtractionTests(TestCase):
         DeviceSessionService.validate_access_claims(user=user, validated_token=token)
 
 
+@override_settings(
+    OTP_WHITELIST_PHONES=["13800138000"],
+    OTP_FIXED_WHITELIST_CODE="989898",
+    ALIYUN_SMS_OTP_TEMPLATE_CODE="",
+)
 class DeviceSessionServiceTests(TestCase):
     bundle_a = "com.sparkclient.ios"
     device_a1 = "device-a1"

@@ -17,10 +17,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from accounts.infrastructure.email_provider import EmailProvider
-from accounts.infrastructure.sms_provider import AliyunSMSProvider
-from accounts.models import NotificationMessage
-from accounts.services.notification_service import NotificationService
+from notification_center.models import NotificationMessage
+from notification_center.services import NotificationCenterService
 
 from medical.models import Member, MemberShareInvite, MemberShareInviteDeliveryLog
 from medical.services import member_binding_service as binding_service
@@ -292,7 +290,7 @@ def _try_apns(invite: MemberShareInvite, request_id: str) -> tuple[bool, str, st
     if invite.target_user_id is None:
         return False, "", "no_target_user"
 
-    msgs = NotificationService.send_to_user_sync(
+    msgs = NotificationCenterService.send_to_user_sync(
         campaign_id=None,
         user_id=invite.target_user_id,
         channels=[NotificationMessage.Channel.APNS],
@@ -301,9 +299,21 @@ def _try_apns(invite: MemberShareInvite, request_id: str) -> tuple[bool, str, st
         payload=_apns_payload(invite),
         created_by_id=invite.inviter_user_id,
         request_id=request_id,
+        business_scene="medical.member.invite_received",
+        business_reference_type="member_share_invite",
+        business_id=str(invite.id),
+        idempotency_key=f"medical.member.invite_received:{invite.id}:apns:{invite.target_user_id}",
+        source="medical.member_invite_delivery",
+        actor_type="user",
+        actor_id=str(invite.inviter_user_id),
     )
     msg = msgs[0] if msgs else None
-    ok = msg and msg.status in (NotificationMessage.Status.SENT, NotificationMessage.Status.PARTIAL)
+    ok = msg and msg.status in (
+        NotificationMessage.Status.ACCEPTED,
+        NotificationMessage.Status.DELIVERED,
+        NotificationMessage.Status.SENT,
+        NotificationMessage.Status.PARTIAL,
+    )
     if ok:
         return True, getattr(msg, "provider_message_id", "") or "", ""
     error = ""
@@ -321,7 +331,7 @@ def _try_email_user(invite: MemberShareInvite, request_id: str) -> tuple[bool, s
 
     open_url = _open_url(invite.id)
     body = f"{_invite_body(invite)}\n\n打开 Spark 查看邀请：{open_url}"
-    msgs = NotificationService.send_to_user_sync(
+    msgs = NotificationCenterService.send_to_user_sync(
         campaign_id=None,
         user_id=invite.target_user_id,
         channels=[NotificationMessage.Channel.EMAIL],
@@ -330,9 +340,20 @@ def _try_email_user(invite: MemberShareInvite, request_id: str) -> tuple[bool, s
         payload=_apns_payload(invite),
         created_by_id=invite.inviter_user_id,
         request_id=request_id,
+        business_scene="medical.member.invite_received",
+        business_reference_type="member_share_invite",
+        business_id=str(invite.id),
+        idempotency_key=f"medical.member.invite_received:{invite.id}:email:{invite.target_user_id}",
+        source="medical.member_invite_delivery",
+        actor_type="user",
+        actor_id=str(invite.inviter_user_id),
     )
     msg = msgs[0] if msgs else None
-    ok = msg and msg.status == NotificationMessage.Status.SENT
+    ok = msg and msg.status in (
+        NotificationMessage.Status.ACCEPTED,
+        NotificationMessage.Status.DELIVERED,
+        NotificationMessage.Status.SENT,
+    )
     if ok:
         return True, getattr(msg, "provider_message_id", "") or "", ""
     error = "email_missing" if msg and msg.status == NotificationMessage.Status.SKIPPED else ""
@@ -343,8 +364,16 @@ def _try_email_direct(invite: MemberShareInvite, email: str, request_id: str) ->
     open_url = _open_url(invite.id)
     title = _invite_title(invite)
     body = f"{_invite_body(invite)}\n\n打开 Spark 查看邀请：{open_url}"
-    ok, code, msg_id, detail = EmailProvider.send_notification(
-        email=email, title=title, body=body, request_id=request_id
+    ok, code, msg_id, detail = NotificationCenterService.send_contact_email(
+        email=email,
+        title=title,
+        body=body,
+        request_id=request_id,
+        business_scene="medical.member.invite_received",
+        business_reference_type="member_share_invite",
+        business_id=str(invite.id),
+        idempotency_key=f"medical.member.invite_received:{invite.id}:direct_email",
+        source="medical.member_invite_delivery",
     )
     return ok, msg_id, code, detail
 
@@ -356,7 +385,7 @@ def _try_sms_user(invite: MemberShareInvite, request_id: str) -> tuple[bool, str
 
     open_url = _open_url(invite.id)
     sms_body = f"你收到一条 Spark 成员绑定邀请，点击打开：{open_url}"
-    msgs = NotificationService.send_to_user_sync(
+    msgs = NotificationCenterService.send_to_user_sync(
         campaign_id=None,
         user_id=invite.target_user_id,
         channels=[NotificationMessage.Channel.SMS],
@@ -365,9 +394,20 @@ def _try_sms_user(invite: MemberShareInvite, request_id: str) -> tuple[bool, str
         payload=_apns_payload(invite),
         created_by_id=invite.inviter_user_id,
         request_id=request_id,
+        business_scene="medical.member.invite_received",
+        business_reference_type="member_share_invite",
+        business_id=str(invite.id),
+        idempotency_key=f"medical.member.invite_received:{invite.id}:sms:{invite.target_user_id}",
+        source="medical.member_invite_delivery",
+        actor_type="user",
+        actor_id=str(invite.inviter_user_id),
     )
     msg = msgs[0] if msgs else None
-    ok = msg and msg.status == NotificationMessage.Status.SENT
+    ok = msg and msg.status in (
+        NotificationMessage.Status.ACCEPTED,
+        NotificationMessage.Status.DELIVERED,
+        NotificationMessage.Status.SENT,
+    )
     if ok:
         return True, getattr(msg, "provider_message_id", "") or "", ""
     error = "phone_missing" if msg and msg.status == NotificationMessage.Status.SKIPPED else ""
@@ -377,8 +417,16 @@ def _try_sms_user(invite: MemberShareInvite, request_id: str) -> tuple[bool, str
 def _try_sms_direct(invite: MemberShareInvite, phone: str, request_id: str) -> tuple[bool, str, str]:
     open_url = _open_url(invite.id)
     body = f"你收到一条 Spark 成员绑定邀请，点击打开：{open_url}"
-    ok, reason, msg_id = AliyunSMSProvider.send(
-        phone_number=phone, title="成员绑定邀请", body=body
+    ok, reason, msg_id = NotificationCenterService.send_contact_sms(
+        phone_number=phone,
+        title="成员绑定邀请",
+        body=body,
+        request_id=request_id,
+        business_scene="medical.member.invite_received",
+        business_reference_type="member_share_invite",
+        business_id=str(invite.id),
+        idempotency_key=f"medical.member.invite_received:{invite.id}:direct_sms",
+        source="medical.member_invite_delivery",
     )
     return ok, msg_id, reason
 

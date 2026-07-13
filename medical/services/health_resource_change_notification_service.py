@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from django.contrib.auth.models import User
 
-from accounts.models import NotificationMessage
-from accounts.services.notification_service import NotificationService
+from notification_center.models import NotificationMessage
+from notification_center.services import NotificationCenterService
 from medical.services.member_binding_service import (
     _masked_user_label,
     active_bindings_qs,
@@ -94,7 +94,7 @@ class HealthResourceChangeNotificationService:
                 )
                 continue
             try:
-                msgs = NotificationService.send_to_user_sync(
+                msgs = NotificationCenterService.send_to_user_sync(
                     campaign_id=None,
                     user_id=target_user.id,
                     channels=[NotificationMessage.Channel.APNS],
@@ -103,9 +103,18 @@ class HealthResourceChangeNotificationService:
                     payload=payload,
                     created_by_id=actor_user.id,
                     request_id=request_id,
+                    business_scene="medical.resource.updated",
+                    business_reference_type=resource_type,
+                    business_id=str(resource_id),
+                    idempotency_key=f"medical.resource.updated:{resource_type}:{resource_id}:{target_user.id}:{action}:{request_id or 'event'}",
+                    source="medical.health_resource_change",
+                    actor_type="user",
+                    actor_id=str(actor_user.id),
                 )
                 msg = msgs[0] if msgs else None
                 ok = msg and msg.status in (
+                    NotificationMessage.Status.ACCEPTED,
+                    NotificationMessage.Status.DELIVERED,
                     NotificationMessage.Status.SENT,
                     NotificationMessage.Status.PARTIAL,
                 )

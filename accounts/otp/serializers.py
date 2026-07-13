@@ -8,6 +8,12 @@ class EmailOTPRequestSerializer(serializers.Serializer):
     provider_uid = serializers.CharField(max_length=128, required=False, allow_blank=True)
     bundle_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
     device_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    scene = serializers.ChoiceField(
+        choices=("login", "registration", "identity_bind", "identity_change", "password_reset"),
+        required=False,
+        allow_blank=True,
+        default="login",
+    )
 
 
 class EmailOTPVerifySerializer(serializers.Serializer):
@@ -21,8 +27,15 @@ class EmailOTPVerifySerializer(serializers.Serializer):
 class PhoneOTPRequestSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=32)
     provider_uid = serializers.CharField(max_length=128, required=False, allow_blank=True)
-    bundle_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
-    device_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    bundle_id = serializers.CharField(max_length=128)
+    device_id = serializers.CharField(max_length=128)
+    scene = serializers.ChoiceField(
+        choices=("login", "account_deactivation"),
+        required=False,
+        allow_blank=True,
+        default="login",
+    )
+    user_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
     def validate_phone_number(self, value: str) -> str:
         return PhoneNumberService.normalize_e164(value)

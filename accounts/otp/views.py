@@ -33,6 +33,7 @@ class EmailOTPRequestView(APIView):
         bundle_id = serializer.validated_data.get("bundle_id", "") or ""
         device_id = serializer.validated_data.get("device_id", "") or ""
         provider_uid = serializer.validated_data.get("provider_uid", "") or ""
+        scene = serializer.validated_data.get("scene", "") or "login"
 
         result = OTPService.request_email_otp(
             email=serializer.validated_data["email"],
@@ -41,6 +42,7 @@ class EmailOTPRequestView(APIView):
             device_id=device_id,
             ip_address=ip_address,
             request_id=getattr(request, "request_id", "") or "",
+            scene=scene,
         )
         flow_logger.info(
             "auth.otp.request.success",
@@ -113,6 +115,9 @@ class PhoneOTPRequestView(APIView):
         bundle_id = serializer.validated_data.get("bundle_id", "") or ""
         device_id = serializer.validated_data.get("device_id", "") or ""
         provider_uid = serializer.validated_data.get("provider_uid", "") or ""
+        scene = serializer.validated_data.get("scene", "") or "login"
+        user_id = serializer.validated_data.get("user_id")
+        actor_user_id = getattr(request.user, "id", None) if getattr(request.user, "is_authenticated", False) else None
 
         result = OTPService.request_phone_otp(
             phone_number=serializer.validated_data["phone_number"],
@@ -121,6 +126,9 @@ class PhoneOTPRequestView(APIView):
             device_id=device_id,
             ip_address=ip_address,
             request_id=request_id,
+            scene=scene,
+            user_id=user_id,
+            actor_user_id=actor_user_id,
         )
         flow_logger.info(
             "auth.phone_otp.request.success",

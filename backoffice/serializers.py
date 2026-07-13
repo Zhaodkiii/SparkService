@@ -11,17 +11,10 @@ from ai_config.models import (
     TrialApplication,
     TrialApplicationRequest,
 )
-from accounts.models import (
-    AccountDeactivation,
-    AccountDeactivationAudit,
-    AccountDeviceSession,
-    NotificationCampaign,
-    NotificationMessage,
-    NotificationTemplate,
-    TrustedDevice,
-)
+from accounts.models import AccountDeactivation, AccountDeactivationAudit, AccountDeviceSession, TrustedDevice
 from app_version.serializers import AppVersionConfigSerializer, VersionCheckLogSerializer
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
+from notification_center.models import NotificationCampaign, NotificationMessage, NotificationTemplate
 
 
 User = get_user_model()
@@ -269,7 +262,17 @@ class AdminNotificationLogQuerySerializer(serializers.Serializer):
     status = serializers.ChoiceField(
         required=False,
         allow_blank=True,
-        choices=["", NotificationMessage.Status.SENT, NotificationMessage.Status.FAILED, NotificationMessage.Status.PARTIAL, NotificationMessage.Status.SKIPPED],
+        choices=[
+            "",
+            NotificationMessage.Status.QUEUED,
+            NotificationMessage.Status.PROCESSING,
+            NotificationMessage.Status.ACCEPTED,
+            NotificationMessage.Status.DELIVERED,
+            NotificationMessage.Status.SENT,
+            NotificationMessage.Status.FAILED,
+            NotificationMessage.Status.PARTIAL,
+            NotificationMessage.Status.SKIPPED,
+        ],
         default="",
     )
 
@@ -277,6 +280,27 @@ class AdminNotificationLogQuerySerializer(serializers.Serializer):
 class AdminNotificationMessageSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.username", read_only=True)
     campaign_name = serializers.CharField(source="campaign.name", read_only=True)
+    recipient_key = serializers.SerializerMethodField()
+    body = serializers.SerializerMethodField()
+    payload = serializers.SerializerMethodField()
+
+    def get_recipient_key(self, obj):
+        if obj.channel == NotificationMessage.Channel.SMS:
+            return obj.receiver_phone or "***"
+        if obj.channel == NotificationMessage.Channel.EMAIL:
+            return obj.receiver_email or "***"
+        return "***"
+
+    def get_body(self, obj):
+        text = (obj.body or "").strip()
+        if not text:
+            return ""
+        return text[:120] + ("..." if len(text) > 120 else "")
+
+    def get_payload(self, obj):
+        if not isinstance(obj.payload, dict):
+            return {}
+        return {"keys": sorted(obj.payload.keys())}
 
     class Meta:
         model = NotificationMessage
@@ -286,6 +310,8 @@ class AdminNotificationMessageSerializer(serializers.ModelSerializer):
             "campaign_name",
             "user",
             "user_name",
+            "recipient_type",
+            "recipient_key",
             "channel",
             "status",
             "title",

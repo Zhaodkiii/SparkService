@@ -62,6 +62,7 @@ APPLE_ALLOWED_BUNDLE_IDS = [
     for item in os.getenv("APPLE_ALLOWED_BUNDLE_IDS", "").split(",")
     if item.strip()
 ]
+APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS = int(os.getenv("APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS", "30"))
 
 # Aliyun OSS / STS（`file_manager` 签发客户端临时凭证）
 # 来源：项目根目录 `.env`（由上方 `load_dotenv` 注入 `os.environ`），部署环境也可用容器/系统环境变量覆盖。
@@ -149,6 +150,7 @@ INSTALLED_APPS = [
     'file_manager',
     'app_version',
     'content',
+    'notification_center',
     'backoffice',
     'zdk_migration',
 ]
@@ -322,6 +324,11 @@ CELERY_TASK_ROUTES = {
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
     "accounts.deactivation.tasks.deactivation_health_check_task": {"queue": "monitoring"},
+    "notification_center.tasks.execute_sms_otp_intent_task": {"queue": "notification.security.high"},
+    "notification_center.tasks.execute_notification_campaign_task": {"queue": "notification.bulk"},
+    "notification_center.tasks.relay_notification_outbox_task": {"queue": "notification.transactional"},
+    "notification_center.tasks.reconcile_notification_outbox_task": {"queue": "notification.receipt"},
+    "notification_center.tasks.poll_sms_delivery_receipts_task": {"queue": "notification.receipt"},
 }
 CELERY_BEAT_SCHEDULE = {
     "process-due-account-deactivations": {
@@ -337,6 +344,21 @@ CELERY_BEAT_SCHEDULE = {
     "account-deactivation-health-check": {
         "task": "accounts.deactivation.tasks.deactivation_health_check_task",
         "schedule": crontab(minute="*/30"),
+        "options": {"queue": "monitoring"},
+    },
+    "notification-center-relay-outbox": {
+        "task": "notification_center.tasks.relay_notification_outbox_task",
+        "schedule": crontab(minute="*/1"),
+        "options": {"queue": "monitoring"},
+    },
+    "notification-center-reconcile-outbox": {
+        "task": "notification_center.tasks.reconcile_notification_outbox_task",
+        "schedule": crontab(minute="*/5"),
+        "options": {"queue": "monitoring"},
+    },
+    "notification-center-poll-sms-receipts": {
+        "task": "notification_center.tasks.poll_sms_delivery_receipts_task",
+        "schedule": crontab(minute="*/2"),
         "options": {"queue": "monitoring"},
     },
 }
@@ -525,10 +547,26 @@ LOGGING = {
             "level": LOG_LEVEL,
             "filters": ["request_id"],
         },
+        "notification_center_file": {
+            "class": "common.logging.DateFolderTimedRotatingFileHandler",
+            "filename": "notification_center.log",
+            "log_root": str(LOG_ROOT),
+            "when": "midnight",
+            "backupCount": LOG_BACKUP_COUNT,
+            "encoding": "utf-8",
+            "formatter": LOG_FORMAT,
+            "level": LOG_LEVEL,
+            "filters": ["request_id"],
+        },
     },
     "loggers": {
         "django": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": True},
         "accounts": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": True},
+        "accounts.infrastructure.sms_provider": {
+            "handlers": ["console", "notification_center_file", "app_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
         "accounts.request": {"handlers": ["console", "access_file"], "level": LOG_LEVEL, "propagate": False},
         "accounts.api_io": {
             "handlers": ["console", "access_api_io_file"],
@@ -552,6 +590,11 @@ LOGGING = {
         },
         "medical.api_io": {
             "handlers": ["console", "medical_api_io_file"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "notification_center": {
+            "handlers": ["console", "notification_center_file", "app_file"],
             "level": LOG_LEVEL,
             "propagate": False,
         },

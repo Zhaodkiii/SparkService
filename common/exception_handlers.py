@@ -24,8 +24,11 @@ def api_exception_handler(exc, context):
         return Response({"code": -1, "msg": msg, "data": error_data}, status=drf_response.status_code)
 
     if isinstance(exc, APIError):
+        payload = exc.details if exc.details is not None else error_data
+        if isinstance(payload, dict) and request_id and "request_id" not in payload:
+            payload = {**payload, "request_id": request_id}
         return Response(
-            {"code": exc.code, "msg": exc.msg, "data": exc.details if exc.details is not None else error_data},
+            {"code": exc.code, "msg": exc.msg, "data": payload},
             status=exc.status_code,
         )
 

@@ -23,16 +23,7 @@ from rest_framework.serializers import BooleanField, CharField, Serializer
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from accounts.models import (
-    AccountDeactivation,
-    AccountDeactivationAudit,
-    AccountDeviceSession,
-    NotificationCampaign,
-    NotificationMessage,
-    NotificationTemplate,
-    TrustedDevice,
-)
-from accounts.services.notification_service import NotificationService
+from accounts.models import AccountDeactivation, AccountDeactivationAudit, AccountDeviceSession, TrustedDevice
 from accounts.deactivation.tasks import process_deactivation_task
 from ai_config.models import (
     AIModelCatalog,
@@ -92,6 +83,8 @@ from backoffice.serializers import (
     AppVersionConfigSerializer,
     VersionCheckLogSerializer,
 )
+from notification_center.models import NotificationCampaign, NotificationMessage, NotificationTemplate
+from notification_center.services import NotificationCenterService
 
 
 User = get_user_model()
@@ -830,7 +823,7 @@ class AdminNotificationUserListView(APIView):
     def get(self, request):
         query = AdminNotificationUserQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
-        result = NotificationService.list_notification_users(**query.validated_data)
+        result = NotificationCenterService.list_notification_users(**query.validated_data)
         return success_response(result, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
@@ -842,7 +835,7 @@ class AdminNotificationSendView(APIView):
         serializer = AdminNotificationSendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        campaign = NotificationService.create_campaign_and_enqueue(
+        campaign = NotificationCenterService.create_campaign_and_enqueue(
             campaign_name=data.get("campaign_name") or "",
             channels=data["channels"],
             title=data.get("title") or "",
@@ -882,7 +875,21 @@ class AdminNotificationLogListView(APIView):
         queryset = NotificationMessage.objects.select_related("user").filter(channel=channel).order_by("-created_at", "-id")
         search_q = (query.get("q") or "").strip()
         if search_q:
-            queryset = queryset.filter(Q(user__username__icontains=search_q) | Q(user__email__icontains=search_q) | Q(title__icontains=search_q))
+            lookup = (
+                Q(user__username__icontains=search_q)
+                | Q(user__email__icontains=search_q)
+                | Q(title__icontains=search_q)
+                | Q(receiver_phone__icontains=search_q)
+                | Q(receiver_email__icontains=search_q)
+                | Q(provider_message_id__icontains=search_q)
+            )
+            if "@" in search_q:
+                lookup |= Q(channel_deliveries__endpoint_hmac=NotificationCenterService._email_hmac(search_q))
+            elif any(ch.isdigit() for ch in search_q):
+                normalized_phone = NotificationCenterService._normalize_phone(search_q)
+                if normalized_phone:
+                    lookup |= Q(channel_deliveries__endpoint_hmac=NotificationCenterService._phone_hmac(normalized_phone))
+            queryset = queryset.filter(lookup).distinct()
         if query.get("status"):
             queryset = queryset.filter(status=query["status"])
 
@@ -916,7 +923,7 @@ class AdminNotificationTemplateListCreateView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        rows = NotificationService.list_templates()
+        rows = NotificationCenterService.list_templates()
         payload = AdminNotificationTemplateSerializer(rows, many=True).data
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
@@ -986,7 +993,7 @@ class AdminNotificationPreviewView(APIView):
         if data.get("template_id"):
             template = get_object_or_404(NotificationTemplate, pk=data["template_id"])
 
-        title, body, payload = NotificationService.build_message_content(
+        title, body, payload = NotificationCenterService.build_message_content(
             user=user,
             template=template,
             title=data.get("title") or "",
@@ -997,7 +1004,7 @@ class AdminNotificationPreviewView(APIView):
             "title": title,
             "body": body,
             "payload": payload,
-            "context": NotificationService.build_context_for_user(user),
+            "context": NotificationCenterService.build_context_for_user(user),
         }
         return success_response(result, msg="success", code=0, status_code=status.HTTP_200_OK)
 
@@ -1577,7 +1584,7 @@ class AdminAITrialActionView(APIView):
                 pending_req.rejected_at = None
                 pending_req.save(update_fields=["status", "approved_at", "rejected_at", "updated_at"])
             try:
-                NotificationService.send_to_user_sync(
+                NotificationCenterService.send_to_user_sync(
                     campaign_id=None,
                     user_id=trial.user_id,
                     channels=[NotificationMessage.Channel.APNS],
@@ -1592,6 +1599,13 @@ class AdminAITrialActionView(APIView):
                     },
                     created_by_id=getattr(request.user, "id", None),
                     request_id=getattr(request, "request_id", "") or "",
+                    business_scene="membership.pro_trial.application_approved",
+                    business_reference_type="trial_application",
+                    business_id=str(pending_req.id if pending_req else trial.id),
+                    idempotency_key=f"membership.pro_trial.application_approved:{pending_req.id if pending_req else trial.id}:manual",
+                    source="backoffice.ai_trial",
+                    actor_type="admin",
+                    actor_id=str(getattr(request.user, "id", "") or ""),
                 )
             except Exception:
                 # 通知失败不影响人工审核结果
@@ -1603,7 +1617,7 @@ class AdminAITrialActionView(APIView):
                 pending_req.approved_at = None
                 pending_req.save(update_fields=["status", "rejected_at", "approved_at", "updated_at"])
             try:
-                NotificationService.send_to_user_sync(
+                NotificationCenterService.send_to_user_sync(
                     campaign_id=None,
                     user_id=trial.user_id,
                     channels=[NotificationMessage.Channel.APNS],
@@ -1618,6 +1632,13 @@ class AdminAITrialActionView(APIView):
                     },
                     created_by_id=getattr(request.user, "id", None),
                     request_id=getattr(request, "request_id", "") or "",
+                    business_scene="membership.pro_trial.application_rejected",
+                    business_reference_type="trial_application",
+                    business_id=str(pending_req.id if pending_req else trial.id),
+                    idempotency_key=f"membership.pro_trial.application_rejected:{pending_req.id if pending_req else trial.id}:manual",
+                    source="backoffice.ai_trial",
+                    actor_type="admin",
+                    actor_id=str(getattr(request.user, "id", "") or ""),
                 )
             except Exception:
                 pass
@@ -1642,7 +1663,7 @@ class AdminAITrialActionView(APIView):
                 rejected_at=None,
             )
             try:
-                NotificationService.send_to_user_sync(
+                NotificationCenterService.send_to_user_sync(
                     campaign_id=None,
                     user_id=trial.user_id,
                     channels=[NotificationMessage.Channel.APNS],
@@ -1657,6 +1678,13 @@ class AdminAITrialActionView(APIView):
                     },
                     created_by_id=getattr(request.user, "id", None),
                     request_id=getattr(request, "request_id", "") or "",
+                    business_scene="membership.pro_trial.manually_granted",
+                    business_reference_type="trial_application",
+                    business_id=str(grant_req.id),
+                    idempotency_key=f"membership.pro_trial.manually_granted:{grant_req.id}:manual",
+                    source="backoffice.ai_trial",
+                    actor_type="admin",
+                    actor_id=str(getattr(request.user, "id", "") or ""),
                 )
             except Exception:
                 pass
@@ -1819,7 +1847,21 @@ class AdminAsyncTaskManagerControlView(APIView):
             )
             return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
-        celery_worker_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "worker", "--loglevel=INFO"]
+        # Keep the worker subscribed to every routed notification queue.  A
+        # worker without -Q only consumes the default ``celery`` queue, which
+        # leaves notification outbox rows stuck in PROCESSING forever after
+        # the task router sends them to their dedicated queues.
+        celery_worker_cmd = [
+            sys.executable,
+            "-m",
+            "celery",
+            "-A",
+            "SparkService",
+            "worker",
+            "--loglevel=INFO",
+            "-Q",
+            "celery,notification.security.high,notification.bulk,notification.transactional,notification.receipt,deactivation,cleanup,monitoring",
+        ]
         celery_beat_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "beat", "--loglevel=INFO"]
 
         operations: list[dict] = []

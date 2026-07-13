@@ -99,7 +99,12 @@ class EmailProvider:
 
     @staticmethod
     def send_otp(*, email: str, code: str, request_id: str, provider_uid: str = ""):
-        logger.info("send_email_otp email=%s provider_uid=%s request_id=%s code=%s", email, provider_uid, request_id, code)
+        logger.info(
+            "send_email_otp email=%s provider_uid=%s request_id=%s",
+            _mask_email(email),
+            provider_uid or "-",
+            request_id or "-",
+        )
 
     @staticmethod
     def send_notification(

@@ -114,6 +114,10 @@ class DeactivationService:
             raise APIError("OTP already used", code=40066, status_code=400)
         if otp.expires_at <= now:
             raise APIError("OTP expired", code=40067, status_code=400)
+        if getattr(otp, "invalidated_at", None) is not None:
+            raise APIError("OTP unavailable", code=40068, status_code=400)
+        if getattr(otp, "send_status", "") in {PhoneOTP.SendStatus.QUEUED, PhoneOTP.SendStatus.SUBMIT_FAILED, PhoneOTP.SendStatus.SUBMIT_UNKNOWN}:
+            raise APIError("OTP SMS not sent", code=40069, status_code=400)
         if otp.locked_until and otp.locked_until > now:
             raise APIError("OTP temporarily locked", code=42361, status_code=423)
 
@@ -588,7 +592,7 @@ class DeactivationService:
     @staticmethod
     def _anonymize_notification_receivers(*, user_id: int):
         try:
-            notification_message = apps.get_model("accounts", "NotificationMessage")
+            notification_message = apps.get_model("notification_center", "NotificationMessage")
         except LookupError:
             return
         notification_message.objects.filter(user_id=user_id).update(receiver_email="", receiver_phone="")

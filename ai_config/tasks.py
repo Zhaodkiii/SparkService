@@ -4,8 +4,8 @@ from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
 
-from accounts.models import NotificationMessage
-from accounts.services.notification_service import NotificationService
+from notification_center.models import NotificationMessage
+from notification_center.services import NotificationCenterService
 from ai_config.models import TrialApplication, TrialApplicationRequest
 from ai_config.services import TrialService
 
@@ -70,7 +70,7 @@ def approve_trial_application_request_task(self, request_id: int):
             req.rejected_at = None
             req.save(update_fields=["status", "approved_at", "rejected_at", "updated_at"])
 
-        NotificationService.send_to_user_sync(
+        NotificationCenterService.send_to_user_sync(
             campaign_id=None,
             user_id=req.user_id,
             channels=[NotificationMessage.Channel.APNS],
@@ -85,9 +85,13 @@ def approve_trial_application_request_task(self, request_id: int):
             },
             created_by_id=None,
             request_id=f"trial_auto_approve:{req.id}",
+            business_scene="membership.pro_trial.application_approved",
+            business_reference_type="trial_application",
+            business_id=str(req.id),
+            idempotency_key=f"membership.pro_trial.application_approved:{req.id}:auto",
+            source="ai_config.tasks",
         )
         return {"ok": True, "status": "active", "request_id": int(req.id)}
     except Exception as exc:  # noqa: BLE001
         logger.exception("trial.auto_approve.failed request_id=%s reason=%s", request_id, str(exc))
         raise self.retry(exc=exc)
-
