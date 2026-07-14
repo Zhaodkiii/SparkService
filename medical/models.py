@@ -32,6 +32,8 @@ class MedicalBaseModel(models.Model):
     user = models.ForeignKey(User, related_name="%(class)s_items", on_delete=models.CASCADE, db_index=True)
     is_deleted = models.BooleanField(default=False, db_index=True, db_comment="是否删除")
     deleted_at = models.DateTimeField(null=True, blank=True, db_comment="软删除时间")
+    is_archived = models.BooleanField(default=False, db_index=True, db_comment="是否归档")
+    archived_at = models.DateTimeField(null=True, blank=True, db_comment="归档时间")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_comment="创建时间")
     updated_at = models.DateTimeField(auto_now=True, db_index=True, db_comment="更新时间")
     objects = SoftDeleteManager()
@@ -47,6 +49,22 @@ class MedicalBaseModel(models.Model):
         self.is_deleted = True
         self.deleted_at = timezone.now()
         self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+    def archive(self):
+        """标记为已归档并记录归档时间；已归档则不重复刷新 archived_at。"""
+        if self.is_archived:
+            return
+        self.is_archived = True
+        self.archived_at = timezone.now()
+        self.save(update_fields=["is_archived", "archived_at", "updated_at"])
+
+    def unarchive(self):
+        """取消归档并清空 archived_at；未归档则幂等返回。"""
+        if not self.is_archived:
+            return
+        self.is_archived = False
+        self.archived_at = None
+        self.save(update_fields=["is_archived", "archived_at", "updated_at"])
 
 
 class Member(MedicalBaseModel):

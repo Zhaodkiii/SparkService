@@ -2217,19 +2217,20 @@ class NotificationCenterService:
                 delivery=delivery,
                 phone_number=context["phone_number"],
                 request_id=message.request_id or "",
-                max_attempts=10,
+                max_attempts=3,
                 interval_seconds=1,
             )
             delivery.refresh_from_db()
             message.refresh_from_db()
         NotificationCenterService._sync_phone_otp_send_state(otp_id=intent.business_id, message=message, delivery=delivery)
-        final_success = bool(receipt_result is not None and receipt_result.get("status") == ChannelDelivery.Status.DELIVERED)
+        receipt_failed = bool(receipt_result is not None and receipt_result.get("status") == ChannelDelivery.Status.DELIVERY_FAILED)
+        final_success = bool(sms_result.accepted and not receipt_failed)
         final_error = ""
         if not final_success:
             final_error = (
                 (receipt_result or {}).get("reason")
                 or sms_result.reason
-                or ("sms_receipt_timeout" if sms_result.accepted else "sms_send_failed")
+                or "sms_send_failed"
             )
         NotificationIntent.objects.filter(id=intent.id).update(
             status=NotificationIntent.Status.COMPLETED if final_success else NotificationIntent.Status.FAILED,
@@ -2251,7 +2252,7 @@ class NotificationCenterService:
                 "reason": receipt_result.get("reason") or "sms_delivery_failed",
             }
         if sms_result.accepted:
-            return {"status": "sms_receipt_timeout", "message_id": message.id, "biz_id": sms_result.biz_id, "reason": "sms_receipt_timeout"}
+            return {"status": ChannelDelivery.Status.ACCEPTED, "message_id": message.id, "biz_id": sms_result.biz_id, "reason": ""}
         return {"status": delivery.status, "message_id": message.id, "biz_id": sms_result.biz_id, "reason": sms_result.reason}
 
     @staticmethod
@@ -2325,15 +2326,16 @@ class NotificationCenterService:
             delivery.details = details
             delivery.save(update_fields=["provider_status", "provider_code", "provider_request_id", "details", "updated_at"])
 
-        delivery.status = ChannelDelivery.Status.SUBMIT_UNKNOWN
-        delivery.error_code = "sms_receipt_timeout"
-        delivery.error_message = "sms_receipt_timeout"
+        delivery.status = ChannelDelivery.Status.ACCEPTED
+        delivery.error_code = ""
+        delivery.error_message = ""
         delivery.save(update_fields=["status", "error_code", "error_message", "updated_at"])
         NotificationMessage.objects.filter(id=message.id).update(
-            error_message="sms_receipt_timeout",
+            status=NotificationMessage.Status.ACCEPTED,
+            error_message="",
             updated_at=timezone.now(),
         )
-        return {"status": "sms_receipt_timeout", "attempt": attempts, "reason": "sms_receipt_timeout"}
+        return {"status": ChannelDelivery.Status.ACCEPTED, "attempt": attempts, "reason": ""}
 
     @staticmethod
     def poll_pending_sms_deliveries(*, limit: int = 100) -> dict[str, int]:

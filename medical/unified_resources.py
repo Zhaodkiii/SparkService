@@ -20,17 +20,17 @@ MEDICAL_UNIFIED_RESOURCE_VIEWSETS: dict[str, type] = {}
 # kind -> allowed query param names (excluding "kind")
 MEDICAL_UNIFIED_ALLOWED_QUERY_PARAMS: dict[str, frozenset[str]] = {
     "members": frozenset(),
-    "cases": frozenset({"member_id"}),
+    "cases": frozenset({"member_id", "archived"}),
     "symptoms": frozenset({"member_id", "medical_case_id"}),
     "visits": frozenset({"member_id", "medical_case_id"}),
     "surgeries": frozenset({"member_id", "medical_case_id"}),
     "follow-ups": frozenset({"member_id", "medical_case_id"}),
-    "health-exam-reports": frozenset({"member_id"}),
-    "examination-reports": frozenset({"member_id"}),
+    "health-exam-reports": frozenset({"member_id", "archived"}),
+    "examination-reports": frozenset({"member_id", "archived"}),
     "med-exam-details": frozenset({"member_id", "business_type", "business_id"}),
-    "medicine-boxes": frozenset({"member_id", "medicine_type", "expire_before", "low_stock"}),
-    "prescriptions": frozenset({"member_id", "medical_case_id", "status"}),
-    "medication-plans": frozenset({"member_id", "medical_case_id", "medicine_box_id", "prescription_id", "status"}),
+    "medicine-boxes": frozenset({"member_id", "medicine_type", "expire_before", "low_stock", "archived"}),
+    "prescriptions": frozenset({"member_id", "medical_case_id", "status", "archived"}),
+    "medication-plans": frozenset({"member_id", "medical_case_id", "medicine_box_id", "prescription_id", "status", "archived"}),
     "member-medical-profiles": frozenset({"member_id"}),
     "member-module-settings": frozenset({"member_id", "module_code"}),
     # medication-records scheduled_from: inclusive lower bound (scheduled_at >= scheduled_from)

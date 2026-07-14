@@ -9,7 +9,7 @@
 ## 命令
 
 ```bash
-cd /Users/hua/Downloads/Reference/SparkService
+cd /Users/hua/Documents/project/Reference/SparkService
 
 ./scripts/后台管理/start.sh    # 一键启动
 ./scripts/后台管理/restart.sh   # 一键重启

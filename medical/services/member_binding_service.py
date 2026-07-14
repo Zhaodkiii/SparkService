@@ -255,10 +255,10 @@ def delete_member_profile(member: Member) -> None:
 
 def member_medical_overview(member_id: int) -> dict:
     return {
-        "medical_case_count": MedicalCase.objects.filter(member_id=member_id, is_deleted=False).count(),
-        "health_exam_report_count": HealthExamReport.objects.filter(member_id=member_id, is_deleted=False).count(),
-        "examination_report_count": ExaminationReport.objects.filter(member_id=member_id, is_deleted=False).count(),
-        "medication_plan_count": MedicationPlan.objects.filter(member_id=member_id, is_deleted=False).count(),
+        "medical_case_count": MedicalCase.objects.filter(member_id=member_id, is_deleted=False, is_archived=False).count(),
+        "health_exam_report_count": HealthExamReport.objects.filter(member_id=member_id, is_deleted=False, is_archived=False).count(),
+        "examination_report_count": ExaminationReport.objects.filter(member_id=member_id, is_deleted=False, is_archived=False).count(),
+        "medication_plan_count": MedicationPlan.objects.filter(member_id=member_id, is_deleted=False, is_archived=False).count(),
         "last_updated_at": _latest_member_activity_at(member_id),
     }
 
@@ -267,7 +267,7 @@ def _latest_member_activity_at(member_id: int):
     candidates = []
     for model in (MedicalCase, HealthExamReport, ExaminationReport, MedicationPlan):
         latest = (
-            model.objects.filter(member_id=member_id, is_deleted=False)
+            model.objects.filter(member_id=member_id, is_deleted=False, is_archived=False)
             .order_by("-updated_at")
             .values_list("updated_at", flat=True)
             .first()

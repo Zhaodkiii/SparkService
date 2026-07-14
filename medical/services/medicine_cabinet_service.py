@@ -17,7 +17,7 @@ def family_medicine_cabinet_queryset(*, user: User, entry_member_id: int) -> Que
         Member.objects.filter(user_id=owner_user_id, is_deleted=False).values_list("id", flat=True)
     )
     return (
-        MedicineBox.objects.filter(is_deleted=False)
+        MedicineBox.objects.filter(is_deleted=False, is_archived=False)
         .filter(Q(member_id__in=member_ids) | Q(member_id__isnull=True, user_id=owner_user_id))
         .select_related("member")
         .order_by("-updated_at", "-id")

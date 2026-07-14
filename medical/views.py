@@ -17,6 +17,12 @@ from rest_framework.views import APIView
 
 from common.http_cache import build_etag, normalize_etag
 from common.response import error_response, success_response
+from medical.archive_utils import (
+    apply_archive_state_to_validated_data,
+    apply_archived_filter,
+    model_has_is_archived,
+    parse_archived_param,
+)
 from medical.models import (
     ExaminationReport,
     FollowUp,
@@ -104,8 +110,19 @@ class WrappedModelViewSet(viewsets.ModelViewSet):
         queryset = self.queryset.filter(is_deleted=False)
         model = queryset.model
         if any(field.name == "member" for field in model._meta.fields):
-            return MemberPermissionGate.filter_qs(queryset, self.request.user)
-        return queryset.filter(user=self.request.user)
+            queryset = MemberPermissionGate.filter_qs(queryset, self.request.user)
+        else:
+            queryset = queryset.filter(user=self.request.user)
+        return self._apply_list_archived_filter(queryset)
+
+    def _apply_list_archived_filter(self, queryset):
+        """列表默认排除归档；详情/更新/删除可读已归档对象。"""
+        if getattr(self, "action", None) != "list":
+            return queryset
+        if not model_has_is_archived(queryset.model):
+            return queryset
+        mode = parse_archived_param(self.request)
+        return apply_archived_filter(queryset, mode)
 
     def _ensure_member_create_access(self, member_id: int) -> None:
         try:
@@ -135,6 +152,7 @@ class WrappedModelViewSet(viewsets.ModelViewSet):
         member = serializer.validated_data.get("member") or getattr(serializer.instance, "member", None)
         if member is not None:
             self._ensure_member_edit_access(member.id)
+        apply_archive_state_to_validated_data(serializer)
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -396,11 +414,11 @@ class MemberGuidanceStateAPI(APIView):
             enrich_member_medical_profile_payload,
         )
 
-        symptoms = Symptom.objects.filter(is_deleted=False, member_id=member.id).order_by("-updated_at", "-created_at", "-id")
-        medication_plans = MedicationPlan.objects.filter(is_deleted=False, member_id=member.id).order_by("-start_date", "-updated_at", "-id")
-        surgeries = Surgery.objects.filter(is_deleted=False, member_id=member.id).order_by("-performed_at", "-updated_at", "-id")
-        health_exam_reports = HealthExamReport.objects.filter(is_deleted=False, member_id=member.id).order_by("-exam_date", "-updated_at")
-        examination_reports = ExaminationReport.objects.filter(is_deleted=False, member_id=member.id).order_by("-performed_at", "-updated_at")
+        symptoms = Symptom.objects.filter(is_deleted=False, is_archived=False, member_id=member.id).order_by("-updated_at", "-created_at", "-id")
+        medication_plans = MedicationPlan.objects.filter(is_deleted=False, is_archived=False, member_id=member.id).order_by("-start_date", "-updated_at", "-id")
+        surgeries = Surgery.objects.filter(is_deleted=False, is_archived=False, member_id=member.id).order_by("-performed_at", "-updated_at", "-id")
+        health_exam_reports = HealthExamReport.objects.filter(is_deleted=False, is_archived=False, member_id=member.id).order_by("-exam_date", "-updated_at")
+        examination_reports = ExaminationReport.objects.filter(is_deleted=False, is_archived=False, member_id=member.id).order_by("-performed_at", "-updated_at")
 
         guidance_projection = build_member_medical_guidance_projection(
             member=member,
@@ -1293,6 +1311,7 @@ class MedicineBoxViewSet(WrappedModelViewSet):
             return queryset.none()
         owner_ids = Member.objects.filter(id__in=member_ids, is_deleted=False).values_list("user_id", flat=True).distinct()
         queryset = queryset.filter(Q(member_id__in=member_ids) | Q(member_id__isnull=True, user_id__in=owner_ids))
+        queryset = self._apply_list_archived_filter(queryset)
         member_id = self.request.query_params.get("member_id")
         medicine_type = self.request.query_params.get("medicine_type")
         expire_before = self.request.query_params.get("expire_before")
@@ -1349,6 +1368,7 @@ class MedicineBoxViewSet(WrappedModelViewSet):
             else:
                 entry_member_id = self._resolve_public_medicine_entry_member_id(serializer.instance.user_id)
                 self._ensure_member_edit_access(entry_member_id)
+        apply_archive_state_to_validated_data(serializer)
         serializer.save()
 
     def perform_destroy(self, instance):
@@ -1446,6 +1466,7 @@ class MedicationPlanViewSet(WrappedModelViewSet):
         member = serializer.validated_data.get("member") or getattr(serializer.instance, "member", None)
         if member is not None:
             self._ensure_member_edit_access(member.id)
+        apply_archive_state_to_validated_data(serializer)
         plan = serializer.save()
         schedule_medication_plan_health_notification(
             actor_user=self.request.user,
@@ -1810,7 +1831,7 @@ class MemberCompleteDataAPI(APIView):
             return error_response(msg="member_not_found", code=-1, status_code=status.HTTP_404_NOT_FOUND)
 
         medical_cases = (
-            MedicalCase.objects.filter(is_deleted=False, member_id=member_id)
+            MedicalCase.objects.filter(is_deleted=False, is_archived=False, member_id=member_id)
             .prefetch_related(
                 "symptoms",
                 "prescriptions__plans",
@@ -1821,21 +1842,25 @@ class MemberCompleteDataAPI(APIView):
 
         health_exam_reports = HealthExamReport.objects.filter(
             is_deleted=False,
+            is_archived=False,
             member_id=member_id,
         ).order_by("-exam_date", "-updated_at")
 
         examination_reports = ExaminationReport.objects.select_related("medical_record").filter(
             is_deleted=False,
+            is_archived=False,
             member_id=member_id,
         ).order_by("-performed_at", "-updated_at")
 
         medicine_boxes = MedicineBox.objects.filter(
             is_deleted=False,
+            is_archived=False,
             member_id=member_id,
         ).order_by("-updated_at", "-id")
 
         prescriptions = Prescription.objects.filter(
             is_deleted=False,
+            is_archived=False,
             member_id=member_id,
         ).order_by("-prescribed_at", "-updated_at", "-id")
 
@@ -1844,6 +1869,7 @@ class MemberCompleteDataAPI(APIView):
             "prescription",
         ).filter(
             is_deleted=False,
+            is_archived=False,
             member_id=member_id,
         ).order_by("-start_date", "-updated_at", "-id")
 

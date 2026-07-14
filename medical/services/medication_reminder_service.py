@@ -143,6 +143,7 @@ def build_enabled_plans_response(
         self_plans = (
             MedicationPlan.objects.filter(
                 is_deleted=False,
+                is_archived=False,
                 member_id__in=self_member_ids,
                 reminder_enabled=True,
                 status=MedicationPlan.Status.ACTIVE,
@@ -163,6 +164,7 @@ def build_enabled_plans_response(
                 enabled=True,
                 member_id__in=accessible_member_ids,
                 medication_plan__is_deleted=False,
+                medication_plan__is_archived=False,
                 medication_plan__member__is_deleted=False,
                 medication_plan__reminder_enabled=True,
                 medication_plan__status=MedicationPlan.Status.ACTIVE,

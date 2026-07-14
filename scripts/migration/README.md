@@ -14,7 +14,7 @@
 | Password | Zhao1029* | Zhao1029* |
 
 ```bash
-cd /Users/hua/Downloads/Reference/SparkService
+cd /Users/hua/Documents/project/Reference/SparkService
 source .venv/bin/activate
 
 python manage.py migrate
@@ -26,7 +26,7 @@ python manage.py zdk_migrate_00_check
 ## 一键执行（全部步骤）
 
 ```bash
-cd /Users/hua/Downloads/Reference/SparkService
+cd /Users/hua/Documents/project/Reference/SparkService
 chmod +x scripts/migration/run_all_migration.sh
 
 # 正式迁移（00 → 18 → 99，日志写入 logs/migration/）
@@ -129,5 +129,5 @@ scripts/migration/state/id_map.json
 
 ## 相关文档
 
-- 字段级对照手册：`Health/ZhaodkDream/数据迁移手册-ZhaodkDream到SparkService.md`
+- 字段级对照手册：`/Users/hua/Documents/project/Reference/包/Health/ZhaodkDream/数据迁移手册-ZhaodkDream到SparkService.md`
 - 迁移代码：`zdk_migration/management/commands/`

@@ -19,6 +19,8 @@ def schedule_medication_plan_health_notification(
 ) -> None:
     if not plan.reminder_enabled:
         return
+    if plan.is_archived:
+        return
     if plan.status != MedicationPlan.Status.ACTIVE:
         return
     if not plan.member_id:

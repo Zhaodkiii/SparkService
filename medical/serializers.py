@@ -395,10 +395,12 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
             "case_status",
             "diagnosis_summary",
             "extra",
+            "is_archived",
+            "archived_at",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "archived_at", "created_at", "updated_at")
 
 
 class SymptomSerializer(serializers.ModelSerializer):
@@ -541,10 +543,12 @@ class ExaminationReportSerializer(HasAttachmentsMixin, serializers.ModelSerializ
             "status",
             "extra",
             "attachments",
+            "is_archived",
+            "archived_at",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "archived_at", "created_at", "updated_at")
 
 
 class HealthExamReportSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
@@ -578,10 +582,12 @@ class HealthExamReportSerializer(HasAttachmentsMixin, serializers.ModelSerialize
             "status",
             "extra",
             "attachments",
+            "is_archived",
+            "archived_at",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "archived_at", "created_at", "updated_at")
 
 
 class MedExamDetailSerializer(serializers.ModelSerializer):
@@ -744,10 +750,12 @@ class MedicineBoxSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
             "notes",
             "extra",
             "attachments",
+            "is_archived",
+            "archived_at",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "archived_at", "created_at", "updated_at")
         extra_kwargs = {"member": {"required": False, "allow_null": True}}
 
 
@@ -788,10 +796,12 @@ class PrescriptionSerializer(HasAttachmentsMixin, serializers.ModelSerializer):
             "status",
             "extra",
             "attachments",
+            "is_archived",
+            "archived_at",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "archived_at", "created_at", "updated_at")
 
 
 class MedicationPlanMedicineBoxField(serializers.PrimaryKeyRelatedField):
@@ -948,10 +958,12 @@ class MedicationPlanSerializer(HasAttachmentsMixin, serializers.ModelSerializer)
             "status",
             "extra",
             "attachments",
+            "is_archived",
+            "archived_at",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = ("id", "user", "archived_at", "created_at", "updated_at")
 
 
 class MedicationRecordSerializer(serializers.ModelSerializer):

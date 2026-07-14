@@ -22,7 +22,7 @@ python manage.py seed_admin_rbac
 
 ## 2. 前端启动
 
-目录：`/Users/hua/Downloads/Reference/SparkService/backoffice-web`
+目录：`/Users/hua/Documents/project/Reference/SparkService/backoffice-web`
 
 ```bash
 cd backoffice-web
@@ -66,4 +66,3 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - `GET/POST /api/admin/v1/rbac/roles/{id}/permissions/`
 - `POST /api/admin/v1/users/{id}/roles/`
 - `GET /api/admin/v1/audit/logs/`
-

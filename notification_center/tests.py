@@ -171,7 +171,7 @@ class NotificationCenterServiceTests(TestCase):
         delivery = ChannelDelivery.objects.get(message=message, channel=ChannelDelivery.Channel.SMS)
         self.assertEqual(delivery.details["template_param"]["code"], "123456")
         data = NotificationMessageSerializer(message).data
-        self.assertEqual(data["payload"]["sms_send_request"]["template_param"]["code"], "123456")
+        self.assertEqual(data["payload"], {"code": "123456"})
         self.assertEqual(data["delivery_details"][0]["template_param"]["code"], "123456")
         self.assertEqual(NotificationOutbox.objects.get(aggregate_id=str(message.intent_id)).status, NotificationOutbox.Status.PROCESSED)
 
@@ -179,7 +179,7 @@ class NotificationCenterServiceTests(TestCase):
     @patch("notification_center.services.time_module.sleep", return_value=None)
     @patch("notification_center.services.AliyunSMSProvider.send_login_code")
     @patch("notification_center.services.AliyunSMSProvider.otp_readiness_error", return_value="")
-    def test_phone_otp_sync_request_fails_when_receipt_times_out(self, _readiness, send_login_code, mocked_sleep, mocked_query):
+    def test_phone_otp_sync_request_succeeds_when_receipt_is_still_pending_after_three_seconds(self, _readiness, send_login_code, mocked_sleep, mocked_query):
         send_login_code.return_value = SMSProviderResult(
             accepted=True,
             unknown=False,
@@ -208,14 +208,15 @@ class NotificationCenterServiceTests(TestCase):
             expires_at=timezone.now() + timedelta(minutes=5),
         )
 
-        self.assertFalse(ok)
-        self.assertEqual(reason, "sms_receipt_timeout")
-        self.assertEqual(mocked_query.call_count, 10)
-        self.assertEqual(mocked_sleep.call_count, 10)
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+        self.assertEqual(mocked_query.call_count, 3)
+        self.assertEqual(mocked_sleep.call_count, 3)
         message = NotificationMessage.objects.get(id=int(message_id))
         delivery = ChannelDelivery.objects.get(message=message, channel=ChannelDelivery.Channel.SMS)
-        self.assertEqual(delivery.status, ChannelDelivery.Status.SUBMIT_UNKNOWN)
-        self.assertEqual(delivery.error_code, "sms_receipt_timeout")
+        self.assertEqual(message.status, NotificationMessage.Status.ACCEPTED)
+        self.assertEqual(delivery.status, ChannelDelivery.Status.ACCEPTED)
+        self.assertEqual(delivery.error_code, "")
 
     @patch("notification_center.tasks.relay_notification_outbox_task.delay")
     def test_campaign_uses_row_based_audience_snapshot(self, _relay_delay):
