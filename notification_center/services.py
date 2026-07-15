@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import logging
 import time as time_module
 import uuid
@@ -12,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.template.loader import render_to_string
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -158,6 +160,9 @@ _BUSINESS_SCENE_ALIASES = {
     "login": "account.auth.login_otp_requested",
     "registration": "account.auth.registration_otp_requested",
     "register": "account.auth.registration_otp_requested",
+    "identity_bind": "account.auth.identity_bind_otp_requested",
+    "identity_change": "account.auth.identity_change_otp_requested",
+    "identity_reauth": "account.auth.identity_reauth_otp_requested",
     "account_deactivation": "account.lifecycle.deactivation_requested",
     "deactivation": "account.lifecycle.deactivation_requested",
     "campaign": "operation.campaign.published",
@@ -252,6 +257,31 @@ class NotificationCenterService:
             "default_routing": scene.default_routing,
             "status": scene.status,
         }
+
+    @staticmethod
+    def _email_otp_context(*, email: str, code: str, expires_at, request_id: str = "") -> dict[str, Any]:
+        now = timezone.now()
+        expiry_at = expires_at or (now + timedelta(minutes=5))
+        expires_in_seconds = max(0, int((expiry_at - now).total_seconds()))
+        expires_in_minutes = max(1, math.ceil(expires_in_seconds / 60))
+        return {
+            "brand_name": "DreamWhale",
+            "subject": "【DreamWhale】您的账号安全验证码",
+            "email": email,
+            "code": code,
+            "expires_at": expiry_at,
+            "expires_minutes": expires_in_minutes,
+            "support_url": "https://dreamwhale.top",
+            "request_id": request_id,
+        }
+
+    @staticmethod
+    def _render_email_otp_text(context: dict[str, Any]) -> str:
+        return render_to_string("notification_center/email_otp.txt", context)
+
+    @staticmethod
+    def _render_email_otp_html(context: dict[str, Any]) -> str:
+        return render_to_string("notification_center/email_otp.html", context)
 
     @staticmethod
     def _build_intent_scene_context(
@@ -1938,12 +1968,19 @@ class NotificationCenterService:
 
         now = timezone.now()
         expiry = expires_at or now + timedelta(minutes=5)
+        email_context = NotificationCenterService._email_otp_context(
+            email=address,
+            code=code,
+            expires_at=expiry,
+            request_id=request_id or "",
+        )
         scene_key = NotificationCenterService._normalize_scene_key(scene)
         if scene_key not in {
             "account.auth.login_otp_requested",
             "account.auth.registration_otp_requested",
             "account.auth.identity_bind_otp_requested",
             "account.auth.identity_change_otp_requested",
+            "account.auth.identity_reauth_otp_requested",
             "account.auth.password_reset_otp_requested",
         }:
             scene_key = _BUSINESS_SCENE_ALIASES.get(scene_key, scene_key or "account.auth.login_otp_requested")
@@ -2043,6 +2080,12 @@ class NotificationCenterService:
             if not intent.sensitive_context_ciphertext:
                 raise ValueError("otp_sensitive_context_missing")
             context = json.loads(decrypt_sensitive(intent.sensitive_context_ciphertext))
+            email_context = NotificationCenterService._email_otp_context(
+                email=context["email"],
+                code=context["code"],
+                expires_at=intent.expires_at,
+                request_id=message.request_id,
+            )
             endpoint = ContactEndpoint.objects.get(channel=ContactEndpoint.Channel.EMAIL, address_hmac=message.recipient_key)
             delivery, delivery_created = ChannelDelivery.objects.get_or_create(
                 message=message,
@@ -2072,9 +2115,10 @@ class NotificationCenterService:
             message.save(update_fields=["status", "updated_at"])
 
         ok, reason, provider_message_id, detail = EmailProvider.send_notification(
-            email=context["email"],
-            title="验证码邮件",
-            body=f"你的验证码是：{context['code']}，请在有效期内使用。",
+            email=email_context["email"],
+            title=email_context["subject"],
+            body=NotificationCenterService._render_email_otp_text(email_context),
+            html_body=NotificationCenterService._render_email_otp_html(email_context),
             request_id=message.request_id,
         )
         provider_payload = {"otp": True}

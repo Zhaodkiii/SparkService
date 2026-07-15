@@ -82,6 +82,7 @@ class OTPService:
             "registration": "account.auth.registration_otp_requested",
             "identity_bind": "account.auth.identity_bind_otp_requested",
             "identity_change": "account.auth.identity_change_otp_requested",
+            "identity_reauth": "account.auth.identity_reauth_otp_requested",
             "password_reset": "account.auth.password_reset_otp_requested",
         }
         scene_key = scene_aliases.get((scene or "").strip(), scene or "account.auth.login_otp_requested")
@@ -240,7 +241,13 @@ class OTPService:
 
         resolved_user = None
         resolved_identity = None
-        if scene_key == "account.lifecycle.deactivation_requested":
+        identity_owned_scenes = {
+            "account.lifecycle.deactivation_requested",
+            "account.auth.identity_reauth_otp_requested",
+            "account.auth.identity_reauth",
+            "identity_reauth",
+        }
+        if scene_key in identity_owned_scenes or (scene or "").strip() in {"identity_reauth", "account_deactivation"}:
             if user_id is None:
                 raise APIError("user_id_required_for_account_deactivation", code=40061, status_code=400)
             if actor_user_id is None or int(actor_user_id) != int(user_id):
@@ -425,36 +432,91 @@ class OTPService:
         otp.save(update_fields=["used_at"])
 
         User = get_user_model()
-        user = User.objects.filter(email__iexact=email).first()
-        if not user:
-            # Create a user placeholder for OTP-only login.
-            flow_logger.info(
-                "user.register.begin",
-                extra={"action": "user.register", "request_id": request_id, "channel": "email_otp"},
+        normalized_bundle_id = (bundle_id or "").strip() or (otp.bundle_id or "")
+        identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
+        created_user = False
+
+        identity = (
+            SocialIdentity.objects.select_for_update()
+            .select_related("user")
+            .filter(
+                bundle_id=identity_scope,
+                provider=SocialIdentity.Provider.EMAIL,
+                provider_uid=email,
             )
-            user = User.objects.create(username=email, email=email)
-            user.set_unusable_password()
-            user.save(update_fields=["password"])
-            flow_logger.info(
-                "user.register.success",
-                extra={
-                    "action": "user.register",
-                    "request_id": request_id,
-                    "channel": "email_otp",
-                    "user_id": user.id,
-                },
-            )
+            .first()
+        )
+        user = identity.user if identity else None
+
+        if user and not user.is_active:
+            raise APIError("user_inactive", code=40103, status_code=401)
+
+        if identity is None:
+            # Legacy: auth_user.email exists without email SocialIdentity — lazy-create when safe.
+            legacy_user = User.objects.filter(email__iexact=email).first()
+            if legacy_user is not None:
+                if not legacy_user.is_active:
+                    raise APIError("user_inactive", code=40103, status_code=401)
+                conflict = (
+                    SocialIdentity.objects.filter(
+                        bundle_id=identity_scope,
+                        provider=SocialIdentity.Provider.EMAIL,
+                        provider_uid=email,
+                    )
+                    .exclude(user_id=legacy_user.id)
+                    .select_related("user")
+                    .first()
+                )
+                if conflict is not None and conflict.user.is_active:
+                    raise APIError(
+                        "identity_already_bound_to_active_user",
+                        code=40921,
+                        status_code=409,
+                        details={"provider": SocialIdentity.Provider.EMAIL},
+                    )
+                identity, _ = SocialIdentity.objects.get_or_create(
+                    bundle_id=identity_scope,
+                    provider=SocialIdentity.Provider.EMAIL,
+                    provider_uid=email,
+                    defaults={"user": legacy_user},
+                )
+                user = identity.user
+            else:
+                flow_logger.info(
+                    "user.register.begin",
+                    extra={"action": "user.register", "request_id": request_id, "channel": "email_otp"},
+                )
+                user = User.objects.create(username=email, email=email)
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+                created_user = True
+                SocialIdentity.objects.create(
+                    user=user,
+                    bundle_id=identity_scope,
+                    provider=SocialIdentity.Provider.EMAIL,
+                    provider_uid=email,
+                )
+                flow_logger.info(
+                    "user.register.success",
+                    extra={
+                        "action": "user.register",
+                        "request_id": request_id,
+                        "channel": "email_otp",
+                        "user_id": user.id,
+                        "identity_scope": identity_scope,
+                    },
+                )
 
         DeviceLinkingService.try_attach_user_to_trusted_device(
             user=user,
             device_id=device_id,
-            bundle_id=bundle_id,
+            bundle_id=normalized_bundle_id,
             request_id=request_id,
         )
         try:
             TrialService.try_grant_auto_trial_for_login_device(
                 user=user,
-                bundle_id=bundle_id or "",
+                bundle_id=normalized_bundle_id,
                 device_id=device_id or "",
                 request_id=request_id,
             )
@@ -463,7 +525,7 @@ class OTPService:
 
         token_payload = DeviceSessionService.activate_and_issue_tokens(
             user=user,
-            bundle_id=bundle_id,
+            bundle_id=normalized_bundle_id,
             device_id=device_id,
             request_id=request_id,
         )
@@ -474,9 +536,9 @@ class OTPService:
             outcome=LoginAudit.LoginOutcome.SUCCESS,
             ip_address=ip_address or "",
             user_agent=user_agent or "",
-            bundle_id=bundle_id or "",
+            bundle_id=normalized_bundle_id,
             device_id=device_id or "",
-            raw_claims=None,
+            raw_claims={"email": email, "identity_scope": identity_scope},
             request_id=request_id or "",
         )
 
@@ -489,12 +551,16 @@ class OTPService:
                 "otp_id": otp_id,
                 "user_id": user.id,
                 "is_pro": is_pro,
+                "identity_scope": identity_scope,
+                "is_new_user": created_user,
             },
         )
         return {
             **token_payload,
             "otp_id": otp.otp_id,
             "is_pro": is_pro,
+            "is_new_user": created_user,
+            "email": user.email or email,
         }
 
     @staticmethod

@@ -38,6 +38,34 @@ class NotificationCenterServiceTests(TestCase):
 
         self.assertEqual(result.delivered_at, delivered_at)
 
+    @patch("notification_center.services.EmailProvider.send_notification")
+    def test_email_otp_uses_html_reference_layout(self, send_notification):
+        send_notification.return_value = (True, "", "email-otp-1", "")
+
+        ok, reason, message_id = NotificationCenterService.send_email_otp(
+            email="tester@example.com",
+            code="334394",
+            request_id="req-email-otp",
+            otp_id="otp-email-otp",
+            expires_at=timezone.now() + timedelta(minutes=15),
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+        self.assertTrue(message_id)
+        message = NotificationMessage.objects.get(id=int(message_id))
+
+        result = NotificationCenterService.execute_email_otp_intent(intent_id=message.intent_id, message_id=message.id)
+
+        self.assertEqual(result["status"], ChannelDelivery.Status.ACCEPTED)
+        send_notification.assert_called_once()
+        kwargs = send_notification.call_args.kwargs
+        self.assertEqual(kwargs["title"], "【DreamWhale】您的账号安全验证码")
+        self.assertIn("334394", kwargs["body"])
+        self.assertIn("334394", kwargs["html_body"])
+        self.assertIn("DreamWhale", kwargs["html_body"])
+        self.assertIn("15", kwargs["html_body"])
+
     @patch("notification_center.tasks.relay_notification_outbox_task.delay")
     @patch("notification_center.services.AliyunSMSProvider.send_login_code")
     @patch("notification_center.services.AliyunSMSProvider.otp_readiness_error", return_value="")

@@ -3,7 +3,7 @@ import smtplib
 import ssl
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ class EmailProvider:
 
     @staticmethod
     def send_notification(
-        *, email: str, title: str, body: str, request_id: str = ""
+        *, email: str, title: str, body: str, request_id: str = "", html_body: str = ""
     ) -> tuple[bool, str, str, str]:
         """
         Returns:
@@ -124,13 +124,15 @@ class EmailProvider:
         from_email = (getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip() or None
         masked = _mask_email(to)
         try:
-            send_mail(
+            message = EmailMultiAlternatives(
                 subject=subject,
-                message=content,
+                body=content,
                 from_email=from_email,
-                recipient_list=[to],
-                fail_silently=False,
+                to=[to],
             )
+            if html_body.strip():
+                message.attach_alternative(html_body, "text/html")
+            message.send(fail_silently=False)
             logger.info(
                 "send_email_notification email=%s request_id=%s subject=%s",
                 masked,

@@ -151,6 +151,7 @@ class SocialIdentity(models.Model):
         APPLE = "apple"
         GOOGLE = "google"
         PHONE = "phone"
+        EMAIL = "email"
 
     user = models.ForeignKey(User, related_name="social_identities", on_delete=models.CASCADE)
     provider = models.CharField(max_length=32, choices=Provider.choices, db_index=True)
@@ -305,3 +306,42 @@ class AccountDeactivationAudit(models.Model):
     request_id = models.CharField(max_length=64, blank=True, default="")
     details = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class AccountIdentityVerificationTicket(models.Model):
+    """
+    账号管理绑定/修改前的一次性再认证凭证。
+    明文 ticket 只返回一次，库内仅存 hash。
+    """
+
+    class Purpose(models.TextChoices):
+        BIND_IDENTITY = "bind_identity"
+        CHANGE_IDENTITY = "change_identity"
+
+    class VerifiedProvider(models.TextChoices):
+        PHONE = "phone"
+        EMAIL = "email"
+        APPLE = "apple"
+
+    user = models.ForeignKey(
+        User,
+        related_name="identity_verification_tickets",
+        on_delete=models.CASCADE,
+        db_comment="签发对象用户",
+    )
+    purpose = models.CharField(max_length=32, choices=Purpose.choices, db_index=True)
+    verified_provider = models.CharField(max_length=32, choices=VerifiedProvider.choices, db_index=True)
+    identity_scope = models.CharField(max_length=128, db_index=True, default="", db_comment="账号身份作用域")
+    bundle_id = models.CharField(max_length=128, blank=True, default="", db_comment="真实客户端 bundle_id")
+    device_id = models.CharField(max_length=128, blank=True, default="")
+    ticket_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    request_id = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table_comment = "账号登录方式绑定/修改再认证一次性 ticket"
+        indexes = [
+            models.Index(fields=["user", "purpose", "expires_at"]),
+        ]

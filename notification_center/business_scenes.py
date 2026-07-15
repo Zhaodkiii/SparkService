@@ -88,6 +88,7 @@ SCENE_CATALOG: tuple[SceneDefinition, ...] = (
     _scene("account.auth.login_otp_requested", "登录验证码", category=SECURITY, channels=("sms", "email"), preference_policy="mandatory", quiet_hour_policy="bypass"),
     _scene("account.auth.identity_bind_otp_requested", "绑定身份验证码", category=SECURITY, channels=("sms", "email"), preference_policy="mandatory", quiet_hour_policy="bypass"),
     _scene("account.auth.identity_change_otp_requested", "换绑身份验证码", category=SECURITY, channels=("sms", "email"), preference_policy="mandatory", quiet_hour_policy="bypass"),
+    _scene("account.auth.identity_reauth_otp_requested", "身份再认证验证码", category=SECURITY, channels=("sms", "email"), preference_policy="mandatory", quiet_hour_policy="bypass"),
     _scene("account.auth.password_reset_otp_requested", "重置凭证验证码", category=SECURITY, channels=("sms", "email"), preference_policy="mandatory", quiet_hour_policy="bypass"),
     _scene("account.security.new_device_login_detected", "新设备登录", category=SECURITY, severity=WARNING, channels=("apns", "email"), preference_policy="mandatory"),
     _scene("account.security.suspicious_login_detected", "异常登录", category=SECURITY, severity=CRITICAL, channels=("apns", "sms", "email"), preference_policy="mandatory", quiet_hour_policy="bypass_critical"),

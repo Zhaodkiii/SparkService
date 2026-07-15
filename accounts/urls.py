@@ -3,6 +3,13 @@ from django.urls import path
 from accounts.auth.views import AppleLoginView, CurrentSessionView, LogoutView, PasswordLoginView
 from accounts.device.views import DeviceRegisterView
 from accounts.deactivation.views import AccountDeactivationView
+from accounts.identity.views import (
+    AccountIdentitiesView,
+    BindIdentityView,
+    ChangeIdentityView,
+    IdentityVerificationRequestView,
+    IdentityVerificationVerifyView,
+)
 from accounts.otp.views import (
     EmailOTPRequestView,
     EmailOTPVerifyView,
@@ -21,6 +28,20 @@ urlpatterns = [
     path("otp/email/verify/", EmailOTPVerifyView.as_view(), name="email_otp_verify"),
     path("otp/phone/request/", PhoneOTPRequestView.as_view(), name="phone_otp_request"),
     path("otp/phone/verify/", PhoneOTPVerifyView.as_view(), name="phone_otp_verify"),
+    # Account identity linking
+    path("accounts/identities/", AccountIdentitiesView.as_view(), name="account_identities"),
+    path(
+        "accounts/identity-verification/request/",
+        IdentityVerificationRequestView.as_view(),
+        name="account_identity_verification_request",
+    ),
+    path(
+        "accounts/identity-verification/verify/",
+        IdentityVerificationVerifyView.as_view(),
+        name="account_identity_verification_verify",
+    ),
+    path("accounts/identities/bind/", BindIdentityView.as_view(), name="account_identities_bind"),
+    path("accounts/identities/change/", ChangeIdentityView.as_view(), name="account_identities_change"),
     # Trusted devices
     path("device/register/", DeviceRegisterView.as_view(), name="device_register"),
     # Deactivation (state machine + celery)

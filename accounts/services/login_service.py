@@ -358,7 +358,9 @@ class LoginService:
         if identity:
             user = identity.user
             if user.is_active:
-                if email_from_token and user.email.lower() != email_from_token:
+                # 仅在账号邮箱为空且 Apple token email 已验证时补写；禁止覆盖已有邮箱。
+                email_verified = payload.get("email_verified") in (True, "true", "1")
+                if not (user.email or "").strip() and email_from_token and email_verified:
                     user.email = email_from_token
                     user.save(update_fields=["email"])
                 LoginService._maybe_backfill_apple_first_name(user=user, full_name=full_name)
@@ -481,8 +483,11 @@ class LoginService:
                 request_id=request_id,
             ),
         )
-        result["email"] = user.email or chosen_email
-        result["display_name"] = LoginService._resolve_user_display_name(user=user, fallback_email=chosen_email)
+        result["email"] = user.email or ""
+        result["display_name"] = LoginService._resolve_user_display_name(
+            user=user,
+            fallback_email=user.email or chosen_email,
+        )
         result["is_new_user"] = created_user
         result["deactivation_cancelled"] = cancel_result
         flow_logger.info(
@@ -527,6 +532,8 @@ class LoginService:
             sign_in_method = "apple"
         elif SocialIdentity.Provider.PHONE in providers:
             sign_in_method = "phone"
+        elif SocialIdentity.Provider.EMAIL in providers:
+            sign_in_method = "email"
         else:
             sign_in_method = "apple"
 

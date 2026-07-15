@@ -9,7 +9,7 @@ class EmailOTPRequestSerializer(serializers.Serializer):
     bundle_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
     device_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
     scene = serializers.ChoiceField(
-        choices=("login", "registration", "identity_bind", "identity_change", "password_reset"),
+        choices=("login", "registration", "identity_bind", "identity_change", "identity_reauth", "password_reset"),
         required=False,
         allow_blank=True,
         default="login",
@@ -30,7 +30,7 @@ class PhoneOTPRequestSerializer(serializers.Serializer):
     bundle_id = serializers.CharField(max_length=128)
     device_id = serializers.CharField(max_length=128)
     scene = serializers.ChoiceField(
-        choices=("login", "account_deactivation"),
+        choices=("login", "account_deactivation", "identity_bind", "identity_change", "identity_reauth"),
         required=False,
         allow_blank=True,
         default="login",

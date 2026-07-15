@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; }
+        img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        table { border-collapse: collapse !important; }
+        body { height: 100% !important; margin: 0 !important; padding: 0 !important; width: 100% !important; }
+    </style>
+</head>
+<body style="background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0;">
+    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td align="center" style="padding: 40px 0;">
+                <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+                    <tr>
+                        <td align="center" style="background-color: #1e293b; padding: 30px 20px;">
+                            <h1 style="color: #ffffff; font-size: 24px; font-weight: 600; margin: 0; letter-spacing: 1px;">{{ brand_name }}</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 40px 30px; color: #334155; font-size: 16px; line-height: 1.6;">
+                            <p style="margin-top: 0; margin-bottom: 20px; font-size: 16px; font-weight: 600;">尊敬的用户：</p>
+                            <p style="margin-bottom: 25px;">您好！感谢您使用 {{ brand_name }}。我们收到了您账号的身份验证请求。</p>
+                            <p style="margin-bottom: 15px;">您的专属验证码如下，请在对应页面完成输入：</p>
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 25px;">
+                                <tr>
+                                    <td align="center" style="background-color: #f1f5f9; border-radius: 6px; padding: 24px 20px; border: 1px dashed #cbd5e1;">
+                                        <span style="font-family: 'Courier New', Courier, monospace; font-size: 38px; font-weight: bold; color: #2563eb; letter-spacing: 6px;">{{ code }}</span>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="font-size: 14px; color: #64748b; margin-bottom: 30px;">*(注意：该验证码将在 <strong>{{ expires_minutes }}</strong> 分钟后失效，请尽快使用。)*</p>
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px; margin-bottom: 35px;">
+                                <tr>
+                                    <td style="padding: 15px; font-size: 14px; color: #c2410c; line-height: 1.6;">
+                                        <strong style="display: block; margin-bottom: 6px;">安全提醒：</strong>
+                                        <ul style="margin: 0; padding-left: 20px;">
+                                            <li>请勿将此验证码泄露给任何人，我们的客服人员绝不会向您索要此代码。</li>
+                                            <li>如果您并未请求此验证码，请直接忽略本邮件，您的账号当前是安全的。</li>
+                                        </ul>
+                                    </td>
+                                </tr>
+                            </table>
+                            <p style="margin-bottom: 0;">祝您使用愉快，<br><strong>{{ brand_name }} 团队 敬上</strong></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td align="center" style="background-color: #f8fafc; padding: 30px 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; line-height: 1.6;">
+                            <p style="margin: 0 0 8px 0;">此邮件为系统自动发送，请勿直接回复。</p>
+                            <p style="margin: 0 0 8px 0;">如果您有任何疑问，请访问官方网站或联系支持团队。</p>
+                            <p style="margin: 0 0 12px 0;">官网地址：<a href="{{ support_url }}" target="_blank" style="color: #2563eb; text-decoration: none;">{{ support_url }}</a></p>
+                            <p style="margin: 0;">&copy; 2026 {{ brand_name }}. All rights reserved.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
