@@ -60,13 +60,6 @@ from medical.views import (
     VisitWorkflowCreateView,
     VisitViewSet,
 )
-from medical.medicine_home_views import (
-    MedicationRecordActionAPI,
-    MedicineBoxStocktakeAPI,
-    MedicineHomeAPI,
-    MedicineHomeSearchAPI,
-)
-
 router = DefaultRouter()
 router.register("members", MemberViewSet, basename="medical-members")
 router.register("cases", MedicalCaseViewSet, basename="medical-cases")
@@ -135,10 +128,6 @@ urlpatterns = [
     path("medication-reminders/local-authorizations/<int:plan_id>/", MedicationReminderLocalAuthorizationAPI.as_view(), name="medical-medication-reminder-local-authorization"),
     path("members/<int:member_id>/notification-ownership/", MemberNotificationOwnershipAPI.as_view(), name="medical-member-notification-ownership"),
     path("medicine-cabinet/summary/", FamilyMedicineCabinetSummaryAPI.as_view(), name="medical-medicine-cabinet-summary"),  # 家庭药箱汇总（按入口成员推导创建者范围）
-    path("medicine-cabinet/home/", MedicineHomeAPI.as_view(), name="medical-medicine-cabinet-home"),
-    path("medicine-cabinet/search/", MedicineHomeSearchAPI.as_view(), name="medical-medicine-cabinet-search"),
-    path("medicine-boxes/<int:box_id>/stocktake/", MedicineBoxStocktakeAPI.as_view(), name="medical-medicine-box-stocktake"),
-    path("medication-records/<int:record_id>/<str:action>/", MedicationRecordActionAPI.as_view(), name="medical-medication-record-action"),
     path("workflows/case-documents/save/", MedicalCaseWorkflowSaveView.as_view(), name="medical-workflow-case-save"),  # 工作流：保存病例文档
     path("workflows/health-exams/save/", HealthExamWorkflowSaveView.as_view(), name="medical-workflow-health-exam-save"),  # 工作流：保存体检报告
     path("workflows/medical-reports/create/", MedicalReportWorkflowSaveView.as_view(), name="medical-workflow-medical-report-create"),  # 工作流：创建检查/检验报告
