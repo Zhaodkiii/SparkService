@@ -8,12 +8,12 @@
     </a-select>
   </a-space>
 
-  <a-table :data-source="rows" :pagination="false" row-key="id" :loading="loading">
-    <a-table-column title="ID" data-index="id" />
-    <a-table-column title="显示名称" data-index="display_name" />
-    <a-table-column title="账号标识" data-index="username" />
-    <a-table-column title="邮箱" data-index="email" />
-    <a-table-column title="状态" key="status">
+  <a-table :data-source="rows" :pagination="false" row-key="id" :loading="loading" :scroll="{ x: 1100 }">
+    <a-table-column title="ID" data-index="id" :width="90" />
+    <a-table-column title="显示名称" data-index="display_name" :width="140" />
+    <a-table-column title="账号标识" data-index="username" :width="200" />
+    <a-table-column title="邮箱" data-index="email" :width="220" />
+    <a-table-column title="状态" key="status" :width="90">
       <template #default="{ record }">
         <a-tag :color="record.is_active ? 'green' : 'red'">{{ record.is_active ? '启用' : '禁用' }}</a-tag>
       </template>
@@ -23,7 +23,7 @@
         {{ formatDateTime(record.last_used_at) }}
       </template>
     </a-table-column>
-    <a-table-column title="操作" key="actions" :width="actionsColWidth">
+    <a-table-column title="操作" key="actions" :width="actionsColWidth" fixed="right">
       <template #default="{ record }">
         <TableHoverActions>
           <a-button size="small" @click="openUserDetail(record)">详细</a-button>

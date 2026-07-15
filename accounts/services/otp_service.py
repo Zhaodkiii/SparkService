@@ -14,10 +14,7 @@ from common.exceptions import APIError
 from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
-from accounts.services.device_linking_service import DeviceLinkingService
-from accounts.services.device_session_service import DeviceSessionService
 from notification_center.services import NotificationCenterService
-from ai_config.services import TrialService
 
 flow_logger = logging.getLogger("accounts.flow")
 
@@ -367,7 +364,7 @@ class OTPService:
 
     @staticmethod
     @transaction.atomic
-    def verify_email_otp_and_issue_tokens(*, otp_id: str, email: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str):
+    def verify_email_otp_and_issue_tokens(*, otp_id: str, email: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str, device_secret: str = ""):
         flow_logger.info(
             "auth.otp.verify.service.begin",
             extra={"action": "auth.otp.verify.service", "request_id": request_id, "otp_id": otp_id, "bundle_id": bundle_id, "device_id": device_id},
@@ -431,141 +428,98 @@ class OTPService:
         otp.used_at = now
         otp.save(update_fields=["used_at"])
 
+        from accounts.services.account_login_resolution_service import AccountLoginResolutionService
+
         User = get_user_model()
         normalized_bundle_id = (bundle_id or "").strip() or (otp.bundle_id or "")
         identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
-        created_user = False
 
-        identity = (
-            SocialIdentity.objects.select_for_update()
-            .select_related("user")
-            .filter(
+        # Legacy：仅在无正式 email identity 且无设备账户可升级时，把 User.email 懒绑定为 SocialIdentity。
+        existing_email = (
+            SocialIdentity.objects.filter(
                 bundle_id=identity_scope,
                 provider=SocialIdentity.Provider.EMAIL,
                 provider_uid=email,
             )
             .first()
         )
-        user = identity.user if identity else None
-
-        if user and not user.is_active:
-            raise APIError("user_inactive", code=40103, status_code=401)
-
-        if identity is None:
-            # Legacy: auth_user.email exists without email SocialIdentity — lazy-create when safe.
+        device_identity = (
+            SocialIdentity.objects.filter(
+                bundle_id=identity_scope,
+                provider=SocialIdentity.Provider.DEVICE,
+                provider_uid=(device_id or "").strip(),
+            ).first()
+            if (device_id or "").strip()
+            else None
+        )
+        if existing_email is None and device_identity is None:
             legacy_user = User.objects.filter(email__iexact=email).first()
             if legacy_user is not None:
                 if not legacy_user.is_active:
                     raise APIError("user_inactive", code=40103, status_code=401)
-                conflict = (
-                    SocialIdentity.objects.filter(
-                        bundle_id=identity_scope,
-                        provider=SocialIdentity.Provider.EMAIL,
-                        provider_uid=email,
-                    )
-                    .exclude(user_id=legacy_user.id)
-                    .select_related("user")
-                    .first()
-                )
-                if conflict is not None and conflict.user.is_active:
-                    raise APIError(
-                        "identity_already_bound_to_active_user",
-                        code=40921,
-                        status_code=409,
-                        details={"provider": SocialIdentity.Provider.EMAIL},
-                    )
-                identity, _ = SocialIdentity.objects.get_or_create(
+                SocialIdentity.objects.get_or_create(
                     bundle_id=identity_scope,
                     provider=SocialIdentity.Provider.EMAIL,
                     provider_uid=email,
                     defaults={"user": legacy_user},
                 )
-                user = identity.user
-            else:
-                flow_logger.info(
-                    "user.register.begin",
-                    extra={"action": "user.register", "request_id": request_id, "channel": "email_otp"},
-                )
-                user = User.objects.create(username=email, email=email)
-                user.set_unusable_password()
-                user.save(update_fields=["password"])
-                created_user = True
-                SocialIdentity.objects.create(
-                    user=user,
-                    bundle_id=identity_scope,
-                    provider=SocialIdentity.Provider.EMAIL,
-                    provider_uid=email,
-                )
-                flow_logger.info(
-                    "user.register.success",
-                    extra={
-                        "action": "user.register",
-                        "request_id": request_id,
-                        "channel": "email_otp",
-                        "user_id": user.id,
-                        "identity_scope": identity_scope,
-                    },
-                )
 
-        DeviceLinkingService.try_attach_user_to_trusted_device(
-            user=user,
-            device_id=device_id,
-            bundle_id=normalized_bundle_id,
-            request_id=request_id,
-        )
-        try:
-            TrialService.try_grant_auto_trial_for_login_device(
-                user=user,
-                bundle_id=normalized_bundle_id,
-                device_id=device_id or "",
-                request_id=request_id,
+        def _create_email_user():
+            flow_logger.info(
+                "user.register.begin",
+                extra={"action": "user.register", "request_id": request_id, "channel": "email_otp"},
             )
-        except Exception as exc:  # noqa: BLE001 - defensive
-            flow_logger.warning("auth.trial.auto_grant.skipped", extra={"action": "auth.trial.auto_grant", "request_id": request_id, "user_id": user.id, "reason": str(exc)})
+            new_user = User.objects.create(username=email, email=email)
+            new_user.set_unusable_password()
+            new_user.save(update_fields=["password"])
+            flow_logger.info(
+                "user.register.success",
+                extra={
+                    "action": "user.register",
+                    "request_id": request_id,
+                    "channel": "email_otp",
+                    "user_id": new_user.id,
+                    "identity_scope": identity_scope,
+                },
+            )
+            return new_user
 
-        token_payload = DeviceSessionService.activate_and_issue_tokens(
-            user=user,
-            bundle_id=normalized_bundle_id,
-            device_id=device_id,
-            request_id=request_id,
-        )
-
-        LoginAudit.objects.create(
-            user=user,
-            provider=LoginAudit.LoginProvider.EMAIL_OTP,
-            outcome=LoginAudit.LoginOutcome.SUCCESS,
-            ip_address=ip_address or "",
-            user_agent=user_agent or "",
-            bundle_id=normalized_bundle_id,
+        resolved = AccountLoginResolutionService.resolve_verified_identity(
+            provider=SocialIdentity.Provider.EMAIL,
+            normalized_provider_uid=email,
+            real_bundle_id=normalized_bundle_id,
+            identity_scope=identity_scope,
             device_id=device_id or "",
-            raw_claims={"email": email, "identity_scope": identity_scope},
-            request_id=request_id or "",
+            device_secret=device_secret or "",
+            request_id=request_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            verified_claims={"email": email},
+            create_user=_create_email_user,
+            login_audit_provider=LoginAudit.LoginProvider.EMAIL_OTP,
         )
-
-        is_pro = TrialService.is_pro_user(user=user)
         flow_logger.info(
             "auth.otp.verify.service.success",
             extra={
                 "action": "auth.otp.verify.service",
                 "request_id": request_id,
                 "otp_id": otp_id,
-                "user_id": user.id,
-                "is_pro": is_pro,
+                "user_id": resolved.get("user_id"),
+                "is_pro": resolved.get("is_pro"),
                 "identity_scope": identity_scope,
-                "is_new_user": created_user,
+                "is_new_user": resolved.get("is_new_user"),
+                "account_resolution": resolved.get("account_resolution"),
             },
         )
         return {
-            **token_payload,
+            **resolved,
             "otp_id": otp.otp_id,
-            "is_pro": is_pro,
-            "is_new_user": created_user,
-            "email": user.email or email,
+            "email": resolved.get("email") or email,
         }
 
     @staticmethod
     @transaction.atomic
-    def verify_phone_otp_and_issue_tokens(*, otp_id: str, phone_number: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str):
+    def verify_phone_otp_and_issue_tokens(*, otp_id: str, phone_number: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str, device_secret: str = ""):
         normalized_bundle_id = (bundle_id or "").strip()
         flow_logger.info(
             "auth.phone_otp.verify.service.begin",
@@ -622,27 +576,11 @@ class OTPService:
         otp.used_at = now
         otp.save(update_fields=["used_at"])
 
+        from accounts.services.account_login_resolution_service import AccountLoginResolutionService
+
         User = get_user_model()
-        created_user = False
-
-        identity = (
-            SocialIdentity.objects.select_for_update()
-            .select_related("user")
-            .filter(
-                bundle_id=identity_scope,
-                provider=SocialIdentity.Provider.PHONE,
-                provider_uid=normalized_phone,
-            )
-            .first()
-        )
-        user = identity.user if identity else None
-
-        if user and not user.is_active:
-            raise APIError("user_inactive", code=40103, status_code=401)
 
         def _create_phone_user():
-            nonlocal created_user
-            created_user = True
             new_user = User.objects.create(
                 username=OTPService._build_phone_username(normalized_phone),
                 email="",
@@ -652,69 +590,35 @@ class OTPService:
             new_user.save(update_fields=["password", "is_active"])
             return new_user
 
-        if identity is None:
-            identity, _ = SocialIdentity.objects.get_or_create(
-                bundle_id=identity_scope,
-                provider=SocialIdentity.Provider.PHONE,
-                provider_uid=normalized_phone,
-                defaults={"user": _create_phone_user},
-            )
-            user = identity.user
-
-        if not user.is_active:
-            raise APIError("user_inactive", code=40103, status_code=401)
-
-        DeviceLinkingService.try_attach_user_to_trusted_device(
-            user=user,
-            device_id=device_id,
-            bundle_id=normalized_bundle_id,
-            request_id=request_id,
-        )
-        try:
-            TrialService.try_grant_auto_trial_for_login_device(
-                user=user,
-                bundle_id=normalized_bundle_id,
-                device_id=device_id or "",
-                request_id=request_id,
-            )
-        except Exception as exc:  # noqa: BLE001 - defensive
-            flow_logger.warning("auth.trial.auto_grant.skipped", extra={"action": "auth.trial.auto_grant", "request_id": request_id, "user_id": user.id, "reason": str(exc)})
-
-        token_payload = DeviceSessionService.activate_and_issue_tokens(
-            user=user,
-            bundle_id=normalized_bundle_id,
-            device_id=device_id,
-            request_id=request_id,
-        )
-
-        LoginAudit.objects.create(
-            user=user,
-            provider=LoginAudit.LoginProvider.PHONE_OTP,
-            outcome=LoginAudit.LoginOutcome.SUCCESS,
-            ip_address=ip_address or "",
-            user_agent=user_agent or "",
-            bundle_id=normalized_bundle_id,
+        resolved = AccountLoginResolutionService.resolve_verified_identity(
+            provider=SocialIdentity.Provider.PHONE,
+            normalized_provider_uid=normalized_phone,
+            real_bundle_id=normalized_bundle_id,
+            identity_scope=identity_scope,
             device_id=device_id or "",
-            raw_claims={"phone_number": normalized_phone},
-            request_id=request_id or "",
+            device_secret=device_secret or "",
+            request_id=request_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            verified_claims={"phone_number": normalized_phone},
+            create_user=_create_phone_user,
+            login_audit_provider=LoginAudit.LoginProvider.PHONE_OTP,
         )
-
-        is_pro = TrialService.is_pro_user(user=user)
         flow_logger.info(
             "auth.phone_otp.verify.service.success",
             extra={
                 "action": "auth.phone_otp.verify.service",
                 "request_id": request_id,
                 "otp_id": otp_id,
-                "user_id": user.id,
-                "is_pro": is_pro,
+                "user_id": resolved.get("user_id"),
+                "is_pro": resolved.get("is_pro"),
+                "account_resolution": resolved.get("account_resolution"),
             },
         )
         return {
+            **resolved,
             "phone_number": normalized_phone,
-            "display_name": PhoneNumberService.masked_display(normalized_phone),
-            "is_pro": is_pro,
-            "is_new_user": created_user,
+            "display_name": resolved.get("display_name")
+            or PhoneNumberService.masked_display(normalized_phone),
             "otp_id": otp.otp_id,
-            **token_payload,
         }

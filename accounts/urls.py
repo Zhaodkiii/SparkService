@@ -1,6 +1,12 @@
 from django.urls import path
 
-from accounts.auth.views import AppleLoginView, CurrentSessionView, LogoutView, PasswordLoginView
+from accounts.auth.views import (
+    AppleLoginView,
+    CurrentSessionView,
+    DeviceLoginView,
+    LogoutView,
+    PasswordLoginView,
+)
 from accounts.device.views import DeviceRegisterView
 from accounts.deactivation.views import AccountDeactivationView
 from accounts.identity.views import (
@@ -21,6 +27,7 @@ urlpatterns = [
     # Auth
     path("auth/password/login/", PasswordLoginView.as_view(), name="password_login"),
     path("auth/apple/login/", AppleLoginView.as_view(), name="apple_login"),
+    path("auth/device/login/", DeviceLoginView.as_view(), name="device_login"),
     path("auth/session/", CurrentSessionView.as_view(), name="auth_current_session"),
     path("auth/logout/", LogoutView.as_view(), name="auth_logout"),
     # OTP (email-first)

@@ -74,6 +74,8 @@ class EmailOTPVerifyView(APIView):
 
         bundle_id = serializer.validated_data.get("bundle_id", "") or ""
         device_id = serializer.validated_data.get("device_id", "") or ""
+        device_secret = serializer.validated_data.get("device_secret", "") or ""
+        device_secret = serializer.validated_data.get("device_secret", "") or ""
 
         result = OTPService.verify_email_otp_and_issue_tokens(
             otp_id=serializer.validated_data["otp_id"],
@@ -84,6 +86,7 @@ class EmailOTPVerifyView(APIView):
             user_agent=user_agent,
             bundle_id=bundle_id,
             device_id=device_id,
+            device_secret=device_secret,
         )
         flow_logger.info(
             "auth.otp.verify.success",
@@ -159,6 +162,7 @@ class PhoneOTPVerifyView(APIView):
         user_agent = meta.get("HTTP_USER_AGENT", "") or ""
         bundle_id = serializer.validated_data.get("bundle_id", "") or ""
         device_id = serializer.validated_data.get("device_id", "") or ""
+        device_secret = serializer.validated_data.get("device_secret", "") or ""
 
         result = OTPService.verify_phone_otp_and_issue_tokens(
             otp_id=serializer.validated_data["otp_id"],
@@ -169,6 +173,7 @@ class PhoneOTPVerifyView(APIView):
             user_agent=user_agent,
             bundle_id=bundle_id,
             device_id=device_id,
+            device_secret=device_secret,
         )
         flow_logger.info(
             "auth.phone_otp.verify.success",

@@ -121,6 +121,7 @@ class LoginAudit(models.Model):
         PHONE_OTP = "phone_otp"
         GOOGLE = "google"
         APPLE = "apple"
+        DEVICE = "device"
 
     class LoginOutcome(models.TextChoices):
         SUCCESS = "success"
@@ -152,6 +153,7 @@ class SocialIdentity(models.Model):
         GOOGLE = "google"
         PHONE = "phone"
         EMAIL = "email"
+        DEVICE = "device"
 
     user = models.ForeignKey(User, related_name="social_identities", on_delete=models.CASCADE)
     provider = models.CharField(max_length=32, choices=Provider.choices, db_index=True)
@@ -171,6 +173,58 @@ class SocialIdentity(models.Model):
             models.UniqueConstraint(
                 fields=["bundle_id", "provider", "provider_uid"],
                 name="uniq_social_identity_bundle_provider_uid",
+            ),
+        ]
+
+
+class DeviceLoginCredential(models.Model):
+    """
+    安装级设备登录凭证（决策 1A）。
+
+    归属安装而非 User：正式身份升级只删除 device SocialIdentity，保留本凭证，
+    以便同一安装之后可创建新的游客账户。
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "有效"
+        REVOKED = "revoked", "已吊销"
+
+    identity_scope = models.CharField(
+        max_length=128,
+        db_index=True,
+        db_comment="账号身份作用域 identity_scope",
+    )
+    device_id = models.CharField(
+        max_length=255,
+        db_index=True,
+        db_comment="客户端安装级稳定设备标识",
+    )
+    secret_hash = models.CharField(
+        max_length=128,
+        db_comment="device_secret 的不可逆哈希（Django make_password）",
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    failed_attempts = models.PositiveIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    last_used_ip = models.CharField(max_length=64, blank=True, default="")
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table_comment = "设备游客登录安装凭证：UNIQUE(identity_scope, device_id)"
+        verbose_name = "设备登录凭证"
+        verbose_name_plural = "设备登录凭证"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["identity_scope", "device_id"],
+                name="uniq_device_login_credential_scope_device",
             ),
         ]
 

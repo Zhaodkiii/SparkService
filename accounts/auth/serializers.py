@@ -34,3 +34,11 @@ class AppleLoginSerializer(serializers.Serializer):
 
     bundle_id = serializers.CharField(max_length=128)
     device_id = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    device_secret = serializers.CharField(max_length=512, required=False, allow_blank=True, trim_whitespace=True)
+
+
+class DeviceLoginSerializer(serializers.Serializer):
+    bundle_id = serializers.CharField(max_length=128)
+    device_id = serializers.CharField(max_length=255)
+    device_secret = serializers.CharField(max_length=512, trim_whitespace=True)
+    attestation = serializers.CharField(required=False, allow_blank=True, max_length=8192)

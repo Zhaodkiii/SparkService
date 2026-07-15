@@ -10,7 +10,13 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.auth.authentication import SparkJWTAuthentication
-from accounts.auth.serializers import AppleLoginSerializer, PasswordLoginSerializer, TokenRefreshSerializer
+from accounts.auth.serializers import (
+    AppleLoginSerializer,
+    DeviceLoginSerializer,
+    PasswordLoginSerializer,
+    TokenRefreshSerializer,
+)
+from accounts.services.device_login_service import DeviceLoginService
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.login_service import LoginService
 from common.exceptions import APIError
@@ -257,6 +263,7 @@ class AppleLoginView(APIView):
             ip_address=ip_address,  # 客户端IP
             user_agent=user_agent,  # 客户端设备信息
             device_id=data.get("device_id", "") or "",  # 设备唯一标识
+            device_secret=data.get("device_secret", "") or "",
             request_id=getattr(request, "request_id", "") or "",  # 请求追踪ID
         )
 
@@ -274,6 +281,53 @@ class AppleLoginView(APIView):
         )
 
         # 返回统一格式的成功响应
+        return success_response(result, msg="login_success", code=0, status_code=status.HTTP_200_OK)
+
+
+class DeviceLoginView(APIView):
+    """设备游客账户登录：device_id + device_secret。"""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        request_id = getattr(request, "request_id", "") or ""
+        flow_logger.info(
+            "设备登录接口请求开始",
+            extra={
+                "action": "auth.device.login",
+                "path": request.path,
+                "method": request.method,
+                "request_id": request_id,
+            },
+        )
+        serializer = DeviceLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        meta = request.META
+        ip_address = meta.get("HTTP_X_FORWARDED_FOR", meta.get("REMOTE_ADDR", "")) or ""
+        user_agent = meta.get("HTTP_USER_AGENT", "") or ""
+
+        result = DeviceLoginService.authenticate_and_issue_tokens(
+            bundle_id=data["bundle_id"],
+            device_id=data["device_id"],
+            device_secret=data["device_secret"],
+            ip_address=ip_address,
+            user_agent=user_agent,
+            request_id=request_id,
+            attestation=data.get("attestation", "") or "",
+        )
+        flow_logger.info(
+            "设备登录成功",
+            extra={
+                "action": "auth.device.login",
+                "outcome": "success",
+                "request_id": request_id,
+                "user_id": result.get("user_id"),
+                "account_resolution": result.get("account_resolution"),
+                "is_new_user": result.get("is_new_user", False),
+            },
+        )
         return success_response(result, msg="login_success", code=0, status_code=status.HTTP_200_OK)
 
 

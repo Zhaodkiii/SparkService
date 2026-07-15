@@ -72,6 +72,19 @@ ACCOUNT_IDENTITY_SCOPE_ALIASES = {
     "cn.Zhaodk.MedicineBox": "cn.Zhaodk.Health",
 }
 
+# Device guest account login (ACCOUNT-DEVICE-000001). Empty allow-list = all bundles.
+DEVICE_ACCOUNT_LOGIN_ENABLED = os.getenv("DEVICE_ACCOUNT_LOGIN_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+DEVICE_ACCOUNT_LOGIN_ALLOWED_BUNDLES = [
+    item.strip()
+    for item in os.getenv("DEVICE_ACCOUNT_LOGIN_ALLOWED_BUNDLES", "").split(",")
+    if item.strip()
+]
+
 # Aliyun OSS / STS（`file_manager` 签发客户端临时凭证）
 # 来源：项目根目录 `.env`（由上方 `load_dotenv` 注入 `os.environ`），部署环境也可用容器/系统环境变量覆盖。
 ALIYUN_ACCESS_KEY_ID = (os.getenv("ALIYUN_ACCESS_KEY_ID") or "").strip()

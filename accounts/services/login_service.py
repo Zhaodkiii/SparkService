@@ -294,7 +294,10 @@ class LoginService:
         user_agent: str,
         device_id: str,
         request_id: str,
+        device_secret: str = "",
     ) -> dict[str, Any]:
+        from accounts.services.account_login_resolution_service import AccountLoginResolutionService
+
         flow_logger.info(
             "Apple 登录鉴权开始",
             extra={"action": "auth.apple.authenticate", "request_id": request_id, "provider": "apple"},
@@ -340,121 +343,36 @@ class LoginService:
                 )
                 raise APIError("apple_nonce_mismatch", code=40124, status_code=401)
 
-        # 身份维度使用 identity_scope；审计/设备/token 仍使用真实客户端 bundle_id（matched_audience）。
         identity_scope = IdentityScopeService.resolve(matched_audience)
-        identity = LoginService._load_apple_identity_for_update(
-            bundle_id=identity_scope,
-            subject=subject,
-            request_id=request_id,
-        )
-
         email_from_token = (payload.get("email") or "").strip().lower()
         email_from_client = (email or "").strip().lower()
         chosen_email = email_from_token or email_from_client or f"apple_{subject[:12]}@privaterelay.appleid.com"
+        email_verified = payload.get("email_verified") in (True, "true", "1")
 
-        User = get_user_model()
-        created_user = False
-
-        if identity:
-            user = identity.user
-            if user.is_active:
-                # 仅在账号邮箱为空且 Apple token email 已验证时补写；禁止覆盖已有邮箱。
-                email_verified = payload.get("email_verified") in (True, "true", "1")
-                if not (user.email or "").strip() and email_from_token and email_verified:
-                    user.email = email_from_token
-                    user.save(update_fields=["email"])
-                LoginService._maybe_backfill_apple_first_name(user=user, full_name=full_name)
-            else:
-                # 命中已注销（inactive）账号：按“新注册”流程创建新用户并重绑 Apple identity。
-                flow_logger.info(
-                    "Apple identity 命中 inactive 用户，转新注册流程",
-                    extra={
-                        "action": "user.register",
-                        "request_id": request_id,
-                        "channel": "apple",
-                        "bundle_id": matched_audience,
-                        "identity_scope": identity_scope,
-                        "old_user_id": user.id,
-                    },
-                )
-                user = LoginService._create_apple_user(
-                    subject=subject,
-                    chosen_email=chosen_email,
-                    full_name=full_name,
-                )
-                identity.user = user
-                identity.save(update_fields=["user", "updated_at"])
-                created_user = True
-                flow_logger.info(
-                    "Apple identity 解绑 inactive 旧账号并绑定新账号成功",
-                    extra={
-                        "action": "user.register",
-                        "request_id": request_id,
-                        "channel": "apple",
-                        "bundle_id": matched_audience,
-                        "identity_scope": identity_scope,
-                        "user_id": user.id,
-                    },
-                )
-        else:
-            # 首次登录：创建用户并绑定 apple sub；唯一约束保证并发下幂等。
-            flow_logger.info(
-                "Apple 渠道用户首次注册开始",
-                extra={
-                    "action": "user.register",
-                    "request_id": request_id,
-                    "channel": "apple",
-                    "bundle_id": matched_audience,
-                    "identity_scope": identity_scope,
-                },
-            )
-            user = LoginService._create_apple_user(
+        def _create_user():
+            return LoginService._create_apple_user(
                 subject=subject,
                 chosen_email=chosen_email,
                 full_name=full_name,
             )
 
-            # 并发首登下，唯一约束可能被并发请求同时命中；冲突时回退读取已创建记录。
-            try:
-                SocialIdentity.objects.create(
-                    user=user,
-                    bundle_id=identity_scope,
-                    provider=SocialIdentity.Provider.APPLE,
-                    provider_uid=subject,
-                )
-                created_user = True
-            except IntegrityError:
-                identity = LoginService._load_apple_identity_for_update(
-                    bundle_id=identity_scope,
-                    subject=subject,
-                    request_id=request_id,
-                )
-                if not identity:
-                    raise APIError("apple_identity_bind_failed", code=50032, status_code=500)
-                user = identity.user
-                created_user = False
-                LoginService._maybe_backfill_apple_first_name(user=user, full_name=full_name)
-            flow_logger.info(
-                "Apple 渠道用户首次注册成功",
-                extra={
-                    "action": "user.register",
-                    "request_id": request_id,
-                    "channel": "apple",
-                    "user_id": user.id,
-                    "bundle_id": matched_audience,
-                    "identity_scope": identity_scope,
-                },
-            )
+        def _on_existing(user):
+            if email_verified and email_from_token and not (user.email or "").strip():
+                user.email = email_from_token
+                user.save(update_fields=["email"])
+            LoginService._maybe_backfill_apple_first_name(user=user, full_name=full_name)
 
-        LoginAudit.objects.create(
-            user=user,
-            provider=LoginAudit.LoginProvider.APPLE,
-            outcome=LoginAudit.LoginOutcome.SUCCESS,
-            ip_address=ip_address or "",
-            user_agent=user_agent or "",
-            bundle_id=matched_audience,
+        result = AccountLoginResolutionService.resolve_verified_identity(
+            provider=SocialIdentity.Provider.APPLE,
+            normalized_provider_uid=subject,
+            real_bundle_id=matched_audience,
+            identity_scope=identity_scope,
             device_id=device_id or "",
-            raw_claims={
+            device_secret=device_secret or "",
+            request_id=request_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            verified_claims={
                 "sub": subject,
                 "aud": payload.get("aud"),
                 "email": email_from_token,
@@ -462,42 +380,32 @@ class LoginService:
                 "apple_user_identifier": user_identifier or "",
                 **LoginService._audit_client_full_name(full_name),
             },
-            request_id=request_id or "",
+            create_user=_create_user,
+            on_existing_user=_on_existing,
+            login_audit_provider=LoginAudit.LoginProvider.APPLE,
         )
+        User = get_user_model()
+        user = User.objects.filter(id=result["user_id"]).first()
+        if user is not None:
+            _on_existing(user)
+            result["email"] = user.email or ""
+            result["display_name"] = LoginService._resolve_user_display_name(
+                user=user,
+                fallback_email=user.email or chosen_email,
+            )
+        else:
+            result["email"] = chosen_email
+            result["display_name"] = LoginService._normalize_apple_full_name(full_name) or "Apple User"
 
-        cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
-
-        LoginService._prepare_login_entitlements(
-            user=user,
-            bundle_id=matched_audience,
-            device_id=device_id,
-            request_id=request_id,
-        )
-
-        result = LoginService._apply_is_pro(
-            user=user,
-            payload=LoginService._issue_tokens(
-                user,
-                bundle_id=matched_audience,
-                device_id=device_id,
-                request_id=request_id,
-            ),
-        )
-        result["email"] = user.email or ""
-        result["display_name"] = LoginService._resolve_user_display_name(
-            user=user,
-            fallback_email=user.email or chosen_email,
-        )
-        result["is_new_user"] = created_user
-        result["deactivation_cancelled"] = cancel_result
         flow_logger.info(
             "Apple 登录鉴权成功并签发令牌",
             extra={
                 "action": "auth.apple.authenticate",
                 "outcome": "success",
                 "request_id": request_id,
-                "user_id": user.id,
-                "is_new_user": created_user,
+                "user_id": result.get("user_id"),
+                "is_new_user": result.get("is_new_user"),
+                "account_resolution": result.get("account_resolution"),
                 "bundle_id": matched_audience,
                 "is_pro": result.get("is_pro"),
             },
@@ -528,12 +436,27 @@ class LoginService:
         providers = set(
             SocialIdentity.objects.filter(user=user).values_list("provider", flat=True)
         )
+        formal = {
+            SocialIdentity.Provider.APPLE,
+            SocialIdentity.Provider.GOOGLE,
+            SocialIdentity.Provider.PHONE,
+            SocialIdentity.Provider.EMAIL,
+        }
+        is_device_account = bool(providers) and providers.isdisjoint(formal) and (
+            SocialIdentity.Provider.DEVICE in providers
+        )
+
+        # 冷启动：优先正式身份，其次 device；不再默认回退 apple。
         if SocialIdentity.Provider.APPLE in providers:
             sign_in_method = "apple"
         elif SocialIdentity.Provider.PHONE in providers:
             sign_in_method = "phone"
         elif SocialIdentity.Provider.EMAIL in providers:
             sign_in_method = "email"
+        elif SocialIdentity.Provider.GOOGLE in providers:
+            sign_in_method = "google"
+        elif SocialIdentity.Provider.DEVICE in providers:
+            sign_in_method = "device"
         else:
             sign_in_method = "apple"
 
@@ -544,4 +467,5 @@ class LoginService:
             "is_pro": TrialService.is_pro_user(user=user),
             "is_new_user": False,
             "sign_in_method": sign_in_method,
+            "is_device_account": is_device_account,
         }
