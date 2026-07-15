@@ -13,6 +13,7 @@ from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.deactivation_service import DeactivationService
 from accounts.services.device_linking_service import DeviceLinkingService
 from accounts.services.device_session_service import DeviceSessionService
+from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
 from ai_config.services import TrialService
 
@@ -96,6 +97,7 @@ class LoginService:
         User = get_user_model()
         identifier = identifier.strip()
         normalized_bundle_id = (bundle_id or "").strip()
+        identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
 
         # email
         if "@" in identifier:
@@ -112,8 +114,8 @@ class LoginService:
                     provider=SocialIdentity.Provider.PHONE,
                     provider_uid=normalized_phone,
                 )
-                if normalized_bundle_id:
-                    queryset = queryset.filter(bundle_id=normalized_bundle_id)
+                if identity_scope:
+                    queryset = queryset.filter(bundle_id=identity_scope)
                 identity = queryset.first()
                 if identity:
                     return identity.user
@@ -338,9 +340,10 @@ class LoginService:
                 )
                 raise APIError("apple_nonce_mismatch", code=40124, status_code=401)
 
-        # 关键防线：只使用 Apple 已验签且 aud 匹配后的 bundle_id 作为身份维度。
+        # 身份维度使用 identity_scope；审计/设备/token 仍使用真实客户端 bundle_id（matched_audience）。
+        identity_scope = IdentityScopeService.resolve(matched_audience)
         identity = LoginService._load_apple_identity_for_update(
-            bundle_id=matched_audience,
+            bundle_id=identity_scope,
             subject=subject,
             request_id=request_id,
         )
@@ -368,6 +371,7 @@ class LoginService:
                         "request_id": request_id,
                         "channel": "apple",
                         "bundle_id": matched_audience,
+                        "identity_scope": identity_scope,
                         "old_user_id": user.id,
                     },
                 )
@@ -386,6 +390,7 @@ class LoginService:
                         "request_id": request_id,
                         "channel": "apple",
                         "bundle_id": matched_audience,
+                        "identity_scope": identity_scope,
                         "user_id": user.id,
                     },
                 )
@@ -398,6 +403,7 @@ class LoginService:
                     "request_id": request_id,
                     "channel": "apple",
                     "bundle_id": matched_audience,
+                    "identity_scope": identity_scope,
                 },
             )
             user = LoginService._create_apple_user(
@@ -410,14 +416,14 @@ class LoginService:
             try:
                 SocialIdentity.objects.create(
                     user=user,
-                    bundle_id=matched_audience,
+                    bundle_id=identity_scope,
                     provider=SocialIdentity.Provider.APPLE,
                     provider_uid=subject,
                 )
                 created_user = True
             except IntegrityError:
                 identity = LoginService._load_apple_identity_for_update(
-                    bundle_id=matched_audience,
+                    bundle_id=identity_scope,
                     subject=subject,
                     request_id=request_id,
                 )
@@ -434,6 +440,7 @@ class LoginService:
                     "channel": "apple",
                     "user_id": user.id,
                     "bundle_id": matched_audience,
+                    "identity_scope": identity_scope,
                 },
             )
 

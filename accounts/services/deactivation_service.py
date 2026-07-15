@@ -23,6 +23,7 @@ from accounts.models import (
     TrustedDevice,
 )
 from accounts.services.apple_identity_service import AppleIdentityService
+from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.otp_service import OTPService
 
 logger = logging.getLogger(__name__)
@@ -74,11 +75,12 @@ class DeactivationService:
             subject = (payload.get("sub") or "").strip()
             if not subject or subject != user_identifier:
                 raise APIError("apple subject mismatch", code=40161, status_code=401)
+            identity_scope = IdentityScopeService.resolve(matched_audience)
             linked = SocialIdentity.objects.filter(
                 user=user,
                 provider=SocialIdentity.Provider.APPLE,
                 provider_uid=subject,
-                bundle_id=matched_audience,
+                bundle_id=identity_scope,
             ).exists()
             if not linked:
                 raise APIError("apple identity not linked to current user", code=40162, status_code=401)

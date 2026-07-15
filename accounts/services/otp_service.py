@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 from common.exceptions import APIError
 from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
+from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
 from accounts.services.device_linking_service import DeviceLinkingService
 from accounts.services.device_session_service import DeviceSessionService
@@ -192,6 +193,7 @@ class OTPService:
         now = timezone.now()
         normalized_phone = PhoneNumberService.normalize_e164(phone_number)
         normalized_bundle_id = (bundle_id or "").strip()
+        identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
         normalized_device_id = (device_id or "").strip()
         scene_key = NotificationCenterService._normalize_scene_key(scene or "login")
         region_code, dial_code = PhoneNumberService.resolve_region(normalized_phone)
@@ -246,7 +248,7 @@ class OTPService:
             identity = (
                 SocialIdentity.objects.select_related("user")
                 .filter(
-                    bundle_id=normalized_bundle_id,
+                    bundle_id=identity_scope,
                     provider=SocialIdentity.Provider.PHONE,
                     provider_uid=normalized_phone,
                 )
@@ -272,7 +274,7 @@ class OTPService:
             identity = (
                 SocialIdentity.objects.select_related("user")
                 .filter(
-                    bundle_id=normalized_bundle_id,
+                    bundle_id=identity_scope,
                     provider=SocialIdentity.Provider.PHONE,
                     provider_uid=normalized_phone,
                 )
@@ -530,6 +532,7 @@ class OTPService:
         if otp.bundle_id and normalized_bundle_id and otp.bundle_id != normalized_bundle_id:
             raise APIError("bundle_id mismatch", code=40044, status_code=400)
         normalized_bundle_id = normalized_bundle_id or otp.bundle_id or ""
+        identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
 
         expected_hash = OTPService._hash_code(code)
         if expected_hash != otp.code_hash:
@@ -560,7 +563,7 @@ class OTPService:
             SocialIdentity.objects.select_for_update()
             .select_related("user")
             .filter(
-                bundle_id=normalized_bundle_id,
+                bundle_id=identity_scope,
                 provider=SocialIdentity.Provider.PHONE,
                 provider_uid=normalized_phone,
             )
@@ -585,7 +588,7 @@ class OTPService:
 
         if identity is None:
             identity, _ = SocialIdentity.objects.get_or_create(
-                bundle_id=normalized_bundle_id,
+                bundle_id=identity_scope,
                 provider=SocialIdentity.Provider.PHONE,
                 provider_uid=normalized_phone,
                 defaults={"user": _create_phone_user},

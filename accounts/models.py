@@ -139,6 +139,14 @@ class LoginAudit(models.Model):
 
 
 class SocialIdentity(models.Model):
+    """
+    用户第三方登录身份绑定记录
+
+    bundle_id 存储账号身份域标识（参考身份域服务 IdentityScopeService），
+    并不等同于客户端真实应用的包标识。客户端真实包标识会记录在手机验证码、登录审计、可信设备、账号设备会话相关表中。
+    """
+
+
     class Provider(models.TextChoices):
         APPLE = "apple"
         GOOGLE = "google"
@@ -147,7 +155,13 @@ class SocialIdentity(models.Model):
     user = models.ForeignKey(User, related_name="social_identities", on_delete=models.CASCADE)
     provider = models.CharField(max_length=32, choices=Provider.choices, db_index=True)
     provider_uid = models.CharField(max_length=255, db_index=True)
-    bundle_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    bundle_id = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        db_index=True,
+        db_comment="账号身份作用域 identity_scope；可能与真实客户端 bundle_id 不同",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
