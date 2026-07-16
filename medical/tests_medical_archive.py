@@ -166,3 +166,48 @@ class MedicalArchiveAPITests(APITestCase):
             for item in (group.get("plans") or [])
         }
         self.assertNotIn(plan.id, plan_ids)
+
+    def test_family_cabinet_summary_returns_etag(self):
+        MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="维生素C",
+        )
+        url = f"/api/v1/medical/medicine-cabinet/summary/?member_id={self.member_id}"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("ETag", response)
+        self.assertIn("private, max-age=120", response["Cache-Control"])
+
+    def test_family_cabinet_summary_etag_hit_returns_304(self):
+        MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="钙片",
+        )
+        url = f"/api/v1/medical/medicine-cabinet/summary/?member_id={self.member_id}"
+        first = self.client.get(url)
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        etag = first["ETag"]
+
+        second = self.client.get(url, HTTP_IF_NONE_MATCH=etag)
+        self.assertEqual(second.status_code, status.HTTP_304_NOT_MODIFIED)
+        self.assertEqual(second["ETag"], etag)
+        self.assertEqual(second.content, b"")
+
+    def test_family_cabinet_summary_etag_changes_after_update(self):
+        box = MedicineBox.objects.create(
+            user=self.user,
+            member_id=self.member_id,
+            medicine_name="感冒灵",
+        )
+        url = f"/api/v1/medical/medicine-cabinet/summary/?member_id={self.member_id}"
+        first = self.client.get(url)
+        etag = first["ETag"]
+
+        box.medicine_name = "感冒灵颗粒"
+        box.save(update_fields=["medicine_name", "updated_at"])
+
+        second = self.client.get(url, HTTP_IF_NONE_MATCH=etag)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertNotEqual(second["ETag"], etag)

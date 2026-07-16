@@ -1385,6 +1385,7 @@ class FamilyMedicineCabinetSummaryAPI(APIView):
     """家庭药箱汇总：按入口成员 ID 返回创建者名下全部药品。"""
 
     permission_classes = [IsAuthenticated]
+    etag_max_age = 86400
 
     def get(self, request):
         raw_member_id = request.query_params.get("member_id")
@@ -1398,8 +1399,38 @@ class FamilyMedicineCabinetSummaryAPI(APIView):
             queryset = family_medicine_cabinet_queryset(user=request.user, entry_member_id=entry_member_id)
         except PermissionError:
             return error_response(msg="permission_denied", code=-1, status_code=status.HTTP_403_FORBIDDEN)
+
+        etag = self._build_collection_etag(request, queryset)
+        if self._is_not_modified(request, etag):
+            response = success_response(None, msg="not_modified", code=0, status_code=status.HTTP_304_NOT_MODIFIED)
+            response.content = b""
+            self._set_cache_headers(response, etag)
+            return response
+
         serializer = MedicineBoxSerializer(queryset, many=True, context={"request": request})
-        return success_response(serializer.data, msg="success", code=0, status_code=status.HTTP_200_OK)
+        response = success_response(serializer.data, msg="success", code=0, status_code=status.HTTP_200_OK)
+        self._set_cache_headers(response, etag)
+        return response
+
+    def _build_collection_etag(self, request, queryset):
+        records = list(queryset.values_list("id", "updated_at"))
+        payload = {
+            "path": request.path,
+            "query": request.query_params.dict(),
+            "user_id": request.user.id,
+            "records": records,
+        }
+        return build_etag(payload)
+
+    def _is_not_modified(self, request, etag):
+        incoming = normalize_etag(request.headers.get("If-None-Match"))
+        if incoming == "":
+            return False
+        return incoming == normalize_etag(etag)
+
+    def _set_cache_headers(self, response, etag):
+        response["ETag"] = etag
+        response["Cache-Control"] = f"private, max-age={self.etag_max_age}"
 
 
 class PrescriptionViewSet(WrappedModelViewSet):

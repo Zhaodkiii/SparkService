@@ -346,6 +346,7 @@ CELERY_TASK_ROUTES = {
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
     "accounts.deactivation.tasks.deactivation_health_check_task": {"queue": "monitoring"},
     "notification_center.tasks.execute_sms_otp_intent_task": {"queue": "notification.security.high"},
+    "notification_center.tasks.execute_email_otp_intent_task": {"queue": "notification.security.high"},
     "notification_center.tasks.execute_notification_campaign_task": {"queue": "notification.bulk"},
     "notification_center.tasks.relay_notification_outbox_task": {"queue": "notification.transactional"},
     "notification_center.tasks.reconcile_notification_outbox_task": {"queue": "notification.receipt"},
@@ -370,17 +371,17 @@ CELERY_BEAT_SCHEDULE = {
     "notification-center-relay-outbox": {
         "task": "notification_center.tasks.relay_notification_outbox_task",
         "schedule": crontab(minute="*/1"),
-        "options": {"queue": "monitoring"},
+        "options": {"queue": "notification.transactional"},
     },
     "notification-center-reconcile-outbox": {
         "task": "notification_center.tasks.reconcile_notification_outbox_task",
         "schedule": crontab(minute="*/5"),
-        "options": {"queue": "monitoring"},
+        "options": {"queue": "notification.receipt"},
     },
     "notification-center-poll-sms-receipts": {
         "task": "notification_center.tasks.poll_sms_delivery_receipts_task",
         "schedule": crontab(minute="*/2"),
-        "options": {"queue": "monitoring"},
+        "options": {"queue": "notification.receipt"},
     },
 }
 
