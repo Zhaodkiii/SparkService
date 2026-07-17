@@ -44,6 +44,8 @@ from backoffice.views import (
     AdminRolePermissionAssignView,
     AdminUserDetailView,
     AdminUserListView,
+    AdminUserProGrantView,
+    AdminUserProRecycleView,
     AdminUserRoleAssignView,
     AdminUserStatusView,
 )
@@ -79,6 +81,8 @@ urlpatterns = [
     path("users/", AdminUserListView.as_view(), name="admin-user-list"),
     path("users/<int:user_id>/status/", AdminUserStatusView.as_view(), name="admin-user-status"),
     path("users/<int:user_id>/detail/", AdminUserDetailView.as_view(), name="admin-user-detail"),
+    path("users/<int:user_id>/pro/grant/", AdminUserProGrantView.as_view(), name="admin-user-pro-grant"),
+    path("users/<int:user_id>/pro/recycle/", AdminUserProRecycleView.as_view(), name="admin-user-pro-recycle"),
     path("users/<int:user_id>/roles/", AdminUserRoleAssignView.as_view(), name="admin-user-role-assign"),
     path("users/devices/", AdminDeviceListView.as_view(), name="admin-user-device-list"),
     path("users/devices/<int:device_id>/revoke/", AdminDeviceRevokeView.as_view(), name="admin-user-device-revoke"),

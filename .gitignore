@@ -1,6 +1,12 @@
-# Secrets
+# Secrets（含密钥，切勿提交）
 .env
 apns_keys/
+
+# macOS
+.DS_Store
+
+# Database backups（本地数据库备份，切勿提交）
+数据库备份/
 
 # Uploaded/generated files
 media/

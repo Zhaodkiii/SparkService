@@ -58,6 +58,13 @@ class NotificationBusinessSceneRegistryTests(TestCase):
         self.assertEqual(scene.business_type, "membership.pro_trial")
         self.assertEqual(scene.event_name, "application_approved")
         self.assertEqual(scene.status, NotificationBusinessScene.Status.ACTIVE)
+        self.assertEqual(scene.default_routing.get("mode"), "fallback")
+        self.assertEqual(
+            [step["channel"] for step in scene.default_routing.get("steps", [])],
+            ["apns", "email", "sms"],
+        )
+        manually_granted = NotificationBusinessScene.objects.get(key="membership.pro_trial.manually_granted")
+        self.assertEqual(manually_granted.display_name, "系统发放试用")
 
     def test_command_synchronizes_catalog(self):
         NotificationBusinessScene.objects.all().delete()

@@ -79,6 +79,37 @@ class LoginIsProAfterAutoGrantTests(TestCase):
         with self.assertRaises(TrialApplication.DoesNotExist):
             TrialApplication.objects.get(user=user, status=TrialApplication.Status.ACTIVE)
 
+    @override_settings(AI_TRIAL_AUTO_GRANT_COUNTRY_CODES=["CN", "US"])
+    @patch("accounts.services.login_service.AppleIdentityService.verify_identity_token")
+    def test_apple_login_returns_is_pro_true_when_us_in_allowed_countries(self, mock_verify):
+        mock_verify.return_value = (
+            {"sub": "apple-sub-us-config-1", "email": "us-config@example.com"},
+            self.bundle_id,
+        )
+        TrustedDevice.objects.create(
+            bundle_id=self.bundle_id,
+            device_id="device-us-config-login-test",
+            country_code="US",
+        )
+
+        result = LoginService.authenticate_apple_and_issue_tokens(
+            identity_token="fake-token",
+            bundle_id=self.bundle_id,
+            nonce="",
+            user_identifier="apple-user-us-config",
+            email="us-config@example.com",
+            full_name="US Config User",
+            ip_address="127.0.0.1",
+            user_agent="unit-test",
+            device_id="device-us-config-login-test",
+            request_id="req-apple-us-config",
+        )
+
+        self.assertTrue(result["is_pro"])
+        user = get_user_model().objects.get(id=result["user_id"])
+        trial = TrialApplication.objects.get(user=user)
+        self.assertEqual(trial.status, TrialApplication.Status.ACTIVE)
+
     def test_email_otp_login_returns_is_pro_true_after_cn_auto_grant(self):
         email = "cn-otp-auto@example.com"
         otp_code = "654321"

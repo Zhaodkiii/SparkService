@@ -17,6 +17,13 @@ class TrialService:
         return int(getattr(settings, "AI_TRIAL_DURATION_DAYS", 15))
 
     @staticmethod
+    def _auto_grant_country_codes() -> frozenset[str]:
+        raw = getattr(settings, "AI_TRIAL_AUTO_GRANT_COUNTRY_CODES", None)
+        if not raw:
+            return frozenset({"CN"})
+        return frozenset(str(code).strip().upper() for code in raw if str(code).strip())
+
+    @staticmethod
     def _build_expiry(started_at):
         return started_at + timedelta(days=TrialService._trial_days())
 
@@ -113,7 +120,8 @@ class TrialService:
     @staticmethod
     def try_grant_auto_trial_for_login_device(*, user, bundle_id: str, device_id: str, request_id: str) -> bool:
         """
-        登录自动发放 Pro：仅当本次登录设备登记的 country_code == CN 时才允许触发。
+        登录自动发放 Pro：仅当本次登录设备登记的 country_code 在
+        settings.AI_TRIAL_AUTO_GRANT_COUNTRY_CODES 内时才允许触发。
         当前用户设备行无国家时，可用同安装历史用户设备行国家兜底（仅判断，不写回画像）。
         失败/跳过不影响登录流程，只记录日志。
         """
@@ -122,12 +130,14 @@ class TrialService:
         if not bundle_id or not device_id or user is None:
             return False
         try:
+            allowed_country_codes = TrialService._auto_grant_country_codes()
             cc = TrialService._resolve_login_device_country_code(
                 user=user,
                 bundle_id=bundle_id,
                 device_id=device_id,
             )
-            if cc != "CN":
+            normalized_cc = (cc or "").strip().upper()
+            if normalized_cc not in allowed_country_codes:
                 flow_logger.info(
                     "auth.trial.auto_grant.skipped_by_country",
                     extra={
@@ -137,6 +147,7 @@ class TrialService:
                         "bundle_id": bundle_id,
                         "device_id": device_id,
                         "country_code": cc,
+                        "allowed_country_codes": sorted(allowed_country_codes),
                     },
                 )
                 return False
@@ -258,3 +269,124 @@ class TrialService:
         trial = getattr(user, "trial_application", None)
         trial = TrialService.ensure_status_fresh(trial=trial)
         return bool(trial and trial.is_active_trial())
+
+    @staticmethod
+    def get_user_trial(*, user) -> TrialApplication | None:
+        trial = getattr(user, "trial_application", None)
+        return TrialService.ensure_status_fresh(trial=trial)
+
+    @staticmethod
+    def build_pro_summary(*, user) -> dict:
+        """后台用户详情/操作接口用的 Pro 摘要。"""
+        trial = TrialService.get_user_trial(user=user)
+        if trial is None:
+            return {
+                "is_pro": False,
+                "status": TrialApplication.Status.NONE,
+                "grant_source": "",
+                "started_at": None,
+                "expires_at": None,
+                "remaining_seconds": 0,
+                "trial_id": None,
+                "latest_request_id": None,
+            }
+
+        is_pro = trial.is_active_trial()
+        remaining_seconds = 0
+        if is_pro and trial.expires_at:
+            remaining_seconds = max(0, int((trial.expires_at - timezone.now()).total_seconds()))
+
+        latest_request_id = (
+            TrialApplicationRequest.objects.filter(user_id=user.id)
+            .order_by("-id")
+            .values_list("id", flat=True)
+            .first()
+        )
+        return {
+            "is_pro": is_pro,
+            "status": trial.status,
+            "grant_source": trial.grant_source or "",
+            "started_at": trial.started_at,
+            "expires_at": trial.expires_at,
+            "remaining_seconds": remaining_seconds,
+            "trial_id": trial.id,
+            "latest_request_id": latest_request_id,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def admin_grant_user_trial(
+        *,
+        user,
+        grant_days: int | None = None,
+        expires_at=None,
+        note: str = "",
+    ) -> tuple[TrialApplication, TrialApplicationRequest, str]:
+        """后台按用户发放 Pro。返回 (trial, grant_request, previous_status)。"""
+        trial, _ = TrialApplication.objects.select_for_update().get_or_create(
+            user=user,
+            defaults={
+                "status": TrialApplication.Status.NONE,
+                "grant_source": TrialApplication.GrantSource.MANUAL,
+            },
+        )
+        previous_status = trial.status
+        now = timezone.now()
+        resolved_expires_at = expires_at
+        if resolved_expires_at is None:
+            days = int(grant_days or TrialService._trial_days())
+            resolved_expires_at = now + timedelta(days=days)
+        if resolved_expires_at <= now:
+            raise ValueError("invalid_expires_at")
+
+        note = (note or "").strip()
+        trial.status = TrialApplication.Status.ACTIVE
+        trial.grant_source = TrialApplication.GrantSource.MANUAL
+        trial.started_at = now
+        trial.expires_at = resolved_expires_at
+        trial.approved_at = now
+        trial.rejected_at = None
+        trial.applied_at = trial.applied_at or now
+        if note:
+            trial.note = note
+        trial.save()
+
+        latest_seq = (
+            TrialApplicationRequest.objects.select_for_update()
+            .filter(user_id=user.id, source=TrialApplicationRequest.Source.MANUAL)
+            .order_by("-sequence")
+            .values_list("sequence", flat=True)
+            .first()
+            or 0
+        )
+        grant_req = TrialApplicationRequest.objects.create(
+            user_id=user.id,
+            source=TrialApplicationRequest.Source.MANUAL,
+            sequence=latest_seq + 1,
+            status=TrialApplication.Status.ACTIVE,
+            note=note,
+            auto_approve_after_seconds=None,
+            scheduled_at=None,
+            approved_at=now,
+            rejected_at=None,
+        )
+        return trial, grant_req, previous_status
+
+    @staticmethod
+    @transaction.atomic
+    def admin_recycle_user_trial(*, user, note: str = "") -> tuple[TrialApplication, str]:
+        """后台按用户回收 Pro。返回 (trial, previous_status)。不存在记录时抛 ValueError('pro_not_found')。"""
+        try:
+            trial = TrialApplication.objects.select_for_update().get(user=user)
+        except TrialApplication.DoesNotExist as exc:
+            raise ValueError("pro_not_found") from exc
+
+        previous_status = trial.status
+        now = timezone.now()
+        note = (note or "").strip()
+        trial.status = TrialApplication.Status.EXPIRED
+        trial.expires_at = now
+        if note:
+            trial.note = note
+        trial.save()
+        return trial, previous_status

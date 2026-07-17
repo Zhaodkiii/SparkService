@@ -14,7 +14,8 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q, Count, Max, Prefetch
+from django.db.models import Q, Count, Max, Prefetch, F, Case, When, IntegerField, Value, DateTimeField, TextField, Exists, OuterRef
+from django.db.models.functions import Coalesce, Greatest, Cast
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -23,7 +24,14 @@ from rest_framework.serializers import BooleanField, CharField, Serializer
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from accounts.models import AccountDeactivation, AccountDeactivationAudit, AccountDeviceSession, TrustedDevice
+from accounts.models import (
+    AccountDeactivation,
+    AccountDeactivationAudit,
+    AccountDeviceSession,
+    LoginAudit,
+    SocialIdentity,
+    TrustedDevice,
+)
 from accounts.deactivation.tasks import process_deactivation_task
 from ai_config.models import (
     AIModelCatalog,
@@ -47,7 +55,9 @@ from medical.models import MedicalCase, Member
 
 from backoffice.audit import write_audit_log
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole, AdminRolePermission, AdminUserRole
+from backoffice.query_params import InvalidAdminDatetimeParam, parse_admin_datetime_param
 from backoffice.rbac import bootstrap_admin_permissions, get_user_menu_tree, get_user_permission_codes, get_user_role_codes
+from backoffice.sorting import resolve_admin_sort
 from backoffice.serializers import (
     AdminAIModelCatalogCreateSerializer,
     AdminAIModelCatalogSerializer,
@@ -76,8 +86,11 @@ from backoffice.serializers import (
     AdminTrialApplicationSerializer,
     AdminUserDeviceSessionSerializer,
     AdminUserListSerializer,
+    AdminUserProGrantSerializer,
+    AdminUserProRecycleSerializer,
     AdminUserRoleAssignSerializer,
     AdminUserSerializer,
+    AdminUserSocialIdentitySerializer,
     AdminUserStatusSerializer,
     AdminUserTrustedDeviceSerializer,
     AppVersionConfigSerializer,
@@ -94,6 +107,40 @@ LOG_DIR = BASE_DIR / "logs"
 ADMIN_LOGIN_TOKEN_LIFETIME_DEFAULT = timedelta(days=1)
 ADMIN_LOGIN_TOKEN_LIFETIME_REMEMBER = timedelta(days=30)
 ADMIN_TOKEN_LIFETIME_CLAIM = "admin_token_lifetime_seconds"
+# MySQL GREATEST 遇 NULL 即返回 NULL；排序前 Coalesce 到哨兵值，并 Cast 为 char 避免驱动转换异常
+_LAST_USED_SORT_EPOCH = Cast(Value("1970-01-01 00:00:00"), DateTimeField())
+
+
+def _last_used_greatest_expr():
+    return Greatest(
+        Coalesce(F("_max_device_seen"), _LAST_USED_SORT_EPOCH),
+        Coalesce(F("_max_session_refresh"), _LAST_USED_SORT_EPOCH),
+        Coalesce(F("last_login"), _LAST_USED_SORT_EPOCH),
+    )
+
+
+def _has_last_used_case():
+    return Case(
+        When(
+            Q(_max_device_seen__isnull=False)
+            | Q(_max_session_refresh__isnull=False)
+            | Q(last_login__isnull=False),
+            then=Value(1),
+        ),
+        default=Value(0),
+        output_field=IntegerField(),
+    )
+
+
+def _annotate_users_last_used(queryset, *, include_sort_text: bool = False):
+    greatest = _last_used_greatest_expr()
+    annotations = {
+        "has_last_used": _has_last_used_case(),
+        "last_used_sort_dt": greatest,
+    }
+    if include_sort_text:
+        annotations["last_used_sort"] = Cast(greatest, TextField())
+    return queryset.annotate(**annotations)
 
 
 class AdminAccessToken(AccessToken):
@@ -554,13 +601,22 @@ class AdminUserListView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        queryset = (
-            User.objects.annotate(
-                _max_device_seen=Max("trusted_devices__last_seen"),
-                _max_session_refresh=Max("device_sessions__last_refreshed_at"),
+        try:
+            date_joined_after = parse_admin_datetime_param(request, "date_joined_after")
+            date_joined_before = parse_admin_datetime_param(request, "date_joined_before")
+            last_used_after = parse_admin_datetime_param(request, "last_used_after")
+            last_used_before = parse_admin_datetime_param(request, "last_used_before")
+        except InvalidAdminDatetimeParam as exc:
+            return error_response(
+                msg="invalid_datetime_param",
+                code=40001,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                data={"field": exc.field},
             )
-            .all()
-            .order_by("-date_joined", "-id")
+
+        queryset = User.objects.select_related("trial_application").annotate(
+            _max_device_seen=Max("trusted_devices__last_seen"),
+            _max_session_refresh=Max("device_sessions__last_refreshed_at"),
         )
         query = (request.query_params.get("q") or "").strip()
         if query:
@@ -573,6 +629,57 @@ class AdminUserListView(APIView):
         is_active = request.query_params.get("is_active")
         if is_active in {"true", "false"}:
             queryset = queryset.filter(is_active=(is_active == "true"))
+
+        bundle_id = (request.query_params.get("bundle_id") or "").strip()
+        if bundle_id:
+            device_exists = TrustedDevice.objects.filter(user_id=OuterRef("pk"), bundle_id=bundle_id)
+            session_exists = AccountDeviceSession.objects.filter(user_id=OuterRef("pk"), bundle_id=bundle_id)
+            audit_exists = LoginAudit.objects.filter(user_id=OuterRef("pk"), bundle_id=bundle_id)
+            queryset = queryset.annotate(
+                _bundle_device_exists=Exists(device_exists),
+                _bundle_session_exists=Exists(session_exists),
+                _bundle_audit_exists=Exists(audit_exists),
+            ).filter(
+                Q(_bundle_device_exists=True) | Q(_bundle_session_exists=True) | Q(_bundle_audit_exists=True)
+            )
+
+        if date_joined_after:
+            queryset = queryset.filter(date_joined__gte=date_joined_after)
+        if date_joined_before:
+            queryset = queryset.filter(date_joined__lte=date_joined_before)
+
+        sort_by = (request.query_params.get("sort_by") or "").strip()
+        order = (request.query_params.get("order") or "").strip().lower()
+        need_last_used_filter = last_used_after is not None or last_used_before is not None
+        need_last_used_sort = sort_by == "last_used_at" and order in {"asc", "desc"}
+        if need_last_used_filter or need_last_used_sort:
+            queryset = _annotate_users_last_used(queryset, include_sort_text=need_last_used_sort)
+
+        if last_used_after:
+            queryset = queryset.filter(has_last_used=1, last_used_sort_dt__gte=last_used_after)
+        if last_used_before:
+            queryset = queryset.filter(has_last_used=1, last_used_sort_dt__lte=last_used_before)
+
+        order_by = resolve_admin_sort(
+            request,
+            allowed={
+                "id": {
+                    "asc": ["id"],
+                    "desc": ["-id"],
+                },
+                "date_joined": {
+                    "asc": ["date_joined", "id"],
+                    "desc": ["-date_joined", "-id"],
+                },
+                "last_used_at": {
+                    # has_last_used 优先，保证升序/降序时空值都排在最后（兼容 MySQL）
+                    "asc": ["-has_last_used", "last_used_sort", "id"],
+                    "desc": ["-has_last_used", "-last_used_sort", "-id"],
+                },
+            },
+            default=("date_joined", "desc"),
+        )
+        queryset = queryset.order_by(*order_by)
 
         page = int(request.query_params.get("page", "1"))
         page_size = min(int(request.query_params.get("page_size", "20")), 100)
@@ -628,19 +735,176 @@ class AdminUserDetailView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request, user_id: int):
-        user = get_object_or_404(User, pk=user_id)
+        user = get_object_or_404(User.objects.select_related("trial_application"), pk=user_id)
         trusted_devices = TrustedDevice.objects.filter(user=user).order_by("-last_seen", "-id")
         device_sessions = (
             AccountDeviceSession.objects.filter(user=user)
             .select_related("trusted_device")
             .order_by("-updated_at", "-id")
         )
+        auth_identities = SocialIdentity.objects.filter(user=user).order_by("provider", "-updated_at", "-id")
+        pro = TrialService.build_pro_summary(user=user)
+        user_data = AdminUserSerializer(user).data
+        user_data["is_pro"] = pro["is_pro"]
+        user_data["pro_status"] = pro["status"]
+        user_data["pro_expires_at"] = pro["expires_at"]
         payload = {
-            "user": AdminUserSerializer(user).data,
+            "user": user_data,
+            "pro": pro,
+            "auth_identities": AdminUserSocialIdentitySerializer(auth_identities, many=True).data,
             "trusted_devices": AdminUserTrustedDeviceSerializer(trusted_devices, many=True).data,
             "device_sessions": AdminUserDeviceSessionSerializer(device_sessions, many=True).data,
         }
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+def _send_membership_pro_notification(
+    *,
+    request,
+    user_id: int,
+    business_scene: str,
+    title: str,
+    body: str,
+    business_id: str,
+    channels: list[str],
+    status_value: str,
+    application_id=None,
+):
+    try:
+        NotificationCenterService.send_to_user_sync(
+            campaign_id=None,
+            user_id=user_id,
+            channels=channels,
+            title=title,
+            body=body,
+            payload={
+                "type": "ai_trial_application_result",
+                "status": status_value,
+                "application_id": application_id,
+                "refresh_ai_config": True,
+                "route": "ai_settings",
+            },
+            created_by_id=getattr(request.user, "id", None),
+            request_id=getattr(request, "request_id", "") or "",
+            business_scene=business_scene,
+            business_reference_type="trial_application",
+            business_id=business_id,
+            idempotency_key=f"{business_scene}:{business_id}:manual",
+            source="backoffice.user_pro",
+            actor_type="admin",
+            actor_id=str(getattr(request.user, "id", "") or ""),
+        )
+    except Exception:
+        # 通知失败不影响 Pro 操作结果
+        pass
+
+
+class AdminUserProGrantView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:user:pro:grant"
+
+    @transaction.atomic
+    def post(self, request, user_id: int):
+        target = get_object_or_404(User, pk=user_id)
+        serializer = AdminUserProGrantSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        note = serializer.validated_data.get("note", "")
+        try:
+            trial, grant_req, previous_status = TrialService.admin_grant_user_trial(
+                user=target,
+                grant_days=serializer.validated_data.get("grant_days"),
+                expires_at=serializer.validated_data.get("expires_at"),
+                note=note,
+            )
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+
+        _send_membership_pro_notification(
+            request=request,
+            user_id=target.id,
+            business_scene="membership.pro_trial.manually_granted",
+            title="已发放 Pro 试用权限",
+            body="系统已为你发放 Pro 模型试用权限。",
+            business_id=str(grant_req.id),
+            channels=[
+                NotificationMessage.Channel.APNS,
+                NotificationMessage.Channel.EMAIL,
+                NotificationMessage.Channel.SMS,
+            ],
+            status_value="active",
+            application_id=grant_req.id,
+        )
+
+        pro = TrialService.build_pro_summary(user=target)
+        payload = {"user_id": target.id, "pro": pro}
+        write_audit_log(
+            request,
+            action="admin.user.pro.grant",
+            resource_type="user",
+            resource_id=str(target.id),
+            status_code=200,
+            response_payload={
+                **payload,
+                "trial_id": trial.id,
+                "previous_status": previous_status,
+                "new_status": trial.status,
+                "expires_at": trial.expires_at.isoformat() if trial.expires_at else None,
+                "note": note,
+                "operator_user_id": getattr(request.user, "id", None),
+            },
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminUserProRecycleView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:user:pro:recycle"
+
+    @transaction.atomic
+    def post(self, request, user_id: int):
+        target = get_object_or_404(User, pk=user_id)
+        serializer = AdminUserProRecycleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        note = serializer.validated_data.get("note", "")
+        try:
+            trial, previous_status = TrialService.admin_recycle_user_trial(user=target, note=note)
+        except ValueError as exc:
+            return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+
+        _send_membership_pro_notification(
+            request=request,
+            user_id=target.id,
+            business_scene="membership.pro_trial.revoked",
+            title="试用已收回",
+            body="你的 Pro 模型试用权限已被收回。",
+            business_id=str(trial.id),
+            channels=[
+                NotificationMessage.Channel.APNS,
+                NotificationMessage.Channel.EMAIL,
+            ],
+            status_value="expired",
+            application_id=None,
+        )
+
+        pro = TrialService.build_pro_summary(user=target)
+        payload = {"user_id": target.id, "pro": pro}
+        write_audit_log(
+            request,
+            action="admin.user.pro.recycle",
+            resource_type="user",
+            resource_id=str(target.id),
+            status_code=200,
+            response_payload={
+                **payload,
+                "trial_id": trial.id,
+                "previous_status": previous_status,
+                "new_status": trial.status,
+                "expires_at": trial.expires_at.isoformat() if trial.expires_at else None,
+                "note": note,
+                "operator_user_id": getattr(request.user, "id", None),
+            },
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminDeviceListView(APIView):
@@ -1537,30 +1801,81 @@ class AdminAITrialActionView(APIView):
             trial.approved_at = None
             required_code = "button:ai:trial:reject"
         elif action == "recycle":
-            trial.status = TrialApplication.Status.EXPIRED
-            trial.expires_at = now
             required_code = "button:ai:trial:recycle"
         elif action == "grant":
-            grant_days = serializer.validated_data.get("grant_days")
-            custom_expires_at = serializer.validated_data.get("expires_at")
-            expires_at = custom_expires_at
-            if expires_at is None:
-                expires_at = now + timedelta(days=int(grant_days or TrialService._trial_days()))
-            if expires_at <= now:
-                return error_response(msg="invalid_expires_at", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-            trial.status = TrialApplication.Status.ACTIVE
-            trial.grant_source = TrialApplication.GrantSource.MANUAL
-            trial.started_at = now
-            trial.expires_at = expires_at
-            trial.approved_at = now
-            trial.rejected_at = None
-            trial.applied_at = trial.applied_at or now
             required_code = "button:ai:trial:grant"
         else:
             return error_response(msg="invalid_action", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
 
         if not request.user.is_superuser and required_code not in get_user_permission_codes(request.user.id):
             return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
+
+        if action == "recycle":
+            try:
+                trial, _previous_status = TrialService.admin_recycle_user_trial(user=trial.user, note=note)
+            except ValueError as exc:
+                return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+            payload = AdminTrialApplicationSerializer(trial).data
+            write_audit_log(
+                request,
+                action=f"admin.ai.trial.{action}",
+                resource_type="trial_application",
+                resource_id=str(trial.id),
+                status_code=200,
+                response_payload=payload,
+            )
+            return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+        if action == "grant":
+            try:
+                trial, grant_req, _previous_status = TrialService.admin_grant_user_trial(
+                    user=trial.user,
+                    grant_days=serializer.validated_data.get("grant_days"),
+                    expires_at=serializer.validated_data.get("expires_at"),
+                    note=note,
+                )
+            except ValueError as exc:
+                return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+            try:
+                NotificationCenterService.send_to_user_sync(
+                    campaign_id=None,
+                    user_id=trial.user_id,
+                    channels=[
+                        NotificationMessage.Channel.APNS,
+                        NotificationMessage.Channel.EMAIL,
+                        NotificationMessage.Channel.SMS,
+                    ],
+                    title="已发放 Pro 试用权限",
+                    body="系统已为你发放 Pro 模型试用权限。",
+                    payload={
+                        "type": "ai_trial_application_result",
+                        "status": "active",
+                        "application_id": grant_req.id,
+                        "refresh_ai_config": True,
+                        "route": "ai_settings",
+                    },
+                    created_by_id=getattr(request.user, "id", None),
+                    request_id=getattr(request, "request_id", "") or "",
+                    business_scene="membership.pro_trial.manually_granted",
+                    business_reference_type="trial_application",
+                    business_id=str(grant_req.id),
+                    idempotency_key=f"membership.pro_trial.manually_granted:{grant_req.id}:manual",
+                    source="backoffice.ai_trial",
+                    actor_type="admin",
+                    actor_id=str(getattr(request.user, "id", "") or ""),
+                )
+            except Exception:
+                pass
+            payload = AdminTrialApplicationSerializer(trial).data
+            write_audit_log(
+                request,
+                action=f"admin.ai.trial.{action}",
+                resource_type="trial_application",
+                resource_id=str(trial.id),
+                status_code=200,
+                response_payload=payload,
+            )
+            return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
         if note:
             trial.note = note
@@ -1587,7 +1902,11 @@ class AdminAITrialActionView(APIView):
                 NotificationCenterService.send_to_user_sync(
                     campaign_id=None,
                     user_id=trial.user_id,
-                    channels=[NotificationMessage.Channel.APNS],
+                    channels=[
+                        NotificationMessage.Channel.APNS,
+                        NotificationMessage.Channel.EMAIL,
+                        NotificationMessage.Channel.SMS,
+                    ],
                     title="试用申请已通过",
                     body="你的 Pro 模型试用申请已通过，现在可以使用服务端模型。",
                     payload={
@@ -1636,52 +1955,6 @@ class AdminAITrialActionView(APIView):
                     business_reference_type="trial_application",
                     business_id=str(pending_req.id if pending_req else trial.id),
                     idempotency_key=f"membership.pro_trial.application_rejected:{pending_req.id if pending_req else trial.id}:manual",
-                    source="backoffice.ai_trial",
-                    actor_type="admin",
-                    actor_id=str(getattr(request.user, "id", "") or ""),
-                )
-            except Exception:
-                pass
-        elif action == "grant":
-            latest_seq = (
-                TrialApplicationRequest.objects.select_for_update()
-                .filter(user_id=trial.user_id, source=TrialApplicationRequest.Source.MANUAL)
-                .order_by("-sequence")
-                .values_list("sequence", flat=True)
-                .first()
-                or 0
-            )
-            grant_req = TrialApplicationRequest.objects.create(
-                user_id=trial.user_id,
-                source=TrialApplicationRequest.Source.MANUAL,
-                sequence=latest_seq + 1,
-                status=TrialApplication.Status.ACTIVE,
-                note=note,
-                auto_approve_after_seconds=None,
-                scheduled_at=None,
-                approved_at=now,
-                rejected_at=None,
-            )
-            try:
-                NotificationCenterService.send_to_user_sync(
-                    campaign_id=None,
-                    user_id=trial.user_id,
-                    channels=[NotificationMessage.Channel.APNS],
-                    title="已发放 Pro 试用权限",
-                    body="管理员已为你发放 Pro 模型试用权限。",
-                    payload={
-                        "type": "ai_trial_application_result",
-                        "status": "active",
-                        "application_id": grant_req.id,
-                        "refresh_ai_config": True,
-                        "route": "ai_settings",
-                    },
-                    created_by_id=getattr(request.user, "id", None),
-                    request_id=getattr(request, "request_id", "") or "",
-                    business_scene="membership.pro_trial.manually_granted",
-                    business_reference_type="trial_application",
-                    business_id=str(grant_req.id),
-                    idempotency_key=f"membership.pro_trial.manually_granted:{grant_req.id}:manual",
                     source="backoffice.ai_trial",
                     actor_type="admin",
                     actor_id=str(getattr(request.user, "id", "") or ""),

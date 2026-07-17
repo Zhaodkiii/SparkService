@@ -66,6 +66,9 @@ export interface AdminUserTrustedDevice {
   id: number;
   bundle_id: string;
   device_id: string;
+  app_version: string;
+  build_version: string;
+  bundle_identifier: string;
   push_token_masked: string;
   notifications_enabled: boolean;
   platform: string;
@@ -97,13 +100,48 @@ export interface AdminUserDeviceSession {
   updated_at: string;
 }
 
+export interface AdminUserProSummary {
+  is_pro: boolean;
+  status: string;
+  grant_source: string;
+  started_at: string | null;
+  expires_at: string | null;
+  remaining_seconds: number;
+  trial_id: number | null;
+  latest_request_id: number | null;
+}
+
+export interface AdminUserAuthIdentity {
+  id: number;
+  provider: string;
+  provider_label: string;
+  provider_uid_masked: string;
+  bundle_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AdminUserDetail {
   user: AdminUser;
+  pro: AdminUserProSummary;
+  auth_identities: AdminUserAuthIdentity[];
   trusted_devices: AdminUserTrustedDevice[];
   device_sessions: AdminUserDeviceSession[];
 }
 
-export function fetchUsers(params: { page: number; page_size: number; q?: string; is_active?: string }) {
+export function fetchUsers(params: {
+  page: number;
+  page_size: number;
+  q?: string;
+  is_active?: string;
+  bundle_id?: string;
+  date_joined_after?: string;
+  date_joined_before?: string;
+  last_used_after?: string;
+  last_used_before?: string;
+  sort_by?: string;
+  order?: 'asc' | 'desc';
+}) {
   return http.get<unknown, UserListResponse>('/api/admin/v1/users/', { params });
 }
 
@@ -113,6 +151,23 @@ export function updateUserStatus(userId: number, isActive: boolean) {
 
 export function fetchUserDetail(userId: number) {
   return http.get<unknown, AdminUserDetail>(`/api/admin/v1/users/${userId}/detail/`);
+}
+
+export function grantUserPro(
+  userId: number,
+  payload: { grant_days?: number; expires_at?: string | null; note?: string },
+) {
+  return http.post<unknown, { user_id: number; pro: AdminUserProSummary }>(
+    `/api/admin/v1/users/${userId}/pro/grant/`,
+    payload,
+  );
+}
+
+export function recycleUserPro(userId: number, payload: { note?: string } = {}) {
+  return http.post<unknown, { user_id: number; pro: AdminUserProSummary }>(
+    `/api/admin/v1/users/${userId}/pro/recycle/`,
+    payload,
+  );
 }
 
 export function assignUserRoles(userId: number, roleCodes: string[]) {

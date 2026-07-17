@@ -148,6 +148,8 @@ def bootstrap_admin_permissions() -> None:
         ("button:medical_data:sensitive:view", "查看医疗未脱敏字段", "button", "", "menu:medical_data:users"),
         ("button:medical_data:export", "医疗数据导出", "button", "", "menu:medical_data:users"),
         ("button:user:status:update", "用户状态更新", "button", "", "menu:users"),
+        ("button:user:pro:grant", "用户发放 Pro", "button", "", "menu:users"),
+        ("button:user:pro:recycle", "用户回收 Pro", "button", "", "menu:users"),
         ("button:user:device:revoke", "设备吊销更新", "button", "", "menu:users:devices"),
         ("button:user:deactivation:cancel", "注销单取消", "button", "", "menu:users:deactivations"),
         ("button:user:deactivation:retry", "注销单重试", "button", "", "menu:users:deactivations"),
@@ -168,6 +170,7 @@ def bootstrap_admin_permissions() -> None:
         ("button:ai:trial:approve", "试用通过", "button", "", "menu:ai:trial"),
         ("button:ai:trial:reject", "试用拒绝", "button", "", "menu:ai:trial"),
         ("button:ai:trial:recycle", "试用回收权限", "button", "", "menu:ai:trial"),
+        ("button:ai:trial:grant", "试用发放权限", "button", "", "menu:ai:trial"),
         ("button:rbac:role:assign", "角色分配", "button", "", "menu:rbac"),
     ]
 

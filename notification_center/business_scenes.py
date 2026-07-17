@@ -14,6 +14,24 @@ from django.db import transaction
 from notification_center.models import NotificationBusinessScene, NotificationTopic
 
 
+MEMBERSHIP_FALLBACK_ROUTING: dict[str, Any] = {
+    "mode": "fallback",
+    "steps": [
+        {"channel": "apns", "route_order": 1, "required": False, "success_threshold": "provider_accepted"},
+        {"channel": "email", "route_order": 2, "required": False, "success_threshold": "provider_accepted"},
+        {"channel": "sms", "route_order": 3, "required": False, "success_threshold": "provider_accepted"},
+    ],
+}
+
+# Scenes kept in the catalog for documentation but must not create user notifications yet.
+MEMBERSHIP_USER_NOTIFICATION_SUPPRESSED_SCENES: frozenset[str] = frozenset(
+    {
+        "membership.pro_trial.expiring",
+        "membership.pro_trial.revoked",
+    }
+)
+
+
 @dataclass(frozen=True)
 class SceneDefinition:
     key: str
@@ -24,6 +42,7 @@ class SceneDefinition:
     topic_key: str = ""
     default_template_key: str = ""
     channels: tuple[str, ...] = ("in_app",)
+    default_routing: dict[str, Any] | None = None
     preference_policy: str = "opt_out"
     quiet_hour_policy: str = "respect"
     contract_version: int = 1
@@ -45,6 +64,10 @@ class SceneDefinition:
         return self.key.rsplit(".", 1)[-1]
 
     def defaults(self, topic: NotificationTopic | None = None) -> dict[str, Any]:
+        routing = self.default_routing or {
+            "mode": "parallel",
+            "steps": [{"channel": channel, "required": False} for channel in self.channels],
+        }
         return {
             "key": self.key,
             "domain": self.domain,
@@ -56,10 +79,7 @@ class SceneDefinition:
             "category": self.category,
             "severity": self.severity,
             "default_template_key": self.default_template_key,
-            "default_routing": {
-                "mode": "parallel",
-                "steps": [{"channel": channel, "required": False} for channel in self.channels],
-            },
+            "default_routing": routing,
             "variable_schema": self.variable_schema,
             "reference_schema": self.reference_schema,
             "client_action_schema": self.client_action_schema,
@@ -99,12 +119,26 @@ SCENE_CATALOG: tuple[SceneDefinition, ...] = (
     _scene("account.lifecycle.deactivation_completed", "注销完成", severity=CRITICAL, channels=("email", "sms"), preference_policy="mandatory", quiet_hour_policy="bypass"),
     _scene("account.lifecycle.deactivation_failed", "注销处理失败", severity=WARNING, channels=("email", "in_app"), preference_policy="mandatory"),
     _scene("membership.pro_trial.application_submitted", "Pro 试用申请已提交", channels=("apns", "in_app")),
-    _scene("membership.pro_trial.application_approved", "Pro 试用申请通过", severity=SUCCESS, channels=("apns", "in_app", "email")),
+    _scene(
+        "membership.pro_trial.application_approved",
+        "Pro 试用申请通过",
+        severity=SUCCESS,
+        channels=("apns", "email", "sms"),
+        default_routing=MEMBERSHIP_FALLBACK_ROUTING,
+    ),
     _scene("membership.pro_trial.application_rejected", "Pro 试用申请未通过", channels=("apns", "in_app")),
-    _scene("membership.pro_trial.manually_granted", "管理员发放试用", severity=SUCCESS, channels=("apns", "in_app", "email")),
+    _scene(
+        "membership.pro_trial.manually_granted",
+        "系统发放试用",
+        severity=SUCCESS,
+        channels=("apns", "email", "sms"),
+        default_routing=MEMBERSHIP_FALLBACK_ROUTING,
+    ),
     _scene("membership.pro_trial.activated", "试用已生效", severity=SUCCESS, channels=("apns", "in_app")),
+    # Catalog only — user notifications suppressed until product enables expiring reminders.
     _scene("membership.pro_trial.expiring", "试用即将到期", severity=WARNING, channels=("apns", "in_app", "email")),
     _scene("membership.pro_trial.expired", "试用已到期", channels=("apns", "in_app")),
+    # Catalog only — user notifications suppressed until product enables revocation notices.
     _scene("membership.pro_trial.revoked", "试用已收回", severity=WARNING, channels=("apns", "in_app", "email")),
     _scene("medical.resource.created", "医疗信息已新增", channels=("apns", "in_app")),
     _scene("medical.resource.updated", "医疗信息已更新", channels=("apns", "in_app")),

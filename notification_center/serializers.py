@@ -450,6 +450,17 @@ class NotificationMessageSerializer(serializers.ModelSerializer):
         )
 
 
+class AdminNotificationUserListQuerySerializer(serializers.Serializer):
+    q = serializers.CharField(required=False, allow_blank=True, default="")
+    page = serializers.IntegerField(required=False, min_value=1, default=1)
+    page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=20)
+    only_enabled = serializers.BooleanField(required=False, default=True)
+    has_email = serializers.BooleanField(required=False, allow_null=True)
+    has_sms = serializers.BooleanField(required=False, allow_null=True)
+    has_apns = serializers.BooleanField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False, allow_null=True)
+
+
 class NotificationSuppressionSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source="user.username", read_only=True)
     created_by_name = serializers.CharField(source="created_by.username", read_only=True)

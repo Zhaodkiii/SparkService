@@ -46,8 +46,21 @@ from notification_center.models import (
 )
 from notification_center.security import decrypt_sensitive, encrypt_sensitive, keyed_hmac
 
+try:
+    from notification_center.business_scenes import MEMBERSHIP_USER_NOTIFICATION_SUPPRESSED_SCENES
+except ImportError:  # pragma: no cover
+    MEMBERSHIP_USER_NOTIFICATION_SUPPRESSED_SCENES = frozenset()
+
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+_EXTERNAL_DELIVERY_CHANNELS = frozenset(
+    {
+        NotificationMessage.Channel.APNS,
+        NotificationMessage.Channel.EMAIL,
+        NotificationMessage.Channel.SMS,
+    }
+)
 
 
 class _SafeDict(dict):
@@ -76,6 +89,42 @@ def _mask_email(email: str) -> str:
     if len(local) <= 4:
         return f"{local[0]}***@{domain}"
     return f"{local[:3]}***@{domain}"
+
+
+def _coerce_positive_int(value, *, default: int, maximum: int | None = None) -> int:
+    try:
+        parsed = max(int(value or default), 1)
+    except (TypeError, ValueError):
+        parsed = default
+    if maximum is not None:
+        return min(parsed, maximum)
+    return parsed
+
+
+def _coerce_bool(value, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    return default
+
+
+def _coerce_optional_bool(value) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return None
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    return None
 
 
 @dataclass(frozen=True)
@@ -595,6 +644,14 @@ class NotificationCenterService:
 
     @staticmethod
     def list_notification_users(*, q: str = "", page: int = 1, page_size: int = 20, only_enabled: bool = True, has_email: bool | None = None, has_sms: bool | None = None, has_apns: bool | None = None, is_active: bool | None = None) -> dict[str, Any]:
+        page = _coerce_positive_int(page, default=1)
+        page_size = _coerce_positive_int(page_size, default=20, maximum=100)
+        only_enabled = _coerce_bool(only_enabled, default=True)
+        has_email = _coerce_optional_bool(has_email)
+        has_sms = _coerce_optional_bool(has_sms)
+        has_apns = _coerce_optional_bool(has_apns)
+        is_active = _coerce_optional_bool(is_active)
+
         queryset = NotificationCenterService._filter_user_queryset(
             q=q,
             only_enabled=only_enabled,
@@ -791,6 +848,86 @@ class NotificationCenterService:
         return mode, steps
 
     @staticmethod
+    def _route_channels_from_steps(steps: list[dict[str, Any]]) -> list[str]:
+        channels: list[str] = []
+        for step in steps:
+            channel = str(step.get("channel") or "").strip()
+            if channel and channel not in channels:
+                channels.append(channel)
+        return channels
+
+    @staticmethod
+    def _resolve_send_routing(
+        *,
+        channels: list[str],
+        routing: dict[str, Any] | None,
+        business_scene: str = "",
+    ) -> tuple[str, list[dict[str, Any]], list[str]]:
+        resolved_mode, resolved_steps = NotificationCenterService._route_steps(channels=[], routing=routing)
+        if resolved_steps:
+            resolved_channels = NotificationCenterService._route_channels_from_steps(resolved_steps)
+            if channels and set(channels) != set(resolved_channels):
+                logger.warning(
+                    "notification.route.channels_overridden scene=%s input_channels=%s resolved_channels=%s",
+                    business_scene or "-",
+                    ",".join(channels),
+                    ",".join(resolved_channels),
+                )
+            return resolved_mode, resolved_steps, resolved_channels
+        mode, steps = NotificationCenterService._route_steps(channels=channels, routing=routing)
+        return mode, steps, NotificationCenterService._route_channels_from_steps(steps) or list(channels)
+
+    @staticmethod
+    def _should_continue_fallback(*, mode: str, delivery: ChannelDelivery | None, step: dict[str, Any]) -> bool:
+        if mode != "fallback":
+            return True
+        if delivery is None:
+            return True
+        threshold = str(step.get("success_threshold") or "provider_accepted")
+        if NotificationCenterService._delivery_meets_threshold(delivery, threshold):
+            return False
+        if delivery.status in {
+            ChannelDelivery.Status.SUBMIT_UNKNOWN,
+            ChannelDelivery.Status.PROCESSING,
+            ChannelDelivery.Status.QUEUED,
+            ChannelDelivery.Status.CREATED,
+        }:
+            return False
+        return True
+
+    @staticmethod
+    def _finalize_fallback_recipient_status(
+        recipient_message: NotificationRecipientMessage,
+        routing: dict[str, Any] | None,
+    ) -> None:
+        mode, _ = NotificationCenterService._route_steps(channels=[], routing=routing)
+        if mode != "fallback":
+            return
+        deliveries = list(
+            ChannelDelivery.objects.filter(message__recipient_message=recipient_message).order_by("route_order", "id")
+        )
+        if not deliveries:
+            return
+        if NotificationCenterService._recipient_route_succeeded(recipient_message, routing):
+            return
+        if any(
+            row.status
+            in {
+                ChannelDelivery.Status.SUBMIT_UNKNOWN,
+                ChannelDelivery.Status.PROCESSING,
+                ChannelDelivery.Status.QUEUED,
+                ChannelDelivery.Status.CREATED,
+            }
+            for row in deliveries
+        ):
+            return
+        NotificationRecipientMessage.objects.filter(id=recipient_message.id).update(
+            status=NotificationRecipientMessage.Status.FAILED,
+            completed_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+
+    @staticmethod
     def _delivery_meets_threshold(delivery: ChannelDelivery | None, threshold: str) -> bool:
         if delivery is None:
             return False
@@ -812,16 +949,24 @@ class NotificationCenterService:
             status = NotificationRecipientMessage.Status.CREATED
         elif any(row.status in {ChannelDelivery.Status.CREATED, ChannelDelivery.Status.QUEUED, ChannelDelivery.Status.PROCESSING, ChannelDelivery.Status.SUBMIT_UNKNOWN} for row in deliveries):
             status = NotificationRecipientMessage.Status.PROCESSING
-        elif any(row.required and row.status in {ChannelDelivery.Status.SUBMIT_FAILED, ChannelDelivery.Status.DELIVERY_FAILED} for row in deliveries):
-            status = NotificationRecipientMessage.Status.FAILED
-        elif all(row.status == ChannelDelivery.Status.DELIVERED for row in deliveries):
-            status = NotificationRecipientMessage.Status.DELIVERED
-        elif any(row.status in {ChannelDelivery.Status.SUBMIT_FAILED, ChannelDelivery.Status.DELIVERY_FAILED} for row in deliveries):
-            status = NotificationRecipientMessage.Status.PARTIAL
-        elif any(row.status in {ChannelDelivery.Status.ACCEPTED, ChannelDelivery.Status.DELIVERED} for row in deliveries):
-            status = NotificationRecipientMessage.Status.ACCEPTED
         else:
-            status = NotificationRecipientMessage.Status.SKIPPED
+            routing = recipient_message.routing or {}
+            mode, _ = NotificationCenterService._route_steps(channels=[], routing=routing)
+            if mode == "fallback" and NotificationCenterService._recipient_route_succeeded(recipient_message, routing):
+                if all(row.status == ChannelDelivery.Status.DELIVERED for row in deliveries if NotificationCenterService._delivery_meets_threshold(row, row.success_threshold)):
+                    status = NotificationRecipientMessage.Status.DELIVERED
+                else:
+                    status = NotificationRecipientMessage.Status.ACCEPTED
+            elif any(row.required and row.status in {ChannelDelivery.Status.SUBMIT_FAILED, ChannelDelivery.Status.DELIVERY_FAILED} for row in deliveries):
+                status = NotificationRecipientMessage.Status.FAILED
+            elif all(row.status == ChannelDelivery.Status.DELIVERED for row in deliveries):
+                status = NotificationRecipientMessage.Status.DELIVERED
+            elif any(row.status in {ChannelDelivery.Status.SUBMIT_FAILED, ChannelDelivery.Status.DELIVERY_FAILED} for row in deliveries):
+                status = NotificationRecipientMessage.Status.PARTIAL
+            elif any(row.status in {ChannelDelivery.Status.ACCEPTED, ChannelDelivery.Status.DELIVERED} for row in deliveries):
+                status = NotificationRecipientMessage.Status.ACCEPTED
+            else:
+                status = NotificationRecipientMessage.Status.SKIPPED
         completed_at = timezone.now() if status in {
             NotificationRecipientMessage.Status.DELIVERED,
             NotificationRecipientMessage.Status.PARTIAL,
@@ -1725,10 +1870,20 @@ class NotificationCenterService:
         if user is None:
             raise ValueError("user_not_found")
 
+        normalized_scene = NotificationCenterService._normalize_scene_key(business_scene)
+        if normalized_scene in MEMBERSHIP_USER_NOTIFICATION_SUPPRESSED_SCENES:
+            logger.info(
+                "notification.membership.route.suppressed scene=%s user_id=%s reason=scene_disabled",
+                normalized_scene,
+                user_id,
+            )
+            return []
+
         payload = payload or {}
         out: list[NotificationMessage] = []
         campaign = NotificationCampaign.objects.filter(id=campaign_id).select_related("intent").first() if campaign_id else None
         intent = campaign.intent if campaign else None
+        scene = None
         if intent is None:
             if not business_scene:
                 raise ValueError("business_scene_required")
@@ -1770,7 +1925,21 @@ class NotificationCenterService:
             topic_key = topic_key or intent.topic_key
             routing = routing or payload.get("_routing") or intent.routing
 
-        mode, steps = NotificationCenterService._route_steps(channels=channels, routing=routing or payload.get("_routing"))
+        mode, steps, _resolved_channels = NotificationCenterService._resolve_send_routing(
+            channels=channels,
+            routing=routing or payload.get("_routing"),
+            business_scene=business_scene or (intent.business_scene if intent else ""),
+        )
+        membership_scene_key = business_scene or (intent.business_scene if intent else "")
+        if mode == "fallback" and membership_scene_key.startswith("membership."):
+            logger.info(
+                "notification.membership.route.start scene=%s user_id=%s routing_mode=%s steps=%s business_id=%s",
+                membership_scene_key,
+                user_id,
+                mode,
+                ",".join(step["channel"] for step in steps),
+                business_id or "-",
+            )
         recipient_message, _ = NotificationRecipientMessage.objects.get_or_create(
             campaign_id=campaign_id,
             intent_id=intent.id if intent else None,
@@ -1805,13 +1974,39 @@ class NotificationCenterService:
             NotificationCenterService._refresh_recipient_message_status(recipient_message)
             out.append(message)
             delivery = ChannelDelivery.objects.filter(message=message).order_by("-id").first()
-            if mode == "fallback" and NotificationCenterService._delivery_meets_threshold(
-                delivery,
-                step.get("success_threshold", "provider_accepted"),
-            ):
+            if membership_scene_key.startswith("membership."):
+                logger.info(
+                    "notification.membership.route.step scene=%s user_id=%s channel=%s route_order=%s status=%s stop=%s",
+                    membership_scene_key,
+                    user_id,
+                    channel,
+                    step.get("route_order", 1),
+                    delivery.status if delivery else "-",
+                    not NotificationCenterService._should_continue_fallback(mode=mode, delivery=delivery, step=step),
+                )
+            if not NotificationCenterService._should_continue_fallback(mode=mode, delivery=delivery, step=step):
                 break
-            if step.get("required", True) and message.status == NotificationMessage.Status.FAILED:
+            if mode != "fallback" and step.get("required", True) and message.status == NotificationMessage.Status.FAILED:
                 break
+        NotificationCenterService._finalize_fallback_recipient_status(recipient_message, routing)
+        if mode == "fallback" and membership_scene_key.startswith("membership."):
+            recipient_message.refresh_from_db()
+            winning = (
+                ChannelDelivery.objects.filter(
+                    message__recipient_message=recipient_message,
+                    status__in={ChannelDelivery.Status.ACCEPTED, ChannelDelivery.Status.DELIVERED},
+                )
+                .order_by("route_order", "id")
+                .values_list("channel", flat=True)
+                .first()
+            )
+            logger.info(
+                "notification.membership.route.done scene=%s user_id=%s final_status=%s winning_channel=%s",
+                membership_scene_key,
+                user_id,
+                recipient_message.status,
+                winning or "-",
+            )
         return out
 
     @staticmethod

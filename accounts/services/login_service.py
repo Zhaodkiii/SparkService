@@ -23,7 +23,7 @@ flow_logger = logging.getLogger("accounts.flow")
 class LoginService:
     @staticmethod
     def _try_grant_auto_trial(*, user, bundle_id: str, device_id: str, request_id: str):
-        # 登录自动试用仅对中国设备生效；失败/跳过不影响登录。
+        # 登录自动试用仅对 settings.AI_TRIAL_AUTO_GRANT_COUNTRY_CODES 内国家生效；失败/跳过不影响登录。
         TrialService.try_grant_auto_trial_for_login_device(
             user=user,
             bundle_id=bundle_id,

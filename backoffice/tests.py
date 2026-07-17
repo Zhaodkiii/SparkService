@@ -285,6 +285,335 @@ class BackofficePermissionTests(TestCase):
         ids = {item["id"] for item in response.data["data"]["items"]}
         self.assertIn(self.target_user.id, ids)
 
+    def test_user_list_sort_by_id(self):
+        older = User.objects.create_user(username="older_u", email="older@example.com", password="pass1234")
+        newer = User.objects.create_user(username="newer_u", email="newer@example.com", password="pass1234")
+        self.client.force_authenticate(user=self.staff_user)
+
+        asc = self.client.get("/api/admin/v1/users/", {"sort_by": "id", "order": "asc", "page_size": 100})
+        self.assertEqual(asc.status_code, 200)
+        asc_ids = [item["id"] for item in asc.data["data"]["items"]]
+        self.assertLess(asc_ids.index(older.id), asc_ids.index(newer.id))
+
+        desc = self.client.get("/api/admin/v1/users/", {"sort_by": "id", "order": "desc", "page_size": 100})
+        self.assertEqual(desc.status_code, 200)
+        desc_ids = [item["id"] for item in desc.data["data"]["items"]]
+        self.assertLess(desc_ids.index(newer.id), desc_ids.index(older.id))
+
+    def test_user_list_sort_by_date_joined_and_invalid_fallback(self):
+        from django.utils import timezone
+
+        early = User.objects.create_user(username="early_u", email="early@example.com", password="pass1234")
+        late = User.objects.create_user(username="late_u", email="late@example.com", password="pass1234")
+        User.objects.filter(pk=early.pk).update(date_joined=timezone.now() - timezone.timedelta(days=3))
+        User.objects.filter(pk=late.pk).update(date_joined=timezone.now() - timezone.timedelta(days=1))
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(
+            "/api/admin/v1/users/",
+            {"sort_by": "date_joined", "order": "desc", "page_size": 100},
+        )
+        self.assertEqual(response.status_code, 200)
+        ids = [item["id"] for item in response.data["data"]["items"]]
+        self.assertLess(ids.index(late.id), ids.index(early.id))
+
+        invalid = self.client.get(
+            "/api/admin/v1/users/",
+            {"sort_by": "hack", "order": "nope", "page_size": 100},
+        )
+        self.assertEqual(invalid.status_code, 200)
+        invalid_ids = [item["id"] for item in invalid.data["data"]["items"]]
+        self.assertLess(invalid_ids.index(late.id), invalid_ids.index(early.id))
+
+    def test_user_list_sort_by_last_used_at_nulls_last(self):
+        from django.utils import timezone
+
+        active_user = User.objects.create_user(username="active_u", email="active@example.com", password="pass1234")
+        idle_user = User.objects.create_user(username="idle_u", email="idle@example.com", password="pass1234")
+        seen = timezone.now() - timezone.timedelta(hours=1)
+        device = TrustedDevice.objects.create(
+            user=active_user,
+            bundle_id="cn.Zhaodk.Health",
+            device_id="device-sort-active",
+        )
+        TrustedDevice.objects.filter(pk=device.pk).update(last_seen=seen)
+
+        self.client.force_authenticate(user=self.staff_user)
+        desc = self.client.get(
+            "/api/admin/v1/users/",
+            {"sort_by": "last_used_at", "order": "desc", "page_size": 100},
+        )
+        self.assertEqual(desc.status_code, 200)
+        desc_ids = [item["id"] for item in desc.data["data"]["items"]]
+        self.assertLess(desc_ids.index(active_user.id), desc_ids.index(idle_user.id))
+
+        asc = self.client.get(
+            "/api/admin/v1/users/",
+            {"sort_by": "last_used_at", "order": "asc", "page_size": 100},
+        )
+        self.assertEqual(asc.status_code, 200)
+        asc_ids = [item["id"] for item in asc.data["data"]["items"]]
+        self.assertLess(asc_ids.index(active_user.id), asc_ids.index(idle_user.id))
+
+    def test_user_list_includes_pro_fields(self):
+        from django.utils import timezone
+        from ai_config.models import TrialApplication
+
+        TrialApplication.objects.create(
+            user=self.target_user,
+            status=TrialApplication.Status.ACTIVE,
+            grant_source=TrialApplication.GrantSource.MANUAL,
+            started_at=timezone.now(),
+            expires_at=timezone.now() + timezone.timedelta(days=7),
+        )
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/")
+        self.assertEqual(response.status_code, 200)
+        row = next(item for item in response.data["data"]["items"] if item["id"] == self.target_user.id)
+        self.assertTrue(row["is_pro"])
+        self.assertEqual(row["pro_status"], "active")
+        self.assertIsNotNone(row["pro_expires_at"])
+
+    def test_user_detail_includes_pro_and_app_version(self):
+        from django.utils import timezone
+        from ai_config.models import TrialApplication
+
+        TrialApplication.objects.create(
+            user=self.target_user,
+            status=TrialApplication.Status.ACTIVE,
+            grant_source=TrialApplication.GrantSource.MANUAL,
+            started_at=timezone.now(),
+            expires_at=timezone.now() + timezone.timedelta(days=10),
+        )
+        TrustedDevice.objects.create(
+            user=self.target_user,
+            bundle_id="cn.Zhaodk.Health",
+            device_id="device-version",
+            app_version="1.4.2",
+            build_version="102",
+            bundle_identifier="cn.Zhaodk.Health",
+        )
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f"/api/admin/v1/users/{self.target_user.id}/detail/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data["data"]
+        self.assertTrue(data["pro"]["is_pro"])
+        self.assertEqual(data["pro"]["status"], "active")
+        self.assertTrue(data["user"]["is_pro"])
+        self.assertEqual(data["trusted_devices"][0]["app_version"], "1.4.2")
+        self.assertEqual(data["trusted_devices"][0]["build_version"], "102")
+
+    def test_user_detail_pro_none_when_missing(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f"/api/admin/v1/users/{self.target_user.id}/detail/")
+        self.assertEqual(response.status_code, 200)
+        pro = response.data["data"]["pro"]
+        self.assertFalse(pro["is_pro"])
+        self.assertEqual(pro["status"], "none")
+        self.assertIsNone(pro["trial_id"])
+
+    def test_user_pro_grant_and_recycle(self):
+        self.client.force_authenticate(user=self.staff_user)
+        grant = self.client.post(
+            f"/api/admin/v1/users/{self.target_user.id}/pro/grant/",
+            {"grant_days": 15, "note": "客服补偿"},
+            format="json",
+        )
+        self.assertEqual(grant.status_code, 200, grant.data)
+        self.assertTrue(grant.data["data"]["pro"]["is_pro"])
+        self.assertEqual(grant.data["data"]["pro"]["status"], "active")
+
+        recycle = self.client.post(
+            f"/api/admin/v1/users/{self.target_user.id}/pro/recycle/",
+            {"note": "误发回收"},
+            format="json",
+        )
+        self.assertEqual(recycle.status_code, 200, recycle.data)
+        self.assertFalse(recycle.data["data"]["pro"]["is_pro"])
+        self.assertEqual(recycle.data["data"]["pro"]["status"], "expired")
+
+        audits = AdminAuditLog.objects.filter(
+            action__in=["admin.user.pro.grant", "admin.user.pro.recycle"],
+            resource_id=str(self.target_user.id),
+        )
+        self.assertEqual(audits.count(), 2)
+
+    def test_user_pro_recycle_without_record_returns_400(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.post(
+            f"/api/admin/v1/users/{self.target_user.id}/pro/recycle/",
+            {"note": "无记录"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["msg"], "pro_not_found")
+
+    def test_user_pro_grant_requires_permission(self):
+        limited = User.objects.create_user(
+            username="limited_staff",
+            email="limited@example.com",
+            password="pass1234",
+            is_staff=True,
+        )
+        self.client.force_authenticate(user=limited)
+        response = self.client.post(
+            f"/api/admin/v1/users/{self.target_user.id}/pro/grant/",
+            {"grant_days": 7},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_user_list_filter_by_bundle_id_device(self):
+        bundle = "cn.Zhaodk.Health"
+        TrustedDevice.objects.create(
+            user=self.target_user,
+            bundle_id=bundle,
+            device_id="bundle-filter-device",
+        )
+        other = User.objects.create_user(username="other_bundle", email="other@example.com", password="pass1234")
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/", {"bundle_id": bundle, "page_size": 100})
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["data"]["items"]}
+        self.assertIn(self.target_user.id, ids)
+        self.assertNotIn(other.id, ids)
+
+    def test_user_list_filter_by_bundle_id_session(self):
+        bundle = "cn.Zhaodk.Session"
+        device = TrustedDevice.objects.create(
+            user=self.target_user,
+            bundle_id=bundle,
+            device_id="bundle-session-device",
+        )
+        AccountDeviceSession.objects.create(
+            user=self.target_user,
+            trusted_device=device,
+            bundle_id=bundle,
+            device_id=device.device_id,
+        )
+        other = User.objects.create_user(username="other_session", email="sess@example.com", password="pass1234")
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/", {"bundle_id": bundle, "page_size": 100})
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["data"]["items"]}
+        self.assertIn(self.target_user.id, ids)
+        self.assertNotIn(other.id, ids)
+
+    def test_user_list_filter_by_date_joined_range(self):
+        from django.utils import timezone
+
+        early = User.objects.create_user(username="joined_early", email="early2@example.com", password="pass1234")
+        late = User.objects.create_user(username="joined_late", email="late2@example.com", password="pass1234")
+        mid = timezone.now() - timezone.timedelta(days=5)
+        User.objects.filter(pk=early.pk).update(date_joined=mid - timezone.timedelta(days=10))
+        User.objects.filter(pk=late.pk).update(date_joined=mid + timezone.timedelta(days=10))
+        User.objects.filter(pk=self.target_user.pk).update(date_joined=mid)
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(
+            "/api/admin/v1/users/",
+            {
+                "date_joined_after": (mid - timezone.timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S"),
+                "date_joined_before": (mid + timezone.timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S"),
+                "page_size": 100,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["data"]["items"]}
+        self.assertIn(self.target_user.id, ids)
+        self.assertNotIn(early.id, ids)
+        self.assertNotIn(late.id, ids)
+
+    def test_user_list_filter_by_last_used_range(self):
+        from django.utils import timezone
+
+        active_user = User.objects.create_user(username="used_active", email="used@example.com", password="pass1234")
+        idle_user = User.objects.create_user(username="used_idle", email="idle2@example.com", password="pass1234")
+        seen = timezone.now() - timezone.timedelta(hours=2)
+        device = TrustedDevice.objects.create(
+            user=active_user,
+            bundle_id="cn.Zhaodk.Health",
+            device_id="last-used-filter",
+        )
+        TrustedDevice.objects.filter(pk=device.pk).update(last_seen=seen)
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(
+            "/api/admin/v1/users/",
+            {
+                "last_used_after": (seen - timezone.timedelta(hours=1)).isoformat(),
+                "last_used_before": (seen + timezone.timedelta(hours=1)).isoformat(),
+                "page_size": 100,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data["data"]["items"]}
+        self.assertIn(active_user.id, ids)
+        self.assertNotIn(idle_user.id, ids)
+
+    def test_user_list_invalid_datetime_returns_400(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get("/api/admin/v1/users/", {"date_joined_after": "not-a-date"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["msg"], "invalid_datetime_param")
+        self.assertEqual(response.data["data"]["field"], "date_joined_after")
+
+    def test_user_detail_returns_auth_identities_masked(self):
+        from accounts.models import SocialIdentity
+
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.APPLE,
+            provider_uid="apple_000082.abcdef123456",
+            bundle_id="cn.Zhaodk.Health",
+        )
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="97621528@qq.com",
+            bundle_id="cn.Zhaodk.Health",
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f"/api/admin/v1/users/{self.target_user.id}/detail/")
+        self.assertEqual(response.status_code, 200)
+        identities = response.data["data"]["auth_identities"]
+        self.assertEqual(len(identities), 2)
+        apple = next(item for item in identities if item["provider"] == "apple")
+        email = next(item for item in identities if item["provider"] == "email")
+        self.assertEqual(apple["provider_label"], "Apple")
+        self.assertIn("...", apple["provider_uid_masked"])
+        self.assertNotEqual(apple["provider_uid_masked"], "apple_000082.abcdef123456")
+        self.assertIn("***", email["provider_uid_masked"])
+        self.assertNotIn("provider_uid", apple)
+
+    def test_user_detail_auth_identities_empty(self):
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f"/api/admin/v1/users/{self.target_user.id}/detail/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["auth_identities"], [])
+
+
+class AdminSortingHelperTests(TestCase):
+    def test_resolve_admin_sort_whitelist_and_fallback(self):
+        from types import SimpleNamespace
+        from backoffice.sorting import resolve_admin_sort
+
+        allowed = {
+            "id": {"asc": ["id"], "desc": ["-id"]},
+            "date_joined": {"asc": ["date_joined", "id"], "desc": ["-date_joined", "-id"]},
+        }
+        request = SimpleNamespace(query_params={"sort_by": "id", "order": "asc"})
+        self.assertEqual(resolve_admin_sort(request, allowed=allowed, default=("date_joined", "desc")), ["id"])
+
+        bad = SimpleNamespace(query_params={"sort_by": "x", "order": "desc"})
+        self.assertEqual(
+            resolve_admin_sort(bad, allowed=allowed, default=("date_joined", "desc")),
+            ["-date_joined", "-id"],
+        )
+
 
 class AdminAIScenarioMultiAgentTests(TestCase):
     def setUp(self):

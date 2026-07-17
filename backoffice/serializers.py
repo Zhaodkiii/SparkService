@@ -11,8 +11,17 @@ from ai_config.models import (
     TrialApplication,
     TrialApplicationRequest,
 )
-from accounts.models import AccountDeactivation, AccountDeactivationAudit, AccountDeviceSession, TrustedDevice
+from ai_config.services import TrialService
+from accounts.models import (
+    AccountDeactivation,
+    AccountDeactivationAudit,
+    AccountDeviceSession,
+    LoginAudit,
+    SocialIdentity,
+    TrustedDevice,
+)
 from app_version.serializers import AppVersionConfigSerializer, VersionCheckLogSerializer
+from backoffice.medical_data_serializers import mask_email, mask_phone
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole
 from notification_center.models import NotificationCampaign, NotificationMessage, NotificationTemplate
 
@@ -76,18 +85,110 @@ def _compute_last_used_at(user):
     return max(candidates)
 
 
+def _resolve_user_trial(user):
+    if hasattr(user, "_cached_pro_trial"):
+        return getattr(user, "_cached_pro_trial", None)
+    trial = TrialService.get_user_trial(user=user)
+    user._cached_pro_trial = trial
+    return trial
+
+
 class AdminUserListSerializer(AdminUserSerializer):
     last_used_at = serializers.SerializerMethodField()
+    is_pro = serializers.SerializerMethodField()
+    pro_status = serializers.SerializerMethodField()
+    pro_expires_at = serializers.SerializerMethodField()
 
     class Meta(AdminUserSerializer.Meta):
-        fields = AdminUserSerializer.Meta.fields + ("last_used_at",)
+        fields = AdminUserSerializer.Meta.fields + (
+            "last_used_at",
+            "is_pro",
+            "pro_status",
+            "pro_expires_at",
+        )
 
     def get_last_used_at(self, obj):
         return _compute_last_used_at(obj)
 
+    def get_is_pro(self, obj):
+        trial = _resolve_user_trial(obj)
+        return bool(trial and trial.is_active_trial())
+
+    def get_pro_status(self, obj):
+        trial = _resolve_user_trial(obj)
+        if trial is None:
+            return TrialApplication.Status.NONE
+        return trial.status
+
+    def get_pro_expires_at(self, obj):
+        trial = _resolve_user_trial(obj)
+        return trial.expires_at if trial else None
+
 
 class AdminUserStatusSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
+
+
+class AdminUserProGrantSerializer(serializers.Serializer):
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    grant_days = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    expires_at = serializers.DateTimeField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        grant_days = attrs.get("grant_days")
+        expires_at = attrs.get("expires_at")
+        if grant_days is None and expires_at is None:
+            raise serializers.ValidationError("grant_days 或 expires_at 至少提供一个")
+        return attrs
+
+
+class AdminUserProRecycleSerializer(serializers.Serializer):
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+
+_SOCIAL_PROVIDER_LABELS = {
+    SocialIdentity.Provider.APPLE: "Apple",
+    SocialIdentity.Provider.GOOGLE: "Google",
+    SocialIdentity.Provider.PHONE: "手机",
+    SocialIdentity.Provider.EMAIL: "邮箱",
+    SocialIdentity.Provider.DEVICE: "设备",
+}
+
+
+def mask_provider_uid(*, provider: str, provider_uid: str) -> str:
+    uid = (provider_uid or "").strip()
+    if not uid:
+        return ""
+    if provider == SocialIdentity.Provider.EMAIL:
+        return mask_email(uid, reveal=False)
+    if provider == SocialIdentity.Provider.PHONE:
+        return mask_phone(uid, reveal=False)
+    if len(uid) <= 14:
+        return f"{uid[:6]}..." if len(uid) > 6 else "***"
+    return f"{uid[:10]}...{uid[-4:]}"
+
+
+class AdminUserSocialIdentitySerializer(serializers.ModelSerializer):
+    provider_label = serializers.SerializerMethodField()
+    provider_uid_masked = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SocialIdentity
+        fields = (
+            "id",
+            "provider",
+            "provider_label",
+            "provider_uid_masked",
+            "bundle_id",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_provider_label(self, obj: SocialIdentity) -> str:
+        return _SOCIAL_PROVIDER_LABELS.get(obj.provider, obj.provider or "-")
+
+    def get_provider_uid_masked(self, obj: SocialIdentity) -> str:
+        return mask_provider_uid(provider=obj.provider, provider_uid=obj.provider_uid) or "-"
 
 
 def mask_push_token(token: str) -> str:
@@ -108,6 +209,9 @@ class AdminUserTrustedDeviceSerializer(serializers.ModelSerializer):
             "id",
             "bundle_id",
             "device_id",
+            "app_version",
+            "build_version",
+            "bundle_identifier",
             "push_token_masked",
             "notifications_enabled",
             "platform",
@@ -244,15 +348,7 @@ class AdminNotificationSendSerializer(serializers.Serializer):
         return attrs
 
 
-class AdminNotificationUserQuerySerializer(serializers.Serializer):
-    q = serializers.CharField(required=False, allow_blank=True, default="")
-    page = serializers.IntegerField(required=False, min_value=1, default=1)
-    page_size = serializers.IntegerField(required=False, min_value=1, max_value=100, default=20)
-    only_enabled = serializers.BooleanField(required=False, default=True)
-    has_email = serializers.BooleanField(required=False, allow_null=True)
-    has_sms = serializers.BooleanField(required=False, allow_null=True)
-    has_apns = serializers.BooleanField(required=False, allow_null=True)
-    is_active = serializers.BooleanField(required=False, allow_null=True)
+from notification_center.serializers import AdminNotificationUserListQuerySerializer as AdminNotificationUserQuerySerializer
 
 
 class AdminNotificationLogQuerySerializer(serializers.Serializer):

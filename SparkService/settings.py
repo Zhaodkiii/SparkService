@@ -307,6 +307,12 @@ SIMPLE_JWT = {
 # -------------------------
 AI_TRIAL_DURATION_DAYS = int(os.getenv("AI_TRIAL_DURATION_DAYS", "15"))
 AI_TRIAL_AUTO_APPROVE_APPLICATIONS = os.getenv("AI_TRIAL_AUTO_APPROVE_APPLICATIONS", "true").lower() in ("1", "true", "yes", "y")
+# ISO 3166-1 alpha-2；登录自动发放 Pro 试用仅当设备 country_code 在此列表内时触发（默认仅 CN）
+AI_TRIAL_AUTO_GRANT_COUNTRY_CODES = [
+    item.strip().upper()
+    for item in os.getenv("AI_TRIAL_AUTO_GRANT_COUNTRY_CODES", "CN").split(",")
+    if item.strip()
+]
 
 # -------------------------
 # CORS

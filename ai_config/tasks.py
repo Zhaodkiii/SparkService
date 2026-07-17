@@ -73,7 +73,11 @@ def approve_trial_application_request_task(self, request_id: int):
         NotificationCenterService.send_to_user_sync(
             campaign_id=None,
             user_id=req.user_id,
-            channels=[NotificationMessage.Channel.APNS],
+            channels=[
+                NotificationMessage.Channel.APNS,
+                NotificationMessage.Channel.EMAIL,
+                NotificationMessage.Channel.SMS,
+            ],
             title="试用申请已通过",
             body="你的 Pro 模型试用申请已通过，现在可以使用服务端模型。",
             payload={

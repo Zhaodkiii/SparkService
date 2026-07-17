@@ -29,4 +29,7 @@ export interface AdminUser {
   date_joined: string;
   last_login: string | null;
   last_used_at?: string | null;
+  is_pro?: boolean;
+  pro_status?: string;
+  pro_expires_at?: string | null;
 }

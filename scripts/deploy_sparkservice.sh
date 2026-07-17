@@ -23,6 +23,12 @@ UPLOAD_DIR="$REMOTE_BASE/uploads"
 REMOTE_BIN="$REMOTE_BASE/bin"
 # 远程执行的部署脚本路径
 REMOTE_DEPLOY="$REMOTE_BIN/deploy_remote.sh"
+# 本地环境变量文件；每次发布会同步到服务器 $REMOTE_BASE/.deploy.env
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$SRC_DIR/.env}"
+# 是否同步本地 .env 到服务器 .deploy.env（1=启用，0=关闭）
+SYNC_DEPLOY_ENV="${SYNC_DEPLOY_ENV:-1}"
+# 服务器 Docker Compose 使用的环境变量文件
+REMOTE_DEPLOY_ENV="$REMOTE_BASE/.deploy.env"
 # PyPI 镜像源（阿里云 HTTPS，避免新版 pip 拒绝不可信 HTTP 源）
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 # 前端生产 API 地址
@@ -82,6 +88,10 @@ command -v ssh >/dev/null || { echo "ssh not found" >&2; exit 2; }
 command -v scp >/dev/null || { echo "scp not found" >&2; exit 2; }
 # 检查源码目录是否存在
 [[ -d "$SRC_DIR" ]] || { echo "SRC_DIR not found: $SRC_DIR" >&2; exit 2; }
+# 检查本地环境变量文件是否存在
+if [[ "$SYNC_DEPLOY_ENV" == "1" ]]; then
+  [[ -f "$DEPLOY_ENV_FILE" ]] || { echo "DEPLOY_ENV_FILE not found: $DEPLOY_ENV_FILE" >&2; exit 2; }
+fi
 # 检查服务器模板脚本目录是否存在
 [[ -d "$SERVER_TEMPLATE_DIR/bin" ]] || { echo "server template bin not found: $SERVER_TEMPLATE_DIR/bin" >&2; exit 2; }
 if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
@@ -194,6 +204,24 @@ else
 fi
 # 给远程脚本添加执行权限
 ssh "$REMOTE_HOST" "chmod +x '$REMOTE_BIN'/*.sh '$REMOTE_BASE'/docker/scripts/*.sh '$REMOTE_BASE'/docker/backup/*.sh"
+
+# ========== 5.1 同步生产环境变量 ==========
+# 服务器 Docker Compose 使用 $REMOTE_BASE/.deploy.env。
+# 每次发布都用本地 SparkService/.env 覆盖服务器 .deploy.env，确保最新配置随发布生效。
+if [[ "$SYNC_DEPLOY_ENV" == "1" ]]; then
+  echo "==> 同步环境变量：$DEPLOY_ENV_FILE -> $REMOTE_HOST:$REMOTE_DEPLOY_ENV"
+  REMOTE_ENV_TMP="$UPLOAD_DIR/.deploy.env.${TS}.tmp"
+  scp "$DEPLOY_ENV_FILE" "$REMOTE_HOST:$REMOTE_ENV_TMP"
+  ssh "$REMOTE_HOST" "set -euo pipefail
+    if [[ -f '$REMOTE_DEPLOY_ENV' ]]; then
+      cp '$REMOTE_DEPLOY_ENV' '$REMOTE_DEPLOY_ENV.bak_${TS}'
+    fi
+    install -m 600 '$REMOTE_ENV_TMP' '$REMOTE_DEPLOY_ENV'
+    rm -f '$REMOTE_ENV_TMP'
+  "
+else
+  echo "==> 跳过环境变量同步：SYNC_DEPLOY_ENV=0"
+fi
 
 # ========== 6. 本地构建前端并上传 ==========
 # 2C2G 服务器不适合跑 vue-tsc/vite build；前端在本机产出 dist，服务器只用 nginx 托管静态文件。

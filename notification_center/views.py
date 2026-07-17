@@ -15,6 +15,7 @@ from common.permissions import AdminCodePermission, AdminOnlyPermission
 from common.response import error_response, success_response
 from notification_center.models import ChannelDelivery, NotificationBusinessScene, NotificationCampaign, NotificationIntent, NotificationMessage, NotificationSuppression, NotificationTemplate, ProviderEvent
 from notification_center.serializers import (
+    AdminNotificationUserListQuerySerializer,
     NotificationBusinessSceneSerializer,
     NotificationCampaignSerializer,
     NotificationIntentSerializer,
@@ -31,7 +32,9 @@ class AdminNotificationUserListView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request):
-        result = NotificationCenterService.list_notification_users(**request.query_params.dict())
+        serializer = AdminNotificationUserListQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        result = NotificationCenterService.list_notification_users(**serializer.validated_data)
         return success_response(result, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
