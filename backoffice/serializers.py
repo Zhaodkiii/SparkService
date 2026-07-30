@@ -891,6 +891,32 @@ class AdminAuditLogSerializer(serializers.ModelSerializer):
         )
 
 
+class AdminLoginAuditSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LoginAudit
+        fields = (
+            "id",
+            "user",
+            "user_name",
+            "provider",
+            "outcome",
+            "ip_address",
+            "user_agent",
+            "bundle_id",
+            "device_id",
+            "raw_claims",
+            "request_id",
+            "created_at",
+        )
+
+    def get_user_name(self, obj):
+        if obj.user_id and obj.user:
+            return obj.user.username
+        return ""
+
+
 class AdminTrialApplicationSerializer(serializers.ModelSerializer):
     applicant = serializers.CharField(source="user.username", read_only=True)
     applicant_email = serializers.CharField(source="user.email", read_only=True)

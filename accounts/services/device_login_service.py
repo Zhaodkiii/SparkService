@@ -9,6 +9,7 @@ from django.db.utils import IntegrityError
 from django.utils import timezone
 
 from accounts.models import AccountDeviceSession, LoginAudit, SocialIdentity
+from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.device_credential_service import DeviceCredentialService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.login_service import LoginService
@@ -185,20 +186,19 @@ class DeviceLoginService:
                     created_user = True
                     account_resolution = "device_account_recreated"
 
-        LoginAudit.objects.create(
+        LoginAuditService.write_success(
             user=user,
             provider=LoginAudit.LoginProvider.DEVICE,
-            outcome=LoginAudit.LoginOutcome.SUCCESS,
-            ip_address=ip_address or "",
-            user_agent=user_agent or "",
             bundle_id=real_bundle_id,
             device_id=normalized_device_id,
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            user_agent=user_agent or "",
             raw_claims={
                 "identity_scope": identity_scope,
                 "account_resolution": account_resolution,
                 "device_id_hash": DeviceCredentialService.device_id_audit_tail(normalized_device_id),
             },
-            request_id=request_id or "",
         )
 
         LoginService._prepare_login_entitlements(

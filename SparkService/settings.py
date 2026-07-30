@@ -435,6 +435,8 @@ if LOG_FORMAT not in {"console", "json"}:
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "30"))
 LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "30"))
 LOG_ROOT = Path(os.getenv("LOG_ROOT", BASE_DIR / "logs"))
+# Optional host path hint for backoffice display only; never used for file reads.
+LOG_HOST_PATH_HINT = os.getenv("LOG_HOST_PATH_HINT", "").strip()
 LOG_DIR = LOG_ROOT / os.getenv("LOG_DATE", "")
 if not os.getenv("LOG_DATE"):
     from datetime import datetime

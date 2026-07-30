@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.utils import IntegrityError
 
 from accounts.models import LoginAudit, SocialIdentity
+from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.device_credential_service import DeviceCredentialService
 from accounts.services.device_login_service import DeviceLoginService
 from accounts.services.deactivation_service import DeactivationService
@@ -240,22 +241,21 @@ class AccountLoginResolutionService:
                     if on_existing_user is not None:
                         on_existing_user(user)
 
-        LoginAudit.objects.create(
+        LoginAuditService.write_success(
             user=user,
             provider=login_audit_provider
             or AccountLoginResolutionService._audit_provider(provider),
-            outcome=LoginAudit.LoginOutcome.SUCCESS,
-            ip_address=ip_address or "",
-            user_agent=user_agent or "",
             bundle_id=real_bundle,
             device_id=normalized_device_id,
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            user_agent=user_agent or "",
             raw_claims={
                 **verified_claims,
                 "identity_scope": scope,
                 "account_resolution": account_resolution,
                 "previous_device_account_id": previous_device_account_id,
             },
-            request_id=request_id or "",
         )
 
         cancel_result = DeactivationService.cancel_pending_on_login(

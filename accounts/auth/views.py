@@ -16,7 +16,9 @@ from accounts.auth.serializers import (
     PasswordLoginSerializer,
     TokenRefreshSerializer,
 )
+from accounts.models import LoginAudit
 from accounts.services.device_login_service import DeviceLoginService
+from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.login_service import LoginService
 from common.exceptions import APIError
@@ -81,7 +83,31 @@ class TokenRefreshView(APIView):
         provided_refresh = serializer.validated_data["refresh_token"]
         bundle_id = serializer.validated_data.get("bundle_id", "") or ""
         device_id = serializer.validated_data.get("device_id", "") or ""
+        meta = request.META
+        ip_address = meta.get("HTTP_X_FORWARDED_FOR", meta.get("REMOTE_ADDR", "")) or ""
+        user_agent = meta.get("HTTP_USER_AGENT", "") or ""
 
+        try:
+            return self._refresh_tokens(
+                provided_refresh=provided_refresh,
+                bundle_id=bundle_id,
+                device_id=device_id,
+                request_id=request_id,
+            )
+        except APIError as exc:
+            LoginAuditService.write_failure_from_api_error(
+                exc=exc,
+                provider=LoginAudit.LoginProvider.DEVICE if device_id else LoginAudit.LoginProvider.PASSWORD,
+                bundle_id=bundle_id,
+                device_id=device_id,
+                request_id=request_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                raw_claims={"failure_stage": "token_refresh"},
+            )
+            raise
+
+    def _refresh_tokens(self, *, provided_refresh: str, bundle_id: str, device_id: str, request_id: str):
         try:
             refresh_claims = dict(RefreshToken(provided_refresh).payload)
         except Exception:
@@ -252,20 +278,35 @@ class AppleLoginView(APIView):
         # 获取序列化器校验通过后的合法数据
         data = serializer.validated_data
 
-        # 调用登录服务层：执行苹果登录核心逻辑（认证、创建/更新用户、颁发token）
-        result = LoginService.authenticate_apple_and_issue_tokens(
-            identity_token=data["identity_token"],  # 苹果授权的身份令牌
-            bundle_id=data["bundle_id"],  # 应用Bundle ID（iOS应用标识）
-            nonce=data.get("nonce", "") or "",  # 随机字符串，防重放攻击
-            user_identifier=data.get("user", "") or "",  # 苹果用户唯一标识
-            email=data.get("email", "") or "",  # 用户邮箱（苹果可能加密）
-            full_name=data.get("full_name", "") or "",  # 用户姓名
-            ip_address=ip_address,  # 客户端IP
-            user_agent=user_agent,  # 客户端设备信息
-            device_id=data.get("device_id", "") or "",  # 设备唯一标识
-            device_secret=data.get("device_secret", "") or "",
-            request_id=getattr(request, "request_id", "") or "",  # 请求追踪ID
-        )
+        try:
+            result = LoginService.authenticate_apple_and_issue_tokens(
+                identity_token=data["identity_token"],
+                bundle_id=data["bundle_id"],
+                nonce=data.get("nonce", "") or "",
+                user_identifier=data.get("user", "") or "",
+                email=data.get("email", "") or "",
+                full_name=data.get("full_name", "") or "",
+                ip_address=ip_address,
+                user_agent=user_agent,
+                device_id=data.get("device_id", "") or "",
+                device_secret=data.get("device_secret", "") or "",
+                request_id=getattr(request, "request_id", "") or "",
+            )
+        except APIError as exc:
+            LoginAuditService.write_failure_from_api_error(
+                exc=exc,
+                provider=LoginAudit.LoginProvider.APPLE,
+                bundle_id=data.get("bundle_id", "") or "",
+                device_id=data.get("device_id", "") or "",
+                request_id=request_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                raw_claims={
+                    "failure_stage": "apple_login",
+                    "apple_user_identifier": data.get("user", "") or "",
+                },
+            )
+            raise
 
         # 记录日志：苹果登录成功，记录关键信息（用户ID、是否新用户等）
         flow_logger.info(
@@ -308,15 +349,28 @@ class DeviceLoginView(APIView):
         ip_address = meta.get("HTTP_X_FORWARDED_FOR", meta.get("REMOTE_ADDR", "")) or ""
         user_agent = meta.get("HTTP_USER_AGENT", "") or ""
 
-        result = DeviceLoginService.authenticate_and_issue_tokens(
-            bundle_id=data["bundle_id"],
-            device_id=data["device_id"],
-            device_secret=data["device_secret"],
-            ip_address=ip_address,
-            user_agent=user_agent,
-            request_id=request_id,
-            attestation=data.get("attestation", "") or "",
-        )
+        try:
+            result = DeviceLoginService.authenticate_and_issue_tokens(
+                bundle_id=data["bundle_id"],
+                device_id=data["device_id"],
+                device_secret=data["device_secret"],
+                ip_address=ip_address,
+                user_agent=user_agent,
+                request_id=request_id,
+                attestation=data.get("attestation", "") or "",
+            )
+        except APIError as exc:
+            LoginAuditService.write_failure_from_api_error(
+                exc=exc,
+                provider=LoginAudit.LoginProvider.DEVICE,
+                bundle_id=data.get("bundle_id", "") or "",
+                device_id=data.get("device_id", "") or "",
+                request_id=request_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                raw_claims={"failure_stage": "device_login"},
+            )
+            raise
         flow_logger.info(
             "设备登录成功",
             extra={

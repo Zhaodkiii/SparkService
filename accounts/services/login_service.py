@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.utils import IntegrityError, OperationalError, ProgrammingError
 from common.exceptions import APIError
 from accounts.models import LoginAudit, SocialIdentity
+from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.deactivation_service import DeactivationService
 from accounts.services.device_linking_service import DeviceLinkingService
@@ -200,16 +201,16 @@ class LoginService:
         user = LoginService._find_user_by_identifier(identifier, bundle_id=bundle_id)
 
         if not user or not user.check_password(password):
-            LoginAudit.objects.create(
-                user=None,
+            LoginAuditService.write_failure(
                 provider=provider,
-                outcome=LoginAudit.LoginOutcome.FAILED,
-                ip_address=ip_address,
-                user_agent=user_agent,
                 bundle_id=bundle_id or "",
                 device_id=device_id or "",
-                raw_claims=None,
                 request_id=request_id or "",
+                ip_address=ip_address,
+                user_agent=user_agent,
+                status_code=401,
+                error_code=40101,
+                error_message="Invalid credentials",
             )
             flow_logger.warning(
                 "密码登录鉴权失败",
@@ -239,16 +240,14 @@ class LoginService:
 
         cancel_result = DeactivationService.cancel_pending_on_login(user=user, request_id=request_id)
 
-        LoginAudit.objects.create(
+        LoginAuditService.write_success(
             user=user,
             provider=provider,
-            outcome=LoginAudit.LoginOutcome.SUCCESS,
-            ip_address=ip_address,
-            user_agent=user_agent,
             bundle_id=bundle_id or "",
             device_id=device_id or "",
-            raw_claims=None,
             request_id=request_id or "",
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         LoginService._prepare_login_entitlements(
