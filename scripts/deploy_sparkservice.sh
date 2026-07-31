@@ -21,7 +21,7 @@ OPEN_WEB_REMOTE_DIR="${OPEN_WEB_REMOTE_DIR:-$REMOTE_BASE/shared/open-web-dist}"
 UPLOAD_DIR="$REMOTE_BASE/uploads"
 # 远程脚本存放目录
 REMOTE_BIN="$REMOTE_BASE/bin"
-# 远程执行的部署脚本路径
+# 远程执行的部署脚本路径 这会是就分支。
 REMOTE_DEPLOY="$REMOTE_BIN/deploy_remote.sh"
 # 本地环境变量文件；每次发布会同步到服务器 $REMOTE_BASE/.deploy.env
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$SRC_DIR/.env}"
