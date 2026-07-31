@@ -315,6 +315,21 @@ AI_TRIAL_AUTO_GRANT_COUNTRY_CODES = [
 ]
 
 # -------------------------
+# AI Chat Bridge Token (DeepTutor)
+# -------------------------
+AI_CHAT_ALLOWED_BUNDLES = [
+    item.strip()
+    for item in os.getenv("AI_CHAT_ALLOWED_BUNDLES", "cn.zhaodk.SupportClient").split(",")
+    if item.strip()
+]
+AI_CHAT_BRIDGE_TOKEN_TTL_MINUTES = int(os.getenv("AI_CHAT_BRIDGE_TOKEN_TTL_MINUTES", "10"))
+DEEPTUTOR_HTTP_BASE_URL = (os.getenv("DEEPTUTOR_HTTP_BASE_URL") or "").strip()
+DEEPTUTOR_WS_URL = (os.getenv("DEEPTUTOR_WS_URL") or "").strip()
+DEEPTUTOR_BRIDGE_JWT_SECRET = (os.getenv("DEEPTUTOR_BRIDGE_JWT_SECRET") or "").strip()
+DEEPTUTOR_LLM_PROFILE_ID = (os.getenv("DEEPTUTOR_LLM_PROFILE_ID") or "").strip()
+DEEPTUTOR_LLM_MODEL_ID = (os.getenv("DEEPTUTOR_LLM_MODEL_ID") or "").strip()
+
+# -------------------------
 # CORS
 # -------------------------
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "false").lower() in ("1", "true", "yes", "y")
@@ -435,6 +450,8 @@ if LOG_FORMAT not in {"console", "json"}:
 LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "30"))
 LOG_RETENTION_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "30"))
 LOG_ROOT = Path(os.getenv("LOG_ROOT", BASE_DIR / "logs"))
+# Optional host path hint for backoffice display only; never used for file reads.
+LOG_HOST_PATH_HINT = os.getenv("LOG_HOST_PATH_HINT", "").strip()
 LOG_DIR = LOG_ROOT / os.getenv("LOG_DATE", "")
 if not os.getenv("LOG_DATE"):
     from datetime import datetime

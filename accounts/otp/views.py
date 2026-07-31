@@ -11,7 +11,10 @@ from accounts.otp.serializers import (
     PhoneOTPRequestSerializer,
     PhoneOTPVerifySerializer,
 )
+from accounts.models import LoginAudit
+from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.otp_service import OTPService
+from common.exceptions import APIError
 
 flow_logger = logging.getLogger("accounts.flow")
 
@@ -77,17 +80,31 @@ class EmailOTPVerifyView(APIView):
         device_secret = serializer.validated_data.get("device_secret", "") or ""
         device_secret = serializer.validated_data.get("device_secret", "") or ""
 
-        result = OTPService.verify_email_otp_and_issue_tokens(
-            otp_id=serializer.validated_data["otp_id"],
-            email=serializer.validated_data["email"],
-            code=serializer.validated_data["code"],
-            request_id=getattr(request, "request_id", "") or "",
-            ip_address=ip_address,
-            user_agent=user_agent,
-            bundle_id=bundle_id,
-            device_id=device_id,
-            device_secret=device_secret,
-        )
+        try:
+            result = OTPService.verify_email_otp_and_issue_tokens(
+                otp_id=serializer.validated_data["otp_id"],
+                email=serializer.validated_data["email"],
+                code=serializer.validated_data["code"],
+                request_id=getattr(request, "request_id", "") or "",
+                ip_address=ip_address,
+                user_agent=user_agent,
+                bundle_id=bundle_id,
+                device_id=device_id,
+                device_secret=device_secret,
+            )
+        except APIError as exc:
+            if exc.code not in {40013}:
+                LoginAuditService.write_failure_from_api_error(
+                    exc=exc,
+                    provider=LoginAudit.LoginProvider.EMAIL_OTP,
+                    bundle_id=bundle_id,
+                    device_id=device_id,
+                    request_id=request_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    raw_claims={"failure_stage": "email_otp_verify"},
+                )
+            raise
         flow_logger.info(
             "auth.otp.verify.success",
             extra={
@@ -164,17 +181,31 @@ class PhoneOTPVerifyView(APIView):
         device_id = serializer.validated_data.get("device_id", "") or ""
         device_secret = serializer.validated_data.get("device_secret", "") or ""
 
-        result = OTPService.verify_phone_otp_and_issue_tokens(
-            otp_id=serializer.validated_data["otp_id"],
-            phone_number=serializer.validated_data["phone_number"],
-            code=serializer.validated_data["code"],
-            request_id=request_id,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            bundle_id=bundle_id,
-            device_id=device_id,
-            device_secret=device_secret,
-        )
+        try:
+            result = OTPService.verify_phone_otp_and_issue_tokens(
+                otp_id=serializer.validated_data["otp_id"],
+                phone_number=serializer.validated_data["phone_number"],
+                code=serializer.validated_data["code"],
+                request_id=request_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                bundle_id=bundle_id,
+                device_id=device_id,
+                device_secret=device_secret,
+            )
+        except APIError as exc:
+            if exc.code not in {40043}:
+                LoginAuditService.write_failure_from_api_error(
+                    exc=exc,
+                    provider=LoginAudit.LoginProvider.PHONE_OTP,
+                    bundle_id=bundle_id,
+                    device_id=device_id,
+                    request_id=request_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    raw_claims={"failure_stage": "phone_otp_verify"},
+                )
+            raise
         flow_logger.info(
             "auth.phone_otp.verify.success",
             extra={

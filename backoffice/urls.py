@@ -57,6 +57,12 @@ from backoffice.conversation_views import (
     AdminConversationUserListView,
     AdminConversationUserSummaryView,
 )
+from backoffice.system_log_views import (
+    AdminLoginAuditListView,
+    AdminSystemLogDetailView,
+    AdminSystemLogListView,
+    AdminSystemLogModuleListView,
+)
 from backoffice.medical_data_views import (
     AdminMedicalDataAttachmentDownloadView,
     AdminMedicalDataGlobalStatsView,
@@ -120,6 +126,10 @@ urlpatterns = [
     path("rbac/roles/<int:role_id>/permissions/", AdminRolePermissionAssignView.as_view(), name="admin-rbac-role-permission-assign"),
     path("rbac/permissions/", AdminPermissionListCreateView.as_view(), name="admin-rbac-permission-list-create"),
     path("audit/logs/", AdminAuditLogListView.as_view(), name="admin-audit-log-list"),
+    path("audit/login-logs/", AdminLoginAuditListView.as_view(), name="admin-login-audit-list"),
+    path("audit/system-log-modules/", AdminSystemLogModuleListView.as_view(), name="admin-system-log-module-list"),
+    path("audit/system-logs/", AdminSystemLogListView.as_view(), name="admin-system-log-list"),
+    path("audit/system-logs/detail/", AdminSystemLogDetailView.as_view(), name="admin-system-log-detail"),
     path("conversations/users/", AdminConversationUserListView.as_view(), name="admin-conversation-user-list"),
     path("conversations/users/<int:user_id>/summary/", AdminConversationUserSummaryView.as_view(), name="admin-conversation-user-summary"),
     path("conversations/users/<int:user_id>/threads/", AdminConversationThreadListView.as_view(), name="admin-conversation-thread-list"),

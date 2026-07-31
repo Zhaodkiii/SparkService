@@ -170,7 +170,15 @@ const fallbackMenus = [
     ],
   },
   { code: 'menu:rbac', name: '权限管理', path: '/rbac', children: [] },
-  { code: 'menu:audit', name: '审计日志', path: '/audit', children: [] },
+  {
+    code: 'menu:audit',
+    name: '审计日志',
+    path: '/audit',
+    children: [
+      { code: 'menu:audit:operator', name: '操作员日志', path: '/audit/admin', children: [] },
+      { code: 'menu:audit:system', name: '系统日志', path: '/audit/system', children: [] },
+    ],
+  },
   {
     code: 'menu:conversations',
     name: '对话',
@@ -249,6 +257,9 @@ function resolveOpenKeys(path: string) {
   }
   if (path.startsWith('/articles/')) {
     return ['/articles'];
+  }
+  if (path.startsWith('/audit/')) {
+    return ['/audit'];
   }
   return [];
 }

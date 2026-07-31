@@ -67,7 +67,15 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/ai-config/providers', name: 'AIProviders', component: () => import('../views/AIProvidersView.vue'), meta: { title: 'Provider配置' } },
       { path: '/ai-config/trials', name: 'AITrials', component: () => import('../views/AITrialsView.vue'), meta: { title: '试用期' } },
       { path: '/rbac', name: 'RBAC', component: () => import('../views/RBACView.vue'), meta: { title: '权限管理' } },
-      { path: '/audit', name: 'Audit', component: () => import('../views/AuditView.vue'), meta: { title: '审计日志' } },
+      {
+        path: '/audit',
+        component: () => import('../views/AuditView.vue'),
+        children: [
+          { path: '', redirect: '/audit/admin' },
+          { path: 'admin', name: 'OperatorAudit', component: () => import('../views/audit/OperatorAuditView.vue'), meta: { title: '操作员日志', keepAlive: true } },
+          { path: 'system', name: 'SystemLog', component: () => import('../views/audit/SystemLogView.vue'), meta: { title: '系统日志', keepAlive: true } },
+        ],
+      },
     ],
   },
 ];

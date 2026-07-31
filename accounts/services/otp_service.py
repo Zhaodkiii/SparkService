@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 from common.exceptions import APIError
 from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
+from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
 from notification_center.services import NotificationCenterService
@@ -408,16 +409,16 @@ class OTPService:
             if otp.attempts >= OTPService.MAX_ATTEMPTS:
                 otp.locked_until = now + timedelta(minutes=OTPService.LOCKOUT_MINUTES)
             otp.save(update_fields=["attempts", "locked_until"])
-            LoginAudit.objects.create(
-                user=None,
+            LoginAuditService.write_failure(
                 provider=LoginAudit.LoginProvider.EMAIL_OTP,
-                outcome=LoginAudit.LoginOutcome.FAILED,
-                ip_address=ip_address or "",
-                user_agent=user_agent or "",
                 bundle_id=bundle_id or "",
                 device_id=device_id or "",
-                raw_claims=None,
                 request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+                status_code=400,
+                error_code=40013,
+                error_message="Invalid OTP",
             )
             flow_logger.warning(
                 "auth.otp.verify.service.failed",
@@ -560,16 +561,17 @@ class OTPService:
             if otp.attempts >= OTPService.MAX_ATTEMPTS:
                 otp.locked_until = now + timedelta(minutes=OTPService.LOCKOUT_MINUTES)
             otp.save(update_fields=["attempts", "locked_until"])
-            LoginAudit.objects.create(
-                user=None,
+            LoginAuditService.write_failure(
                 provider=LoginAudit.LoginProvider.PHONE_OTP,
-                outcome=LoginAudit.LoginOutcome.FAILED,
-                ip_address=ip_address or "",
-                user_agent=user_agent or "",
                 bundle_id=normalized_bundle_id,
                 device_id=device_id or "",
-                raw_claims={"phone_number": normalized_phone},
                 request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+                status_code=400,
+                error_code=40043,
+                error_message="Invalid OTP",
+                raw_claims={"phone_number": normalized_phone},
             )
             raise APIError("Invalid OTP", code=40043, status_code=400)
 

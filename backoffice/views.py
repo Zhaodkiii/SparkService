@@ -2295,9 +2295,32 @@ class AdminAuditLogListView(APIView):
         if action:
             queryset = queryset.filter(action__icontains=action)
 
+        resource_type = (request.query_params.get("resource_type") or "").strip()
+        if resource_type:
+            queryset = queryset.filter(resource_type__icontains=resource_type)
+
+        request_id = (request.query_params.get("request_id") or "").strip()
+        if request_id:
+            queryset = queryset.filter(request_id=request_id)
+
+        path = (request.query_params.get("path") or "").strip()
+        if path:
+            queryset = queryset.filter(path__icontains=path)
+
+        user_id = (request.query_params.get("user_id") or "").strip()
+        if user_id.isdigit():
+            queryset = queryset.filter(user_id=int(user_id))
+
         status_code = (request.query_params.get("status_code") or "").strip()
         if status_code.isdigit():
             queryset = queryset.filter(status_code=int(status_code))
+
+        date_from = (request.query_params.get("date_from") or "").strip()
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        date_to = (request.query_params.get("date_to") or "").strip()
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
 
         page = int(request.query_params.get("page", "1"))
         page_size = min(int(request.query_params.get("page_size", "20")), 100)
