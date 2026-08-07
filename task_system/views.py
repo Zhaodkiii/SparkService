@@ -11,6 +11,8 @@ from rest_framework.views import APIView
 
 from common.response import error_response, success_response
 from medical.models import Member
+from medical.services.member_permission_gate import MemberPermissionGate
+from medical.services.member_permission_service import MemberPermissionDenied
 from task_system.notification_tasks import dispatch_task_notification_task
 from task_system.models import (
     Task,
@@ -51,13 +53,49 @@ class _TaskBaseAPIView(APIView):
         return parsed
 
     def _member_or_404(self, member_id: int):
-        member = Member.objects.filter(id=member_id, user_id=self.request.user.id, is_deleted=False).first()
+        try:
+            MemberPermissionGate.require_access(self.request.user, member_id)
+        except PermissionError:
+            return None
+        member = Member.objects.filter(id=member_id, is_deleted=False).first()
         if member is None:
             return None
         return member
 
     def _task_or_404(self, task_id: int):
-        return Task.objects.filter(id=task_id, member__user_id=self.request.user.id).first()
+        return MemberPermissionGate.filter_qs(Task.objects.filter(id=task_id), self.request.user).first()
+
+    def _task_queryset(self):
+        return MemberPermissionGate.filter_qs(
+            Task.objects.select_related("member", "creator").prefetch_related("task_medical", "task_exercise", "task_diet"),
+            self.request.user,
+        )
+
+    @staticmethod
+    def _parse_member_id(member_id_raw: str):
+        try:
+            return int(member_id_raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _permission_denied(self, exc: MemberPermissionDenied | None = None):
+        if exc is not None:
+            return MemberPermissionGate.permission_denied_response(exc, error_response)
+        return error_response(msg="permission_denied", status_code=status.HTTP_403_FORBIDDEN)
+
+    @staticmethod
+    def _serializer_permission_error(serializer: TaskSerializer):
+        member_errors = serializer.errors.get("member")
+        if not member_errors:
+            return None
+        errors = member_errors if isinstance(member_errors, list) else [member_errors]
+        for item in errors:
+            code = item.get("code") if isinstance(item, dict) else None
+            if code == "member_permission_denied":
+                return error_response(msg="permission_denied", data=item, status_code=status.HTTP_403_FORBIDDEN)
+            if code == "member_not_accessible":
+                return error_response(msg="member_not_found", data=item, status_code=status.HTTP_404_NOT_FOUND)
+        return None
 
 
 class TaskListCreateAPI(_TaskBaseAPIView):
@@ -67,13 +105,15 @@ class TaskListCreateAPI(_TaskBaseAPIView):
         member_id = request.query_params.get("member_id")
         since = self._parse_since(request.query_params.get("since", ""))
 
-        queryset = (
-            Task.objects.select_related("member", "creator")
-            .prefetch_related("task_medical", "task_exercise", "task_diet")
-            .filter(member__user_id=request.user.id)
-        )
+        queryset = self._task_queryset()
         if member_id:
-            queryset = queryset.filter(member_id=member_id)
+            parsed_member_id = self._parse_member_id(member_id)
+            if parsed_member_id is None:
+                return error_response(msg="invalid_member_id", status_code=status.HTTP_400_BAD_REQUEST)
+            member = self._member_or_404(parsed_member_id)
+            if member is None:
+                return error_response(msg="member_not_found", status_code=status.HTTP_404_NOT_FOUND)
+            queryset = queryset.filter(member_id=parsed_member_id)
         if since:
             queryset = queryset.filter(updated_at__gt=since)
         serializer = TaskSerializer(queryset.order_by("-updated_at"), many=True)
@@ -82,6 +122,9 @@ class TaskListCreateAPI(_TaskBaseAPIView):
     def post(self, request):
         serializer = TaskSerializer(data=request.data, context={"request": request})
         if serializer.is_valid() is False:
+            permission_error = self._serializer_permission_error(serializer)
+            if permission_error is not None:
+                return permission_error
             return error_response(msg="invalid_params", data=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
@@ -127,9 +170,18 @@ class TaskDetailAPI(_TaskBaseAPIView):
         task = self._task_or_404(task_id)
         if task is None:
             return error_response(msg="task_not_found", status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_edit(request.user, task.member_id)
+        except MemberPermissionDenied as exc:
+            return self._permission_denied(exc)
+        except PermissionError:
+            return self._permission_denied()
 
         serializer = TaskSerializer(task, data=request.data, partial=True, context={"request": request})
         if serializer.is_valid() is False:
+            permission_error = self._serializer_permission_error(serializer)
+            if permission_error is not None:
+                return permission_error
             return error_response(msg="invalid_params", data=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
 
         task = serializer.save()
@@ -144,6 +196,12 @@ class TaskCompleteAPI(_TaskBaseAPIView):
         task = self._task_or_404(task_id)
         if task is None:
             return error_response(msg="task_not_found", status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_edit(request.user, task.member_id)
+        except MemberPermissionDenied as exc:
+            return self._permission_denied(exc)
+        except PermissionError:
+            return self._permission_denied()
 
         with transaction.atomic():
             executed_at = request.data.get("executed_at")
@@ -211,6 +269,12 @@ class TaskCancelAPI(_TaskBaseAPIView):
         task = self._task_or_404(task_id)
         if task is None:
             return error_response(msg="task_not_found", status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_edit(request.user, task.member_id)
+        except MemberPermissionDenied as exc:
+            return self._permission_denied(exc)
+        except PermissionError:
+            return self._permission_denied()
 
         with transaction.atomic():
             task.status = TaskStatus.CANCELED
@@ -227,7 +291,7 @@ class TaskCancelAPI(_TaskBaseAPIView):
 
 
 class TaskExecutionListAPI(_TaskBaseAPIView):
-    """GET /tasks/{id}/executions。"""
+    """GET/POST /tasks/{id}/executions。"""
 
     def get(self, request, task_id: int):
         task = self._task_or_404(task_id)
@@ -236,6 +300,70 @@ class TaskExecutionListAPI(_TaskBaseAPIView):
 
         queryset = TaskExecution.objects.filter(task_id=task.id).order_by("-executed_at")
         return success_response(TaskExecutionSerializer(queryset, many=True).data)
+
+    def post(self, request, task_id: int):
+        task = self._task_or_404(task_id)
+        if task is None:
+            return error_response(msg="task_not_found", status_code=status.HTTP_404_NOT_FOUND)
+        try:
+            MemberPermissionGate.require_edit(request.user, task.member_id)
+        except MemberPermissionDenied as exc:
+            return self._permission_denied(exc)
+        except PermissionError:
+            return self._permission_denied()
+
+        status_raw = (request.data.get("status") or "").strip().lower()
+        status_map = {
+            "done": TaskExecutionStatus.DONE,
+            "skipped": TaskExecutionStatus.SKIPPED,
+            "failed": TaskExecutionStatus.FAILED,
+        }
+        execution_status = status_map.get(status_raw)
+        if execution_status is None:
+            return error_response(msg="invalid_execution_status", status_code=status.HTTP_400_BAD_REQUEST)
+
+        executed_at = request.data.get("executed_at")
+        if isinstance(executed_at, str) and executed_at:
+            parsed_executed_at = parse_datetime(executed_at)
+            if parsed_executed_at is not None:
+                if timezone.is_naive(parsed_executed_at):
+                    parsed_executed_at = timezone.make_aware(parsed_executed_at, timezone.get_current_timezone())
+                executed_at = parsed_executed_at
+        if not executed_at:
+            executed_at = timezone.now()
+
+        with transaction.atomic():
+            if execution_status == TaskExecutionStatus.DONE:
+                task.status = TaskStatus.COMPLETED
+                task.save(update_fields=["status", "updated_at"])
+                _sync_sub_task_status(task, TaskStatus.COMPLETED, request.user.id)
+                TaskNotification.objects.filter(task=task, status=TaskNotificationStatus.PENDING).update(
+                    status=TaskNotificationStatus.SENT,
+                    sent_at=timezone.now(),
+                    updated_at=timezone.now(),
+                )
+
+            execution = TaskExecution.objects.create(
+                task=task,
+                user=request.user,
+                member=task.member,
+                business_type=request.data.get("business_type", task.business_type),
+                business_id=request.data.get("business_id", task.business_id),
+                related_sub_type=TaskCompleteAPI._related_sub_type(task.type),
+                related_sub_id=TaskCompleteAPI._related_sub_id(task),
+                status=execution_status,
+                executed_at=executed_at,
+                value=request.data.get("value") or {},
+                notes=request.data.get("notes", ""),
+            )
+
+        logger.info(
+            "task execution created task_id=%s status=%s by=%s",
+            task.id,
+            execution_status,
+            request.user.id,
+        )
+        return success_response(TaskExecutionSerializer(execution).data, msg="execution_created")
 
 
 class TaskNotificationListAPI(_TaskBaseAPIView):
@@ -257,9 +385,15 @@ class TaskSyncAPI(_TaskBaseAPIView):
         since = self._parse_since(request.query_params.get("since", ""))
         member_id = request.query_params.get("member_id")
 
-        tasks = Task.objects.filter(member__user_id=request.user.id)
+        tasks = self._task_queryset()
         if member_id:
-            tasks = tasks.filter(member_id=member_id)
+            parsed_member_id = self._parse_member_id(member_id)
+            if parsed_member_id is None:
+                return error_response(msg="invalid_member_id", status_code=status.HTTP_400_BAD_REQUEST)
+            member = self._member_or_404(parsed_member_id)
+            if member is None:
+                return error_response(msg="member_not_found", status_code=status.HTTP_404_NOT_FOUND)
+            tasks = tasks.filter(member_id=parsed_member_id)
 
         if since:
             tasks = tasks.filter(updated_at__gt=since)
@@ -283,7 +417,10 @@ class TaskQueryByMemberAPI(_TaskBaseAPIView):
         if not member_id:
             return error_response(msg="member_id_required", status_code=status.HTTP_400_BAD_REQUEST)
 
-        member = self._member_or_404(int(member_id))
+        parsed_member_id = self._parse_member_id(member_id)
+        if parsed_member_id is None:
+            return error_response(msg="invalid_member_id", status_code=status.HTTP_400_BAD_REQUEST)
+        member = self._member_or_404(parsed_member_id)
         if member is None:
             return error_response(msg="member_not_found", status_code=status.HTTP_404_NOT_FOUND)
 
@@ -311,7 +448,10 @@ class AITaskCandidateAnalyzeAPI(_TaskBaseAPIView):
         if not member_id:
             return error_response(msg="member_id_required", status_code=status.HTTP_400_BAD_REQUEST)
 
-        member = self._member_or_404(int(member_id))
+        parsed_member_id = self._parse_member_id(member_id)
+        if parsed_member_id is None:
+            return error_response(msg="invalid_member_id", status_code=status.HTTP_400_BAD_REQUEST)
+        member = self._member_or_404(parsed_member_id)
         if member is None:
             return error_response(msg="member_not_found", status_code=status.HTTP_404_NOT_FOUND)
 

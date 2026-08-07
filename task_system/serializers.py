@@ -2,6 +2,8 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from medical.models import Member
+from medical.services.member_permission_gate import MemberPermissionGate
+from medical.services.member_permission_service import MemberPermissionDenied
 from task_system.models import (
     Task,
     TaskDiet,
@@ -153,8 +155,19 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def validate_member(self, value: Member):
         request = self.context.get("request")
-        if request and value.user_id != request.user.id:
-            raise serializers.ValidationError("member does not belong to current user")
+        if request:
+            try:
+                MemberPermissionGate.require_create(request.user, value.id)
+            except MemberPermissionDenied as exc:
+                raise serializers.ValidationError(
+                    {
+                        "code": "member_permission_denied",
+                        "required_permission": exc.required_permission,
+                        "current_permission": exc.current_permission,
+                    }
+                )
+            except PermissionError:
+                raise serializers.ValidationError({"code": "member_not_accessible"})
         return value
 
     def validate(self, attrs):
