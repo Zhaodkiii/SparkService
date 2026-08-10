@@ -54,6 +54,8 @@ GENERATE_TASK_TOOL = {
             "properties": {
                 "member_id": {"type": "integer"},
                 "creator_id": {"type": "integer"},
+                "business_type": {"type": "string"},
+                "business_id": {"type": "string"},
                 "extracted": {
                     "type": "object",
                     "properties": {
@@ -119,6 +121,8 @@ TASK_GENERATION_JSON_SCHEMA = {
         "task_medical": {"type": "object"},
         "task_exercise": {"type": "object"},
         "task_diet": {"type": "object"},
+        "business_type": {"type": "string"},
+        "business_id": {"type": "string"},
     },
     "required": ["should_create"],
     "additionalProperties": False,
