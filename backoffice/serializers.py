@@ -511,7 +511,7 @@ def _resolve_provider_for_catalog_model(model_obj: AIModelCatalog):
 
 
 class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
-    model = serializers.SlugRelatedField(slug_field="name", queryset=AIModelCatalog.objects.filter(is_active=True))
+    model = serializers.SlugRelatedField(slug_field="name", queryset=AIModelCatalog.objects.all())
     model_id = serializers.IntegerField(read_only=True)
     display_name = serializers.CharField(max_length=128, required=False, allow_blank=True, trim_whitespace=False)
     bootstrap_name = serializers.SerializerMethodField()
@@ -554,6 +554,16 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
 
     def validate_display_name(self, value):
         return "" if value is None else str(value).strip()
+
+    def validate_model(self, value):
+        """新建或换基座须已激活；编辑时保留当前基座可豁免（即使目录已停用）。"""
+        if value is None:
+            return value
+        if self.instance is not None and self.instance.model_id == value.pk:
+            return value
+        if not value.is_active:
+            raise serializers.ValidationError("model_not_active")
+        return value
 
     def _resolve_provider(self, obj: AIScenarioModelBinding):
         return _resolve_provider_for_catalog_model(obj.model)

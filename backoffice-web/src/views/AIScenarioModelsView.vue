@@ -55,7 +55,10 @@
           :placeholder="displayNamePlaceholder"
         />
       </a-form-item>
-      <a-form-item label="基座模型" extra="从模型目录选择（须已激活且厂商已配置 API）；智能体可重复选择同一基座模型">
+      <a-form-item
+        label="基座模型"
+        extra="从模型目录选择（须已激活且厂商已配置 API）；智能体可重复选择同一基座模型；修改后智能体对外名与 baseModelName 会随之更新"
+      >
         <a-select
           v-model:value="form.model"
           show-search
@@ -63,7 +66,6 @@
           placeholder="选择模型"
           :options="modelSelectOptions"
           style="width: 100%"
-          :disabled="!isCreate"
         />
       </a-form-item>
       <a-form-item label="类型">
@@ -233,14 +235,22 @@ function scenarioLabel(key: string) {
   return map[key] || key;
 }
 
-const modelSelectOptions = computed(() =>
-  catalogRows.value
-    .filter((c) => c.is_active)
+const modelSelectOptions = computed(() => {
+  const currentModel = typeof form.model === 'string' ? form.model : '';
+  const options = catalogRows.value
+    .filter((c) => c.is_active || c.name === currentModel)
     .map((c) => ({
       value: c.name,
-      label: `${c.display_name}（${c.name}）`,
-    })),
-);
+      label: c.is_active ? `${c.display_name}（${c.name}）` : `${c.display_name}（${c.name}·已停用）`,
+    }));
+  if (currentModel && !options.some((item) => item.value === currentModel)) {
+    options.unshift({
+      value: currentModel,
+      label: `${currentModel}（当前·目录中不可用）`,
+    });
+  }
+  return options;
+});
 
 const displayNamePlaceholder = computed(() => {
   const modelName = typeof form.model === 'string' ? form.model : undefined;
@@ -393,6 +403,7 @@ async function submit() {
       message.success('已添加');
     } else {
       await updateScenarioBinding(Number(form.id), {
+        model: form.model,
         display_name: displayName,
         identity: form.identity,
         is_default: form.is_default,

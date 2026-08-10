@@ -717,6 +717,42 @@ class AdminAIScenarioMultiAgentTests(TestCase):
         self.assertEqual(update_resp.status_code, 200, update_resp.data)
         self.assertEqual(update_resp.data["data"]["display_name"], "更新后的名称")
 
+    def test_update_binding_base_model(self):
+        from ai_config.models import AIModelCatalog
+
+        other_model = AIModelCatalog.objects.create(
+            name="deepseek-v4-pro",
+            display_name="DeepSeek-V4-Pro",
+            company="TESTCO",
+        )
+        create_resp = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            {
+                "model": self.catalog_model.name,
+                "display_name": "高级健康助手",
+                "identity": self.agent_identity,
+                "temperature": 0.8,
+                "max_tokens": 12048,
+                "position": 2,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_resp.status_code, 201, create_resp.data)
+        binding_id = create_resp.data["data"]["id"]
+        old_bootstrap = create_resp.data["data"]["bootstrap_name"]
+
+        update_resp = self.client.patch(
+            f"/api/admin/v1/ai/scenario-models/{binding_id}/",
+            {"model": other_model.name},
+            format="json",
+        )
+        self.assertEqual(update_resp.status_code, 200, update_resp.data)
+        self.assertEqual(update_resp.data["data"]["model"], other_model.name)
+        self.assertEqual(update_resp.data["data"]["model_id"], other_model.id)
+        self.assertNotEqual(update_resp.data["data"]["bootstrap_name"], old_bootstrap)
+        self.assertIn(other_model.name, update_resp.data["data"]["bootstrap_name"])
+
     def test_create_duplicate_model_binding_still_rejected(self):
         payload = {
             "model": self.catalog_model.name,
