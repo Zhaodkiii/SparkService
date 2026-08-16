@@ -144,6 +144,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "business_id",
             "source",
             "notification_id",
+            "notification_enabled",
             "extra",
             "created_at",
             "updated_at",
@@ -182,6 +183,24 @@ class TaskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"task_exercise": "exercise task extension is required"})
         if task_type == TaskType.DIET and not (diet or getattr(self.instance, "task_diet", None)):
             raise serializers.ValidationError({"task_diet": "diet task extension is required"})
+
+        notification_enabled = attrs.get(
+            "notification_enabled",
+            getattr(self.instance, "notification_enabled", True),
+        )
+        if notification_enabled:
+            reminder_time = med.get("reminder_time") if med else None
+            if reminder_time is None and self.instance is not None:
+                try:
+                    reminder_time = self.instance.task_medical.reminder_time
+                except TaskMedical.DoesNotExist:
+                    reminder_time = None
+            start_time = attrs.get("start_time", getattr(self.instance, "start_time", None))
+            due_time = attrs.get("due_time", getattr(self.instance, "due_time", None))
+            if reminder_time is None and start_time is None and due_time is None:
+                raise serializers.ValidationError(
+                    {"notification_enabled": "enabled notification requires reminder_time, start_time, or due_time"}
+                )
         return attrs
 
     def create(self, validated_data):
@@ -236,6 +255,9 @@ class TaskSerializer(serializers.ModelSerializer):
                     "operator": user,
                 },
             )
+        # 校验阶段可能已缓存旧的一对一扩展；清缓存后响应和通知调度才能读取本次更新值。
+        for relation in ("task_medical", "task_exercise", "task_diet"):
+            task._state.fields_cache.pop(relation, None)
 
 
 class TaskPlanSerializer(serializers.ModelSerializer):
@@ -262,4 +284,4 @@ class TaskStatusSyncSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ("task_id", "status", "updated_at")
+        fields = ("task_id", "status", "notification_enabled", "updated_at")

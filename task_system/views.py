@@ -1,6 +1,4 @@
 import logging
-from datetime import timedelta
-
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -13,7 +11,6 @@ from common.response import error_response, success_response
 from medical.models import Member
 from medical.services.member_permission_gate import MemberPermissionGate
 from medical.services.member_permission_service import MemberPermissionDenied
-from task_system.notification_tasks import dispatch_task_notification_task
 from task_system.models import (
     Task,
     TaskDiet,
@@ -136,7 +133,9 @@ class TaskListCreateAPI(_TaskBaseAPIView):
         return success_response(output, msg="created", status_code=status.HTTP_201_CREATED)
 
     def _create_default_notification_if_needed(self, task: Task):
-        # 关键逻辑：创建后预置提醒策略，统一给 iOS 本地通知与服务端调度同步使用。
+        # 服务端仅保存提醒偏好/审计记录；首期实际触发由客户端本地通知负责。
+        if task.notification_enabled is False:
+            return
         reminder_time = task.start_time or task.due_time
         if task.type == TaskType.MEDICAL and hasattr(task, "task_medical") and task.task_medical.reminder_time:
             reminder_time = task.task_medical.reminder_time
@@ -149,7 +148,7 @@ class TaskListCreateAPI(_TaskBaseAPIView):
             "task_id": task.id,
             "repeat_type": task.repeat_type,
         }
-        notification = TaskNotification.objects.create(
+        TaskNotification.objects.create(
             task=task,
             member=task.member,
             status=TaskNotificationStatus.PENDING,
@@ -158,9 +157,45 @@ class TaskListCreateAPI(_TaskBaseAPIView):
             template_code="health_task_default",
         )
 
-        # 可选 Celery：如果设置了提醒时间，则由服务端异步调度一次提醒。
-        if reminder_time > timezone.now() - timedelta(seconds=5):
-            dispatch_task_notification_task.apply_async(args=[notification.id], eta=reminder_time)
+
+    @staticmethod
+    def sync_default_notification(task: Task):
+        pending = TaskNotification.objects.filter(task=task, status=TaskNotificationStatus.PENDING)
+        if task.notification_enabled is False or task.status != TaskStatus.PENDING:
+            pending.update(
+                status=TaskNotificationStatus.FAILED,
+                failed_reason="notification_disabled" if task.notification_enabled is False else "task_not_pending",
+                updated_at=timezone.now(),
+            )
+            return
+
+        reminder_time = task.start_time or task.due_time
+        if task.type == TaskType.MEDICAL and hasattr(task, "task_medical") and task.task_medical.reminder_time:
+            reminder_time = task.task_medical.reminder_time
+        if reminder_time is None:
+            return
+
+        params = {
+            "title": "健康任务提醒",
+            "content": f"你有一个待完成任务：{task.title}",
+            "task_id": task.id,
+            "repeat_type": task.repeat_type,
+        }
+        notification = pending.order_by("-id").first()
+        if notification is None:
+            TaskNotification.objects.create(
+                task=task,
+                member=task.member,
+                status=TaskNotificationStatus.PENDING,
+                reminder_time=reminder_time,
+                template_params=params,
+                template_code="health_task_default",
+            )
+        else:
+            notification.reminder_time = reminder_time
+            notification.template_params = params
+            notification.failed_reason = ""
+            notification.save(update_fields=["reminder_time", "template_params", "failed_reason", "updated_at"])
 
 
 class TaskDetailAPI(_TaskBaseAPIView):
@@ -184,7 +219,9 @@ class TaskDetailAPI(_TaskBaseAPIView):
                 return permission_error
             return error_response(msg="invalid_params", data=serializer.errors, status_code=status.HTTP_400_BAD_REQUEST)
 
-        task = serializer.save()
+        with transaction.atomic():
+            task = serializer.save()
+            TaskListCreateAPI.sync_default_notification(task)
         logger.info("task updated id=%s by=%s", task.id, request.user.id)
         return success_response(TaskSerializer(task).data, msg="updated")
 

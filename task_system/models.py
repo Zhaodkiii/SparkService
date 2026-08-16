@@ -89,6 +89,7 @@ class Task(TaskBaseModel):
     business_id = models.CharField("业务 ID", max_length=64, blank=True, default="", db_index=True)
     source = models.PositiveSmallIntegerField("任务来源", choices=TaskSource.choices, default=TaskSource.MANUAL, db_index=True)
     notification_id = models.CharField("通知标识", max_length=128, blank=True, default="", db_index=True)
+    notification_enabled = models.BooleanField("通知已开启", default=True, db_index=True)
 
     class Meta:
         db_table = "task"

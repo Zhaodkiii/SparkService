@@ -92,6 +92,7 @@ class SparkToolName(models.TextChoices):
 
     # 网络类
     SEARCH_ONLINE = "search_online", "联网搜索"
+    INSERT_HEALTH_CITATION_SOURCES = "insert_health_citation_sources", "插入健康引用来源"
     READ_WEB_PAGE = "read_web_page", "读取网页"
     SEARCH_ARXIV_PAPERS = "search_arxiv_papers", "搜索 arXiv 论文"
     EXTRACT_REMOTE_FILE_CONTENT = "extract_remote_file_content", "提取远程文件内容"

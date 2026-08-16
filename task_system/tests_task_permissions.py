@@ -1,4 +1,3 @@
-from unittest.mock import patch
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -62,8 +61,7 @@ class TaskMemberPermissionAPITests(APITestCase):
             },
         }
 
-    @patch("task_system.views.dispatch_task_notification_task.apply_async")
-    def test_editor_binding_can_create_task_for_shared_member(self, mock_apply_async):
+    def test_editor_binding_can_create_task_for_shared_member(self):
         self.client.force_authenticate(self.editor)
 
         response = self.client.post("/api/v1/tasks/", self._medical_task_payload(), format="json")
@@ -73,7 +71,48 @@ class TaskMemberPermissionAPITests(APITestCase):
         self.assertEqual(body["member"], self.member.id)
         self.assertEqual(Task.objects.filter(member=self.member, creator=self.editor).count(), 1)
         self.assertEqual(TaskMedical.objects.filter(task_id=body["id"], medical_task_type="睡眠管理").count(), 1)
-        mock_apply_async.assert_called_once()
+        self.assertTrue(body["notification_enabled"])
+
+    def test_notification_enabled_can_be_disabled_and_synced(self):
+        self.client.force_authenticate(self.owner)
+        created = self.client.post("/api/v1/tasks/", self._medical_task_payload(), format="json").json()["data"]
+
+        response = self.client.patch(
+            f"/api/v1/tasks/{created['id']}/",
+            {"notification_enabled": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.json()["data"]["notification_enabled"])
+        sync = self.client.get("/api/v1/tasks/sync/").json()["data"]
+        self.assertFalse(sync["tasks"][0]["notification_enabled"])
+        self.assertFalse(sync["task_statuses"][0]["notification_enabled"])
+
+    def test_enabled_notification_requires_effective_time(self):
+        self.client.force_authenticate(self.owner)
+        payload = self._medical_task_payload()
+        payload["start_time"] = None
+        payload["due_time"] = None
+        payload["task_medical"]["reminder_time"] = None
+
+        response = self.client.post("/api/v1/tasks/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("notification_enabled", response.json()["data"])
+
+    def test_disabled_notification_allows_task_without_time(self):
+        self.client.force_authenticate(self.owner)
+        payload = self._medical_task_payload()
+        payload["notification_enabled"] = False
+        payload["start_time"] = None
+        payload["due_time"] = None
+        payload["task_medical"]["reminder_time"] = None
+
+        response = self.client.post("/api/v1/tasks/", payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(response.json()["data"]["notification_enabled"])
 
     def test_viewer_binding_cannot_create_task_for_shared_member(self):
         self.client.force_authenticate(self.viewer)
