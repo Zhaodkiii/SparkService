@@ -121,6 +121,7 @@ const fallbackMenus = [
       { code: 'menu:users:list', name: '用户管理', path: '/users', children: [] },
       { code: 'menu:users:devices', name: '设备管理', path: '/users/devices', children: [] },
       { code: 'menu:users:deactivations', name: '注销管理', path: '/users/deactivations', children: [] },
+      { code: 'menu:users:blacklist', name: '黑名单管理', path: '/users/blacklist', children: [] },
     ],
   },
   {

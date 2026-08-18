@@ -135,7 +135,7 @@ class AliyunSMSProvider:
         return timezone.localtime(dt, timezone=ZoneInfo("Asia/Shanghai"))
 
     @staticmethod
-    def _send_request(*, phone_number: str, template_code: str, template_param: dict[str, Any]) -> SMSProviderResult:
+    def _send_request(*, phone_number: str, template_code: str, template_param: dict[str, Any] | None = None) -> SMSProviderResult:
         if dysms_models is None or util_models is None:
             return SMSProviderResult(False, False, "aliyun_sms_sdk_missing")
 
@@ -151,12 +151,15 @@ class AliyunSMSProvider:
         if not to:
             return SMSProviderResult(False, False, "phone_number_missing")
 
-        request = dysms_models.SendSmsRequest(
-            sign_name=sign_name,
-            template_code=template_code,
-            phone_numbers=to,
-            template_param=json.dumps(template_param),
-        )
+        params = template_param if isinstance(template_param, dict) else {}
+        request_kwargs: dict[str, Any] = {
+            "sign_name": sign_name,
+            "template_code": template_code,
+            "phone_numbers": to,
+        }
+        if params:
+            request_kwargs["template_param"] = json.dumps(params)
+        request = dysms_models.SendSmsRequest(**request_kwargs)
         runtime = util_models.RuntimeOptions()
 
         try:
@@ -179,13 +182,35 @@ class AliyunSMSProvider:
             "sign_name": sign_name,
             "phone_number_masked": AliyunSMSProvider._mask_phone_number(to),
             "template_code": template_code,
-            "template_param_keys": sorted(str(key) for key in template_param.keys()),
-            "template_param": template_param,
+            "template_param_keys": sorted(str(key) for key in params.keys()),
+            "template_param": params,
         }
 
         if getattr(response, "status_code", 0) == 200 and code == "OK":
             return SMSProviderResult(True, False, "", biz_id=biz_id, request_id=request_id, code=code, status="accepted", payload=payload)
         return SMSProviderResult(False, False, f"{code or 'SMS_ERROR'}:{message or 'unknown'}", biz_id=biz_id, request_id=request_id, code=code or "SMS_ERROR", status="failed", payload=payload)
+
+    @staticmethod
+    def send_with_template(
+        *,
+        phone_number: str,
+        template_code: str,
+        template_param: dict[str, Any] | None = None,
+    ) -> SMSProviderResult:
+        return AliyunSMSProvider._send_request(
+            phone_number=phone_number,
+            template_code=template_code,
+            template_param=template_param,
+        )
+
+    @staticmethod
+    def send_account_banned(*, phone_number: str) -> SMSProviderResult:
+        template_code = (getattr(settings, "ALIYUN_SMS_ACCOUNT_BANNED_TEMPLATE_CODE", "") or "").strip()
+        return AliyunSMSProvider.send_with_template(
+            phone_number=phone_number,
+            template_code=template_code,
+            template_param=None,
+        )
 
     @staticmethod
     def send(*, phone_number: str, title: str, body: str) -> SMSProviderResult:

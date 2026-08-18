@@ -186,6 +186,41 @@ class DeviceLoginService:
                     created_user = True
                     account_resolution = "device_account_recreated"
 
+        from accounts.services.access_control_service import AccessControlService
+
+        identities = AccessControlService._collect_user_identities(user=user)
+        AccessControlService.check(
+            user_id=user.id,
+            email=(user.email or ""),
+            phone=AccessControlService._phone_for_user(user),
+            provider=LoginAudit.LoginProvider.DEVICE,
+            bundle_id=real_bundle_id,
+            device_id=normalized_device_id,
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            user_agent=user_agent or "",
+        )
+        for email in identities["emails"]:
+            AccessControlService.check(
+                email=email,
+                provider=LoginAudit.LoginProvider.DEVICE,
+                bundle_id=real_bundle_id,
+                device_id=normalized_device_id,
+                request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+            )
+        for phone in identities["phones"]:
+            AccessControlService.check(
+                phone=phone,
+                provider=LoginAudit.LoginProvider.DEVICE,
+                bundle_id=real_bundle_id,
+                device_id=normalized_device_id,
+                request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+            )
+
         LoginAuditService.write_success(
             user=user,
             provider=LoginAudit.LoginProvider.DEVICE,

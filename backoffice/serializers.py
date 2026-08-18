@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import serializers
 
 from ai_config.models import (
@@ -13,6 +14,7 @@ from ai_config.models import (
 )
 from ai_config.services import TrialService
 from accounts.models import (
+    AccessDenyEntry,
     AccountDeactivation,
     AccountDeactivationAudit,
     AccountDeviceSession,
@@ -98,6 +100,7 @@ class AdminUserListSerializer(AdminUserSerializer):
     is_pro = serializers.SerializerMethodField()
     pro_status = serializers.SerializerMethodField()
     pro_expires_at = serializers.SerializerMethodField()
+    phone_number = serializers.SerializerMethodField()
 
     class Meta(AdminUserSerializer.Meta):
         fields = AdminUserSerializer.Meta.fields + (
@@ -105,7 +108,19 @@ class AdminUserListSerializer(AdminUserSerializer):
             "is_pro",
             "pro_status",
             "pro_expires_at",
+            "phone_number",
         )
+
+    def get_phone_number(self, obj):
+        identities = getattr(obj, "_phone_identities", None)
+        if identities:
+            return (identities[0].provider_uid or "").strip()
+        identity = (
+            SocialIdentity.objects.filter(user=obj, provider=SocialIdentity.Provider.PHONE)
+            .order_by("-updated_at", "-id")
+            .first()
+        )
+        return (identity.provider_uid if identity else "") or ""
 
     def get_last_used_at(self, obj):
         return _compute_last_used_at(obj)
@@ -127,6 +142,76 @@ class AdminUserListSerializer(AdminUserSerializer):
 
 class AdminUserStatusSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
+
+
+class AdminAccessDenyCreateSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField(required=False, allow_null=True)
+    phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    reason_note = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+    def validate(self, attrs):
+        user_id = attrs.get("user_id")
+        phone = (attrs.get("phone") or "").strip()
+        email = (attrs.get("email") or "").strip().lower()
+        provided = sum(bool(x) for x in [user_id, phone, email])
+        if provided != 1:
+            raise serializers.ValidationError("user_id、phone、email 必须且只能提供一个")
+        attrs["phone"] = phone
+        attrs["email"] = email
+        return attrs
+
+
+class AdminAccessDenyEntrySerializer(serializers.ModelSerializer):
+    is_active = serializers.SerializerMethodField()
+    display_value = serializers.SerializerMethodField()
+    sms_status = serializers.SerializerMethodField()
+    related_user_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AccessDenyEntry
+        fields = (
+            "id",
+            "dimension",
+            "dimension_value",
+            "display_value",
+            "reason_code",
+            "reason_note",
+            "source",
+            "related_user_id",
+            "related_user_display",
+            "expires_at",
+            "revoked_at",
+            "is_active",
+            "sms_status",
+            "created_by_id",
+            "metadata",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_is_active(self, obj):
+        if obj.revoked_at is not None:
+            return False
+        if obj.expires_at and obj.expires_at <= timezone.now():
+            return False
+        return True
+
+    def get_display_value(self, obj):
+        return obj.dimension_value
+
+    def get_sms_status(self, obj):
+        metadata = obj.metadata if isinstance(obj.metadata, dict) else {}
+        return metadata.get("sms_status", "")
+
+    def get_related_user_display(self, obj):
+        if not obj.related_user_id:
+            return ""
+        user = User.objects.filter(id=obj.related_user_id).only("username", "first_name", "email").first()
+        if user is None:
+            return str(obj.related_user_id)
+        name = (getattr(user, "first_name", None) or "").strip()
+        return name or user.username or str(user.id)
 
 
 class AdminUserProGrantSerializer(serializers.Serializer):

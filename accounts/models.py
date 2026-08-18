@@ -399,3 +399,37 @@ class AccountIdentityVerificationTicket(models.Model):
         indexes = [
             models.Index(fields=["user", "purpose", "expires_at"]),
         ]
+
+
+class AccessDenyEntry(models.Model):
+    """登录/注册黑名单：按 user_id、手机号、邮箱维度拦截。"""
+
+    class Dimension(models.TextChoices):
+        USER_ID = "user_id", "用户 ID"
+        PHONE = "phone", "手机号"
+        EMAIL = "email", "邮箱"
+
+    class Source(models.TextChoices):
+        ADMIN = "admin", "后台手动"
+        AUTO_EXPAND = "auto_expand", "用户封禁自动展开"
+
+    dimension = models.CharField(max_length=32, choices=Dimension.choices, db_index=True)
+    dimension_value = models.CharField(max_length=255, db_index=True)
+    reason_code = models.CharField(max_length=64, default="account_banned", db_index=True)
+    reason_note = models.TextField(blank=True, default="", db_comment="后台内部备注，不返回客户端")
+    source = models.CharField(max_length=32, choices=Source.choices, default=Source.ADMIN, db_index=True)
+    related_user_id = models.IntegerField(null=True, blank=True, db_index=True, db_comment="关联用户 ID（展示用）")
+    expires_at = models.DateTimeField(null=True, blank=True, db_index=True, db_comment="空=永久")
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_by_id = models.IntegerField(null=True, blank=True)
+    metadata = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table_comment = "登录注册黑名单：有效条目在应用层保证 dimension+dimension_value 唯一"
+        verbose_name = "访问拒绝条目"
+        verbose_name_plural = "访问拒绝条目"
+        indexes = [
+            models.Index(fields=["dimension", "dimension_value", "revoked_at"]),
+        ]

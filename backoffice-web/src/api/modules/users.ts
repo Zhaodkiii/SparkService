@@ -203,3 +203,56 @@ export function cancelDeactivation(deactivationId: number) {
 export function retryDeactivation(deactivationId: number) {
   return http.post(`/api/admin/v1/users/deactivations/${deactivationId}/retry/`, {});
 }
+
+export interface AdminAccessDenyEntry {
+  id: number;
+  dimension: 'user_id' | 'phone' | 'email';
+  dimension_value: string;
+  display_value: string;
+  reason_code: string;
+  reason_note: string;
+  source: string;
+  related_user_id: number | null;
+  related_user_display: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  is_active: boolean;
+  sms_status: string;
+  created_by_id: number | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccessDenyListResponse {
+  items: AdminAccessDenyEntry[];
+  pagination: Pagination;
+}
+
+export interface AccessDenyCreatePayload {
+  user_id?: number;
+  phone?: string;
+  email?: string;
+  reason_note?: string;
+}
+
+export function fetchAccessDenyList(params: {
+  page: number;
+  page_size: number;
+  q?: string;
+  dimension?: string;
+  active_only?: string;
+}) {
+  return http.get<unknown, AccessDenyListResponse>('/api/admin/v1/users/blacklist/', { params });
+}
+
+export function createAccessDenyEntry(payload: AccessDenyCreatePayload) {
+  return http.post<unknown, { result: Record<string, unknown>; entry: AdminAccessDenyEntry | null }>(
+    '/api/admin/v1/users/blacklist/',
+    payload,
+  );
+}
+
+export function revokeAccessDenyEntry(entryId: number) {
+  return http.post<unknown, AdminAccessDenyEntry>(`/api/admin/v1/users/blacklist/${entryId}/revoke/`, {});
+}

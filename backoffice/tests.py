@@ -2,8 +2,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from unittest.mock import patch
 
-from accounts.models import AccountDeviceSession, TrustedDevice
+from accounts.models import AccessDenyEntry, SocialIdentity
 from backoffice.models import AdminAuditLog, AdminRole, AdminUserRole
 from backoffice.rbac import bootstrap_admin_permissions
 
@@ -777,3 +778,163 @@ class AdminAIScenarioMultiAgentTests(TestCase):
         )
         self.assertEqual(second.status_code, 400)
         self.assertIn("model_already_bound_to_this_scenario_with_same_identity", str(second.data))
+
+
+class BackofficeBlacklistTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff_user = User.objects.create_user(
+            username="blacklist_staff",
+            email="blacklist_staff@example.com",
+            password="pass1234",
+            is_staff=True,
+        )
+        self.target_user = User.objects.create_user(
+            username="blacklist_target",
+            email="blacklist_target@example.com",
+            password="pass1234",
+            is_staff=False,
+            is_active=True,
+        )
+        bootstrap_admin_permissions()
+        super_admin = AdminRole.objects.get(code="super_admin")
+        AdminUserRole.objects.create(user=self.staff_user, role=super_admin)
+        self.client.force_authenticate(user=self.staff_user)
+
+    @patch("accounts.infrastructure.sms_provider.AliyunSMSProvider.send_account_banned")
+    def test_create_blacklist_by_user_disables_account(self, mock_send):
+        mock_send.return_value = type(
+            "R",
+            (),
+            {"accepted": True, "reason": "", "biz_id": "biz-1", "request_id": "req-1", "code": "OK", "status": "accepted", "unknown": False, "payload": {}},
+        )()
+        response = self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"user_id": self.target_user.id, "reason_note": "违规测试"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.target_user.refresh_from_db()
+        self.assertFalse(self.target_user.is_active)
+        self.assertTrue(AdminAuditLog.objects.filter(action="admin.user.blacklist.create").exists())
+
+    def test_create_blacklist_by_phone_without_user(self):
+        with patch("accounts.infrastructure.sms_provider.AliyunSMSProvider.send_account_banned") as mock_send:
+            mock_send.return_value = type(
+                "R",
+                (),
+                {"accepted": True, "reason": "", "biz_id": "biz-2", "request_id": "req-2", "code": "OK", "status": "accepted", "unknown": False, "payload": {}},
+            )()
+            response = self.client.post(
+                "/api/admin/v1/users/blacklist/",
+                {"phone": "13700137000"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(
+            AccessDenyEntry.objects.filter(
+                dimension=AccessDenyEntry.Dimension.PHONE,
+                dimension_value="+8613700137000",
+                revoked_at__isnull=True,
+            ).exists()
+        )
+
+    @patch("accounts.infrastructure.sms_provider.AliyunSMSProvider.send_account_banned")
+    def test_create_blacklist_by_phone_with_user_only_user_entry(self, mock_send):
+        mock_send.return_value = type(
+            "R",
+            (),
+            {"accepted": True, "reason": "", "biz_id": "biz-3", "request_id": "req-3", "code": "OK", "status": "accepted", "unknown": False, "payload": {}},
+        )()
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.PHONE,
+            provider_uid="+8613800138000",
+            bundle_id="cn.Zhaodk.Health",
+        )
+        response = self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"phone": "13800138000"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.target_user.refresh_from_db()
+        self.assertFalse(self.target_user.is_active)
+        self.assertTrue(
+            AccessDenyEntry.objects.filter(
+                dimension=AccessDenyEntry.Dimension.USER_ID,
+                dimension_value=str(self.target_user.id),
+                revoked_at__isnull=True,
+            ).exists()
+        )
+        self.assertFalse(
+            AccessDenyEntry.objects.filter(
+                dimension=AccessDenyEntry.Dimension.PHONE,
+                dimension_value="+8613800138000",
+                revoked_at__isnull=True,
+            ).exists()
+        )
+
+    def test_user_list_search_by_phone(self):
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.PHONE,
+            provider_uid="+8613800138000",
+            bundle_id="cn.Zhaodk.Health",
+        )
+        response = self.client.get("/api/admin/v1/users/", {"q": "13800138000"})
+        self.assertEqual(response.status_code, 200)
+        ids = [row["id"] for row in response.data["data"]["items"]]
+        self.assertIn(self.target_user.id, ids)
+        matched = next(row for row in response.data["data"]["items"] if row["id"] == self.target_user.id)
+        self.assertEqual(matched.get("phone_number"), "+8613800138000")
+
+    @patch("accounts.infrastructure.sms_provider.AliyunSMSProvider.send_account_banned")
+    def test_blacklist_list_display_value_not_masked(self, mock_send):
+        mock_send.return_value = type(
+            "R",
+            (),
+            {"accepted": True, "reason": "", "biz_id": "biz-4", "request_id": "req-4", "code": "OK", "status": "accepted", "unknown": False, "payload": {}},
+        )()
+        self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"phone": "13700137001"},
+            format="json",
+        )
+        response = self.client.get("/api/admin/v1/users/blacklist/", {"active_only": "true"})
+        self.assertEqual(response.status_code, 200)
+        row = next(item for item in response.data["data"]["items"] if item["dimension_value"] == "+8613700137001")
+        self.assertEqual(row["display_value"], "+8613700137001")
+        self.assertNotIn("*", row["display_value"])
+
+    def test_cannot_ban_admin_user(self):
+        admin_target = User.objects.create_user(
+            username="admin_target",
+            email="admin_target@example.com",
+            password="pass1234",
+            is_staff=True,
+        )
+        response = self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"user_id": admin_target.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    @patch("accounts.infrastructure.sms_provider.AliyunSMSProvider.send_account_banned")
+    def test_revoke_blacklist_entry(self, mock_send):
+        mock_send.return_value = type(
+            "R",
+            (),
+            {"accepted": False, "reason": "skipped", "biz_id": "", "request_id": "", "code": "", "status": "skipped", "unknown": False, "payload": {}},
+        )()
+        create_resp = self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"user_id": self.target_user.id},
+            format="json",
+        )
+        entry_id = create_resp.data["data"]["entry"]["id"]
+        revoke_resp = self.client.post(f"/api/admin/v1/users/blacklist/{entry_id}/revoke/", {}, format="json")
+        self.assertEqual(revoke_resp.status_code, 200)
+        self.target_user.refresh_from_db()
+        self.assertTrue(self.target_user.is_active)

@@ -32,4 +32,5 @@ export interface AdminUser {
   is_pro?: boolean;
   pro_status?: string;
   pro_expires_at?: string | null;
+  phone_number?: string;
 }

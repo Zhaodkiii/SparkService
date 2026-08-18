@@ -9,6 +9,7 @@ from django.db import transaction
 from django.db.utils import IntegrityError, OperationalError, ProgrammingError
 from common.exceptions import APIError
 from accounts.models import LoginAudit, SocialIdentity
+from accounts.services.access_control_service import AccessControlService
 from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.deactivation_service import DeactivationService
@@ -197,8 +198,30 @@ class LoginService:
             "密码登录鉴权开始",
             extra={"action": "auth.password.authenticate", "request_id": request_id, "provider": provider},
         )
+        parsed = AccessControlService.parse_identifier_for_deny(identifier)
+        AccessControlService.check(
+            email=parsed.get("email", ""),
+            phone=parsed.get("phone", ""),
+            provider=provider,
+            bundle_id=bundle_id or "",
+            device_id=device_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         User = get_user_model()
         user = LoginService._find_user_by_identifier(identifier, bundle_id=bundle_id)
+        if user is not None:
+            AccessControlService.check(
+                user_id=user.id,
+                email=user.email or "",
+                provider=provider,
+                bundle_id=bundle_id or "",
+                device_id=device_id or "",
+                request_id=request_id or "",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
 
         if not user or not user.check_password(password):
             LoginAuditService.write_failure(
@@ -347,6 +370,36 @@ class LoginService:
         email_from_client = (email or "").strip().lower()
         chosen_email = email_from_token or email_from_client or f"apple_{subject[:12]}@privaterelay.appleid.com"
         email_verified = payload.get("email_verified") in (True, "true", "1")
+
+        AccessControlService.check(
+            email=chosen_email if "@" in chosen_email else "",
+            provider=LoginAudit.LoginProvider.APPLE,
+            bundle_id=normalized_bundle_id,
+            device_id=device_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        existing_apple = (
+            SocialIdentity.objects.select_related("user")
+            .filter(
+                bundle_id=identity_scope,
+                provider=SocialIdentity.Provider.APPLE,
+                provider_uid=subject,
+            )
+            .first()
+        )
+        if existing_apple is not None and existing_apple.user_id:
+            AccessControlService.check(
+                user_id=existing_apple.user_id,
+                email=existing_apple.user.email or chosen_email,
+                provider=LoginAudit.LoginProvider.APPLE,
+                bundle_id=normalized_bundle_id,
+                device_id=device_id or "",
+                request_id=request_id or "",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
 
         def _create_user():
             return LoginService._create_apple_user(

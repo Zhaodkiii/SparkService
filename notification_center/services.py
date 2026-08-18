@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.core.cache import cache
 from django.template.loader import render_to_string
 from django.db import transaction
@@ -188,6 +189,18 @@ _BUILTIN_BUSINESS_SCENES: dict[str, dict[str, Any]] = {
         "default_routing": {"mode": "parallel", "steps": [{"channel": "email", "required": False}, {"channel": "sms", "required": False}, {"channel": "in_app", "required": False}]},
         "preference_policy": "mandatory",
         "quiet_hour_policy": "bypass_critical",
+        "status": NotificationBusinessScene.Status.ACTIVE,
+        "contract_version": 1,
+    },
+    "account.lifecycle.login_banned": {
+        "display_name": "账号违规禁登通知",
+        "description": "用户因违规被永久禁止登录时发送。",
+        "category": NotificationBusinessScene.Category.SECURITY,
+        "severity": NotificationBusinessScene.Severity.CRITICAL,
+        "default_template_key": "account_lifecycle_login_banned",
+        "default_routing": {"mode": "parallel", "steps": [{"channel": "sms", "required": True, "success_threshold": "provider_accepted"}]},
+        "preference_policy": "mandatory",
+        "quiet_hour_policy": "bypass",
         "status": NotificationBusinessScene.Status.ACTIVE,
         "contract_version": 1,
     },
@@ -2955,6 +2968,112 @@ class NotificationCenterService:
             title=title or "",
             body=body or "",
             payload={},
+            target_count=1,
+            success_count=1 if sms_result.accepted else 0,
+            failure_count=0 if (sms_result.accepted or sms_result.unknown) else 1,
+            receiver_phone=endpoint.address_masked,
+            provider_message_id=sms_result.biz_id,
+            provider_request_id=sms_result.request_id or request_id or "",
+            provider_code=sms_result.code or ("OK" if sms_result.accepted else "SMS_ERROR"),
+            provider_status=sms_result.status or ("accepted" if sms_result.accepted else "failed"),
+            error_message="" if sms_result.accepted else sms_result.reason,
+            request_id=request_id or "",
+            sent_at=timezone.now(),
+        )
+        if intent is not None:
+            NotificationIntent.objects.filter(id=intent.id).update(
+                status=NotificationIntent.Status.COMPLETED if sms_result.accepted else NotificationIntent.Status.FAILED,
+                updated_at=timezone.now(),
+            )
+        NotificationCenterService._record_message_event(
+            message=message,
+            channel=NotificationMessage.Channel.SMS,
+            provider="aliyun",
+            result=_SendResult(
+                accepted=sms_result.accepted,
+                delivered=False,
+                unknown=sms_result.unknown,
+                skipped=False,
+                reason="" if sms_result.accepted else sms_result.reason,
+                provider_message_id=sms_result.biz_id,
+                provider_request_id=sms_result.request_id or request_id,
+                provider_code=sms_result.code or ("OK" if sms_result.accepted else "SMS_ERROR"),
+                provider_status=sms_result.status or ("accepted" if sms_result.accepted else "failed"),
+                provider_payload=sms_result.payload or {},
+            ),
+            endpoint=endpoint,
+            details=[],
+        )
+        return sms_result.accepted, sms_result.reason, sms_result.biz_id
+
+    @staticmethod
+    def send_account_banned_sms(
+        *,
+        phone_number: str,
+        user_id: int | None = None,
+        request_id: str = "",
+    ) -> tuple[bool, str, str]:
+        from accounts.infrastructure.sms_provider import AliyunSMSProvider
+        from accounts.services.access_control_service import PUBLIC_BAN_REASON
+
+        normalized_phone = NotificationCenterService._normalize_phone(phone_number)
+        if not normalized_phone:
+            return False, "phone_number_missing", ""
+
+        business_scene = "account.lifecycle.login_banned"
+        endpoint = NotificationCenterService._ensure_endpoint(
+            user=get_user_model().objects.filter(id=user_id).first() if user_id else None,
+            channel=ContactEndpoint.Channel.SMS,
+            address=normalized_phone,
+            metadata={"request_id": request_id},
+        )
+        existing = NotificationCenterService._existing_message(
+            campaign_id=None,
+            recipient_key=endpoint.address_hmac,
+            channel=NotificationMessage.Channel.SMS,
+            request_id=request_id,
+        )
+        if existing is not None:
+            return (
+                existing.status in {NotificationMessage.Status.ACCEPTED, NotificationMessage.Status.DELIVERED, NotificationMessage.Status.SENT},
+                existing.error_message,
+                existing.provider_message_id,
+            )
+
+        scene = NotificationCenterService.ensure_business_scene(business_scene)
+        intent, _ = NotificationIntent.objects.get_or_create(
+            idempotency_key=request_id or f"{scene.key}:contact_sms:{endpoint.address_hmac}:{user_id or 'anonymous'}",
+            defaults={
+                "topic_key": scene.topic.key if scene.topic else scene.key,
+                "business_scene": scene.key,
+                "business_domain": scene.domain,
+                "business_type": scene.business_type,
+                "business_reference_type": "access_deny",
+                "business_id": str(user_id or ""),
+                "subject_type": "contact",
+                "subject_id": endpoint.address_hmac,
+                "routing": {"mode": "parallel", "steps": [{"channel": "sms", "required": True}]},
+                "scene_contract_version": scene.contract_version,
+                "scene_snapshot": NotificationCenterService._scene_snapshot(scene),
+                "event_id": uuid.uuid4().hex,
+                "occurred_at": timezone.now(),
+                "trace_id": request_id or "",
+                "source": "access_control",
+                "status": NotificationIntent.Status.DISPATCHED,
+            },
+        )
+        sms_result = AliyunSMSProvider.send_account_banned(phone_number=normalized_phone)
+        message = NotificationMessage.objects.create(
+            campaign_id=None,
+            intent=intent,
+            user_id=user_id,
+            recipient_type=NotificationMessage.RecipientType.CONTACT if user_id is None else NotificationMessage.RecipientType.USER,
+            recipient_key=str(user_id) if user_id else endpoint.address_hmac,
+            channel=NotificationMessage.Channel.SMS,
+            status=NotificationMessage.Status.SENT if sms_result.accepted else NotificationMessage.Status.FAILED,
+            title="账号违规禁登通知",
+            body=PUBLIC_BAN_REASON,
+            payload={"template_code": getattr(settings, "ALIYUN_SMS_ACCOUNT_BANNED_TEMPLATE_CODE", "")},
             target_count=1,
             success_count=1 if sms_result.accepted else 0,
             failure_count=0 if (sms_result.accepted or sms_result.unknown) else 1,

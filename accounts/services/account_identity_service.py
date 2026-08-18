@@ -14,9 +14,11 @@ from django.utils import timezone
 from accounts.models import (
     AccountIdentityVerificationTicket,
     EmailOTP,
+    LoginAudit,
     PhoneOTP,
     SocialIdentity,
 )
+from accounts.services.access_control_service import AccessControlService
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.otp_service import OTPService
@@ -229,6 +231,22 @@ class AccountIdentityService:
             )
         elif provider in (SocialIdentity.Provider.PHONE, SocialIdentity.Provider.EMAIL):
             provider_uid = AccountIdentityService.normalize_provider_uid(provider, target)
+            if provider == SocialIdentity.Provider.PHONE:
+                AccessControlService.check(
+                    phone=provider_uid,
+                    provider=LoginAudit.LoginProvider.PHONE_OTP,
+                    bundle_id=real_bundle_id,
+                    device_id=device_id or "",
+                    request_id=request_id or "",
+                )
+            else:
+                AccessControlService.check(
+                    email=provider_uid,
+                    provider=LoginAudit.LoginProvider.EMAIL_OTP,
+                    bundle_id=real_bundle_id,
+                    device_id=device_id or "",
+                    request_id=request_id or "",
+                )
             AccountIdentityService._consume_target_otp(
                 provider=provider,
                 provider_uid=provider_uid,

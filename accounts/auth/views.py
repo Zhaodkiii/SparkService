@@ -21,6 +21,7 @@ from accounts.services.device_login_service import DeviceLoginService
 from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.login_service import LoginService
+from accounts.services.access_control_service import AccessControlService
 from common.exceptions import APIError
 from common.response import success_response
 
@@ -205,6 +206,16 @@ class TokenObtainUnifiedView(APIView):
             40103：用户不存在或账号已禁用
         """
         # 实例化simplejwt账号密码序列化器
+        username = (request.data.get("username") or "").strip()
+        parsed = AccessControlService.parse_identifier_for_deny(username)
+        AccessControlService.check(
+            email=parsed.get("email", ""),
+            phone=parsed.get("phone", ""),
+            provider=LoginAudit.LoginProvider.PASSWORD,
+            request_id=getattr(request, "request_id", "") or "",
+            ip_address=request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")) or "",
+            user_agent=request.META.get("HTTP_USER_AGENT", "") or "",
+        )
         serializer = TokenObtainPairSerializer(data=request.data)
         try:
             # 校验账号密码，失败直接抛异常
@@ -229,6 +240,15 @@ class TokenObtainUnifiedView(APIView):
         # 用户不存在 / 用户被禁用
         if not user or not user.is_active:
             raise APIError("user_inactive", code=40103, status_code=status.HTTP_401_UNAUTHORIZED)
+
+        AccessControlService.check(
+            user_id=user.id,
+            email=user.email or "",
+            provider=LoginAudit.LoginProvider.PASSWORD,
+            request_id=getattr(request, "request_id", "") or "",
+            ip_address=request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")) or "",
+            user_agent=request.META.get("HTTP_USER_AGENT", "") or "",
+        )
 
         # 组装统一格式Token返回体
         return Response(

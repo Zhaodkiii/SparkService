@@ -33,6 +33,7 @@ from accounts.models import (
     TrustedDevice,
 )
 from accounts.deactivation.tasks import process_deactivation_task
+from accounts.services.phone_number_service import PhoneNumberService
 from ai_config.models import (
     AIModelCatalog,
     AIProviderKeyConfig,
@@ -141,6 +142,38 @@ def _annotate_users_last_used(queryset, *, include_sort_text: bool = False):
     if include_sort_text:
         annotations["last_used_sort"] = Cast(greatest, TextField())
     return queryset.annotate(**annotations)
+
+
+def _build_admin_user_search_filter(query: str) -> Q:
+    q = (query or "").strip()
+    if not q:
+        return Q()
+    filters = Q(username__icontains=q) | Q(email__icontains=q) | Q(first_name__icontains=q)
+    if q.isdigit():
+        filters |= Q(id=int(q))
+    phone_candidates: set[str] = {q}
+    if q.isdigit() and len(q) >= 7:
+        try:
+            phone_candidates.add(PhoneNumberService.normalize_e164(q))
+        except Exception:
+            pass
+        if not q.startswith("+"):
+            try:
+                phone_candidates.add(PhoneNumberService.normalize_e164(f"+{q}"))
+            except Exception:
+                pass
+    elif q.startswith(("+", "00")):
+        try:
+            phone_candidates.add(PhoneNumberService.normalize_e164(q))
+        except Exception:
+            pass
+    phone_user_ids = SocialIdentity.objects.filter(
+        provider=SocialIdentity.Provider.PHONE,
+        provider_uid__in=[value for value in phone_candidates if value],
+    ).values_list("user_id", flat=True)
+    if phone_user_ids:
+        filters |= Q(id__in=phone_user_ids)
+    return filters
 
 
 class AdminAccessToken(AccessToken):
@@ -617,14 +650,16 @@ class AdminUserListView(APIView):
         queryset = User.objects.select_related("trial_application").annotate(
             _max_device_seen=Max("trusted_devices__last_seen"),
             _max_session_refresh=Max("device_sessions__last_refreshed_at"),
+        ).prefetch_related(
+            Prefetch(
+                "social_identities",
+                queryset=SocialIdentity.objects.filter(provider=SocialIdentity.Provider.PHONE).order_by("-updated_at", "-id"),
+                to_attr="_phone_identities",
+            )
         )
         query = (request.query_params.get("q") or "").strip()
         if query:
-            queryset = queryset.filter(
-                Q(username__icontains=query)
-                | Q(email__icontains=query)
-                | Q(first_name__icontains=query)
-            )
+            queryset = queryset.filter(_build_admin_user_search_filter(query))
 
         is_active = request.query_params.get("is_active")
         if is_active in {"true", "false"}:

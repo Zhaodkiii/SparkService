@@ -13,6 +13,7 @@ from django.utils import timezone
 from common.exceptions import APIError
 from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
 from accounts.services.login_audit_service import LoginAuditService
+from accounts.services.access_control_service import AccessControlService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
 from notification_center.services import NotificationCenterService
@@ -38,6 +39,15 @@ class OTPService:
         )
         now = timezone.now()
         email = email.strip().lower()
+
+        AccessControlService.check(
+            email=email,
+            provider=LoginAudit.LoginProvider.EMAIL_OTP,
+            bundle_id=bundle_id or "",
+            device_id=device_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+        )
 
         # Cooldown check for same dimension.
         recent = (
@@ -191,6 +201,14 @@ class OTPService:
         )
         now = timezone.now()
         normalized_phone = PhoneNumberService.normalize_e164(phone_number)
+        AccessControlService.check(
+            phone=normalized_phone,
+            provider=LoginAudit.LoginProvider.PHONE_OTP,
+            bundle_id=bundle_id or "",
+            device_id=device_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+        )
         normalized_bundle_id = (bundle_id or "").strip()
         identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
         normalized_device_id = (device_id or "").strip()
@@ -372,6 +390,15 @@ class OTPService:
         )
         now = timezone.now()
         email = email.strip().lower()
+        AccessControlService.check(
+            email=email,
+            provider=LoginAudit.LoginProvider.EMAIL_OTP,
+            bundle_id=bundle_id or "",
+            device_id=device_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            user_agent=user_agent or "",
+        )
         otp = (
             EmailOTP.objects.select_for_update()
             .filter(otp_id=otp_id, email=email)
@@ -456,6 +483,16 @@ class OTPService:
         if existing_email is None and device_identity is None:
             legacy_user = User.objects.filter(email__iexact=email).first()
             if legacy_user is not None:
+                AccessControlService.check(
+                    user_id=legacy_user.id,
+                    email=email,
+                    provider=LoginAudit.LoginProvider.EMAIL_OTP,
+                    bundle_id=normalized_bundle_id,
+                    device_id=device_id or "",
+                    request_id=request_id or "",
+                    ip_address=ip_address or "",
+                    user_agent=user_agent or "",
+                )
                 if not legacy_user.is_active:
                     raise APIError("user_inactive", code=40103, status_code=401)
                 SocialIdentity.objects.get_or_create(
@@ -464,6 +501,27 @@ class OTPService:
                     provider_uid=email,
                     defaults={"user": legacy_user},
                 )
+
+        existing_email_identity = (
+            SocialIdentity.objects.select_related("user")
+            .filter(
+                bundle_id=identity_scope,
+                provider=SocialIdentity.Provider.EMAIL,
+                provider_uid=email,
+            )
+            .first()
+        )
+        if existing_email_identity is not None and existing_email_identity.user_id:
+            AccessControlService.check(
+                user_id=existing_email_identity.user_id,
+                email=email,
+                provider=LoginAudit.LoginProvider.EMAIL_OTP,
+                bundle_id=normalized_bundle_id,
+                device_id=device_id or "",
+                request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+            )
 
         def _create_email_user():
             flow_logger.info(
@@ -528,6 +586,15 @@ class OTPService:
         )
         now = timezone.now()
         normalized_phone = PhoneNumberService.normalize_e164(phone_number)
+        AccessControlService.check(
+            phone=normalized_phone,
+            provider=LoginAudit.LoginProvider.PHONE_OTP,
+            bundle_id=bundle_id or "",
+            device_id=device_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            user_agent=user_agent or "",
+        )
         otp = (
             PhoneOTP.objects.select_for_update()
             .filter(otp_id=otp_id, phone_number=normalized_phone)
@@ -581,6 +648,26 @@ class OTPService:
         from accounts.services.account_login_resolution_service import AccountLoginResolutionService
 
         User = get_user_model()
+        existing_phone_identity = (
+            SocialIdentity.objects.select_related("user")
+            .filter(
+                bundle_id=identity_scope,
+                provider=SocialIdentity.Provider.PHONE,
+                provider_uid=normalized_phone,
+            )
+            .first()
+        )
+        if existing_phone_identity is not None and existing_phone_identity.user_id:
+            AccessControlService.check(
+                user_id=existing_phone_identity.user_id,
+                phone=normalized_phone,
+                provider=LoginAudit.LoginProvider.PHONE_OTP,
+                bundle_id=normalized_bundle_id,
+                device_id=device_id or "",
+                request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+            )
 
         def _create_phone_user():
             new_user = User.objects.create(

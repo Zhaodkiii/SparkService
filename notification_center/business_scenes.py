@@ -118,6 +118,15 @@ SCENE_CATALOG: tuple[SceneDefinition, ...] = (
     _scene("account.lifecycle.deactivation_cancelled", "注销已撤销", channels=("apns", "email", "in_app"), preference_policy="mandatory"),
     _scene("account.lifecycle.deactivation_completed", "注销完成", severity=CRITICAL, channels=("email", "sms"), preference_policy="mandatory", quiet_hour_policy="bypass"),
     _scene("account.lifecycle.deactivation_failed", "注销处理失败", severity=WARNING, channels=("email", "in_app"), preference_policy="mandatory"),
+    _scene(
+        "account.lifecycle.login_banned",
+        "账号违规禁登通知",
+        category=SECURITY,
+        severity=CRITICAL,
+        channels=("sms",),
+        preference_policy="mandatory",
+        quiet_hour_policy="bypass",
+    ),
     _scene("membership.pro_trial.application_submitted", "Pro 试用申请已提交", channels=("apns", "in_app")),
     _scene(
         "membership.pro_trial.application_approved",

@@ -18,6 +18,7 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/users', name: 'Users', component: () => import('../views/UsersView.vue'), meta: { title: '用户管理' } },
       { path: '/users/devices', name: 'Devices', component: () => import('../views/DevicesView.vue'), meta: { title: '设备管理' } },
       { path: '/users/deactivations', name: 'Deactivations', component: () => import('../views/DeactivationsView.vue'), meta: { title: '注销管理' } },
+      { path: '/users/blacklist', name: 'Blacklist', component: () => import('../views/BlacklistView.vue'), meta: { title: '黑名单管理' } },
       { path: '/conversations/users', name: 'ConversationUsers', component: () => import('../views/ConversationUsersView.vue'), meta: { title: '用户对话', superAdminOnly: true, keepAlive: true } },
       { path: '/conversations/users/:userId', name: 'ConversationUserThreads', component: () => import('../views/ConversationUserThreadsView.vue'), meta: { title: '用户会话详情', superAdminOnly: true, keepAlive: true } },
       { path: '/medical-data/users', name: 'MedicalDataUsers', component: () => import('../views/MedicalDataUsersView.vue'), meta: { title: '用户医疗数据' } },
