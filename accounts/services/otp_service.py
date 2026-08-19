@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from common.exceptions import APIError
-from accounts.models import EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
+from accounts.models import AccessDenyHit, EmailOTP, LoginAudit, PhoneOTP, SocialIdentity
 from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.access_control_service import AccessControlService
 from accounts.services.identity_scope_service import IdentityScopeService
@@ -47,6 +47,7 @@ class OTPService:
             device_id=device_id or "",
             request_id=request_id or "",
             ip_address=ip_address or "",
+            action=AccessDenyHit.Action.OTP_REQUEST,
         )
 
         # Cooldown check for same dimension.
@@ -208,6 +209,16 @@ class OTPService:
             device_id=device_id or "",
             request_id=request_id or "",
             ip_address=ip_address or "",
+            action=AccessDenyHit.Action.OTP_REQUEST,
+        )
+        AccessControlService.check_device_registration(
+            device_id=device_id or "",
+            provider=LoginAudit.LoginProvider.PHONE_OTP,
+            bundle_id=bundle_id or "",
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            action=AccessDenyHit.Action.OTP_REQUEST,
+            phone=normalized_phone,
         )
         normalized_bundle_id = (bundle_id or "").strip()
         identity_scope = IdentityScopeService.resolve(normalized_bundle_id)
@@ -305,6 +316,16 @@ class OTPService:
             )
             if identity is not None:
                 if not identity.user.is_active:
+                    AccessControlService.check(
+                        user_id=identity.user_id,
+                        phone=normalized_phone,
+                        provider=LoginAudit.LoginProvider.PHONE_OTP,
+                        bundle_id=bundle_id or "",
+                        device_id=device_id or "",
+                        request_id=request_id or "",
+                        ip_address=ip_address or "",
+                        action=AccessDenyHit.Action.OTP_REQUEST,
+                    )
                     raise APIError("user_inactive", code=40103, status_code=401)
                 resolved_identity = identity
                 resolved_user = identity.user

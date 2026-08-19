@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from unittest.mock import patch
 
-from accounts.models import AccessDenyEntry, SocialIdentity
+from accounts.models import AccessDenyEntry, AccessDenyHit, SocialIdentity
 from backoffice.models import AdminAuditLog, AdminRole, AdminUserRole
 from backoffice.rbac import bootstrap_admin_permissions
 
@@ -938,3 +938,89 @@ class BackofficeBlacklistTests(TestCase):
         self.assertEqual(revoke_resp.status_code, 200)
         self.target_user.refresh_from_db()
         self.assertTrue(self.target_user.is_active)
+
+    def test_create_blacklist_by_device_id(self):
+        response = self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"device_id": "admin-manual-device-001", "reason_note": "设备违规"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(
+            AccessDenyEntry.objects.filter(
+                dimension=AccessDenyEntry.Dimension.DEVICE,
+                dimension_value="admin-manual-device-001",
+                revoked_at__isnull=True,
+            ).exists()
+        )
+        self.target_user.refresh_from_db()
+        self.assertTrue(self.target_user.is_active)
+
+    @patch("accounts.infrastructure.sms_provider.AliyunSMSProvider.send_account_banned")
+    def test_create_blacklist_by_user_expands_devices(self, mock_send):
+        mock_send.return_value = type(
+            "R",
+            (),
+            {"accepted": False, "reason": "skipped", "biz_id": "", "request_id": "", "code": "", "status": "skipped", "unknown": False, "payload": {}},
+        )()
+        from accounts.models import TrustedDevice
+
+        TrustedDevice.objects.create(
+            user=self.target_user,
+            bundle_id="cn.Zhaodk.Health",
+            device_id="admin-user-linked-device-001",
+        )
+        response = self.client.post(
+            "/api/admin/v1/users/blacklist/",
+            {"user_id": self.target_user.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(
+            AccessDenyEntry.objects.filter(
+                dimension=AccessDenyEntry.Dimension.DEVICE,
+                dimension_value="admin-user-linked-device-001",
+                related_user_id=self.target_user.id,
+                revoked_at__isnull=True,
+            ).exists()
+        )
+
+    def test_list_blacklist_hits_with_filters(self):
+        entry = AccessDenyEntry.objects.create(
+            dimension=AccessDenyEntry.Dimension.DEVICE,
+            dimension_value="admin-hit-device-001",
+        )
+        AccessDenyHit.objects.create(
+            deny_entry=entry,
+            action=AccessDenyHit.Action.REGISTER,
+            hit_dimension=AccessDenyEntry.Dimension.DEVICE,
+            hit_value="admin-hit-device-001",
+            reason_code="account_banned",
+            provider="device",
+            device_id="admin-hit-device-001",
+            request_id="req-admin-hit-001",
+        )
+        AccessDenyHit.objects.create(
+            deny_entry=entry,
+            action=AccessDenyHit.Action.LOGIN,
+            hit_dimension=AccessDenyEntry.Dimension.USER_ID,
+            hit_value=str(self.target_user.id),
+            reason_code="account_banned",
+            provider="password",
+            attempted_user_id=self.target_user.id,
+        )
+
+        all_resp = self.client.get("/api/admin/v1/users/blacklist/hits/")
+        self.assertEqual(all_resp.status_code, 200)
+        self.assertEqual(len(all_resp.data["data"]["items"]), 2)
+
+        register_resp = self.client.get("/api/admin/v1/users/blacklist/hits/", {"action": "register"})
+        self.assertEqual(register_resp.status_code, 200)
+        self.assertEqual(len(register_resp.data["data"]["items"]), 1)
+        self.assertEqual(register_resp.data["data"]["items"][0]["action"], "register")
+        self.assertEqual(register_resp.data["data"]["items"][0]["hit_dimension"], "device")
+
+        dimension_resp = self.client.get("/api/admin/v1/users/blacklist/hits/", {"hit_dimension": "user_id"})
+        self.assertEqual(dimension_resp.status_code, 200)
+        self.assertEqual(len(dimension_resp.data["data"]["items"]), 1)
+        self.assertEqual(dimension_resp.data["data"]["items"][0]["attempted_user_id"], self.target_user.id)

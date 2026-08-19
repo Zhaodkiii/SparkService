@@ -206,7 +206,7 @@ export function retryDeactivation(deactivationId: number) {
 
 export interface AdminAccessDenyEntry {
   id: number;
-  dimension: 'user_id' | 'phone' | 'email';
+  dimension: 'user_id' | 'phone' | 'email' | 'device';
   dimension_value: string;
   display_value: string;
   reason_code: string;
@@ -233,6 +233,7 @@ export interface AccessDenyCreatePayload {
   user_id?: number;
   phone?: string;
   email?: string;
+  device_id?: string;
   reason_note?: string;
 }
 
@@ -255,4 +256,43 @@ export function createAccessDenyEntry(payload: AccessDenyCreatePayload) {
 
 export function revokeAccessDenyEntry(entryId: number) {
   return http.post<unknown, AdminAccessDenyEntry>(`/api/admin/v1/users/blacklist/${entryId}/revoke/`, {});
+}
+
+export interface AdminAccessDenyHit {
+  id: number;
+  deny_entry_id: number | null;
+  action: 'login' | 'register' | 'otp_request' | 'identity_bind';
+  hit_dimension: 'user_id' | 'phone' | 'email' | 'device';
+  hit_value: string;
+  reason_code: string;
+  provider: string;
+  attempted_user_id: number | null;
+  attempted_email: string;
+  attempted_phone: string;
+  attempted_identity: string;
+  device_id: string;
+  bundle_id: string;
+  ip_address: string;
+  user_agent: string;
+  request_id: string;
+  created_at: string;
+}
+
+export interface AccessDenyHitListResponse {
+  items: AdminAccessDenyHit[];
+  pagination: Pagination;
+}
+
+export function fetchAccessDenyHits(params: {
+  page: number;
+  page_size: number;
+  q?: string;
+  action?: string;
+  hit_dimension?: string;
+  provider?: string;
+  deny_entry_id?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  return http.get<unknown, AccessDenyHitListResponse>('/api/admin/v1/users/blacklist/hits/', { params });
 }

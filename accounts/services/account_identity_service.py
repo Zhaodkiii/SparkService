@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import (
+    AccessDenyHit,
     AccountIdentityVerificationTicket,
     EmailOTP,
     LoginAudit,
@@ -238,6 +239,7 @@ class AccountIdentityService:
                     bundle_id=real_bundle_id,
                     device_id=device_id or "",
                     request_id=request_id or "",
+                    action=AccessDenyHit.Action.IDENTITY_BIND,
                 )
             else:
                 AccessControlService.check(
@@ -246,6 +248,7 @@ class AccountIdentityService:
                     bundle_id=real_bundle_id,
                     device_id=device_id or "",
                     request_id=request_id or "",
+                    action=AccessDenyHit.Action.IDENTITY_BIND,
                 )
             AccountIdentityService._consume_target_otp(
                 provider=provider,

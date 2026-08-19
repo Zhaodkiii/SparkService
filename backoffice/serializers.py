@@ -15,6 +15,7 @@ from ai_config.models import (
 from ai_config.services import TrialService
 from accounts.models import (
     AccessDenyEntry,
+    AccessDenyHit,
     AccountDeactivation,
     AccountDeactivationAudit,
     AccountDeviceSession,
@@ -148,17 +149,20 @@ class AdminAccessDenyCreateSerializer(serializers.Serializer):
     user_id = serializers.IntegerField(required=False, allow_null=True)
     phone = serializers.CharField(max_length=32, required=False, allow_blank=True)
     email = serializers.EmailField(required=False, allow_blank=True)
+    device_id = serializers.CharField(max_length=255, required=False, allow_blank=True)
     reason_note = serializers.CharField(required=False, allow_blank=True, max_length=2000)
 
     def validate(self, attrs):
         user_id = attrs.get("user_id")
         phone = (attrs.get("phone") or "").strip()
         email = (attrs.get("email") or "").strip().lower()
-        provided = sum(bool(x) for x in [user_id, phone, email])
+        device_id = (attrs.get("device_id") or "").strip()
+        provided = sum(bool(x) for x in [user_id, phone, email, device_id])
         if provided != 1:
-            raise serializers.ValidationError("user_id、phone、email 必须且只能提供一个")
+            raise serializers.ValidationError("user_id、phone、email、device_id 必须且只能提供一个")
         attrs["phone"] = phone
         attrs["email"] = email
+        attrs["device_id"] = device_id
         return attrs
 
 
@@ -212,6 +216,41 @@ class AdminAccessDenyEntrySerializer(serializers.ModelSerializer):
             return str(obj.related_user_id)
         name = (getattr(user, "first_name", None) or "").strip()
         return name or user.username or str(user.id)
+
+
+class AdminAccessDenyHitSerializer(serializers.ModelSerializer):
+    attempted_identity = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AccessDenyHit
+        fields = (
+            "id",
+            "deny_entry_id",
+            "action",
+            "hit_dimension",
+            "hit_value",
+            "reason_code",
+            "provider",
+            "attempted_user_id",
+            "attempted_email",
+            "attempted_phone",
+            "attempted_identity",
+            "device_id",
+            "bundle_id",
+            "ip_address",
+            "user_agent",
+            "request_id",
+            "created_at",
+        )
+
+    def get_attempted_identity(self, obj):
+        if obj.attempted_user_id:
+            return f"user:{obj.attempted_user_id}"
+        if obj.attempted_email:
+            return obj.attempted_email
+        if obj.attempted_phone:
+            return obj.attempted_phone
+        return ""
 
 
 class AdminUserProGrantSerializer(serializers.Serializer):

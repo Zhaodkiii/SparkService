@@ -1,6 +1,10 @@
 from django.urls import include, path
 
-from backoffice.blacklist_views import AdminAccessDenyListCreateView, AdminAccessDenyRevokeView
+from backoffice.blacklist_views import (
+    AdminAccessDenyHitListView,
+    AdminAccessDenyListCreateView,
+    AdminAccessDenyRevokeView,
+)
 from backoffice.views import (
     AdminAITrialActionView,
     AdminAITrialDetailView,
@@ -87,6 +91,7 @@ urlpatterns = [
     path("tasks/manager/<str:action>/", AdminAsyncTaskManagerControlView.as_view(), name="admin-tasks-manager-control"),
     path("users/", AdminUserListView.as_view(), name="admin-user-list"),
     path("users/blacklist/", AdminAccessDenyListCreateView.as_view(), name="admin-user-blacklist"),
+    path("users/blacklist/hits/", AdminAccessDenyHitListView.as_view(), name="admin-user-blacklist-hits"),
     path("users/blacklist/<int:entry_id>/revoke/", AdminAccessDenyRevokeView.as_view(), name="admin-user-blacklist-revoke"),
     path("users/<int:user_id>/status/", AdminUserStatusView.as_view(), name="admin-user-status"),
     path("users/<int:user_id>/detail/", AdminUserDetailView.as_view(), name="admin-user-detail"),

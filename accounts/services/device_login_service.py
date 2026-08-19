@@ -131,6 +131,8 @@ class DeviceLoginService:
         user_agent: str,
         request_id: str,
     ) -> dict[str, Any]:
+        from accounts.services.access_control_service import AccessControlService
+
         identity = DeviceLoginService._load_device_identity(
             identity_scope=identity_scope,
             device_id=normalized_device_id,
@@ -138,6 +140,27 @@ class DeviceLoginService:
         created_user = False
         account_resolution = "device_account_login"
         User = get_user_model()
+
+        def _create_device_user_guarded(*, old_user_id: int | None = None):
+            if old_user_id is not None:
+                AccessControlService.check(
+                    user_id=old_user_id,
+                    provider=LoginAudit.LoginProvider.DEVICE,
+                    bundle_id=real_bundle_id,
+                    device_id=normalized_device_id,
+                    request_id=request_id or "",
+                    ip_address=ip_address or "",
+                    user_agent=user_agent or "",
+                )
+            AccessControlService.check_device_registration(
+                device_id=normalized_device_id,
+                provider=LoginAudit.LoginProvider.DEVICE,
+                bundle_id=real_bundle_id,
+                request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+            )
+            return DeviceLoginService._create_device_user(device_id=normalized_device_id)
 
         if identity is not None:
             user = identity.user
@@ -151,13 +174,13 @@ class DeviceLoginService:
                         "device_id_hash": DeviceCredentialService.device_id_audit_tail(normalized_device_id),
                     },
                 )
-                user = DeviceLoginService._create_device_user(device_id=normalized_device_id)
+                user = _create_device_user_guarded(old_user_id=user.id)
                 identity.user = user
                 identity.save(update_fields=["user", "updated_at"])
                 created_user = True
                 account_resolution = "device_account_recreated"
         else:
-            user = DeviceLoginService._create_device_user(device_id=normalized_device_id)
+            user = _create_device_user_guarded()
             try:
                 SocialIdentity.objects.create(
                     user=user,
@@ -180,13 +203,11 @@ class DeviceLoginService:
                 created_user = False
                 account_resolution = "device_account_login"
                 if not user.is_active:
-                    user = DeviceLoginService._create_device_user(device_id=normalized_device_id)
+                    user = _create_device_user_guarded(old_user_id=user.id)
                     identity.user = user
                     identity.save(update_fields=["user", "updated_at"])
                     created_user = True
                     account_resolution = "device_account_recreated"
-
-        from accounts.services.access_control_service import AccessControlService
 
         identities = AccessControlService._collect_user_identities(user=user)
         AccessControlService.check(

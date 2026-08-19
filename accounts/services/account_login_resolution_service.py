@@ -96,6 +96,31 @@ class AccountLoginResolutionService:
         if not provider_uid or not scope or not real_bundle:
             raise APIError("bundle_id_or_provider_uid_required", code=40065, status_code=400)
 
+        from accounts.services.access_control_service import AccessControlService
+
+        audit_provider = login_audit_provider or AccountLoginResolutionService._audit_provider(provider)
+
+        def _guarded_create_user(*, old_user_id: int | None = None):
+            if old_user_id is not None:
+                AccessControlService.check(
+                    user_id=old_user_id,
+                    provider=audit_provider,
+                    bundle_id=real_bundle,
+                    device_id=normalized_device_id,
+                    request_id=request_id or "",
+                    ip_address=ip_address or "",
+                    user_agent=user_agent or "",
+                )
+            AccessControlService.check_device_registration(
+                device_id=normalized_device_id,
+                provider=audit_provider,
+                bundle_id=real_bundle,
+                request_id=request_id or "",
+                ip_address=ip_address or "",
+                user_agent=user_agent or "",
+            )
+            return create_user()
+
         formal = AccountLoginResolutionService._load_identity_for_update(
             identity_scope=scope,
             provider=provider,
@@ -156,7 +181,7 @@ class AccountLoginResolutionService:
                         "old_user_id": user.id,
                     },
                 )
-                user = create_user()
+                user = _guarded_create_user(old_user_id=user.id)
                 formal.user = user
                 formal.save(update_fields=["user", "updated_at"])
                 created_user = True
@@ -213,7 +238,7 @@ class AccountLoginResolutionService:
                         },
                     )
             else:
-                user = create_user()
+                user = _guarded_create_user()
                 try:
                     SocialIdentity.objects.create(
                         user=user,
@@ -243,8 +268,7 @@ class AccountLoginResolutionService:
 
         LoginAuditService.write_success(
             user=user,
-            provider=login_audit_provider
-            or AccountLoginResolutionService._audit_provider(provider),
+            provider=audit_provider,
             bundle_id=real_bundle,
             device_id=normalized_device_id,
             request_id=request_id or "",

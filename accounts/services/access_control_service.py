@@ -4,11 +4,18 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import connections, router, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import AccessDenyEntry, LoginAudit, SocialIdentity
+from accounts.models import (
+    AccessDenyEntry,
+    AccessDenyHit,
+    AccountDeviceSession,
+    LoginAudit,
+    SocialIdentity,
+    TrustedDevice,
+)
 from accounts.services.login_audit_service import LoginAuditService
 from accounts.services.phone_number_service import PhoneNumberService
 from common.exceptions import APIError
@@ -20,6 +27,10 @@ ACCOUNT_BANNED_SCENE = "account.lifecycle.login_banned"
 
 
 class AccessControlService:
+    @staticmethod
+    def normalize_device_id(value: str) -> str:
+        return (value or "").strip()
+
     @staticmethod
     def normalize_email(value: str) -> str:
         return (value or "").strip().lower()
@@ -66,6 +77,83 @@ class AccessControlService:
         return AccessControlService._active_queryset().filter(query).order_by("-created_at").first()
 
     @staticmethod
+    def _record_hit(
+        *,
+        hit: AccessDenyEntry,
+        action: str,
+        provider: str,
+        user_id: int | None = None,
+        email: str = "",
+        phone: str = "",
+        bundle_id: str = "",
+        device_id: str = "",
+        request_id: str = "",
+        ip_address: str = "",
+        user_agent: str = "",
+    ) -> None:
+        attempted_phone = ""
+        if (phone or "").strip():
+            try:
+                attempted_phone = AccessControlService.normalize_phone(phone)
+            except APIError:
+                attempted_phone = (phone or "").strip()
+        try:
+            AccessControlService._insert_hit_autocommit(
+                deny_entry_id=hit.id,
+                action=action,
+                hit_dimension=hit.dimension,
+                hit_value=hit.dimension_value,
+                reason_code=hit.reason_code or "account_banned",
+                provider=provider,
+                attempted_user_id=user_id,
+                attempted_email=AccessControlService.normalize_email(email),
+                attempted_phone=attempted_phone,
+                device_id=AccessControlService.normalize_device_id(device_id),
+                bundle_id=(bundle_id or "").strip(),
+                ip_address=(ip_address or "").strip()[:64],
+                user_agent=(user_agent or "")[:2000],
+                request_id=(request_id or "").strip()[:64],
+                created_at=timezone.now(),
+            )
+        except Exception as exc:
+            flow_logger.warning(
+                "access.deny_hit.write_failed",
+                extra={
+                    "action": "access.deny_hit.write_failed",
+                    "request_id": request_id,
+                    "deny_entry_id": hit.id,
+                    "reason": str(exc),
+                },
+            )
+
+    @staticmethod
+    def _insert_hit_autocommit(**field_values: Any) -> None:
+        """Insert AccessDenyHit on a new connection so login atomic rollback cannot undo it."""
+        instance = AccessDenyHit(**field_values)
+        alias = router.db_for_write(AccessDenyHit)
+        extra = connections.create_connection(alias)
+        extra.set_autocommit(True)
+        try:
+            columns: list[str] = []
+            values: list[Any] = []
+            for field in AccessDenyHit._meta.local_concrete_fields:
+                if field.primary_key and getattr(field, "auto_created", False):
+                    continue
+                attname = field.attname
+                if attname not in field_values and not hasattr(instance, attname):
+                    continue
+                raw = getattr(instance, attname)
+                columns.append(extra.ops.quote_name(field.column))
+                values.append(field.get_db_prep_save(raw, connection=extra))
+            table = extra.ops.quote_name(AccessDenyHit._meta.db_table)
+            placeholders = ", ".join(["%s"] * len(columns))
+            sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
+            with extra.cursor() as cursor:
+                cursor.execute(sql, values)
+        finally:
+            extra.close()
+
+    @staticmethod
     def check(
         *,
         user_id: int | None = None,
@@ -77,10 +165,24 @@ class AccessControlService:
         request_id: str = "",
         ip_address: str = "",
         user_agent: str = "",
+        action: str = AccessDenyHit.Action.LOGIN,
     ) -> None:
         hit = AccessControlService.find_active_hit(user_id=user_id, email=email, phone=phone)
         if hit is None:
             return
+        AccessControlService._record_hit(
+            hit=hit,
+            action=action,
+            provider=provider,
+            user_id=user_id,
+            email=email,
+            phone=phone,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            request_id=request_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
         LoginAuditService.write_failure(
             provider=provider,
             bundle_id=bundle_id or "",
@@ -120,6 +222,88 @@ class AccessControlService:
         )
 
     @staticmethod
+    def find_active_device_hit(*, device_id: str) -> AccessDenyEntry | None:
+        normalized = AccessControlService.normalize_device_id(device_id)
+        if not normalized:
+            return None
+        return (
+            AccessControlService._active_queryset()
+            .filter(
+                dimension=AccessDenyEntry.Dimension.DEVICE,
+                dimension_value=normalized,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+    @staticmethod
+    def check_device_registration(
+        *,
+        device_id: str,
+        provider: str = LoginAudit.LoginProvider.PASSWORD,
+        bundle_id: str = "",
+        request_id: str = "",
+        ip_address: str = "",
+        user_agent: str = "",
+        action: str = AccessDenyHit.Action.REGISTER,
+        phone: str = "",
+    ) -> None:
+        hit = AccessControlService.find_active_device_hit(device_id=device_id)
+        if hit is None:
+            return
+        action_key = action or AccessDenyHit.Action.REGISTER
+        is_otp = action_key == AccessDenyHit.Action.OTP_REQUEST
+        failure_stage = "device_otp_denied" if is_otp else "device_registration_denied"
+        log_action = "access.device_otp.denied" if is_otp else "access.device_registration.denied"
+        AccessControlService._record_hit(
+            hit=hit,
+            action=action_key,
+            provider=provider,
+            device_id=device_id,
+            bundle_id=bundle_id,
+            request_id=request_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            phone=phone,
+        )
+        LoginAuditService.write_failure(
+            provider=provider,
+            bundle_id=bundle_id or "",
+            device_id=AccessControlService.normalize_device_id(device_id),
+            request_id=request_id or "",
+            ip_address=ip_address or "",
+            user_agent=user_agent or "",
+            status_code=403,
+            error_code=40371,
+            error_message="access_denied",
+            raw_claims={
+                "failure_stage": failure_stage,
+                "deny_entry_id": hit.id,
+                "deny_dimension": hit.dimension,
+                "reason_code": hit.reason_code,
+            },
+            user=get_user_model().objects.filter(id=hit.related_user_id).first() if hit.related_user_id else None,
+        )
+        flow_logger.warning(
+            log_action,
+            extra={
+                "action": log_action,
+                "request_id": request_id,
+                "deny_entry_id": hit.id,
+                "device_id": AccessControlService.normalize_device_id(device_id),
+            },
+        )
+        raise APIError(
+            "access_denied",
+            code=40371,
+            status_code=403,
+            details={
+                "reason_code": hit.reason_code or "account_banned",
+                "public_reason": PUBLIC_BAN_REASON,
+            },
+        )
+
+    @staticmethod
     def _collect_user_identities(*, user) -> dict[str, set[str]]:
         emails: set[str] = set()
         phones: set[str] = set()
@@ -132,6 +316,35 @@ class AccessControlService:
             elif provider == SocialIdentity.Provider.PHONE and uid:
                 phones.add(uid.strip())
         return {"emails": emails, "phones": phones}
+
+    @staticmethod
+    def _collect_user_device_ids(*, user) -> set[str]:
+        device_ids: set[str] = set()
+        for device_id in TrustedDevice.objects.filter(user=user).values_list("device_id", flat=True):
+            normalized = AccessControlService.normalize_device_id(device_id)
+            if normalized:
+                device_ids.add(normalized)
+        for device_id in AccountDeviceSession.objects.filter(user=user).values_list("device_id", flat=True):
+            normalized = AccessControlService.normalize_device_id(device_id)
+            if normalized:
+                device_ids.add(normalized)
+        for provider_uid in SocialIdentity.objects.filter(
+            user=user,
+            provider=SocialIdentity.Provider.DEVICE,
+        ).values_list("provider_uid", flat=True):
+            normalized = AccessControlService.normalize_device_id(provider_uid)
+            if normalized:
+                device_ids.add(normalized)
+        for device_id in (
+            LoginAudit.objects.filter(user=user, outcome=LoginAudit.LoginOutcome.SUCCESS)
+            .exclude(device_id="")
+            .values_list("device_id", flat=True)
+            .distinct()
+        ):
+            normalized = AccessControlService.normalize_device_id(device_id)
+            if normalized:
+                device_ids.add(normalized)
+        return device_ids
 
     @staticmethod
     def _phone_for_user(user) -> str:
@@ -284,6 +497,17 @@ class AccessControlService:
                 if created:
                     expanded_entries.append(entry.id)
 
+        for device_id in AccessControlService._collect_user_device_ids(user=user):
+            entry, created = AccessControlService._ensure_entry(
+                dimension=AccessDenyEntry.Dimension.DEVICE,
+                dimension_value=device_id,
+                source=AccessDenyEntry.Source.AUTO_EXPAND,
+                related_user_id=user.id,
+                created_by_id=created_by_id,
+            )
+            if created:
+                expanded_entries.append(entry.id)
+
         AccessControlService._disable_user_sessions(user=user, request_id=request_id)
         sms_result = {"sms_status": "skipped", "sms_reason": "send_disabled"}
         if send_sms:
@@ -416,6 +640,32 @@ class AccessControlService:
             "linked_users": [],
             "sms_status": "skipped",
             "sms_reason": "no_bound_user",
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def ban_device(
+        *,
+        device_id: str,
+        reason_note: str = "",
+        created_by_id: int | None = None,
+    ) -> dict[str, Any]:
+        normalized_device_id = AccessControlService.normalize_device_id(device_id)
+        if not normalized_device_id:
+            raise APIError("device_id_required", code=40061, status_code=400)
+        device_entry, device_created = AccessControlService._ensure_entry(
+            dimension=AccessDenyEntry.Dimension.DEVICE,
+            dimension_value=normalized_device_id,
+            source=AccessDenyEntry.Source.ADMIN,
+            reason_note=reason_note,
+            created_by_id=created_by_id,
+        )
+        return {
+            "entry_id": device_entry.id,
+            "device_id": normalized_device_id,
+            "created": device_created,
+            "sms_status": "skipped",
+            "sms_reason": "device_only",
         }
 
     @staticmethod

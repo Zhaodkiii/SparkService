@@ -5,10 +5,14 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.views import APIView
 
-from accounts.models import AccessDenyEntry
+from accounts.models import AccessDenyEntry, AccessDenyHit
 from accounts.services.access_control_service import AccessControlService
 from backoffice.audit import write_audit_log
-from backoffice.serializers import AdminAccessDenyCreateSerializer, AdminAccessDenyEntrySerializer
+from backoffice.serializers import (
+    AdminAccessDenyCreateSerializer,
+    AdminAccessDenyEntrySerializer,
+    AdminAccessDenyHitSerializer,
+)
 from common.exceptions import APIError
 from common.permissions import AdminCodePermission
 from common.response import success_response
@@ -79,6 +83,12 @@ class AdminAccessDenyListCreateView(APIView):
                     created_by_id=created_by_id,
                     request_id=request_id,
                 )
+            elif data.get("device_id"):
+                result = AccessControlService.ban_device(
+                    device_id=data["device_id"],
+                    reason_note=data.get("reason_note", ""),
+                    created_by_id=created_by_id,
+                )
             else:
                 result = AccessControlService.ban_email(
                     email=data["email"],
@@ -127,3 +137,61 @@ class AdminAccessDenyRevokeView(APIView):
             response_payload=payload,
         )
         return success_response(payload, msg="revoked", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAccessDenyHitListView(APIView):
+    permission_classes = [AdminCodePermission]
+    required_permission_code = "button:user:blacklist:manage"
+
+    def get(self, request):
+        queryset = AccessDenyHit.objects.select_related("deny_entry").all().order_by("-created_at", "-id")
+
+        action = (request.query_params.get("action") or "").strip()
+        hit_dimension = (request.query_params.get("hit_dimension") or "").strip()
+        provider = (request.query_params.get("provider") or "").strip()
+        deny_entry_id = (request.query_params.get("deny_entry_id") or "").strip()
+        date_from = (request.query_params.get("date_from") or "").strip()
+        date_to = (request.query_params.get("date_to") or "").strip()
+        q = (request.query_params.get("q") or "").strip()
+
+        if action:
+            queryset = queryset.filter(action=action)
+        if hit_dimension:
+            queryset = queryset.filter(hit_dimension=hit_dimension)
+        if provider:
+            queryset = queryset.filter(provider=provider)
+        if deny_entry_id.isdigit():
+            queryset = queryset.filter(deny_entry_id=int(deny_entry_id))
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        if q:
+            queryset = queryset.filter(
+                Q(hit_value__icontains=q)
+                | Q(device_id__icontains=q)
+                | Q(ip_address__icontains=q)
+                | Q(request_id__icontains=q)
+                | Q(attempted_email__icontains=q)
+                | Q(attempted_phone__icontains=q)
+            )
+            if q.isdigit():
+                queryset = queryset.filter(
+                    Q(attempted_user_id=int(q)) | Q(deny_entry_id=int(q))
+                )
+
+        page = int(request.query_params.get("page", "1"))
+        page_size = min(int(request.query_params.get("page_size", "20")), 100)
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(page)
+        payload = {
+            "items": AdminAccessDenyHitSerializer(page_obj.object_list, many=True).data,
+            "pagination": {
+                "page": page_obj.number,
+                "page_size": page_size,
+                "total": paginator.count,
+                "total_pages": paginator.num_pages,
+            },
+        }
+        write_audit_log(request, action="admin.user.blacklist.hits.view", resource_type="access_deny_hit")
+        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)

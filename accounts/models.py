@@ -402,12 +402,13 @@ class AccountIdentityVerificationTicket(models.Model):
 
 
 class AccessDenyEntry(models.Model):
-    """登录/注册黑名单：按 user_id、手机号、邮箱维度拦截。"""
+    """登录/注册黑名单：按 user_id、手机号、邮箱、设备维度拦截。"""
 
     class Dimension(models.TextChoices):
         USER_ID = "user_id", "用户 ID"
         PHONE = "phone", "手机号"
         EMAIL = "email", "邮箱"
+        DEVICE = "device", "设备"
 
     class Source(models.TextChoices):
         ADMIN = "admin", "后台手动"
@@ -432,4 +433,47 @@ class AccessDenyEntry(models.Model):
         verbose_name_plural = "访问拒绝条目"
         indexes = [
             models.Index(fields=["dimension", "dimension_value", "revoked_at"]),
+        ]
+
+
+class AccessDenyHit(models.Model):
+    """黑名单拦截记录：每次 check / check_device_registration 命中写一行。"""
+
+    class Action(models.TextChoices):
+        LOGIN = "login", "登录"
+        REGISTER = "register", "注册"
+        OTP_REQUEST = "otp_request", "OTP 请求"
+        IDENTITY_BIND = "identity_bind", "身份绑定"
+
+    deny_entry = models.ForeignKey(
+        AccessDenyEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="hits",
+        db_comment="命中的黑名单条目，解封后保留记录",
+    )
+    action = models.CharField(max_length=32, choices=Action.choices, db_index=True)
+    hit_dimension = models.CharField(max_length=32, db_index=True)
+    hit_value = models.CharField(max_length=255, db_index=True)
+    reason_code = models.CharField(max_length=64, default="account_banned", db_index=True)
+    provider = models.CharField(max_length=32, db_index=True)
+    attempted_user_id = models.IntegerField(null=True, blank=True, db_index=True)
+    attempted_email = models.CharField(max_length=255, blank=True, default="")
+    attempted_phone = models.CharField(max_length=32, blank=True, default="")
+    device_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    bundle_id = models.CharField(max_length=128, blank=True, default="")
+    ip_address = models.CharField(max_length=64, blank=True, default="")
+    user_agent = models.TextField(blank=True, default="")
+    request_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table_comment = "黑名单拦截记录：append-only，供后台查询"
+        verbose_name = "访问拒绝拦截记录"
+        verbose_name_plural = "访问拒绝拦截记录"
+        indexes = [
+            models.Index(fields=["created_at", "id"]),
+            models.Index(fields=["hit_dimension", "hit_value"]),
+            models.Index(fields=["deny_entry", "created_at"]),
         ]
