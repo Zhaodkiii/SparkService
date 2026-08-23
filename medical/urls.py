@@ -7,6 +7,10 @@ from medical.exam_archive_views import (
     MemberExamArchiveEvidenceAPI,
     MemberExamArchivePreviewAbnormalItemsAPI,
 )
+from medical.chat_guide_question_views import (
+    ChatGuideQuestionClickAPI,
+    ChatGuideQuestionRegisterAPI,
+)
 from medical.unified_resources import UnifiedMedicalResourceViewSet
 from medical.views import (
     CombinedMedicalCreateAPIView,
@@ -124,6 +128,8 @@ urlpatterns = [
         name="medical-exam-archive-ai-plan",
     ),
     path("member-guidance/", MemberGuidanceStateAPI.as_view(), name="medical-member-guidance"),
+    path("chat-guide/questions/register/", ChatGuideQuestionRegisterAPI.as_view(), name="medical-chat-guide-question-register"),  # 登记客户端 AI 生成科普问题
+    path("chat-guide/questions/click/", ChatGuideQuestionClickAPI.as_view(), name="medical-chat-guide-question-click"),  # 上送科普问题点击统计
     path("medication-reminders/enabled-plans/", MedicationReminderEnabledPlansAPI.as_view(), name="medical-medication-reminder-enabled-plans"),
     path("medication-reminders/local-authorizations/<int:plan_id>/", MedicationReminderLocalAuthorizationAPI.as_view(), name="medical-medication-reminder-local-authorization"),
     path("members/<int:member_id>/notification-ownership/", MemberNotificationOwnershipAPI.as_view(), name="medical-member-notification-ownership"),

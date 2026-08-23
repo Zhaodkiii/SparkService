@@ -184,7 +184,10 @@ const fallbackMenus = [
     code: 'menu:conversations',
     name: '对话',
     path: '/conversations',
-    children: [{ code: 'menu:conversations:users', name: '用户对话', path: '/conversations/users', children: [] }],
+    children: [
+      { code: 'menu:conversations:users', name: '用户对话', path: '/conversations/users', children: [] },
+      { code: 'menu:conversations:quick_questions', name: '快捷问题配置', path: '/conversations/quick-questions', children: [] },
+    ],
   },
   {
     code: 'menu:medical_data',

@@ -62,6 +62,14 @@ from backoffice.conversation_views import (
     AdminConversationUserListView,
     AdminConversationUserSummaryView,
 )
+from backoffice.quick_question_views import (
+    AdminGeneratedQuestionRecordDetailView,
+    AdminGeneratedQuestionRecordListView,
+    AdminQuickQuestionConfigDetailView,
+    AdminQuickQuestionConfigDisableView,
+    AdminQuickQuestionConfigEnableView,
+    AdminQuickQuestionConfigListCreateView,
+)
 from backoffice.system_log_views import (
     AdminLoginAuditListView,
     AdminSystemLogDetailView,
@@ -151,6 +159,36 @@ urlpatterns = [
         "conversations/users/<int:user_id>/threads/<uuid:thread_id>/blocks/<uuid:block_id>/detail/",
         AdminConversationBlockDetailView.as_view(),
         name="admin-conversation-block-detail",
+    ),
+    path(
+        "conversations/quick-questions/configs/",
+        AdminQuickQuestionConfigListCreateView.as_view(),
+        name="admin-quick-question-config-list-create",
+    ),
+    path(
+        "conversations/quick-questions/configs/<int:config_id>/",
+        AdminQuickQuestionConfigDetailView.as_view(),
+        name="admin-quick-question-config-detail",
+    ),
+    path(
+        "conversations/quick-questions/configs/<int:config_id>/enable/",
+        AdminQuickQuestionConfigEnableView.as_view(),
+        name="admin-quick-question-config-enable",
+    ),
+    path(
+        "conversations/quick-questions/configs/<int:config_id>/disable/",
+        AdminQuickQuestionConfigDisableView.as_view(),
+        name="admin-quick-question-config-disable",
+    ),
+    path(
+        "conversations/quick-questions/generated-records/",
+        AdminGeneratedQuestionRecordListView.as_view(),
+        name="admin-quick-question-generated-record-list",
+    ),
+    path(
+        "conversations/quick-questions/generated-records/<int:record_id>/",
+        AdminGeneratedQuestionRecordDetailView.as_view(),
+        name="admin-quick-question-generated-record-detail",
     ),
     path("medical-data/stats/global/", AdminMedicalDataGlobalStatsView.as_view(), name="admin-medical-data-global-stats"),
     path("medical-data/users/", AdminMedicalDataUserListView.as_view(), name="admin-medical-data-user-list"),

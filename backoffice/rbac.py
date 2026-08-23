@@ -181,6 +181,14 @@ def bootstrap_admin_permissions() -> None:
         ("button:ai:trial:recycle", "试用回收权限", "button", "", "menu:ai:trial"),
         ("button:ai:trial:grant", "试用发放权限", "button", "", "menu:ai:trial"),
         ("button:rbac:role:assign", "角色分配", "button", "", "menu:rbac"),
+        ("menu:conversations:quick_questions", "快捷问题配置", "menu", "/conversations/quick-questions", "menu:conversations"),
+        ("conversation.quick_question.config.read", "查看快捷问题配置", "api", "", "menu:conversations:quick_questions"),
+        ("conversation.quick_question.config.create", "新增快捷问题", "button", "", "menu:conversations:quick_questions"),
+        ("conversation.quick_question.config.update", "编辑快捷问题", "button", "", "menu:conversations:quick_questions"),
+        ("conversation.quick_question.config.enable", "启用快捷问题", "button", "", "menu:conversations:quick_questions"),
+        ("conversation.quick_question.config.disable", "停用快捷问题", "button", "", "menu:conversations:quick_questions"),
+        ("conversation.quick_question.generated.read", "查看生成记录", "api", "", "menu:conversations:quick_questions"),
+        ("conversation.quick_question.click.read", "查看点击记录", "api", "", "menu:conversations:quick_questions"),
     ]
 
     from backoffice.models import AdminPermission, AdminRolePermission

@@ -1131,3 +1131,79 @@ class HealthMetricRecord(MedicalBaseModel):
 
     class Meta:
         ordering = ["-recorded_at", "-updated_at", "-id"]
+
+
+class ChatGuideQuickQuestionConfig(models.Model):
+    """后台配置的固定快捷问题（BACKOFFICE-CONVERSATION-000001）。
+
+    用于客户端引导卡片科普问题的兜底、未绑定成员、AI 失败或运营推荐场景。
+    第一阶段后台配置不下发客户端，仅提供配置管理与后续能力预留。
+    """
+
+    title = models.CharField(max_length=120, db_comment="卡片展示文案，要求短句")
+    prompt = models.TextField(db_comment="点击后发送给 AI 的完整 prompt")
+    category = models.CharField(max_length=64, default="popular_science", db_index=True, db_comment="问题分类")
+    locale = models.CharField(max_length=32, default="zh-Hans", db_index=True, db_comment="语言区域")
+    is_active = models.BooleanField(default=False, db_index=True, db_comment="是否启用")
+    created_by = models.ForeignKey(
+        User,
+        related_name="quick_question_configs_created",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_comment="创建操作员",
+    )
+    updated_by = models.ForeignKey(
+        User,
+        related_name="quick_question_configs_updated",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_comment="最近编辑操作员",
+    )
+    metadata = models.JSONField(default=dict, blank=True, db_comment="扩展信息，例如适用场景、标签")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_comment="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, db_index=True, db_comment="更新时间")
+
+    class Meta:
+        db_table = "medical_chat_guide_quick_question_config"
+        db_table_comment = "对话引导卡片固定快捷问题配置（后台运营配置）。"
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["is_active", "category"]),
+            models.Index(fields=["locale", "category", "is_active"]),
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class ChatGuideGeneratedQuestionRecord(models.Model):
+    """客户端 AI 成功生成的引导卡片科普问题登记记录（BACKOFFICE-CONVERSATION-000001）。
+
+    仅登记 AI 成功生成的问题；固定兜底、无绑定成员、AI 失败、解析失败等场景不入表。
+    第一阶段不登记 thread/message/block 维度字段，不强制唯一约束，仅保留点击次数。
+    """
+
+    user = models.ForeignKey(User, related_name="guide_generated_questions", on_delete=models.CASCADE, db_index=True, db_comment="登记用户")
+    member = models.ForeignKey(Member, related_name="guide_generated_questions", on_delete=models.CASCADE, db_index=True, db_comment="关联成员")
+    title = models.CharField(max_length=120, db_comment="展示文案")
+    prompt = models.TextField(db_comment="完整 prompt")
+    category = models.CharField(max_length=64, default="popular_science", db_index=True, db_comment="问题分类")
+    locale = models.CharField(max_length=32, default="zh-Hans", db_index=True, db_comment="语言区域")
+    click_count = models.PositiveIntegerField(default=0, db_index=True, db_comment="点击次数")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_comment="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, db_index=True, db_comment="更新时间")
+
+    class Meta:
+        db_table = "medical_chat_guide_generated_question_record"
+        db_table_comment = "客户端 AI 生成引导卡片科普问题登记与点击统计记录。"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["member", "created_at"]),
+            models.Index(fields=["category", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"guide_question:member={self.member_id}:{self.title}"
