@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spark.chat.pending-interaction.v1",
+  "type": "object",
+  "required": ["interaction_id", "kind", "status", "expires_at"],
+  "properties": {
+    "interaction_id": {"type": "string", "format": "uuid"},
+    "kind": {"enum": ["ask_user", "client_tool"]},
+    "tool_call_id": {"type": ["string", "null"]},
+    "status": {"enum": ["pending", "resolved", "refused", "expired", "cancelled"]},
+    "schema": {"type": "object"},
+    "expires_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

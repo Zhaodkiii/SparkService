@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spark.chat.block.v1",
+  "type": "object",
+  "required": ["id", "kind", "status", "revision", "order_key", "node_role", "payload"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "kind": {"type": "string", "minLength": 1},
+    "status": {"enum": ["pending", "streaming", "ready", "failed"]},
+    "revision": {"type": "integer", "minimum": 0},
+    "order_key": {"type": ["number", "null"]},
+    "tool_call_id": {"type": ["string", "null"]},
+    "parent_tool_call_id": {"type": ["string", "null"]},
+    "parent_block_id": {"type": ["string", "null"]},
+    "node_role": {"type": "string"},
+    "anchor": {"type": ["object", "null"]},
+    "payload": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

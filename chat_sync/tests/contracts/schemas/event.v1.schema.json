@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spark.chat.event.v1",
+  "type": "object",
+  "required": ["type", "event_id", "payload_version", "run_id", "thread_id", "sequence", "timestamp", "payload"],
+  "properties": {
+    "type": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "format": "uuid"},
+    "payload_version": {"type": "integer", "minimum": 1},
+    "run_id": {"type": "string", "format": "uuid"},
+    "thread_id": {"type": "string", "format": "uuid"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": true
+}

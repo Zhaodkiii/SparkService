@@ -48,10 +48,15 @@ def _short_repr(obj, max_len: int | None = None) -> str:
         return text[: limit - 20] + "...(truncated)"
     return text
 
-def _headers_for_log(headers: dict | None) -> dict:
+def _headers_for_log(headers: dict | None, *, redact_sensitive: bool = False) -> dict:
     if not headers:
         return {}
-    return {str(k): str(v) for k, v in headers.items()}
+    result = {str(k): str(v) for k, v in headers.items()}
+    if redact_sensitive:
+        for key in list(result):
+            if key.lower() in {"authorization", "cookie", "idempotency-key", "x-api-key"}:
+                result[key] = "<redacted>"
+    return result
 
 
 def _log_level_by_status(status_code: int):
@@ -85,6 +90,37 @@ def _body_for_log(raw: bytes | None, content_type: str | None = None):
     return text
 
 
+def _redact_chat_ai_body(value):
+    """Keep AI request shape observable without logging user/medical content."""
+    sensitive_keys = {
+        "content",
+        "prompt",
+        "full_prompt",
+        "request_snapshot",
+        "attachments",
+        "references",
+        "arguments",
+        "healthkit_raw_samples",
+        "ticket",
+        "access_token",
+        "refresh_token",
+    }
+    if isinstance(value, dict):
+        redacted = {}
+        for key, child in value.items():
+            if str(key).lower() in sensitive_keys:
+                if isinstance(child, (list, dict)):
+                    redacted[key] = {"count": len(child)} if isinstance(child, list) else "<redacted>"
+                else:
+                    redacted[key] = "<redacted>"
+            else:
+                redacted[key] = _redact_chat_ai_body(child)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_chat_ai_body(child) for child in value]
+    return value
+
+
 class RequestLoggingMiddleware:
     """
     Emit one structured access log per request.
@@ -96,8 +132,11 @@ class RequestLoggingMiddleware:
     def __call__(self, request):
         start = time.perf_counter()
         request_io_logger = self._io_logger_for_path(request.path)
-        request_headers = _headers_for_log(dict(request.headers))
+        is_chat_ai_path = request.path.startswith("/api/v1/ai/chat/")
+        request_headers = _headers_for_log(dict(request.headers), redact_sensitive=is_chat_ai_path)
         request_body = _body_for_log(request.body, request.content_type)
+        if is_chat_ai_path:
+            request_body = _redact_chat_ai_body(request_body)
         user_id = None
         client_ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")) or ""
         user_agent = request.META.get("HTTP_USER_AGENT", "") or ""
@@ -178,6 +217,8 @@ class RequestLoggingMiddleware:
         if hasattr(response, "streaming") and not getattr(response, "streaming", False):
             response_content = getattr(response, "content", b"")
             response_body = _body_for_log(response_content, response_content_type)
+            if is_chat_ai_path:
+                response_body = _redact_chat_ai_body(response_body)
             response_bytes = len(response_content or b"")
 
         summary_level = _log_level_by_status(status_code)

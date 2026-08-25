@@ -1,0 +1,130 @@
+{
+  "contract_manifest_version": 1,
+  "contracts": [
+    {
+      "contract_id": "spark.chat.api-envelope.v1",
+      "schema": "schemas/api_envelope.v1.schema.json",
+      "consumers": [
+        "server",
+        "web",
+        "ios"
+      ]
+    },
+    {
+      "contract_id": "spark.chat.run.v1",
+      "schema": "schemas/run.v1.schema.json",
+      "consumers": [
+        "server",
+        "web",
+        "ios"
+      ]
+    },
+    {
+      "contract_id": "spark.chat.event.v1",
+      "schema": "schemas/event.v1.schema.json",
+      "consumers": [
+        "server",
+        "web",
+        "ios"
+      ]
+    },
+    {
+      "contract_id": "spark.chat.block.v1",
+      "schema": "schemas/block.v1.schema.json",
+      "consumers": [
+        "server",
+        "web",
+        "ios"
+      ]
+    },
+    {
+      "contract_id": "spark.chat.tool-call.v1",
+      "schema": "schemas/tool_call.v1.schema.json",
+      "consumers": [
+        "server",
+        "web",
+        "ios"
+      ]
+    },
+    {
+      "contract_id": "spark.chat.pending-interaction.v1",
+      "schema": "schemas/pending_interaction.v1.schema.json",
+      "consumers": [
+        "server",
+        "web",
+        "ios"
+      ]
+    }
+  ],
+  "fixture_policy": {
+    "unknown_types_are_valid": true,
+    "timestamps": "UTC",
+    "ids": "deterministic"
+  },
+  "files": [
+    {
+      "path": "schemas/api_envelope.v1.schema.json",
+      "sha256": "a506d16775f649055500cc12696a0cbafb8b90b4216b3a175297e44eac6002f9"
+    },
+    {
+      "path": "schemas/block.v1.schema.json",
+      "sha256": "ceabf7ca427c36f5dd40ca1486d722a6f05f660a5b2177e721da5f4ddf45fe9b"
+    },
+    {
+      "path": "schemas/event.v1.schema.json",
+      "sha256": "f9be489b3d36bb4390d0976c51af8d0bd1cd98f2324c82f1846dd67bbfb00571"
+    },
+    {
+      "path": "schemas/pending_interaction.v1.schema.json",
+      "sha256": "dbf19a6a782f5f192356f2eaa9be1cf8c01528f86c78a025352e403206d71bff"
+    },
+    {
+      "path": "schemas/run.v1.schema.json",
+      "sha256": "f35911d88c4747118242e39a7021649ed2da512ef6f613acd7ef1dc818c6d504"
+    },
+    {
+      "path": "schemas/tool_call.v1.schema.json",
+      "sha256": "0d0768314ed6c76b8280d4ece6752b86713e02d32291e6d96cec2ca89bc0c147"
+    },
+    {
+      "path": "valid/api/error_envelope.json",
+      "sha256": "1a3e608c1bedcecc99cf6564dbb7da3448b0b68be95346686029fdf4cb824c4b"
+    },
+    {
+      "path": "valid/blocks/text.json",
+      "sha256": "7af172066dd2c58d712cd6f3b8e6fe39bf45a71213cc09a4c9b2ecf0f96c3530"
+    },
+    {
+      "path": "valid/blocks/unknown_kind.json",
+      "sha256": "f2b6c8ff9d298f2a13999618fb1ef3fcf8b7dbe6186ac2c2e4f370face70ba54"
+    },
+    {
+      "path": "valid/events/block_delta.json",
+      "sha256": "8dad9c357c5a2731ea5ca36a98371314dc74056e8cc0fc85264726572a6f45fd"
+    },
+    {
+      "path": "valid/events/run_done.json",
+      "sha256": "f098d74095e076d799a8b3a3982cf41a5ab7f55d6caeb1415a3cfba93fa683be"
+    },
+    {
+      "path": "valid/events/run_started.json",
+      "sha256": "cd9b982164b104b16f806b4573c2151fdc94b1e71b6f80e3fc3e29af7596b782"
+    },
+    {
+      "path": "valid/events/unknown_forward_compatible.json",
+      "sha256": "157030021897001d6292401667b34b3841698eb1204d92223080201fb43a29e7"
+    },
+    {
+      "path": "invalid/blocks/bad_status.json",
+      "sha256": "88f37e38d7279eca55799ae65a6bcc8be47edea0021051a2f60bc04dc548c642"
+    },
+    {
+      "path": "invalid/events/missing_sequence.json",
+      "sha256": "4fd6a1fb81d701d4226b9f58374f5efbff5420dba22647275da0316dc43cd44b"
+    }
+  ],
+  "spark_web_snapshot": {
+    "source": "chat_sync/tests/contracts",
+    "synced_at": "2026-08-24T21:21:28.835Z"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spark.chat.api-envelope.v1",
+  "type": "object",
+  "required": ["code", "msg", "data"],
+  "properties": {
+    "code": {"type": "integer"},
+    "msg": {"type": "string"},
+    "data": {"type": ["object", "null"]}
+  },
+  "additionalProperties": true
+}

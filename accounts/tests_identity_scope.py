@@ -12,12 +12,14 @@ from accounts.services.otp_service import OTPService
 
 HEALTH_BUNDLE = "cn.Zhaodk.Health"
 MEDICINE_BOX_BUNDLE = "cn.Zhaodk.MedicineBox"
+WEB_BUNDLE = "cn.Zhaodk.Health.web"
 OTHER_BUNDLE = "cn.zdk.SupportClient"
 SHARED_SCOPE = "cn.Zhaodk.Health"
 
 IDENTITY_SCOPE_ALIASES = {
     HEALTH_BUNDLE: SHARED_SCOPE,
     MEDICINE_BOX_BUNDLE: SHARED_SCOPE,
+    WEB_BUNDLE: SHARED_SCOPE,
 }
 
 
@@ -28,6 +30,9 @@ class IdentityScopeServiceTests(TestCase):
 
     def test_resolve_medicine_box_maps_to_health(self):
         self.assertEqual(IdentityScopeService.resolve(MEDICINE_BOX_BUNDLE), SHARED_SCOPE)
+
+    def test_resolve_web_maps_to_health(self):
+        self.assertEqual(IdentityScopeService.resolve(WEB_BUNDLE), SHARED_SCOPE)
 
     def test_resolve_unconfigured_bundle_returns_itself(self):
         self.assertEqual(IdentityScopeService.resolve(OTHER_BUNDLE), OTHER_BUNDLE)
@@ -117,6 +122,13 @@ class SharedPhoneIdentityScopeTests(TestCase):
 
         token = AccessToken(medicine["access_token"])
         self.assertEqual(token["bundle_id"], MEDICINE_BOX_BUNDLE)
+
+    def test_health_then_web_hit_same_user(self):
+        health = self._login(bundle_id=HEALTH_BUNDLE, device_id="device-health-web", request_id="req-health-web")
+        web = self._login(bundle_id=WEB_BUNDLE, device_id="device-web", request_id="req-web-phone")
+        self.assertEqual(health["user_id"], web["user_id"])
+        self.assertEqual(web["identity_scope"], SHARED_SCOPE)
+        self.assertEqual(AccessToken(web["access_token"])["bundle_id"], WEB_BUNDLE)
 
     def test_other_bundle_keeps_isolated_user(self):
         health = self._login(

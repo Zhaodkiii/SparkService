@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from chat_sync.views import (
     ChatSyncPullView,
@@ -10,6 +10,7 @@ from chat_sync.views import (
 )
 
 urlpatterns = [
+    path("", include("chat_sync.ai_api.urls")),
     path("sync/push/", ChatSyncPushView.as_view(), name="chat_sync_push"),
     path("sync/pull/", ChatSyncPullView.as_view(), name="chat_sync_pull"),
     path("sync/thread-pull/", ChatSyncThreadPullView.as_view(), name="chat_sync_thread_pull"),

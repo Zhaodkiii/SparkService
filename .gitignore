@@ -1,9 +1,14 @@
 # Secrets（含密钥，切勿提交）
 .env
+chat-web/.env.local
+chat-web/.env.*.local
 apns_keys/
 
 # macOS
 .DS_Store
+
+# IDE
+.idea/
 
 # Database backups（本地数据库备份，切勿提交）
 数据库备份/
@@ -25,6 +30,14 @@ celerybeat-schedule
 
 # Runtime process control
 run/
+scripts/**/.pids/
+
+# chat-web build / deps
+chat-web/node_modules/
+chat-web/.next/
+chat-web/test-results/
+chat-web/playwright-report/
+chat-web/tsconfig.tsbuildinfo
 
 # Logs
 logs/
@@ -35,3 +48,7 @@ logs/*.stderr.log
 
 # Redis dump
 dump.rdb
+
+# Editor swap
+*.swp
+*~

@@ -130,3 +130,21 @@ class ChatMessageBlock(models.Model):
             models.Index(fields=["message", "order_key", "created_at"], name="idx_chat_block_msg_order"),
             models.Index(fields=["user", "server_updated_at", "id"], name="idx_chat_block_user_sync"),
         ]
+
+
+# Keep this module as the Django model discovery entry point while the AI
+# persistence models live in cohesive files under chat_sync.ai_models.
+from chat_sync.ai_models import (  # noqa: E402,F401
+    ChatDeferredToolState,
+    ChatAgentCheckpoint,
+    ChatEventOutbox,
+    ChatPendingInteraction,
+    ChatRun,
+    ChatRunEvent,
+    ChatThreadPreferences,
+    ChatThreadRunLock,
+    ChatWebSocketTicket,
+    ChatToolCall,
+    ChatTurnContextSnapshot,
+    ChatUsageRecord,
+)

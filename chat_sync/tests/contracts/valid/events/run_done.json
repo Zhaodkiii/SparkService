@@ -1,0 +1,10 @@
+{
+  "type": "run.done",
+  "event_id": "00000000-0000-0000-0000-000000000014",
+  "payload_version": 1,
+  "run_id": "00000000-0000-0000-0000-000000000010",
+  "thread_id": "00000000-0000-0000-0000-000000000001",
+  "sequence": 4,
+  "timestamp": "2026-08-25T02:00:04Z",
+  "payload": {"terminal_status": "completed"}
+}

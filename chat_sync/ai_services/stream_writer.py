@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from django.db import transaction
+from django.utils import timezone
+
+from chat_sync.ai_models import ChatRun, ChatThreadRunLock, ChatUsageRecord, RunStatus
+from chat_sync.ai_services.run_service import RunService
+from chat_sync.models import ChatMessageBlock
+
+
+class RunLeaseLost(RuntimeError):
+    pass
+
+
+class RunExecutionCancelled(RuntimeError):
+    pass
+
+
+def _usage_value(usage: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = usage.get(key)
+        if isinstance(value, (int, float)) and value >= 0:
+            return int(value)
+    return 0
+
+
+def _payload_hash(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+class StreamWriter:
+    """Project provider output into durable Blocks and replayable v1 events."""
+
+    @staticmethod
+    def _assert_execution(run: ChatRun, lease_token=None) -> None:
+        if run.is_terminal:
+            raise RunLeaseLost("run is already terminal")
+        if lease_token is not None and run.lease_token != lease_token:
+            raise RunLeaseLost("run worker lease was replaced")
+        if run.cancel_requested_at is not None:
+            raise RunExecutionCancelled("run cancellation requested")
+
+    @classmethod
+    def append_text(cls, *, run_id, text: str, lease_token=None) -> int | None:
+        if not text:
+            return None
+        with transaction.atomic():
+            run = ChatRun.objects.select_for_update().select_related("assistant_message").get(pk=run_id)
+            cls._assert_execution(run, lease_token)
+            block = run.assistant_message.blocks.filter(kind="text").first()
+            now = timezone.now()
+            first_visible_delta = run.first_token_at is None
+            if block is None:
+                block = ChatMessageBlock.objects.create(
+                    user=run.user,
+                    thread=run.thread,
+                    message=run.assistant_message,
+                    kind="text",
+                    status=ChatMessageBlock.Status.STREAMING,
+                    revision=0,
+                    order_key=1000,
+                    node_role="content",
+                    payload={"text": "", "content_type": "text/markdown"},
+                    created_at=now,
+                    updated_at=now,
+                )
+                RunService._append_event_locked(
+                    run=run,
+                    event_type="block.created",
+                    payload={
+                        "message_id": str(run.assistant_message_id),
+                        "block_id": str(block.id),
+                        "kind": "text",
+                        "status": "streaming",
+                        "revision": 0,
+                        "order_key": block.order_key,
+                        "block": {
+                            "id": str(block.id),
+                            "kind": "text",
+                            "status": "streaming",
+                            "revision": 0,
+                            "order_key": block.order_key,
+                            "node_role": block.node_role,
+                            "payload": {"text": "", "content_type": "text/markdown"},
+                        },
+                    },
+                )
+            payload = dict(block.payload or {})
+            payload["text"] = f"{payload.get('text', '')}{text}"
+            payload["content_type"] = "text/markdown"
+            block.payload = payload
+            block.revision += 1
+            block.status = ChatMessageBlock.Status.STREAMING
+            block.updated_at = now
+            block.save(update_fields=["payload", "revision", "status", "updated_at", "server_updated_at"])
+            if first_visible_delta:
+                run.first_token_at = now
+                run.save(update_fields=["first_token_at", "updated_at"])
+                RunService._append_event_locked(run=run, event_type="assistant.status", payload={"state": "answering", "status": "answering"})
+            RunService._append_event_locked(
+                run=run,
+                event_type="block.delta",
+                payload={
+                    "message_id": str(run.assistant_message_id),
+                    "block_id": str(block.id),
+                    "revision": block.revision,
+                    "delta": text,
+                    "content_type": "text/markdown",
+                },
+            )
+            return block.revision
+
+    @classmethod
+    def finish(
+        cls,
+        *,
+        run_id,
+        status=RunStatus.COMPLETED,
+        finish_reason="stop",
+        error_code="",
+        error_message="",
+        retryable=False,
+        lease_token=None,
+        usage: dict[str, Any] | None = None,
+        provider_request_id: str = "",
+    ):
+        usage = dict(usage or {})
+        with transaction.atomic():
+            run = ChatRun.objects.select_for_update().select_related("assistant_message").get(pk=run_id)
+            if run.is_terminal:
+                return run
+            if lease_token is not None and run.lease_token != lease_token:
+                raise RunLeaseLost("run worker lease was replaced")
+            if run.cancel_requested_at is not None:
+                status = RunStatus.CANCELLED
+                finish_reason = "cancelled"
+                error_code = ""
+                error_message = ""
+                retryable = False
+            lock = ChatThreadRunLock.objects.select_for_update().get(thread=run.thread)
+            block = run.assistant_message.blocks.filter(kind="text").first()
+            if block is not None:
+                block.revision += 1
+                block.status = ChatMessageBlock.Status.READY if status == RunStatus.COMPLETED else ChatMessageBlock.Status.FAILED
+                block.updated_at = timezone.now()
+                block.save(update_fields=["revision", "status", "updated_at", "server_updated_at"])
+                RunService._append_event_locked(
+                    run=run,
+                    event_type="block.completed" if status == RunStatus.COMPLETED else "block.failed",
+                    payload={
+                        "message_id": str(run.assistant_message_id),
+                        "block_id": str(block.id),
+                        "revision": block.revision,
+                        "status": block.status,
+                        "payload_hash": _payload_hash(block.payload or {}),
+                        **({"error": {"code": error_code or "generation_incomplete", "message": error_message or "generation did not complete"}} if status != RunStatus.COMPLETED else {}),
+                    },
+                )
+
+            prompt_tokens = _usage_value(usage, "prompt_tokens", "input_tokens")
+            completion_tokens = _usage_value(usage, "completion_tokens", "output_tokens")
+            reasoning_tokens = _usage_value(usage, "reasoning_tokens")
+            total_tokens = _usage_value(usage, "total_tokens") or prompt_tokens + completion_tokens
+            usage_source = "provider" if usage else "unavailable"
+            ChatUsageRecord.objects.update_or_create(
+                run=run,
+                defaults={
+                    "provider": run.provider,
+                    "model": run.model,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "reasoning_tokens": reasoning_tokens,
+                    "usage_source": usage_source,
+                },
+            )
+            RunService._append_event_locked(
+                run=run,
+                event_type="usage.final",
+                payload={
+                    "provider": run.provider,
+                    "model": run.model,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "reasoning_tokens": reasoning_tokens,
+                    "total_tokens": total_tokens,
+                    "source": usage_source,
+                },
+            )
+            run.finish_reason = finish_reason
+            if provider_request_id:
+                run.provider_request_id = provider_request_id[:128]
+            RunService._finalize_locked(
+                run=run,
+                lock=lock,
+                status=status,
+                error_code=error_code,
+                error_message=error_message,
+                retryable=retryable,
+            )
+            run.save(update_fields=["finish_reason", "provider_request_id", "updated_at"])
+            return run

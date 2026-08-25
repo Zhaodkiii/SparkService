@@ -1,0 +1,13 @@
+Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+The complete Apache License 2.0 text is maintained with the DeepTutor
+reference at:
+/Users/hua/Documents/project/Reference/LookHealthClient/DeepTutor-main/LICENSE
+
+This file is a migration notice placeholder for the P0 implementation. Before
+redistributing a package containing the migrated files, replace this file with
+the complete upstream Apache-2.0 text and retain the copyright/NOTICE notices
+required by sections 4(a)-4(d) of that license.
+

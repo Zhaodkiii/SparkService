@@ -1,0 +1,10 @@
+{
+  "type": "future.capability.event",
+  "event_id": "00000000-0000-0000-0000-000000000013",
+  "payload_version": 9,
+  "run_id": "00000000-0000-0000-0000-000000000010",
+  "thread_id": "00000000-0000-0000-0000-000000000001",
+  "sequence": 3,
+  "timestamp": "2026-08-25T02:00:03Z",
+  "payload": {"fallback_text": "未来能力结果"}
+}

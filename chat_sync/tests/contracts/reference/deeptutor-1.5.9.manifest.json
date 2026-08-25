@@ -1,0 +1,18 @@
+{
+  "source": "DeepTutor",
+  "version": "1.5.9",
+  "repository": null,
+  "git_commit": null,
+  "license": "Apache-2.0",
+  "snapshot_date": "2026-08-25",
+  "files": [
+    {"source": "deeptutor/core/tool_protocol.py", "target": "chat_sync/ai_runtime/protocols/tool_protocol.py", "migration": "S1", "sha256": "8d07f2b6462c8fc74bb34edebf2b070873e6c44c05dadbeb571f2bd0853f32e4"},
+    {"source": "deeptutor/core/agentic/messages.py", "target": "chat_sync/ai_runtime/agentic/messages.py", "migration": "S1", "sha256": "d3020b7b617488b9057c7379df766c8c354efce3c22db84a2675058f814d154c"},
+    {"source": "deeptutor/services/llm/exceptions.py", "target": "chat_sync/ai_runtime/providers/exceptions.py", "migration": "S1", "sha256": "4dc8d8927e9ced03cba31291a49ff0eca342338b741967135bf9279b6239184c"},
+    {"source": "deeptutor/services/llm/error_mapping.py", "target": "chat_sync/ai_runtime/providers/error_mapping.py", "migration": "S1", "sha256": "add1af4c4c83a97118ac61e7c0254742c5acf446d53396efa769b12ca89371fd"},
+    {"source": "deeptutor/services/llm/context_window.py", "target": "chat_sync/ai_runtime/providers/context_window.py", "migration": "S1", "sha256": "ed219e4a4a23d96518bc4cfc087eccd2133a974d7db7367fcc0b616c12a817b8"},
+    {"source": "deeptutor/services/llm/request_compat.py", "target": "chat_sync/ai_runtime/providers/request_compat.py", "migration": "S1", "sha256": "2b16fd22ce79c136f71fdc3b5d4c0565fe1e2d773ba71d823bbc21c2e8a8d7b2"},
+    {"source": "deeptutor/services/llm/reasoning_params.py", "target": "chat_sync/ai_runtime/providers/reasoning_params.py", "migration": "S1", "sha256": "c338f9f333bc016b4a80fd8cbec3011871169f0557f92fd777164ba90527a2b7"},
+    {"source": "deeptutor/tools/ask_user.py", "target": "chat_sync/ai_runtime/tools/ask_user_schema.py", "migration": "S1", "sha256": "db430b677f1942e1304275f603d4dcbef5012b35b288d3ab43e9d1367b4f259f"}
+  ]
+}

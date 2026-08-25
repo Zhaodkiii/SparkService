@@ -70,6 +70,7 @@ APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS = int(os.getenv("APPLE_IDENTITY_TOKEN_LEEWAY
 ACCOUNT_IDENTITY_SCOPE_ALIASES = {
     "cn.Zhaodk.Health": "cn.Zhaodk.Health",
     "cn.Zhaodk.MedicineBox": "cn.Zhaodk.Health",
+    "cn.Zhaodk.Health.web": "cn.Zhaodk.Health",
 }
 
 # Device guest account login (ACCOUNT-DEVICE-000001). Empty allow-list = all bundles.
@@ -297,7 +298,7 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_MINUTES", "30"))),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_DAYS", "7"))),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_DAYS", "30"))),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
@@ -350,6 +351,9 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"))
 CELERY_TASK_ROUTES = {
+    "chat_sync.ai_tasks.run_tasks.run_chat": {"queue": "chat.ai"},
+    "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox": {"queue": "chat.events"},
+    "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs": {"queue": "chat.recovery"},
     "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
@@ -361,7 +365,48 @@ CELERY_TASK_ROUTES = {
     "notification_center.tasks.reconcile_notification_outbox_task": {"queue": "notification.receipt"},
     "notification_center.tasks.poll_sms_delivery_receipts_task": {"queue": "notification.receipt"},
 }
+
+# Server-side AI Run control plane. P1 keeps creation disabled and has no
+# network executor; CI/development may explicitly opt into the deterministic
+# Mock executor after migrations are applied.
+CHAT_AI_SERVER_RUNS_ENABLED = os.getenv("CHAT_AI_SERVER_RUNS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+CHAT_AI_RUN_EXECUTOR = os.getenv("CHAT_AI_RUN_EXECUTOR", "disabled").strip().lower()
+CHAT_AI_MOCK_OUTCOME = os.getenv("CHAT_AI_MOCK_OUTCOME", "success").strip().lower()
+CHAT_AI_PROVIDER_CONNECT_TIMEOUT_SECONDS = float(os.getenv("CHAT_AI_PROVIDER_CONNECT_TIMEOUT_SECONDS", "10"))
+CHAT_AI_PROVIDER_FIRST_EVENT_TIMEOUT_SECONDS = float(os.getenv("CHAT_AI_PROVIDER_FIRST_EVENT_TIMEOUT_SECONDS", "30"))
+CHAT_AI_PROVIDER_STREAM_IDLE_TIMEOUT_SECONDS = float(os.getenv("CHAT_AI_PROVIDER_STREAM_IDLE_TIMEOUT_SECONDS", "30"))
+CHAT_AI_RUN_DEADLINE_SECONDS = float(os.getenv("CHAT_AI_RUN_DEADLINE_SECONDS", "180"))
+CHAT_AI_LEASE_TTL_SECONDS = int(os.getenv("CHAT_AI_LEASE_TTL_SECONDS", "45"))
+CHAT_AI_OUTBOX_IMMEDIATE_RELAY = os.getenv("CHAT_AI_OUTBOX_IMMEDIATE_RELAY", "true").lower() in ("1", "true", "yes", "y")
+CHAT_AI_WS_TICKET_TTL_SECONDS = int(os.getenv("CHAT_AI_WS_TICKET_TTL_SECONDS", "30"))
+CHAT_AI_WS_MAX_SUBSCRIPTIONS = int(os.getenv("CHAT_AI_WS_MAX_SUBSCRIPTIONS", "4"))
+CHAT_AI_PROVIDER_MAX_ATTEMPTS = int(os.getenv("CHAT_AI_PROVIDER_MAX_ATTEMPTS", "2"))
+CHAT_AI_MAX_OUTPUT_CHARS = int(os.getenv("CHAT_AI_MAX_OUTPUT_CHARS", "100000"))
+CHAT_AI_HISTORY_MESSAGE_LIMIT = int(os.getenv("CHAT_AI_HISTORY_MESSAGE_LIMIT", "6"))
+CHAT_AI_CONTEXT_MODE = os.getenv("CHAT_AI_CONTEXT_MODE", "unified").strip().lower()
+CHAT_AI_CONTEXT_WINDOW = int(os.getenv("CHAT_AI_CONTEXT_WINDOW", "8192"))
+CHAT_AI_CONTEXT_RESERVED_OUTPUT = int(os.getenv("CHAT_AI_CONTEXT_RESERVED_OUTPUT", "2048"))
+CHAT_AI_CONTEXT_PROMPT_VERSION = os.getenv("CHAT_AI_CONTEXT_PROMPT_VERSION", "chat.prompt.v1")
+CHAT_AI_MAX_REFERENCES_PER_RUN = int(os.getenv("CHAT_AI_MAX_REFERENCES_PER_RUN", "16"))
+CHAT_AI_MAX_PERSONA_CHARS = int(os.getenv("CHAT_AI_MAX_PERSONA_CHARS", "4000"))
+CHAT_AI_AGENTIC_TOOLS_ENABLED = os.getenv("CHAT_AI_AGENTIC_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+CHAT_AI_WAITING_ENABLED = os.getenv("CHAT_AI_WAITING_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+CHAT_AI_ASK_USER_ENABLED = os.getenv("CHAT_AI_ASK_USER_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+CHAT_AI_CLIENT_TOOLS_ENABLED = os.getenv("CHAT_AI_CLIENT_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+CHAT_AI_AGENT_MAX_ROUNDS = int(os.getenv("CHAT_AI_AGENT_MAX_ROUNDS", "8"))
+CHAT_AI_TOOL_MAX_CALLS_PER_ROUND = int(os.getenv("CHAT_AI_TOOL_MAX_CALLS_PER_ROUND", "8"))
+CHAT_AI_TOOL_MAX_CONCURRENCY = int(os.getenv("CHAT_AI_TOOL_MAX_CONCURRENCY", "4"))
 CELERY_BEAT_SCHEDULE = {
+    "chat-ai-relay-events": {
+        "task": "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox",
+        "schedule": crontab(minute="*/1"),
+        "options": {"queue": "chat.events"},
+    },
+    "chat-ai-recover-runs": {
+        "task": "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs",
+        "schedule": crontab(minute="*/1"),
+        "options": {"queue": "chat.recovery"},
+    },
     "process-due-account-deactivations": {
         "task": "accounts.deactivation.tasks.schedule_deactivation_processing_task",
         "schedule": crontab(minute="*/15"),

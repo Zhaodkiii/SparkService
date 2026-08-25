@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spark.chat.tool-call.v1",
+  "type": "object",
+  "required": ["tool_call_id", "name", "status", "target"],
+  "properties": {
+    "tool_call_id": {"type": "string", "minLength": 1},
+    "name": {"type": "string", "minLength": 1},
+    "version": {"type": "string"},
+    "status": {"enum": ["requested", "running", "waiting", "completed", "failed", "cancelled"]},
+    "target": {"enum": ["server", "client", "external"]},
+    "display_args": {"type": "object"},
+    "result_preview": {"type": ["string", "null"]},
+    "result_ref": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

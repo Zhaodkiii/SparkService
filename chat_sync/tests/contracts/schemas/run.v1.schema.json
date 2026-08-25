@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spark.chat.run.v1",
+  "type": "object",
+  "required": ["id", "thread_id", "status", "capability", "last_sequence"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "thread_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["queued", "running", "waiting_for_user_input", "waiting_for_client_tool", "completed", "failed", "cancelled", "interrupted"]},
+    "capability": {"type": "string"},
+    "user_message_id": {"type": ["integer", "string"]},
+    "assistant_message_id": {"type": ["integer", "string"]},
+    "last_sequence": {"type": "integer", "minimum": 0},
+    "error": {"type": ["object", "null"]},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}
