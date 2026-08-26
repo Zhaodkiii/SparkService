@@ -11,6 +11,7 @@ from chat_sync.ai_runtime.tools.deferred import validate_load_names
 from chat_sync.ai_services.deferred_tool_service import DeferredToolService
 from chat_sync.ai_services.run_service import RunService
 from chat_sync.models import ChatThread
+from chat_sync.tests.run_factory import canonical_run_payload
 
 
 @override_settings(CHAT_AI_SERVER_RUNS_ENABLED=True, CHAT_AI_RUN_EXECUTOR="disabled")
@@ -21,14 +22,7 @@ class P6CapabilityDeferredTests(TestCase):
         self.run = RunService.create_run(
             user=self.user,
             thread_id=self.thread.id,
-            payload={
-                "client_message_id": uuid.uuid4(),
-                "content": "hello",
-                "capability": "chat",
-                "references": [],
-                "attachments": [],
-                "client": {"platform": "web", "client_tools": []},
-            },
+            payload=canonical_run_payload(self.thread.id, client={"platform": "web", "client_tools": []}),
             idempotency_key=str(uuid.uuid4()),
         ).run
 

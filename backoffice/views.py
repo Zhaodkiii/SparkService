@@ -335,6 +335,19 @@ def _celery_ping_status() -> dict:
         return {"healthy": False, "returncode": -1, "output": "", "error": str(exc)[:500]}
 
 
+def _celery_worker_queue_names() -> list[str]:
+    configured = (os.getenv("CELERY_QUEUES") or getattr(settings, "CELERY_QUEUES", "") or "").strip()
+    names = [item.strip() for item in configured.split(",") if item.strip()]
+    if not names:
+        names = ["celery"]
+    for route in (getattr(settings, "CELERY_TASK_ROUTES", {}) or {}).values():
+        if isinstance(route, dict):
+            queue = str(route.get("queue") or "").strip()
+            if queue:
+                names.append(queue)
+    return list(dict.fromkeys(names))
+
+
 def _redis_broker_display(broker_url: str) -> str:
     try:
         parsed = urlparse(broker_url)
@@ -543,6 +556,11 @@ def _get_celery_runtime_status() -> dict:
         "overall_running": worker_running and beat_running,
         "ping": ping,
         "redis": redis_status,
+        "worker_queues": _celery_worker_queue_names(),
+        "chat_ai": {
+            "server_runs_enabled": bool(getattr(settings, "CHAT_AI_SERVER_RUNS_ENABLED", False)),
+            "run_executor": str(getattr(settings, "CHAT_AI_RUN_EXECUTOR", "disabled")),
+        },
         "run_dir": str(RUN_DIR),
         "log_dir": str(LOG_DIR),
     }
@@ -2168,7 +2186,7 @@ class AdminAsyncTaskManagerControlView(APIView):
             "worker",
             "--loglevel=INFO",
             "-Q",
-            "celery,notification.security.high,notification.bulk,notification.transactional,notification.receipt,deactivation,cleanup,monitoring",
+            ",".join(_celery_worker_queue_names()),
         ]
         celery_beat_cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "beat", "--loglevel=INFO"]
 

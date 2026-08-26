@@ -421,7 +421,7 @@ pnpm build
 
 ### 5.4 工单与出口验收
 
-工单：`CHAT-WEB-002A`、`002B`、`002C`、`003`、`006` REST/Mock 部分，以及 `CHAT-WEB-016C–F` 统一错误提示接入。
+工单：`CHAT-WEB-002A`、`002B`、`002C`、`003`、`006` REST/Mock 部分，`CHAT-WEB-016C–F` 统一错误提示接入，以及 `CHAT-WEB-018` Run 创建 405/BFF 路径保真修复。
 
 统一 Toast、错误目录、呈现分流、去重和无障碍的完整规格见 [AI 对话 Web App 统一错误提示工单](./AI%20对话%20Web%20App%20统一错误提示工单.md)。
 
@@ -2309,13 +2309,31 @@ P4 开始前必须满足：
 
 #### 8.2.2 Web 当前基线
 
-`chat-web` 现有 reducer 能处理 Run、Text Block、`assistant.status`、Usage 和 Event gap replay，但：
+`CHAT-WEB-017` DeepTutor UI 完全重构已将 P4 所需的页面容器落到真实 `chat-web` 源码中。P4 不再重建 App Shell 或第二套对话页，直接使用下列基线：
 
-- `tool.call.requested` 和 `tool.result` 会落入 `unknownActivitiesByRun`，没有 Tool Activity reducer。
-- `ChatBlockRenderer` 对所有非 `text` Block 只显示「暂不支持的内容」。
+| 已落地能力 | 实际代码位置 | P4 处理 |
+|---|---|---|
+| 220/60px 单左侧栏与 `/home` Workspace | `components/layout/AppShell.tsx`、`components/sidebar/WorkspaceSidebar.tsx` | 保留，不引入 DeepTutor 第二套 Shell |
+| 960px 对话中轴与独立滚动面 | `ChatWorkspace.tsx`、`useChatAutoScroll.ts` | Tool Activity 不改变消息主滚动面 |
+| 统一消息投影 | `ChatMessages.tsx`、`ChatBlockRenderer.tsx` | 扩展 `toolCall/toolResult`，不新建平行 Message renderer |
+| 泛化生成状态 | `ChatMessages.tsx::.generation-status` | 与 Tool Activity 合并为 Assistant Activity Disclosure |
+| 右侧活动面板 | `components/chat/home/SessionActivityPanel.tsx` | 从 P2 基础时间线扩展为 P4 Tool Activity 详情 |
+| 头部 Activity 入口 | `ChatHeader.tsx` + `ChatWorkspace.activityOpen` | 保留同一打开入口，增加焦点/响应式收敛 |
+| 26px Composer 与内联 Context | `ChatComposer.tsx`、`ContextToolbar.tsx` | Tool Catalog/开关进入现有工具栏 |
+| Run/Event 重放 | `RunControlContext.tsx`、`lib/event-reducer.ts` | Tool Event 沿用同一 sequence/replay 机制 |
+
+重构后 P4 仍未完成的部分：
+
+- `SessionActivityPanel` 当前只把最近 20 个非 `block.delta` Event 投影为基础时间线，未按 `tool_call_id` 归并、脱敏和分轮。
+- `tool.call.requested` 和 `tool.result` 仍会落入 `unknownActivitiesByRun`，没有 Tool Activity reducer。
+- `ChatBlockRenderer` 对所有非 `text` Block 仍只显示「结构化内容」安全 fallback。
+- `ChatMessages` 尚无每个 Assistant Turn 内的 `ActivityDisclosure`，基础 `.generation-status` 只能表示整个活跃 Run。
 - 没有 ToolCall/ToolResult DTO、工具名映射、安全参数摘要、结果预览、source 链接和状态 UI。
 - 没有工具开关/Tool Catalog UI；P3 Preferences 也不应允许 Web 任意写入工具名。
-- 没有并行工具分组、跨轮顺序、重放去重与刷新恢复 UI。
+- 右侧 Panel 当前始终使用 absolute overlay，尚未完成 `>=1440px` 并排、窄屏 scrim/Sheet、focus trap、`inert` 和关闭焦点恢复。
+- 当前 `RunControlContext` 只持有选中 Thread 的 active/latest Run；历史 Assistant Turn 的完整活动必须从持久化 Tool Block 恢复，不能借用当前 active Run Event。
+
+P4 实施时必须保留已落地的 Auth/Thread/Run/Context 事实层和 UI 几何，不因工具 UI 再次改造导航、路由、Composer 或消息滚动模型。
 
 #### 8.2.3 当前必须先修正的服务端缺口
 
@@ -2339,10 +2357,10 @@ P4 开始前必须满足：
 |---|---|---|---|---|
 | P4.0 公开契约/脱敏 | 冻结 Tool Catalog、Activity Event/Block、状态与脱敏 | fixture 页 | Contract fixture | 原始 args/result 不进 Web |
 | P4.1 工具选择 | 对接 Catalog 和 Preferences revision | 工具设置 | Catalog + Preferences API | 只能保存可用工具 |
-| P4.2 实时投影 | 扩展 reducer、Block renderer、WS/replay | 请求/运行/结果状态 | 真实 Tool Event | 直播与刷新一致 |
-| P4.3 并行/多轮 | 轮次分组、并行工具、去重和强制收尾 | Tool Activity timeline | 真实 Agent Loop | 无覆盖、无乱序 |
-| P4.4 错误/恢复 | 超时、取消、Worker 重启、Event gap | 部分失败和恢复 UI | Checkpoint + replay | 终态收敛且不重执行 |
-| P4.5 可用性/灰度 | 无障碍、性能、隐私、SLO | 受控真实流量 | 预发/灰度 | 满足 P5 交接条件 |
+| P4.2 实时投影 | 扩展现有 reducer/Block renderer/WS replay | `SessionActivityPanel` 真实 Tool Row | 真实 Tool Event | 直播与刷新一致 |
+| P4.3 Turn 内活动 | 在现有 Assistant Message 中接入 `ActivityDisclosure` | 最终文本前的折叠活动 | Tool Block | 历史与直播使用同一投影 |
+| P4.4 并行/错误/恢复 | 多轮、并行、超时、取消、Worker 重启 | Panel + Turn 局部失败 | Checkpoint + replay | 无覆盖、无乱序、不重执行 |
+| P4.5 UI-R5 验收/灰度 | 完成 Panel 断点、无障碍、性能、隐私、SLO | 重构 UI 内受控真实流量 | 预发/灰度 | `CHAT-WEB-017J/K` + P4 出口同时通过 |
 
 ### 8.4 Public Tool Catalog 与用户开关
 
@@ -2522,11 +2540,18 @@ public_error(error_code)
 
 ### 8.7 Web 目标目录与职责
 
-P4 在 P2/P3 状态层上增量实现：
+P4 以已实现的 `CHAT-WEB-017` UI 重构为容器，不再创建平行 `components/chat/tools` 顶层 UI 树。新增展示组件归入 `components/chat/activity/`，并由现有 `ChatMessages`、`ChatBlockRenderer`、`SessionActivityPanel` 组装：
 
 ```text
 chat-web/
-├── components/chat/tools/
+├── components/chat/home/
+│   ├── ChatWorkspace.tsx              # [现有] Panel 打开状态与滚动容器
+│   ├── ChatMessages.tsx               # [现有改] 按 Assistant Turn 插入 ActivityDisclosure
+│   ├── ChatBlockRenderer.tsx          # [现有改] toolCall/toolResult kind 路由
+│   ├── SessionActivityPanel.tsx       # [现有改] 从基础时间线升级为活动详情
+│   ├── ActivityDisclosure.tsx         # [新] Turn 内折叠头/进度/局部失败
+│   └── AssistantActivityStatus.tsx    # [新] 替换泛化 generation-status
+├── components/chat/activity/
 │   ├── ToolActivityGroup.tsx          # 同一 round 的并行工具组
 │   ├── ToolActivityRow.tsx            # 单个工具的主状态行
 │   ├── ToolActivityDetails.tsx        # 安全参数/结果折叠详情
@@ -2535,10 +2560,9 @@ chat-web/
 │   ├── ToolSourceLinks.tsx            # 与 P3 source summary 对齐
 │   ├── UnknownToolActivity.tsx        # 新工具/新版本安全降级
 │   └── ToolSettingsPopover.tsx        # Public Catalog + Preferences 开关
-├── components/chat/home/
-│   ├── ChatBlockRenderer.tsx          # 增加 toolCall/toolResult renderer
-│   └── AssistantActivityStatus.tsx    # 泛化思考/使用资料/整理回答
 ├── lib/api/tool-catalog-api.ts
+├── lib/chat/
+│   └── activity-projection.ts          # Event/Block → UI Activity 纯投影
 ├── lib/tools/
 │   ├── tool-activity-reducer.ts
 │   ├── tool-activity-selectors.ts
@@ -2556,9 +2580,13 @@ chat-web/
 职责边界：
 
 - Tool Activity 继续放在 `ChatRuntimeState`，不创建一个与 Event reducer 平行的 WebSocket store。
+- `SessionActivityPanel` 不自行遍历原始 Event 生成业务文案；它只渲染 `activity-projection.ts` 的安全 ViewModel。
+- Turn 内 `ActivityDisclosure` 以持久化 `toolCall/toolResult` Block 为历史事实源；右侧 Panel 对活跃 Run 可使用 Event 显示更即时状态。
+- 两个入口共用 `ToolActivityGroup/Row/Details`，禁止内联卡和右侧 Panel 各自实现一套状态文案与脱敏规则。
 - `ChatBlockRenderer` 只做 kind 路由；工具状态合并、去重和轮次分组放在纯 reducer/selector。
 - `ToolSettingsPopover` 编辑 P3 Preferences，不直接修改当前正在运行的 Run tool manifest。设置只对下一个 Run 生效。
 - Tool Result 不直接渲染 Markdown/HTML；`result_preview` 作为纯文本，source link 使用受控路由。
+- `MessageActions`、Markdown 下载和复制仍只取可见 Text Block，不将 Tool Result、system message 或隐藏 Activity payload 写入剪贴板/导出文件。
 
 ### 8.8 Web 状态模型与 reducer
 
@@ -2586,7 +2614,16 @@ reducer 规则：
 
 ### 8.9 Tool Activity UI 交互
 
-#### 8.9.1 默认表达
+P4 在重构后的界面中有两个互补、但共用同一投影的展示面：
+
+| 展示面 | 目的 | 数据范围 | 默认可见性 |
+|---|---|---|---|
+| Assistant Turn 内 `ActivityDisclosure` | 让用户理解这个回答使用了哪些资料/工具 | 该 Assistant Message/Run 的公开 Tool Block | 运行时展开，成功后收起 |
+| 右侧 `SessionActivityPanel` | 查看当前 Run 状态、时间线、Usage、Context 和 Tool 详情 | 活跃/选定 Run 的安全 Event/Block 投影 | 由 `ChatHeader` Activity 按钮打开 |
+
+两者不得通过不同算法计算工具数、状态或结果。Panel 只增加连接状态、时间、Usage 与 Context 等详细信息，不改变 Tool Activity 事实。
+
+#### 8.9.1 Turn 内默认表达
 
 ```text
 小鲸 AI
@@ -2606,7 +2643,29 @@ reducer 规则：
 - 多轮循环：按 round 排序，但 UI 不显示「第 1 步思考」等暗示 chain-of-thought 的文案；可用「查找资料」「整理结果」等泛化阶段。
 - Tool Result 失败但 Run 继续成功时，将它标记为局部失败，不把整条回答标成生成失败。
 
-#### 8.9.2 Assistant 阶段状态
+`ActivityDisclosure` 位于 Assistant Message 的最终 Text Block 之前、头像右侧的内容列中，与现有 `MessageActions` 分离。复制回答和下载 Markdown 不包含 Activity 文本。
+
+#### 8.9.2 右侧 Activity Panel
+
+`SessionActivityPanel` 沿用已实现的「运行摘要 + Usage + 时间线」结构，P4 增量调整为：
+
+```text
+会话活动
+├── Run 状态 / 连接状态
+├── 使用量（仅已批准字段）
+├── 本轮上下文（P3 Safe Context Summary）
+├── 工具活动
+│   ├── Round Group
+│   └── Tool Row / Safe Details / Source Links
+└── 运行时间线（排除 block.delta 和内部事件）
+```
+
+- 当前 `visibleEvents.slice(-20)` 只作为 P2 基线；P4 改用 selector 按事件类型和 Tool Activity 实体聚合，不将每个工具状态重复显示在两个 section。
+- 面板关闭不清空 reducer 事实；再次打开不需要重新订阅 WS。
+- 切换 Thread 时关闭 Panel 或使其立即切换到新 Thread 的 Run，禁止短暂显示上一 Thread 的医疗标题和 Tool Activity。
+- 无活跃 Run 时仍可从当前 Assistant Message 的持久化 Tool Block 显示历史活动；若尚无「选中历史 Run」契约，Panel 只显示当前消息投影，不拿 latest active Run 冒充。
+
+#### 8.9.3 Assistant 阶段状态
 
 P4 只展示可观测状态：
 
@@ -2619,7 +2678,7 @@ P4 只展示可观测状态：
 
 Provider `reasoning_delta`、`<think>` 内容和 Agent transcript 不进入 UI。P4 不迁移 DeepTutor 展示 raw reasoning 的 `ModelThinkingCard` 行为。
 
-#### 8.9.3 详情折叠
+#### 8.9.4 详情折叠
 
 详情只显示：
 
@@ -2662,30 +2721,46 @@ Provider `reasoning_delta`、`<think>` 内容和 Agent transcript 不进入 UI�
 
 ### 8.12 DeepTutor 对齐与迁移边界
 
-DeepTutor 参考基线继续使用 P0 锁定 commit `684d615393322cd18d9edb3a85eacb3beba0d811`。
+P4 以已实现的 `CHAT-WEB-017` Spark Web 重构结果作为直接 UI 基线，DeepTutor 仅继续提供交互与纯函数参考。当前本地 DeepTutor 参考目录缺少 `.git` 元数据，页面页脚版本与 P0 曾登记的版本/commit 也存在差异，因此不能继续把 commit `684d615393322cd18d9edb3a85eacb3beba0d811` 当作未经验证的事实来源。
+
+P4 再迁移任何 DeepTutor 源码前，必须先补齐以下来源证据：
+
+1. 参考包或归档的版本号、下载/导出日期和 SHA-256。
+2. 实际使用文件的相对路径、文件 SHA-256、迁移分类和修改说明。
+3. 上游 LICENSE、NOTICE 与第三方依赖许可证快照。
+4. 若能恢复 Git 元数据，再登记真实 commit；无法恢复时明确标为「归档快照」，不得伪造 commit 对齐。
 
 | DeepTutor 源文件 | 分类 | Spark 处理 | 禁止带入 |
 |---|---|---|---|
-| `web/components/chat/home/TracePanels.tsx` | S3 视觉/交互参考 | 参考折叠层级、并行行和状态密度，Spark 拆小重写 | DeepTutor StreamEvent、thinking/observation、MCP/CLI/子代理语义 |
-| `web/lib/trace-tools.ts` | S1/S2 部分迁移 | 可迁移纯文案截断/未知 Provider 降级思路 | 从工具名猜 Provider、原始 argv 显示 |
-| `web/lib/session-activity.ts` | S2 纯 fold 思路参考 | 参考「消息 → 活动摘要」纯函数，改用 Spark Block DTO | Session/Space/Book/Notebook/KB 实体 |
-| `web/components/chat/home/SessionActivityPanel.tsx` | S3 布局参考 | 仅参考活动摘要和附件分组，不直接复制 | DeepTutor API hooks、Space 路由、本地实体解析 |
+| `web/components/chat/home/TracePanels.tsx` | S3 视觉/交互参考 | 仅参考折叠层级、并行行和状态密度；在 Spark 现有 Activity 组件内重写 | DeepTutor StreamEvent、thinking/observation、MCP/CLI/子代理语义 |
+| `web/lib/trace-tools.ts` | S1/S2 部分迁移 | 来源冻结后，只可迁移与业务无关的截断/未知类型降级纯函数 | 从工具名猜 Provider、原始 argv 显示 |
+| `web/lib/session-activity.ts` | S2 算法参考 | 只参考「消息 → 活动摘要」纯 fold 思路，Spark 使用自己的 Event/Block DTO 重写 | Session/Space/Book/Notebook/KB 实体 |
+| `web/components/chat/home/SessionActivityPanel.tsx` | S3 视觉参考 | Spark 同名 Panel 已自主实现；P4 在现有文件增量扩展，不再复制上游组件 | DeepTutor API hooks、Space 路由、本地实体解析 |
 | `web/components/common/ModelThinkingCard.tsx` | S3 不迁移行为 | 只可参考泛化状态卡视觉 | raw `<think>`/reasoning 流式展示 |
 | `web/app/(utility)/settings/tools/page.tsx` | S3 不直接迁移 | Spark 使用 Thread ToolSettingsPopover | DeepTutor 全局设置、MCP/外部 Provider 管理 |
 | `web/components/partners/ToolPicker.tsx` | S3 不迁移数据层 | 只参考可用/不可用列表交互 | Partner/Agent 身份和 DeepTutor tool id |
 
 P4 不迁移 DeepTutor `UnifiedChatContext`、`unified-ws`、Trace Event 类型、前端工具执行器、Provider Key、MCP 注册表与 raw reasoning UI。
 
+`CHAT-WEB-017` 中的路由、App Shell、消息列、Composer、滚动根和 Activity 入口决策覆盖旧 P4 文档中的布局设想；服务端 Event/Block/Run 契约仍以 Spark 服务端文档为唯一事实源。DeepTutor HTML 截图或静态导出只能作为视觉证据，不能作为源码来源。
+
 ### 8.13 UI 响应式、无障碍与性能
 
-- Desktop：Tool Activity 位于 assistant turn 内、最终文本前；不额外强制开启右侧栏。
-- Mobile Web：使用全宽折叠组，工具名与状态优先，结果摘要最多两行；详情不水平滚动。
+- Assistant Turn 内 Tool Activity 始终位于最终文本前，并受现有 960px 消息列约束；是否打开右侧 Panel 不改变消息内容宽度规则。
+- `≥1440px`：Activity Panel 目标宽度 360px，采用 workspace 内并排布局，消息列让出空间但保持居中和最大宽度，不遮挡 Composer。
+- `1024–1439px`：Activity Panel 作为右侧 overlay，必须有 scrim、层级和关闭入口；背景保留视觉上下文但不可误操作。
+- `<1024px`：Activity Panel 使用全高 sheet/drawer；工具名和状态优先，结果摘要最多两行，详情不产生水平滚动。
+- 当前实现仍是约 340px 的 absolute overlay；上述并排、scrim、移动端 sheet 和焦点管理属于 P4 必须完成的增量，不得在验收记录中标为已有能力。
 - 每个工具行使用语义化文字，不只用颜色/旋转图标表示状态。
 - 新 ToolCall 通过 `aria-live=polite` 简短宣布；高频 progress/revision 不重复朗读。
 - 折叠按钮使用真实 `button` 与 `aria-expanded/aria-controls`，键盘焦点在折叠后保留。
+- Panel 打开后焦点进入标题或首个可操作元素；overlay/sheet 模式下启用 focus trap 和背景 `inert`，`Escape` 关闭后焦点返回 `ChatHeader` 的 Activity 按钮。
+- 切换 Thread 时必须同步切换或关闭 Panel；旧 Thread 的工具名、来源标题和使用量在任何一帧都不得出现在新 Thread。
 - running 动画遵守 `prefers-reduced-motion`；减少动效时改为静态状态图标和文字。
 - 大量轮次只展示当前组与折叠摘要，避免每个 delta 造成整个 Message list 重渲染。
 - Selector 使用 memoized selectors，单个 Tool revision 只更新对应行。
+- Panel 内 Event 更新不得触发 `chat-scroll` 自动滚动；Turn 内 Tool Block revision 只在用户仍处于 follow 模式时保持置底，不能抢回已主动上滚的阅读位置。
+- 200 个 Tool revision、8 个 round 和 4 个并行调用的 fixture 下，Panel 开关、Thread 切换和文本流式输出不得出现明显 layout shift 或整棵消息树重渲染。
 
 ### 8.14 工单拆分与依赖
 
@@ -2695,12 +2770,16 @@ P4 不迁移 DeepTutor `UnifiedChatContext`、`unified-ws`、Trace Event 类型�
 | `CHAT-WEB-007B` | Tool Catalog API 与 Preferences 开关 | P3 Preferences | allowlist/冲突测试 |
 | `CHAT-WEB-007C` | Tool Activity reducer/selectors | 007A、P2 event reducer | 乱序/重放/终态测试 |
 | `CHAT-WEB-004T` | `toolCall/toolResult` Block renderer | 007A/C | 同步/直播一致截图 |
-| `CHAT-WEB-007D` | ToolActivityGroup/Row/Details | 007C | Desktop/Mobile/无障碍证据 |
+| `CHAT-WEB-017J/P4` | 扩展现有 `SessionActivityPanel`、新增 Turn `ActivityDisclosure`，共用安全投影 | 007C、004T | Live/History/Panel 三方一致 fixture |
+| `CHAT-WEB-007D` | ToolActivityGroup/Row/Details 与 Tool Settings | 007B/C、017J/P4 | Desktop/Mobile 组件证据 |
 | `CHAT-WEB-007E` | 错误、取消、未知工具降级 | 007C/D | fault fixture + E2E |
 | `CHAT-WEB-007F` | Checkpoint/replay/Worker 恢复联调 | 服务端 recovery | kill/restart 录屏与 DB 证据 |
+| `CHAT-WEB-017K/P4` | Activity 视觉、断点、键盘、读屏、截图回归 | 017J/P4、007D/E | 4 断点截图和无障碍报告 |
 | `CHAT-WEB-007G` | 隐私扫描、性能与灰度 | 全部 P4 工单 | SLO/脱敏/长轮次报告 |
 
 `CHAT-WEB-007` 的 AskUser/Client Tool 子任务仍留在 P5，P4 只使用 `007A–007G` 中的 Server Tool Activity 范围。
+
+高冲突文件采用串行所有权：`ChatMessages.tsx`、`ChatBlockRenderer.tsx` 先由 `004T` 完成 kind/Block 路由，再由 `017J/P4` 接入 Turn Activity；`SessionActivityPanel.tsx` 仅由 `017J/P4` 修改；Activity 相关全局样式先由 `017J/P4` 建立，最后由 `017K/P4` 验收调整。其他工单不得平行重写这些文件。
 
 ### 8.15 测试矩阵
 
@@ -2722,6 +2801,11 @@ P4 不迁移 DeepTutor `UnifiedChatContext`、`unified-ws`、Trace Event 类型�
 - 工具局部失败后 Run completed，Run failed 时未终态工具收敛。
 - 未知工具名、未知 status、新 payload 字段向前兼容。
 - `result_preview` 作为文本渲染，恶意 HTML/Markdown/超长文字不破坏页面。
+- `SessionActivityPanel` 不直接展示 raw Event；过滤 `block.delta`、内部事件和敏感 payload，Thread 切换时无旧数据闪现。
+- Turn `ActivityDisclosure`、同步历史 Block 和 Panel 使用同一 ViewModel，工具数、顺序、状态和公开文案完全一致。
+- 复制回答、下载 Markdown、消息选择和无障碍可读文本不包含 Tool raw payload、system message 或隐藏 Activity。
+- Panel 在 1440px 并排、1024px overlay、390px sheet 下均可开关；`Escape`、focus trap、焦点返回和背景 `inert` 正确。
+- Panel 更新不触发消息自动滚动；用户主动上滚后 Tool revision 不抢回位置。
 - 读屏宣布节流、折叠焦点、减少动效和 200% 缩放。
 
 #### 8.15.3 E2E 核心场景
@@ -2734,6 +2818,10 @@ P4 不迁移 DeepTutor `UnifiedChatContext`、`unified-ws`、Trace Event 类型�
 6. 工具结果写入后 kill Worker，恢复不重执行，Event 仅出现一份有效终态。
 7. 连续触发最大轮次，服务端禁用工具强制收尾，Web 无无限 spinner。
 8. 伪造工具名、member id、resource id 或超大参数，执行被服务端拒绝且公开错误不泄露资源存在性。
+9. 分别在 1920、1440、1024 和 390px 打开 Activity Panel，验证并排/overlay/sheet、Composer 可用性、焦点和关闭恢复。
+10. 从有医疗 Tool Activity 的 Thread 切到普通 Thread，Panel、消息内 Activity、复制内容和埋点均无上一 Thread 数据残留。
+
+每个 E2E 至少保存状态 fixture、关键 Event/Block 序列和最终截图；视觉归档覆盖 idle、running、并行、局部失败、取消、replay 和历史恢复，不以单张成功态截图代替状态验收。
 
 ### 8.16 隐私、安全与可观测性
 
@@ -2762,6 +2850,8 @@ P4 不迁移 DeepTutor `UnifiedChatContext`、`unified-ws`、Trace Event 类型�
 | `CHAT_AI_WAITING_ENABLED` | off | P4 必须继续 off，P5 才启用 |
 | `CHAT_AI_ASK_USER_ENABLED` | off | P4 必须继续 off |
 | `CHAT_AI_CLIENT_TOOLS_ENABLED` | off | P4 必须继续 off |
+
+已完成的 `CHAT-WEB-017` App Shell、`/home` workspace、Composer 和滚动架构是当前主路径。P4 的 Feature Flag 只控制 Tool Catalog、Tool Activity 和工具设置，不创建第二套 workspace，也不通过 `NEXT_PUBLIC_CHAT_UI_V2_ENABLED` 复制一套旧/新页面；如重构本身需要回滚，沿用 `CHAT-WEB-017` 的独立发布方案处理。
 
 灰度顺序：
 
@@ -2797,12 +2887,19 @@ P4 不实现：
 
 Web 功能：
 
+- [ ] 不新增第二套 App Shell、路由、Composer、消息滚动根或 Event store；P4 全部增量接入现有 `CHAT-WEB-017` 结构。
 - [ ] requested/running/completed/failed/cancelled/timeout 均有稳定 UI，工具局部失败不冒充 Run 失败。
 - [ ] 并行工具状态互不覆盖，多轮顺序不碰撞，重复 Event/Block 不生成重复卡片。
 - [ ] WS 断线/replay/刷新/sync pull 均恢复相同 Tool Activity。
+- [ ] Turn `ActivityDisclosure` 与 `SessionActivityPanel` 使用同一安全 ViewModel；直播 Event 与历史 Block 的工具数、状态、顺序和公开文案一致。
+- [ ] 无活跃 Run 时从当前 Assistant Message 的持久化 Tool Block 恢复历史活动，不把其他 Run 或 latest Run 冒充当前消息。
+- [ ] 1920/1440/1024/390px 下 Panel 分别满足并排、overlay 或 sheet 规则，不遮挡 Composer，键盘与焦点闭环完整。
+- [ ] Thread 切换时 Panel 和 inline Activity 不闪现上一 Thread 的工具、来源、Usage 或医疗资料。
+- [ ] Panel 更新不干扰 `useChatAutoScroll`；用户主动上滚后不会被 Tool revision 强制拉回底部。
 - [ ] 未知工具、未知字段和新 status 安全降级，不破坏整条消息。
 - [ ] Assistant 只展示泛化 thinking/using tools/answering 状态，不展示 raw reasoning。
 - [ ] 工具设置有明确的只读、可用条件和「允许使用，非必然调用」说明。
+- [ ] 复制回答、下载 Markdown、页面搜索和辅助技术输出不包含 raw Tool payload、隐藏 Activity 或 system message。
 
 隐私、质量与发布：
 
@@ -2811,7 +2908,7 @@ Web 功能：
 - [ ] TypeScript、ESLint、Vitest、Django tests、Contract tests、Playwright 和 production build 通过。
 - [ ] Desktop/Mobile 的运行中、并行、局部失败、取消、未知工具和刷新恢复截图归档。
 - [ ] 读屏、键盘、焦点、减少动效、200% 缩放与长轮次性能验收通过。
-- [ ] DeepTutor 来源逐文件登记，无 DeepTutor API/Event/Session/Tool ID、raw reasoning 和 MCP/CLI 逻辑残留。
+- [ ] DeepTutor 归档版本/hash、逐文件 hash 和许可证已登记；无 DeepTutor API/Event/Session/Tool ID、raw reasoning 和 MCP/CLI 逻辑残留。
 
 ### 8.20 P5 交接条件
 
@@ -2823,6 +2920,34 @@ P4 必须向 P5 交付以下稳定边界：
 4. 取消、replay、checkpoint 和终态收敛已验收，P5 只增加跨时间/跨设备暂停恢复。
 
 只有 P4 出口验收通过，且 PendingInteraction 公开契约冻结后，才开放 P5 `ask_user` 和 Web Client Tool UI。
+
+### 8.21 与重构后 Web 的实施顺序
+
+P4 按以下顺序合入，后一步不得绕过前一步自行定义 payload 或 UI 状态：
+
+```text
+服务端 Public Contract / Catalog
+  → TS DTO + contract fixtures
+  → Event reducer + Block normalizer
+  → activity-projection 安全 ViewModel
+  → ChatBlockRenderer / 历史 Tool Block
+  → Turn ActivityDisclosure
+  → SessionActivityPanel
+  → Tool Settings
+  → Replay / Recovery / Responsive / A11y / Privacy 验收
+```
+
+| 合入批次 | 主要文件 | 阶段性可验证结果 | 不得提前做 |
+|---|---|---|---|
+| P4-W1 契约 | `types/tool.ts`、contract fixture、catalog API | Mock Event/Block 可通过同一 DTO 校验 | 在组件内猜字段或工具文案 |
+| P4-W2 状态 | `tool-activity-reducer.ts`、normalizer、selectors | 乱序、重复、replay、Event/Block 合并测试通过 | 直接在 Panel 遍历 raw Event |
+| P4-W3 投影 | `activity-projection.ts`、display/error mapping | 只产生允许公开的 ViewModel，隐私 fixture 通过 | 前端读取 raw arguments/result |
+| P4-W4 消息历史 | `ChatBlockRenderer.tsx`、`ChatMessages.tsx` | 刷新后历史 Tool Activity 与直播一致 | 重构 App Shell、Composer 或滚动根 |
+| P4-W5 双展示面 | `ActivityDisclosure.tsx`、`SessionActivityPanel.tsx`、activity components | inline 与 Panel 展示同一事实，Thread 切换无泄漏 | 两处复制状态机和脱敏逻辑 |
+| P4-W6 设置 | `ToolSettingsPopover.tsx`、catalog client | 只展示服务端允许工具，变更仅影响下一 Run | Web 注册、执行或强制指定工具参数 |
+| P4-W7 加固 | E2E、截图、a11y、性能、隐私扫描 | 四断点和故障场景全部留证 | 开启 P5 AskUser/Client Tool 或 P6 MCP |
+
+每个批次都必须可独立关闭 `NEXT_PUBLIC_CHAT_TOOL_UI_ENABLED` 并回到现有纯文本闭环；关闭后不得影响 Run 创建、文本流式输出、消息同步、Context Toolbar、Activity 基础运行摘要和 Composer 停止按钮。服务端 Agentic flag 与 Web Tool UI flag 分开灰度：服务端可先产生受控 fixture/内部事件，Web 未开放时仍必须安全忽略未知 Tool Event，不能导致聊天白屏。
 
 ## 9. P5：等待与 Web 客户端工具
 

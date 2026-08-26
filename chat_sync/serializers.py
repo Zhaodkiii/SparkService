@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from chat_sync.models import ChatMessage, ChatThread
+from chat_sync.contracts import BlockContractError, decode_block
 
 
 class ChatRemoteThreadSerializer(serializers.Serializer):
@@ -51,11 +52,26 @@ class ChatRemoteMessageSerializer(serializers.Serializer):
     reasoning_expanded = serializers.BooleanField(required=False)
     reasoning_visibility = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
+    def validate_blocks(self, value):
+        for index, block in enumerate(value):
+            try:
+                decode_block(block or {}, block_index=index)
+            except BlockContractError as exc:
+                raise serializers.ValidationError({"index": index, "code": exc.code}) from exc
+        return value
+
 
 class ChatRemoteMessageBlockUpdateSerializer(serializers.Serializer):
     thread_id = serializers.UUIDField()
     client_message_id = serializers.UUIDField()
     block = serializers.JSONField()
+
+    def validate_block(self, value):
+        try:
+            decode_block(value or {})
+        except BlockContractError as exc:
+            raise serializers.ValidationError({"code": exc.code}) from exc
+        return value
 
 
 class ChatPushRequestSerializer(serializers.Serializer):

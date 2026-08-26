@@ -1,0 +1,23 @@
+{
+  "id": "00000000-0000-0000-0000-000000000111",
+  "kind": "tool",
+  "status": "streaming",
+  "revision": 2,
+  "order_key": 1800,
+  "tool_call_id": "call_p4_01",
+  "parent_tool_call_id": null,
+  "parent_block_id": null,
+  "node_role": "tool",
+  "anchor": null,
+  "payload": {
+    "tool": {
+      "_0": {
+        "name": "读取健康档案",
+        "content": "{\"sections\": [\"过敏史\", \"慢性病\"]}",
+        "invocation_arguments": {"sections": "[\"过敏史\", \"慢性病\"]"}
+      }
+    }
+  },
+  "created_at": "2026-08-25T02:00:09Z",
+  "updated_at": "2026-08-25T02:00:10Z"
+}

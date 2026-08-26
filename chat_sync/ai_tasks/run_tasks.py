@@ -8,6 +8,7 @@ from typing import Awaitable, Callable
 
 from celery import shared_task
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 
 from chat_sync.ai_models import ChatAgentCheckpoint, RunStatus
 from chat_sync.ai_services.run_service import RunService
@@ -22,10 +23,29 @@ from asgiref.sync import sync_to_async
 from chat_sync.ai_runtime.tools.registry import build_server_tool_registry
 from chat_sync.ai_runtime.tools.scoped_registry import ScopedToolRegistry
 from chat_sync.ai_runtime.tools.policy import ToolExecutionContext
-from chat_sync.ai_services.tool_state_service import record_tool_requests, record_tool_results, save_agent_checkpoint
+from chat_sync.ai_services.tool_state_service import (
+    converge_cancelled_tool_calls,
+    mark_tool_started,
+    record_tool_progress,
+    record_tool_requests,
+    record_tool_results,
+    save_agent_checkpoint,
+)
 from chat_sync.ai_services.pending_interaction_service import PendingInteractionService
+from chat_sync.contracts import payload_text
 
 logger = logging.getLogger("chat_sync.ai.tasks")
+
+
+def _context_snapshot_id(run_record) -> int | None:
+    """``ChatRun.context_snapshot`` is the reverse accessor of a OneToOneField
+    declared on ``ChatTurnContextSnapshot`` (not a forward FK), so ``ChatRun``
+    has no ``context_snapshot_id`` shortcut attribute and accessing a missing
+    related row raises ``DoesNotExist`` rather than returning ``None``."""
+    try:
+        return run_record.context_snapshot.id
+    except ObjectDoesNotExist:
+        return None
 
 
 class AsyncTextDeltaBuffer:
@@ -148,7 +168,10 @@ def _history_messages(run_id):
     rows = list(run.thread.messages.filter(role__in=["user", "assistant"], tombstone=False).order_by("-created_at", "-id")[: limit + 1])
     for message in reversed(rows):
         block = message.blocks.filter(kind="text", status__in=["ready", "streaming"]).order_by("order_key", "created_at").first()
-        text = (block.payload or {}).get("text", "") if block else ""
+        # Message blocks use the iOS tagged payload shape: {"text": {"_0": "..."}}.
+        # Reading the database column directly silently turns this into a dict and
+        # sends malformed history to the provider.
+        text = payload_text(block.payload) if block else ""
         if message.id == run.user_message_id:
             text = (run.request_snapshot or {}).get("content", text)
         if text:
@@ -182,6 +205,8 @@ async def _execute_provider(run_id, snapshot, *, lease_token, request_id: str = 
         usage: dict[str, int] = {}
         finish_reason = "stop"
         provider_request_id = ""
+        model_calls = 0
+        tool_calls = 0
         think_filter = InlineThinkFilter()
 
         async def ensure_running() -> None:
@@ -217,6 +242,13 @@ async def _execute_provider(run_id, snapshot, *, lease_token, request_id: str = 
                 await text_buffer.add(text)
 
         if context.tool_manifest and route.supports_tool_use:
+            # CHAT-WEB-027 W1: real Agentic final-answer streaming. When enabled,
+            # round_runner classifies a tool-free round's leading text as the
+            # final answer within a short buffer window and streams every
+            # subsequent delta through on_final_chunk in real time, instead of
+            # only becoming visible once the full text is available.
+            agentic_true_stream_enabled = bool(getattr(settings, "CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED", False))
+
             from chat_sync.ai_models import ChatRun
             run_record = await sync_to_async(lambda: ChatRun.objects.select_related("thread", "user", "context_snapshot").get(pk=run_id), thread_sensitive=True)()
             registry = ScopedToolRegistry(build_server_tool_registry(), [item["name"] for item in context.tool_manifest])
@@ -225,20 +257,83 @@ async def _execute_provider(run_id, snapshot, *, lease_token, request_id: str = 
                 thread_id=str(run_record.thread_id),
                 user_id=run_record.user_id,
                 member_id=run_record.thread.member_id,
-                context_snapshot_id=run_record.context_snapshot_id,
+                context_snapshot_id=_context_snapshot_id(run_record),
                 context_hash=context.context_hash,
                 request_id=request_id,
             )
 
             async def on_tool_calls(round_index, calls):
+                nonlocal tool_calls
+                tool_calls += len(calls)
                 await sync_to_async(record_tool_requests, thread_sensitive=True)(run_id, round_index, calls, registry)
+
+            async def on_tool_started(call_id):
+                await sync_to_async(mark_tool_started, thread_sensitive=True)(run_id, call_id)
+
+            async def on_progress(call_id, message, percent):
+                await sync_to_async(record_tool_progress, thread_sensitive=True)(run_id, call_id, message, percent)
+
+            async def on_narration_delta(round_index, delta):
+                await sync_to_async(StreamWriter.round_delta, thread_sensitive=True)(
+                    run_id=run_id,
+                    round_id=str(round_index),
+                    index=round_index,
+                    channel="assistant_content",
+                    text_delta=delta,
+                    lease_token=lease_token,
+                )
 
             async def on_tool_results(round_index, items):
                 await sync_to_async(record_tool_results, thread_sensitive=True)(run_id, items)
-                await sync_to_async(save_agent_checkpoint, thread_sensitive=True)(run_id, transcript=messages, next_round_index=round_index + 1, tool_steps=len(items), context_snapshot_id=run_record.context_snapshot_id, context_hash=context.context_hash)
+                await sync_to_async(save_agent_checkpoint, thread_sensitive=True)(run_id, transcript=messages, next_round_index=round_index + 1, tool_steps=len(items), context_snapshot_id=_context_snapshot_id(run_record), context_hash=context.context_hash)
+
+            async def on_final_chunk(delta: str) -> None:
+                nonlocal visible
+                await ensure_running()
+                visible = True
+                await text_buffer.add(delta)
 
             async def on_final_text(text):
-                await write_text(text)
+                if agentic_true_stream_enabled:
+                    # Already streamed through on_final_chunk in real time; this
+                    # call is only a completion signal, not something to write
+                    # again (writing it again would duplicate the Text Block).
+                    return
+                # Legacy path (flag off): stream the final answer in bounded
+                # chunks after the fact so the Web still renders progressively.
+                chunk_size = int(getattr(settings, "CHAT_AI_FINAL_TEXT_CHUNK_CHARS", 160))
+                for start in range(0, len(text), chunk_size):
+                    await write_text(text[start:start + chunk_size])
+
+            async def on_round(trace):
+                nonlocal model_calls, provider_request_id, finish_reason
+                round_id = str(trace.index)
+                if trace.event == "started":
+                    await sync_to_async(StreamWriter.round_started, thread_sensitive=True)(
+                        run_id=run_id, round_id=round_id, index=trace.index, lease_token=lease_token,
+                    )
+                elif trace.event == "completed":
+                    model_calls += 1
+                    if trace.call_id:
+                        provider_request_id = trace.call_id
+                    if trace.finish_reason:
+                        finish_reason = trace.finish_reason
+                    if trace.usage:
+                        usage.update(trace.usage)
+                        await sync_to_async(StreamWriter.usage_updated, thread_sensitive=True)(
+                            run_id=run_id, usage=usage, lease_token=lease_token,
+                        )
+                    await sync_to_async(StreamWriter.round_completed, thread_sensitive=True)(
+                        run_id=run_id, round_id=round_id, index=trace.index, call_id=trace.call_id or None,
+                        call_role=trace.call_role, content=trace.content, finish_reason=trace.finish_reason,
+                        lease_token=lease_token,
+                    )
+                elif trace.event == "failed":
+                    model_calls += 1
+                    await sync_to_async(StreamWriter.round_failed, thread_sensitive=True)(
+                        run_id=run_id, round_id=round_id, index=trace.index, call_id=trace.call_id or None,
+                        error_code=trace.error_code, retryable=trace.retryable, lease_token=lease_token,
+                    )
 
             async def on_pause(round_index, item, transcript):
                 raw_pause = item.result.pause_for_user or {}
@@ -263,23 +358,32 @@ async def _execute_provider(run_id, snapshot, *, lease_token, request_id: str = 
                         tool_schemas=[item["schema"] for item in context.tool_manifest],
                         execution_context=execution_context,
                         on_tool_calls=on_tool_calls,
+                        on_tool_started=on_tool_started,
+                        on_progress=on_progress,
+                        on_narration_delta=on_narration_delta,
                         on_tool_results=on_tool_results,
                         on_pause=on_pause,
                         on_final_text=on_final_text,
+                        on_final_chunk=on_final_chunk if agentic_true_stream_enabled else None,
+                        on_round=on_round,
                         max_rounds=int(getattr(settings, "CHAT_AI_AGENT_MAX_ROUNDS", 8)),
                         max_calls_per_round=int(getattr(settings, "CHAT_AI_TOOL_MAX_CALLS_PER_ROUND", 8)),
                         max_concurrency=int(getattr(settings, "CHAT_AI_TOOL_MAX_CONCURRENCY", 4)),
+                        stream_classify_chars=int(getattr(settings, "CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS", 40)),
+                        stream_classify_window_ms=int(getattr(settings, "CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS", 150)),
                     ),
                     timeout=float(getattr(settings, "CHAT_AI_RUN_DEADLINE_SECONDS", 180)),
                 )
                 if getattr(agentic_outcome, "kind", "") == "paused":
                     return {"status": RunStatus.WAITING_FOR_USER_INPUT if (agentic_outcome.pause and agentic_outcome.pause.kind == "ask_user") else RunStatus.WAITING_FOR_CLIENT_TOOL, "run_id": str(run_id)}
                 await text_buffer.close()
-                final = await sync_to_async(StreamWriter.finish, thread_sensitive=True)(run_id=run_id, status=RunStatus.COMPLETED, lease_token=lease_token, usage=usage, provider_request_id=provider_request_id)
+                final = await sync_to_async(StreamWriter.finish, thread_sensitive=True)(run_id=run_id, status=RunStatus.COMPLETED, finish_reason=finish_reason, lease_token=lease_token, usage=usage, provider_request_id=provider_request_id, model_calls=model_calls, tool_calls=tool_calls)
                 return {"status": final.status, "run_id": str(run_id)}
             except RunExecutionCancelled:
                 with suppress(Exception):
                     await text_buffer.close()
+                with suppress(Exception):
+                    await sync_to_async(converge_cancelled_tool_calls, thread_sensitive=True)(run_id)
                 final = await sync_to_async(StreamWriter.finish, thread_sensitive=True)(run_id=run_id, status=RunStatus.CANCELLED, lease_token=lease_token)
                 return {"status": final.status, "run_id": str(run_id)}
             except RunLeaseLost:
@@ -287,6 +391,8 @@ async def _execute_provider(run_id, snapshot, *, lease_token, request_id: str = 
             except Exception as exc:
                 with suppress(Exception):
                     await text_buffer.close()
+                with suppress(Exception):
+                    await sync_to_async(converge_cancelled_tool_calls, thread_sensitive=True)(run_id)
                 error = adapt_error(exc)
                 final = await sync_to_async(StreamWriter.finish, thread_sensitive=True)(run_id=run_id, status=RunStatus.FAILED, error_code=error.code, error_message=error.message, retryable=error.retryable, lease_token=lease_token)
                 return {"status": final.status, "run_id": str(run_id)}
@@ -315,11 +421,14 @@ async def _execute_provider(run_id, snapshot, *, lease_token, request_id: str = 
                     lease_token=lease_token,
                     usage=usage,
                     provider_request_id=provider_request_id,
+                    model_calls=attempt + 1,
                 )
                 return {"status": final.status, "run_id": str(run_id)}
             except RunExecutionCancelled:
                 with suppress(Exception):
                     await text_buffer.close()
+                with suppress(Exception):
+                    await sync_to_async(converge_cancelled_tool_calls, thread_sensitive=True)(run_id)
                 final = await sync_to_async(StreamWriter.finish, thread_sensitive=True)(
                     run_id=run_id,
                     status=RunStatus.CANCELLED,

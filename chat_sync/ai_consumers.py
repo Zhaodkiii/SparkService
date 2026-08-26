@@ -17,11 +17,20 @@ class ChatRunConsumer(AsyncJsonWebsocketConsumer):
             return
         self.groups = set()
         await self.accept()
+        claims = self.scope.get("auth_claims") or {}
+        self.session_group = None
+        if claims.get("session_class") == "web" and claims.get("web_session_id"):
+            from chat_sync.events import ChatSyncNotifier
+
+            self.session_group = ChatSyncNotifier.web_session_group(str(claims["web_session_id"]))
+            await self.channel_layer.group_add(self.session_group, self.channel_name)
         await self.send_json({"type": "chat.run.connected"})
 
     async def disconnect(self, code):
         for group in self.groups:
             await self.channel_layer.group_discard(group, self.channel_name)
+        if getattr(self, "session_group", None):
+            await self.channel_layer.group_discard(self.session_group, self.channel_name)
 
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
@@ -65,6 +74,13 @@ class ChatRunConsumer(AsyncJsonWebsocketConsumer):
 
     async def chat_run_event(self, event):
         await self.send_json(event.get("event") or {})
+
+    async def chat_web_session_invalidated(self, event):
+        await self.send_json({
+            "type": "auth.session.invalidated",
+            "msg": event.get("reason") or "web_session_revoked",
+        })
+        await self.close(code=4401)
 
     @database_sync_to_async
     def _get_run(self, run_id):

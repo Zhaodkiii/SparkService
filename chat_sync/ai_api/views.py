@@ -25,16 +25,25 @@ from chat_sync.ai_api.serializers import (
 from chat_sync.ai_models import ChatThreadPreferences, ChatTurnContextSnapshot, ChatWebSocketTicket
 from chat_sync.models import ChatThread
 from chat_sync.ai_services.run_service import RunService
+from chat_sync.ai_services.run_readiness_service import ChatRunReadinessService
 from common.response import success_response
 from chat_sync.ai_services.pending_interaction_service import PendingInteractionService
 from chat_sync.ai_services.deferred_tool_service import DeferredToolService
 from chat_sync.ai_runtime.capabilities import build_capability_registry
+from accounts.services.web_session_service import WebSessionService
 
 logger = logging.getLogger("chat_sync.ai.api")
 
 
 def _request_id(request) -> str:
     return str(request.headers.get("X-Request-ID") or "-")[:128]
+
+
+class RunReadinessView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return success_response(ChatRunReadinessService.evaluate().to_dict(), msg="ok")
 
 
 class WebSocketTicketView(APIView):
@@ -44,8 +53,16 @@ class WebSocketTicketView(APIView):
         ttl = max(5, min(120, int(getattr(settings, "CHAT_AI_WS_TICKET_TTL_SECONDS", 30))))
         raw_ticket = secrets.token_urlsafe(32)
         now = timezone.now()
+        claims = dict(getattr(request.auth, "payload", {}) or {})
+        web_session_id = None
+        web_session_version = None
+        if WebSessionService.claims_require_web_session(claims):
+            web_session_id = claims.get("web_session_id")
+            web_session_version = int(claims.get("web_session_version") or 0) or None
         ChatWebSocketTicket.objects.create(
             user=request.user,
+            web_session_id=web_session_id,
+            web_session_version=web_session_version,
             token_hash=hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest(),
             websocket_path="/ws/chat/runs/",
             expires_at=now + timedelta(seconds=ttl),
@@ -136,6 +153,21 @@ class CreateRunView(APIView):
         return success_response(payload, msg="replayed" if result.replayed else "accepted", status_code=200 if result.replayed else 202)
 
 
+class ThreadToolCatalogView(APIView):
+    """P4 Public Tool Catalog: per-thread allowlist of visible read-only tools."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, thread_id):
+        from common.exceptions import APIError
+        from chat_sync.ai_services.tool_catalog_service import build_thread_tool_catalog
+
+        thread = ChatThread.objects.filter(id=thread_id, user=request.user, is_deleted=False).first()
+        if thread is None:
+            raise APIError("chat_thread_not_found", code=40491, status_code=404)
+        return success_response(build_thread_tool_catalog(thread=thread), msg="ok")
+
+
 class ThreadPreferencesView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -155,9 +187,12 @@ class ThreadPreferencesView(APIView):
     def patch(self, request, thread_id):
         from django.db import transaction
         from common.exceptions import APIError
+        from chat_sync.ai_services.tool_catalog_service import validate_enabled_tools
 
         serializer = PreferencesSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+        if "enabled_tools" in serializer.validated_data:
+            serializer.validated_data["enabled_tools"] = validate_enabled_tools(serializer.validated_data["enabled_tools"])
         with transaction.atomic():
             prefs = self.get_object(request, thread_id)
             expected = request.headers.get("If-Match") or request.data.get("revision")

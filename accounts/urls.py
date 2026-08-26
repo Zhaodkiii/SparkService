@@ -6,6 +6,9 @@ from accounts.auth.views import (
     DeviceLoginView,
     LogoutView,
     PasswordLoginView,
+    WebAppleLoginView,
+    WebPhoneOTPRequestView,
+    WebPhoneOTPVerifyView,
 )
 from accounts.device.views import DeviceRegisterView
 from accounts.deactivation.views import AccountDeactivationView
@@ -27,6 +30,9 @@ urlpatterns = [
     # Auth
     path("auth/password/login/", PasswordLoginView.as_view(), name="password_login"),
     path("auth/apple/login/", AppleLoginView.as_view(), name="apple_login"),
+    path("auth/apple/web/login/", WebAppleLoginView.as_view(), name="apple_web_login"),
+    path("auth/phone/web/otp/request/", WebPhoneOTPRequestView.as_view(), name="web_phone_otp_request"),
+    path("auth/phone/web/otp/verify/", WebPhoneOTPVerifyView.as_view(), name="web_phone_otp_verify"),
     path("auth/device/login/", DeviceLoginView.as_view(), name="device_login"),
     path("auth/session/", CurrentSessionView.as_view(), name="auth_current_session"),
     path("auth/logout/", LogoutView.as_view(), name="auth_logout"),

@@ -11,6 +11,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from chat_sync.events import ChatSyncNotifier
+from chat_sync.ai_models.event import ChatUsageRecord
+from chat_sync.contracts import BlockContractError, decode_block
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from chat_sync.serializers import (
     ChatPushRequestSerializer,
@@ -130,29 +132,86 @@ def _to_payload(message: ChatMessage) -> dict:
         "server_updated_at": message.server_updated_at.isoformat(),
         "tombstone": message.tombstone,
         "attachments": metadata.get("attachments") or [],
-        "blocks": [_block_to_payload(block) for block in message.blocks.all()],
+        # Invalid legacy rows are intentionally not migrated or reshaped. They
+        # are omitted from the wire response so one stale block cannot turn the
+        # whole history request into HTTP 500; all newly written blocks are
+        # rejected before persistence and remain strictly iOS-compatible.
+        "blocks": [item for block in message.blocks.all() if (item := _block_to_payload(block)) is not None],
         "reasoning_content": metadata.get("reasoning_content"),
         "reasoning_duration_ms": metadata.get("reasoning_duration_ms"),
         "reasoning_expanded": metadata.get("reasoning_expanded"),
         "reasoning_visibility": metadata.get("reasoning_visibility"),
+        "usage_summary": _usage_summary_for_message(message),
     }
 
 
-def _block_to_payload(block: ChatMessageBlock) -> dict:
-    payload = dict(block.payload or {})
-    payload.setdefault("id", str(block.id))
-    payload.setdefault("kind", block.kind)
-    payload.setdefault("status", block.status)
-    payload.setdefault("revision", block.revision)
-    payload.setdefault("order_key", block.order_key)
-    payload.setdefault("tool_call_id", block.tool_call_id or None)
-    payload.setdefault("parent_tool_call_id", block.parent_tool_call_id or None)
-    payload.setdefault("parent_block_id", str(block.parent_block_id) if block.parent_block_id else None)
-    payload.setdefault("node_role", block.node_role)
-    payload.setdefault("anchor", block.anchor)
-    payload.setdefault("created_at", block.created_at.isoformat())
-    payload.setdefault("updated_at", block.updated_at.isoformat())
-    return payload
+def _usage_summary_for_message(message: ChatMessage) -> dict | None:
+    """Project a safe, Web-facing token usage summary from the Run Usage record.
+
+    Model names and token counts are not secrets; keys, URLs and billing amounts
+    are intentionally excluded. A message without a completed Run simply omits
+    the field (None), preserving iOS backward compatibility.
+    """
+    if message.role != "assistant":
+        return None
+    for run in message.ai_assistant_runs.all():
+        try:
+            usage = run.usage
+        except ChatUsageRecord.DoesNotExist:
+            continue
+        return {
+            "model": usage.model or None,
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+            "model_calls": usage.model_calls,
+            "tool_calls": usage.tool_calls,
+        }
+    return None
+
+
+def _block_to_payload(block: ChatMessageBlock) -> dict | None:
+    # Sync is the iOS wire contract. There is deliberately no legacy projection
+    # or database migration path: invalid rows are rejected instead of being
+    # silently converted into a second message model.
+    stored = block.payload if isinstance(block.payload, dict) else {}
+    # iOS Sync historically persisted the complete Codable block envelope in
+    # this JSON column.  The wire model is still exactly one iOS block shape;
+    # select its nested payload before validating and projecting it.
+    if isinstance(stored.get("payload"), dict):
+        raw = {
+            "node_role": stored.get("node_role"),
+            "payload": stored.get("payload"),
+            "anchor": stored.get("anchor"),
+        }
+    else:
+        raw = {"kind": block.kind, "node_role": block.node_role, "payload": stored, "anchor": block.anchor}
+    try:
+        canonical = decode_block(raw)
+    except BlockContractError as exc:
+        logger.warning(
+            "chat sync omitted invalid block id=%s message_id=%s code=%s",
+            block.id,
+            block.message_id,
+            exc.code,
+        )
+        return None
+    kind, payload, node_role, anchor = canonical.kind, canonical.payload, canonical.node_role, canonical.anchor
+    return {
+        "id": str(block.id),
+        "kind": kind,
+        "status": block.status,
+        "revision": block.revision,
+        "order_key": block.order_key,
+        "tool_call_id": block.tool_call_id or None,
+        "parent_tool_call_id": block.parent_tool_call_id or None,
+        "parent_block_id": str(block.parent_block_id) if block.parent_block_id else None,
+        "node_role": node_role,
+        "anchor": anchor,
+        "payload": payload,
+        "created_at": block.created_at.isoformat(),
+        "updated_at": block.updated_at.isoformat(),
+    }
 
 
 def _block_value(raw: dict, snake: str, camel: str | None = None, default=None):
@@ -195,23 +254,34 @@ def _upsert_message_blocks(*, user, thread: ChatThread, message: ChatMessage, bl
         incoming_status = _block_value(raw, "status", default=ChatMessageBlock.Status.READY) or ChatMessageBlock.Status.READY
         if existing is not None and existing.status == ChatMessageBlock.Status.READY and incoming_status == ChatMessageBlock.Status.PENDING:
             continue
-        payload = dict(raw)
-        payload["id"] = str(block_id)
-        payload["thread_id"] = str(thread.id)
-        payload["client_message_id"] = str(message.client_message_id)
+        raw_kind = _block_value(raw, "kind")
+        raw_node_role = _block_value(raw, "node_role", "nodeRole")
+        raw_payload = _block_value(raw, "payload") or {}
+        try:
+            canonical = decode_block({"kind": raw_kind, "node_role": raw_node_role, "payload": raw_payload, "anchor": _block_value(raw, "anchor")})
+        except BlockContractError as exc:
+            raise APIError(
+                msg=exc.code,
+                code=40022,
+                status_code=400,
+                details={"block_id": block_id, "block_index": exc.block_index},
+            ) from exc
+        kind = canonical.kind
+        node_role = canonical.node_role
+        payload = canonical.payload
 
         defaults = {
             "user": user,
             "thread": thread,
             "message": message,
-            "kind": _block_value(raw, "kind", default="text") or "text",
+            "kind": kind,
             "status": incoming_status,
             "revision": local_revision,
             "order_key": _block_value(raw, "order_key", "orderKey"),
             "tool_call_id": _block_value(raw, "tool_call_id", "toolCallId") or "",
             "parent_tool_call_id": _block_value(raw, "parent_tool_call_id", "parentToolCallID") or "",
             "parent_block_id": _block_value(raw, "parent_block_id", "parentBlockID"),
-            "node_role": _block_value(raw, "node_role", "nodeRole", default="timeline") or "timeline",
+            "node_role": node_role,
             "anchor": _block_value(raw, "anchor"),
             "payload": payload,
             "created_at": _block_datetime(raw, "created_at", message.created_at),
@@ -732,7 +802,7 @@ class ChatSyncPullView(APIView):
             thread_id_raw,
         )
 
-        queryset = ChatMessage.objects.filter(user=request.user, thread__is_deleted=False).prefetch_related("blocks")
+        queryset = ChatMessage.objects.filter(user=request.user, thread__is_deleted=False).prefetch_related("blocks", "ai_assistant_runs__usage")
 
         if thread_id_raw:
             try:

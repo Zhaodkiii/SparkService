@@ -1,0 +1,69 @@
+"""CHAT-DATA-026 canonical message/block contract.
+
+Canonical Block wire contract aligned to iOS ``ChatMessage.swift``.  The server
+is the single writer; Web and iOS are the two consumers.  Every block stored and
+projected by the server must satisfy the invariants declared in
+:mod:`chat_sync.contracts.canonical`.
+"""
+
+from chat_sync.contracts.canonical import (
+    ANCHOR_TYPES,
+    ANCHOR_TYPES_WITH_VALUE,
+    BLOCK_KINDS,
+    NODE_ROLES,
+    NODE_ROLE_TIMELINE,
+    NODE_ROLE_TOOL,
+    NODE_ROLE_TOOL_PRESENTATION,
+    KIND_TEXT,
+    KIND_TOOL,
+    KIND_SEARCH_SUMMARY,
+    BlockContractError,
+    CanonicalBlock,
+    DecodedPayload,
+    assistant_status_payload,
+    decode_block,
+    decode_payload,
+    deep_thought_payload,
+    error_payload,
+    payload_kind,
+    payload_text,
+    search_summary_payload,
+    text_payload,
+    tool_payload,
+    tool_presentation_kind,
+    tool_result_presentation_payload,
+    validate_anchor,
+    validate_kind_node_role,
+    validate_node_role,
+)
+
+__all__ = [
+    "ANCHOR_TYPES",
+    "ANCHOR_TYPES_WITH_VALUE",
+    "BLOCK_KINDS",
+    "NODE_ROLES",
+    "NODE_ROLE_TIMELINE",
+    "NODE_ROLE_TOOL",
+    "NODE_ROLE_TOOL_PRESENTATION",
+    "KIND_TEXT",
+    "KIND_TOOL",
+    "KIND_SEARCH_SUMMARY",
+    "BlockContractError",
+    "CanonicalBlock",
+    "DecodedPayload",
+    "assistant_status_payload",
+    "decode_block",
+    "decode_payload",
+    "deep_thought_payload",
+    "error_payload",
+    "payload_kind",
+    "payload_text",
+    "search_summary_payload",
+    "text_payload",
+    "tool_payload",
+    "tool_presentation_kind",
+    "tool_result_presentation_payload",
+    "validate_anchor",
+    "validate_kind_node_role",
+    "validate_node_role",
+]

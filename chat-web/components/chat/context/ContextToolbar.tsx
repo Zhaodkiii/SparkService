@@ -2,8 +2,10 @@
 
 import { ChevronDown, Database, FileText, Plus, UserRound, X } from "lucide-react";
 import { useState } from "react";
+import { ToolSettingsPopover } from "@/components/chat/home/ToolSettingsPopover";
 import { useOptionalChatContext } from "@/context/ChatContextProvider";
 import { useOptionalThreads } from "@/context/ThreadContext";
+import { CHAT_TOOL_SETTINGS_ENABLED } from "@/lib/feature-flags";
 import type { HealthResourceType } from "@/types/context";
 
 const RESOURCE_TYPES: Array<{ value: HealthResourceType; label: string }> = [
@@ -26,6 +28,7 @@ export function ContextToolbar() {
   const addFile = () => { const value = fileId.trim(); if (!value) return; addItem({ key: `attachment:file:${value}`, kind: "attachment", fileId: value, title: `文件 ${value}`, status: "ready" }); setFileId(""); };
   const addResource = () => { const id = resourceId.trim(); if (!id || !selectedThread?.member_id) return; addItem({ key: `health:${resourceType}:${id}`, kind: "health_resource", resourceType, resourceId: id, memberId: selectedThread.member_id, title: RESOURCE_TYPES.find((item) => item.value === resourceType)?.label ?? resourceType, status: "ready" }); setResourceId(""); };
   return <section className="context-toolbar" aria-label="对话上下文">
+    {CHAT_TOOL_SETTINGS_ENABLED && <ToolSettingsPopover />}
     <button className="composer-icon" type="button" onClick={toggleOpen} aria-expanded={open} aria-label="添加上下文" title="添加资料与上下文"><Plus size={17} /></button>
     <button className="context-trigger" type="button" onClick={toggleOpen} aria-expanded={open}><Database size={14} /><span>{draft.items.length ? `${draft.items.length} 项上下文` : "上下文"}</span><ChevronDown size={12} /></button>
     {draft.items.slice(0, 2).map((item) => <button key={item.key} className="context-chip" type="button" onClick={() => removeItem(item.key)} aria-label={`移除${item.title}`}><span>{item.title}</span><X size={11} /></button>)}

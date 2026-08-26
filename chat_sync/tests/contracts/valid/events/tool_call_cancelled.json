@@ -1,0 +1,33 @@
+{
+  "type": "tool.call.cancelled",
+  "event_id": "00000000-0000-0000-0000-000000000024",
+  "payload_version": 1,
+  "run_id": "00000000-0000-0000-0000-000000000010",
+  "thread_id": "00000000-0000-0000-0000-000000000001",
+  "sequence": 12,
+  "timestamp": "2026-08-25T02:00:12Z",
+  "payload": {
+    "tool_call_id": "call_p4_02",
+    "status": "cancelled",
+    "revision": 3,
+    "finished_at": "2026-08-25T02:00:12Z",
+    "activity": {
+      "tool_call_id": "call_p4_02",
+      "name": "read_source",
+      "version": "v1",
+      "display_name": "读取参考资料",
+      "target": "server",
+      "status": "cancelled",
+      "round_index": 1,
+      "call_index": 0,
+      "revision": 3,
+      "display_args": {"source_id": "附件"},
+      "result_preview": null,
+      "source_refs": [],
+      "error": null,
+      "duplicate_of": null,
+      "started_at": "2026-08-25T02:00:12Z",
+      "finished_at": "2026-08-25T02:00:12Z"
+    }
+  }
+}

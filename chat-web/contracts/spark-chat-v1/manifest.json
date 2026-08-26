@@ -63,12 +63,20 @@
   },
   "files": [
     {
+      "path": "invalid/blocks/bad_status.json",
+      "sha256": "88f37e38d7279eca55799ae65a6bcc8be47edea0021051a2f60bc04dc548c642"
+    },
+    {
+      "path": "invalid/events/missing_sequence.json",
+      "sha256": "4fd6a1fb81d701d4226b9f58374f5efbff5420dba22647275da0316dc43cd44b"
+    },
+    {
       "path": "schemas/api_envelope.v1.schema.json",
       "sha256": "a506d16775f649055500cc12696a0cbafb8b90b4216b3a175297e44eac6002f9"
     },
     {
       "path": "schemas/block.v1.schema.json",
-      "sha256": "ceabf7ca427c36f5dd40ca1486d722a6f05f660a5b2177e721da5f4ddf45fe9b"
+      "sha256": "f18fd2cb6f8adfdfa9a7f51317b54a6c521abd866ec0b1a8523e094db1312883"
     },
     {
       "path": "schemas/event.v1.schema.json",
@@ -92,7 +100,15 @@
     },
     {
       "path": "valid/blocks/text.json",
-      "sha256": "7af172066dd2c58d712cd6f3b8e6fe39bf45a71213cc09a4c9b2ecf0f96c3530"
+      "sha256": "bcd4301f9f617d128d32cc88e10adbf175c6a136b6f9f7cad9775cbcfdd44f15"
+    },
+    {
+      "path": "valid/blocks/tool_call.json",
+      "sha256": "e0e38354b79a8d78bd0cdfb3f9c385d3158a90fb3523c38c925ce08495ece7e7"
+    },
+    {
+      "path": "valid/blocks/tool_result.json",
+      "sha256": "a36bd570f8f827e010d691b03a58c253609d31ab8bef9e752db4d79c60ce487c"
     },
     {
       "path": "valid/blocks/unknown_kind.json",
@@ -111,20 +127,28 @@
       "sha256": "cd9b982164b104b16f806b4573c2151fdc94b1e71b6f80e3fc3e29af7596b782"
     },
     {
+      "path": "valid/events/tool_call_cancelled.json",
+      "sha256": "1d8ad33f79525927a0533b2f28cba71fcc269c71fda3707682ad1971eebc9f70"
+    },
+    {
+      "path": "valid/events/tool_call_requested.json",
+      "sha256": "42d4a15cb338cc147b1b750b6256e1983899e93fce0221895be2d6832687e6bf"
+    },
+    {
+      "path": "valid/events/tool_call_started.json",
+      "sha256": "9e5ce488da1f3eaa293aa87ab56faea2d204610014f1837492ee848b287fa983"
+    },
+    {
+      "path": "valid/events/tool_result.json",
+      "sha256": "97cdc82d962b2571180138625b70027372aff37920d5ddce03042013d0b8466f"
+    },
+    {
       "path": "valid/events/unknown_forward_compatible.json",
       "sha256": "157030021897001d6292401667b34b3841698eb1204d92223080201fb43a29e7"
-    },
-    {
-      "path": "invalid/blocks/bad_status.json",
-      "sha256": "88f37e38d7279eca55799ae65a6bcc8be47edea0021051a2f60bc04dc548c642"
-    },
-    {
-      "path": "invalid/events/missing_sequence.json",
-      "sha256": "4fd6a1fb81d701d4226b9f58374f5efbff5420dba22647275da0316dc43cd44b"
     }
   ],
   "spark_web_snapshot": {
     "source": "chat_sync/tests/contracts",
-    "synced_at": "2026-08-24T21:21:28.835Z"
+    "synced_at": "2026-08-25T05:39:41.868Z"
   }
 }

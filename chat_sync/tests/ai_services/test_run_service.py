@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from chat_sync.ai_models import ChatRunEvent, ChatThreadRunLock, RunStatus
 from chat_sync.ai_services.run_service import RunService
 from chat_sync.models import ChatThread
+from chat_sync.tests.run_factory import canonical_run_payload
 
 
 @override_settings(CHAT_AI_SERVER_RUNS_ENABLED=True, CHAT_AI_RUN_EXECUTOR="disabled")
@@ -18,14 +19,8 @@ class RunServiceTests(TestCase):
         self.default_client_message_id = uuid.uuid4()
 
     def payload(self, content="hello"):
-        return {
-            "client_message_id": self.default_client_message_id if content == "hello" else uuid.uuid4(),
-            "content": content,
-            "capability": "chat",
-            "references": [],
-            "attachments": [],
-            "client": {"platform": "web", "version": "test", "device_id": "device"},
-        }
+        client_message_id = self.default_client_message_id if content == "hello" else uuid.uuid4()
+        return canonical_run_payload(self.thread.id, content=content, client_message_id=client_message_id)
 
     def create(self, key="key-1", content="hello"):
         return RunService.create_run(

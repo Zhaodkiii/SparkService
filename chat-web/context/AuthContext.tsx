@@ -4,8 +4,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { SparkAuthApi } from "@/lib/api/auth-api";
 import { SparkHttpClient } from "@/lib/api/http-client";
-import { authDiagnosticLog, createAuthRequestId, deviceLogSuffix } from "@/lib/auth/diagnostics";
-import { getOrCreateWebDeviceId } from "@/lib/auth/phone";
+import { authDiagnosticLog, createAuthRequestId } from "@/lib/auth/diagnostics";
 import type { AuthTokenWireDTO, CurrentSessionDTO } from "@/types/auth";
 
 type AuthStatus = "bootstrapping" | "anonymous" | "authenticated" | "refreshing";
@@ -30,12 +29,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     const requestId = createAuthRequestId("refresh");
     const startedAt = Date.now();
-    const deviceId = getOrCreateWebDeviceId();
-    authDiagnosticLog("info", "browser", "auth.bootstrap.started", { request_id: requestId, device: deviceLogSuffix(deviceId) });
+    authDiagnosticLog("info", "browser", "auth.bootstrap.started", { request_id: requestId, session_class: "web" });
     setStatus((current) => current === "authenticated" ? "refreshing" : "bootstrapping");
     try {
       const bootstrapClient = new SparkHttpClient({ baseUrl: "" });
-      const data = await new SparkAuthApi(bootstrapClient).bootstrap(deviceId, requestId);
+      const data = await new SparkAuthApi(bootstrapClient).bootstrap(requestId);
       if (!data.access_token) throw new Error("missing access token");
       tokenRef.current = data.access_token;
       setAccessToken(data.access_token);

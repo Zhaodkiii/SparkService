@@ -1,19 +1,55 @@
 import type { ChatRunDTO } from "@/types/chat";
 import type { ChatEventEnvelope } from "@/types/chat";
 
-export interface CreateRunRequestDTO {
+/**
+ * Canonical Create Run v2 request: the user turn is carried as a canonical
+ * `input_message` (iOS ChatMessage shape) and the run command in `run_options`.
+ * The legacy `content` flat path is no longer emitted by the Web client.
+ */
+export interface CanonicalInputBlockDTO {
+  id?: string;
+  kind: string;
+  status?: "pending" | "streaming" | "ready" | "failed";
+  revision?: number;
+  order_key?: number | null;
+  tool_call_id?: string | null;
+  parent_tool_call_id?: string | null;
+  parent_block_id?: string | null;
+  node_role?: string;
+  anchor?: unknown;
+  payload: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CanonicalInputMessageDTO {
+  thread_id: string;
+  role: "user";
   client_message_id: string;
-  content?: string;
+  server_message_id?: string | null;
+  delivery_state?: string;
+  created_at?: string;
+  tombstone?: boolean;
+  model_name?: string | null;
+  blocks: CanonicalInputBlockDTO[];
+}
+
+export interface RunOptionsDTO {
   capability: "chat";
   preferences_revision?: number | null;
   context_parent_message_id?: number | null;
-  references: unknown[];
+  context_inputs: unknown[];
   attachments: unknown[];
   client: {
     platform: "web";
     version: string;
     device_id: string;
   };
+}
+
+export interface CreateRunRequestDTO {
+  input_message: CanonicalInputMessageDTO;
+  run_options: RunOptionsDTO;
 }
 
 export interface ContextSummarySourceDTO {
@@ -53,4 +89,15 @@ export interface WebSocketTicketData {
   ticket: string;
   expires_in: number;
   websocket_path: string;
+}
+
+export interface ChatRunReadinessDTO {
+  available: boolean;
+  code: string;
+  retryable: boolean;
+  checked_at: string | null;
+  executor: string;
+  model_binding_configured: boolean;
+  worker_healthy: boolean;
+  config_version: string | null;
 }

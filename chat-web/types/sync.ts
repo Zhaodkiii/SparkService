@@ -1,4 +1,4 @@
-import type { ChatBlockDTO } from "@/types/chat";
+import type { ChatBlockDTO, ChatUsageSummary, TurnSummary } from "@/types/chat";
 
 export interface ChatThreadWireDTO {
   thread_id: string;
@@ -40,6 +40,8 @@ export interface ChatMessageWireDTO {
   reasoning_duration_ms?: number | null;
   reasoning_expanded?: boolean;
   reasoning_visibility?: string | null;
+  usage_summary?: ChatUsageSummary | null;
+  turn_summary?: TurnSummary | null;
 }
 
 export interface ThreadPullData {

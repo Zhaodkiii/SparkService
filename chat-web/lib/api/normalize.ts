@@ -32,6 +32,9 @@ const BUSINESS_MESSAGE_KEYS: Record<number, string> = {
   50301: "api.server_unavailable",
   50331: "auth.sms.unavailable",
   50392: "chat.server_runs_disabled",
+  50393: "chat.run_executor_unavailable",
+  50394: "chat.run_model_binding_missing",
+  50395: "chat.run_worker_unavailable",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

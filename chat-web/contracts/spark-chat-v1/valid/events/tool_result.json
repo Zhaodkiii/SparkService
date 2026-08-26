@@ -1,0 +1,33 @@
+{
+  "type": "tool.result",
+  "event_id": "00000000-0000-0000-0000-000000000023",
+  "payload_version": 1,
+  "run_id": "00000000-0000-0000-0000-000000000010",
+  "thread_id": "00000000-0000-0000-0000-000000000001",
+  "sequence": 11,
+  "timestamp": "2026-08-25T02:00:11Z",
+  "payload": {
+    "tool_call_id": "call_p4_01",
+    "tool_name": "query_member_profile",
+    "success": true,
+    "error_code": "",
+    "activity": {
+      "tool_call_id": "call_p4_01",
+      "name": "query_member_profile",
+      "version": "v1",
+      "display_name": "读取健康档案",
+      "target": "server",
+      "status": "completed",
+      "round_index": 0,
+      "call_index": 0,
+      "revision": 3,
+      "display_args": {"sections": ["过敏史", "慢性病"]},
+      "result_preview": "已读取 2 个健康档案分区",
+      "source_refs": [{"source_id": "member_profile:42", "type": "member_profile"}],
+      "error": null,
+      "duplicate_of": null,
+      "started_at": "2026-08-25T02:00:10Z",
+      "finished_at": "2026-08-25T02:00:11Z"
+    }
+  }
+}

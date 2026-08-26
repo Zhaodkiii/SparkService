@@ -1,22 +1,11 @@
 import { SparkApiError } from "@/lib/api/http-client";
 
 const MAINLAND_MOBILE = /^1\d{10}$/;
-const DEVICE_STORAGE_KEY = "spark.web.device-id.v1";
 
 export function normalizeMainlandPhone(value: string): string | null {
   const digits = value.replace(/\D/g, "");
   const local = digits.startsWith("86") && digits.length === 13 ? digits.slice(2) : digits;
   return MAINLAND_MOBILE.test(local) ? `+86${local}` : null;
-}
-
-export function getOrCreateWebDeviceId(): string {
-  const existing = window.localStorage.getItem(DEVICE_STORAGE_KEY)?.trim();
-  if (existing) return existing;
-  const id = typeof crypto.randomUUID === "function"
-    ? `web-${crypto.randomUUID()}`
-    : `web-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  window.localStorage.setItem(DEVICE_STORAGE_KEY, id);
-  return id;
 }
 
 export function phoneOtpErrorMessage(cause: unknown, action: "request" | "verify"): string {
@@ -38,6 +27,8 @@ export function phoneOtpErrorMessage(cause: unknown, action: "request" | "verify
     50231: "短信服务发送失败，请稍后重试",
     50331: "短信服务暂时无响应，请稍后重试",
     50301: "本地服务暂不可用，请确认 Django 服务已启动",
+    50375: "手机号登录暂未开放，请稍后重试",
+    50376: "手机号登录服务配置异常，请稍后重试",
     [-1]: "浏览器未能发出请求，请检查网络或开发者控制台",
   };
   return messages[cause.failure.code]

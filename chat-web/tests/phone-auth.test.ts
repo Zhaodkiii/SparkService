@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SparkApiError } from "@/lib/api/http-client";
 import { normalizeMainlandPhone, phoneOtpErrorMessage } from "@/lib/auth/phone";
-import { deviceLogSuffix, maskPhone } from "@/lib/auth/diagnostics";
+import { maskPhone } from "@/lib/auth/diagnostics";
 
 describe("phone login adapter", () => {
   it("normalizes local and +86 mainland mobile numbers", () => {
@@ -16,9 +16,15 @@ describe("phone login adapter", () => {
     expect(phoneOtpErrorMessage(new TypeError("fetch failed"), "request")).toContain("本地服务");
   });
 
+  it("maps the web phone login kill-switch to a service-unavailable message", () => {
+    const disabled = new SparkApiError({ ok: false, httpStatus: 503, code: 50375, messageKey: "web_phone_login_disabled", retryable: true });
+    expect(phoneOtpErrorMessage(disabled, "verify")).toBe("手机号登录暂未开放，请稍后重试");
+    const misconfigured = new SparkApiError({ ok: false, httpStatus: 503, code: 50376, messageKey: "web_phone_login_misconfigured", retryable: true });
+    expect(phoneOtpErrorMessage(misconfigured, "verify")).toBe("手机号登录服务配置异常，请稍后重试");
+  });
+
   it("redacts identifiers used by diagnostic logs", () => {
     expect(maskPhone("+8613800138000")).toBe("86***8000");
-    expect(deviceLogSuffix("web-12345678-abcdefgh")).toBe("***abcdefgh");
     expect(maskPhone("123")).toBe("***");
   });
 });

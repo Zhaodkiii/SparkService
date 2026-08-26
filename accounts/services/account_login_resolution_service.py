@@ -83,6 +83,8 @@ class AccountLoginResolutionService:
         create_user: Callable[[], Any],
         on_existing_user: Callable[[Any], None] | None = None,
         login_audit_provider: str | None = None,
+        token_issuer: Callable[[Any], dict[str, Any]] | None = None,
+        audit_claims: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         provider = (provider or "").strip()
         provider_uid = (normalized_provider_uid or "").strip()
@@ -276,6 +278,7 @@ class AccountLoginResolutionService:
             user_agent=user_agent or "",
             raw_claims={
                 **verified_claims,
+                **(audit_claims or {}),
                 "identity_scope": scope,
                 "account_resolution": account_resolution,
                 "previous_device_account_id": previous_device_account_id,
@@ -291,15 +294,16 @@ class AccountLoginResolutionService:
             device_id=normalized_device_id,
             request_id=request_id,
         )
-        result = LoginService._apply_is_pro(
-            user=user,
-            payload=LoginService._issue_tokens(
+        if token_issuer is not None:
+            payload = token_issuer(user)
+        else:
+            payload = LoginService._issue_tokens(
                 user,
                 bundle_id=real_bundle,
                 device_id=normalized_device_id,
                 request_id=request_id,
-            ),
-        )
+            )
+        result = LoginService._apply_is_pro(user=user, payload=payload)
         result.update(
             {
                 "is_new_user": created_user,

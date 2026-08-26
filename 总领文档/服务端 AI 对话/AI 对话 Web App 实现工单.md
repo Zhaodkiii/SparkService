@@ -557,6 +557,7 @@ REST 负责资源与可靠查询，WebSocket 负责 Run 实时事件。前端连
 | `CHAT-WEB-014` | AI 记忆确认、来源、编辑、删除与停用 UI | Memory API | 可控记忆工作区 |
 | `CHAT-WEB-015` | 账号、对话、隐私、数据、记忆与外观设置 UI | Auth/Settings API | 设置工作区 |
 | `CHAT-WEB-016` | 全局 Toast、错误归一化、错误码目录、呈现分流、去重与无障碍 | `CHAT-WEB-001`、API 错误合同 | 统一错误提示；详见 `AI 对话 Web App 统一错误提示工单.md` |
+| `CHAT-WEB-018` | 修复 Next BFF 丢失尾斜杠导致 Run 创建 POST 经 301 变 GET、最终 405 | P1 Run REST、Next BFF | 路径保真、禁止自动跟随 API 重定向；详见 `AI 对话 Web App Run 创建 405 修复工单.md` |
 
 ### 16.4 Web P0–P7 分阶段计划入口
 

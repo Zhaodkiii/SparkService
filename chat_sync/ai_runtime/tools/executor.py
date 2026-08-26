@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from chat_sync.ai_runtime.protocols.tool_protocol import ToolResult
 
 from .policy import ToolExecutionContext, canonical_tool_args, validate_schema
 from .scoped_registry import ScopedToolRegistry
+
+
+ProgressSink = Callable[[str, float | None], Awaitable[None]]
 
 
 def _error(code: str, message: str, *, retryable: bool = False) -> ToolResult:
@@ -25,6 +28,7 @@ async def execute_tool_call(
     arguments: Any,
     context: ToolExecutionContext,
     request_id: str = "",
+    on_progress: ProgressSink | None = None,
 ) -> ToolResult:
     entry = registry.get(name)
     if entry is None:
@@ -52,21 +56,39 @@ async def execute_tool_call(
         request_id=request_id or context.request_id,
         deadline_at=context.deadline_at,
     )
-    try:
-        result = await asyncio.wait_for(
-            registry.execute(name, arguments, execution_context),
-            timeout=max(0.1, float(entry.policy.timeout_seconds)),
-        )
-    except asyncio.TimeoutError:
-        return _error("tool_timeout", "工具执行超时。", retryable=True)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
+    max_attempts = max(1, int(entry.policy.max_attempts))
+    result: ToolResult | None = None
+    attempt = 0
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = await asyncio.wait_for(
+                registry.execute(name, arguments, execution_context),
+                timeout=max(0.1, float(entry.policy.timeout_seconds)),
+            )
+            break
+        except asyncio.TimeoutError:
+            if attempt >= max_attempts:
+                return _error("tool_timeout", "工具执行超时。", retryable=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if attempt >= max_attempts:
+                return _error("tool_execution_failed", "工具执行失败，请稍后重试。", retryable=True)
+        if on_progress is not None:
+            await on_progress(f"第 {attempt} 次执行失败，正在重试…", None)
+
+    if result is None:
         return _error("tool_execution_failed", "工具执行失败，请稍后重试。", retryable=True)
     if not isinstance(result, ToolResult):
         result = ToolResult(content=str(result), metadata={})
-    result.metadata = {**result.metadata, "tool": name, "arguments_hash": canonical_tool_args(name, entry.policy.version, arguments)}
+    result.metadata = {"attempts": attempt, **result.metadata, "tool": name, "arguments_hash": canonical_tool_args(name, entry.policy.version, arguments)}
+    # Enforce the policy result budget before the observation reaches the
+    # transcript, DB or any event projection (~4 chars per token heuristic).
+    max_chars = max(64, int(entry.policy.max_result_tokens) * 4)
+    if len(result.content) > max_chars:
+        result.content = result.content[:max_chars]
+        result.metadata = {**result.metadata, "result_truncated": True}
     return result
 
 
-__all__ = ["execute_tool_call"]
+__all__ = ["execute_tool_call", "ProgressSink"]

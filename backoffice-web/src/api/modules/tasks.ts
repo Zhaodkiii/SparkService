@@ -60,6 +60,11 @@ export interface TaskManagerStatusResponse {
     /** @deprecated 与 local_manageable 相同，兼容旧后端 */
     local_start_available?: boolean;
   };
+  worker_queues?: string[];
+  chat_ai?: {
+    server_runs_enabled: boolean;
+    run_executor: string;
+  };
   run_dir: string;
   log_dir: string;
 }

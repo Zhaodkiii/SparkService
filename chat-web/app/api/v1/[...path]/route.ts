@@ -1,10 +1,13 @@
-import { callSparkUpstream, failureEnvelope, jsonEnvelope, requestIdFrom } from "@/lib/server/upstream";
+import { callSparkUpstream, failureEnvelope, jsonEnvelope, requestIdFrom, sparkApiPathFromRequest } from "@/lib/server/upstream";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
 async function proxy(request: Request, context: RouteContext) {
-  const { path } = await context.params;
-  const upstreamPath = `/api/v1/${path.join("/")}`;
+  await context.params;
+  // Catch-all params contain path segments only, so rebuilding the URL from
+  // them drops both the trailing slash and the query string. The Request URL
+  // is the wire-level source of truth and must be forwarded unchanged.
+  const upstreamPath = sparkApiPathFromRequest(request);
   const headers = new Headers();
   for (const name of ["authorization", "idempotency-key", "if-match", "x-device-id", "content-type"]) {
     const value = request.headers.get(name);

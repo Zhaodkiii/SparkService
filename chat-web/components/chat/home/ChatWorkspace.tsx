@@ -14,7 +14,7 @@ export function ChatWorkspace() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const run = useOptionalRunControl();
   const threads = useOptionalThreads();
-  const scrollDependency = useMemo(() => `${threads?.messages.length ?? 0}:${Object.values(run?.state.blocksById ?? {}).map((block) => `${block.id}:${block.revision}`).join("|")}`, [run?.state.blocksById, threads?.messages.length]);
+  const scrollDependency = useMemo(() => `${threads?.messages.length ?? 0}:${run?.run?.status ?? "idle"}:${run?.events.length ?? 0}:${Object.values(run?.state.blocksById ?? {}).map((block) => `${block.id}:${block.revision}`).join("|")}`, [run?.events.length, run?.run?.status, run?.state.blocksById, threads?.messages.length]);
   useChatAutoScroll(scrollRef, scrollDependency);
   return <div className="chat-workspace">
     <ChatHeader activityOpen={activityOpen} onToggleActivity={() => setActivityOpen((value) => !value)} />

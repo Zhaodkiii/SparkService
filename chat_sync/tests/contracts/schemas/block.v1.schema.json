@@ -12,9 +12,12 @@
     "tool_call_id": {"type": ["string", "null"]},
     "parent_tool_call_id": {"type": ["string", "null"]},
     "parent_block_id": {"type": ["string", "null"]},
-    "node_role": {"type": "string"},
+    "node_role": {"enum": ["timeline", "tool", "toolPresentation"]},
     "anchor": {"type": ["object", "null"]},
-    "payload": {"type": "object"},
+    "payload": {
+      "type": "object",
+      "description": "Tagged union of ChatMessageBlockPayload: {\"<kind>\": {\"_0\": value}}."
+    },
     "created_at": {"type": "string", "format": "date-time"},
     "updated_at": {"type": "string", "format": "date-time"}
   },

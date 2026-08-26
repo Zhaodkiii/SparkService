@@ -9,6 +9,7 @@ from chat_sync.ai_models import ChatThreadPreferences, ChatTurnContextSnapshot
 from chat_sync.ai_services.context.context_builder import build_context_for_run
 from chat_sync.ai_services.run_service import RunService
 from chat_sync.models import ChatThread
+from chat_sync.tests.run_factory import canonical_run_payload
 
 
 @override_settings(CHAT_AI_SERVER_RUNS_ENABLED=True, CHAT_AI_RUN_EXECUTOR="disabled")
@@ -18,15 +19,12 @@ class ContextBuilderTests(TestCase):
         self.thread = ChatThread.objects.create(user=self.user, title="context")
 
     def _run(self, content="hello", **extra):
-        payload = {
-            "client_message_id": uuid.uuid4(),
-            "content": content,
-            "capability": "chat",
-            "references": [],
-            "attachments": [],
-            "client": {"platform": "web", "version": "test", "device_id": "context-device"},
-        }
-        payload.update(extra)
+        payload = canonical_run_payload(
+            self.thread.id,
+            content=content,
+            client={"platform": "web", "version": "test", "device_id": "context-device"},
+            **extra,
+        )
         return RunService.create_run(user=self.user, thread_id=self.thread.id, payload=payload, idempotency_key=str(uuid.uuid4())).run
 
     def test_builds_stable_messages_and_snapshot(self):

@@ -9,6 +9,7 @@ import { createInitialChatRuntimeState, reduceChatEvent, reduceChatEvents } from
 import { isTerminalRunStatus } from "@/types/chat";
 import type { ChatEventEnvelope, ChatRunDTO, ChatRuntimeState } from "@/types/chat";
 import type { CreateTurnContextInput } from "@/types/context";
+import type { ChatMessageWireDTO } from "@/types/sync";
 import { clientErrorDetails, sparkClientLog } from "@/lib/diagnostics";
 import { SparkApiError, userFacingApiError } from "@/lib/api/http-client";
 
@@ -21,9 +22,10 @@ interface RunValue {
   connectionState: ConnectionState;
   busy: boolean;
   error: string | null;
-  createRun: (content: string, context?: CreateTurnContextInput | null) => Promise<boolean>;
-  cancelRun: () => Promise<void>;
+  createRun: (content: string, context?: CreateTurnContextInput | null, overrideThreadId?: string | null) => Promise<boolean>;
+  cancelRun: () => Promise<boolean>;
   regenerate: () => Promise<void>;
+  settleActiveRun: () => Promise<boolean>;
 }
 
 const RunContext = createContext<RunValue | null>(null);
@@ -159,15 +161,28 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
             // Protocol control messages and malformed payloads do not alter projections.
           }
         };
-        socket.onclose = () => {
+        socket.onclose = (event: CloseEvent) => {
           if (disposed) return;
+          // 019G：服务端以 4401 关闭 = 鉴权失败（ticket 无效/过期且刷新已失败）。
+          // 停止无限重连，等待用户重新登录后再恢复。
+          if (event.code === 4401) {
+            setConnectionState("idle");
+            sparkClientLog("warn", "run.ws.auth_rejected", { run_id: activeRunId, attempt, close_code: event.code, source: "ws_auth" });
+            return;
+          }
           setConnectionState("polling");
-          sparkClientLog("warn", "run.ws.closed", { run_id: activeRunId, attempt });
+          sparkClientLog("warn", "run.ws.closed", { run_id: activeRunId, attempt, close_code: event.code });
           const delay = Math.min(10_000, 500 * (2 ** Math.min(attempt, 5)));
           retryTimer = window.setTimeout(() => void connect(attempt + 1), delay);
         };
         socket.onerror = () => socket?.close();
       } catch (cause) {
+        // 019G：ticket 申请 401 且自动刷新失败 → 鉴权来源失败，停止重连。
+        if (cause instanceof SparkApiError && cause.failure.httpStatus === 401) {
+          setConnectionState("idle");
+          sparkClientLog("warn", "run.ws.ticket_auth_failed", { run_id: activeRunId, attempt, source: "ticket_auth", ...clientErrorDetails(cause) });
+          return;
+        }
         sparkClientLog("warn", "run.ws.connection_failed", { run_id: activeRunId, attempt, ...clientErrorDetails(cause) });
         if (!disposed) {
           setConnectionState("polling");
@@ -202,31 +217,56 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     void replay(run.id);
   }, [replay, run, state.replayRequiredByRun]);
 
-  const createRun = useCallback(async (content: string, context?: CreateTurnContextInput | null) => {
-    if (!api || !threadId || !content.trim()) return false;
+  const createRun = useCallback(async (content: string, context?: CreateTurnContextInput | null, overrideThreadId?: string | null) => {
+    const targetThreadId = overrideThreadId ?? threadId;
+    if (!api || !targetThreadId || !content.trim()) return false;
+    const clientMessageId = crypto.randomUUID();
+    const optimisticMessage: ChatMessageWireDTO = {
+      thread_id: targetThreadId, role: "user", client_message_id: clientMessageId, server_message_id: null,
+      delivery_state: "sending", created_at: new Date().toISOString(), server_updated_at: null, tombstone: false,
+      attachments: context?.attachments ?? [],
+      blocks: [{ id: crypto.randomUUID(), kind: "text", status: "ready", revision: 1, order_key: 1000, node_role: "timeline", payload: { text: { _0: content.trim() } } }],
+    };
+    threads?.appendOptimisticMessage(optimisticMessage);
     setBusy(true);
     setError(null);
     try {
-      const data = await api.create(threadId, {
-        client_message_id: crypto.randomUUID(),
-        content: content.trim(),
-        capability: "chat",
-        preferences_revision: context?.preferencesRevision,
-        context_parent_message_id: context?.contextParentMessageId,
-        references: context?.references ?? [],
-        attachments: context?.attachments ?? [],
-        client: { platform: "web", version: "p3", device_id: "web" },
+      const data = await api.create(targetThreadId, {
+        input_message: {
+          thread_id: targetThreadId,
+          role: "user",
+          client_message_id: clientMessageId,
+          blocks: [
+            {
+              kind: "text",
+              status: "ready",
+              revision: 1,
+              order_key: 1000,
+              node_role: "timeline",
+              payload: { text: { _0: content.trim() } },
+            },
+          ],
+        },
+        run_options: {
+          capability: "chat",
+          preferences_revision: context?.preferencesRevision,
+          context_parent_message_id: context?.contextParentMessageId,
+          context_inputs: context?.references ?? [],
+          attachments: context?.attachments ?? [],
+          client: { platform: "web", version: "p3", device_id: "web" },
+        },
       }, crypto.randomUUID());
       setRun(data.run);
       setState(createInitialChatRuntimeState());
       setEvents([]);
       lastSequenceRef.current = {};
       await replay(data.run.id, 0);
-      await threads?.reloadMessages();
+      await threads?.reloadMessages(targetThreadId);
       return true;
     } catch (cause) {
       const message = cause instanceof SparkApiError ? userFacingApiError(cause.failure) : cause instanceof Error ? cause.message : "创建 Run 失败";
-      sparkClientLog("error", "run.create.failed", { thread_id: threadId, ...clientErrorDetails(cause) });
+      sparkClientLog("error", "run.create.failed", { thread_id: targetThreadId, ...clientErrorDetails(cause) });
+      threads?.updateMessageDelivery(clientMessageId, "failed");
       setError(message);
       return false;
     } finally {
@@ -235,19 +275,26 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
   }, [api, replay, threadId, threads]);
 
   const cancelRun = useCallback(async () => {
-    if (!api || !run) return;
+    if (!api || !run) return false;
     setBusy(true);
     try {
       const data = await api.cancel(run.id);
       setRun(data.run);
       await replay(run.id);
+      return true;
     } catch (cause) {
       setError(cause instanceof SparkApiError ? userFacingApiError(cause.failure) : cause instanceof Error ? cause.message : "取消失败");
       sparkClientLog("error", "run.cancel.failed", { run_id: run.id, ...clientErrorDetails(cause) });
+      return false;
     } finally {
       setBusy(false);
     }
   }, [api, replay, run]);
+
+  const settleActiveRun = useCallback(async (): Promise<boolean> => {
+    if (!run || isTerminalRunStatus(run.status)) return true;
+    return cancelRun();
+  }, [run, cancelRun]);
 
   const regenerate = useCallback(async () => {
     if (!api || !run) return;
@@ -271,7 +318,7 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     if (activeRunStatus && isTerminalRunStatus(activeRunStatus)) void reloadMessages?.();
   }, [activeRunStatus, reloadMessages]);
 
-  const value = useMemo(() => ({ run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate }), [run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate]);
+  const value = useMemo(() => ({ run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun }), [run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun]);
   return <RunContext.Provider value={value}>{children}</RunContext.Provider>;
 }
 

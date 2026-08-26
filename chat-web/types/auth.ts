@@ -16,11 +16,9 @@ export interface CurrentSessionDTO {
   is_device_account: boolean;
 }
 
-export interface PhoneOtpRequestDTO {
+export interface WebPhoneOtpRequestDTO {
   phone_number: string;
-  bundle_id: string;
-  device_id: string;
-  scene: "login" | "account_deactivation" | "identity_bind" | "identity_change" | "identity_reauth";
+  scene: "login";
 }
 
 export interface PhoneOtpRequestData {
@@ -28,12 +26,10 @@ export interface PhoneOtpRequestData {
   expires_in: number;
 }
 
-export interface PhoneOtpVerifyDTO {
+export interface WebPhoneOtpVerifyDTO {
   otp_id: string;
   phone_number: string;
   code: string;
-  bundle_id: string;
-  device_id: string;
 }
 
 export interface AppleLoginDTO {

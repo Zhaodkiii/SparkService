@@ -227,8 +227,19 @@ class Migration(migrations.Migration):
         # utf8mb4_0900_ai_ci.  MySQL requires identical character set and
         # collation for string foreign-key columns, so normalize every new
         # AI table before Django adds the foreign-key constraints below.
+        # The legacy chat tables are normalized as well so fresh databases
+        # (where they inherit the server default collation) stay compatible
+        # with the AI tables; on existing deployments this is a no-op.
         migrations.RunSQL(
             sql="""
+                SET FOREIGN_KEY_CHECKS = 0;
+                ALTER TABLE `chat_sync_chatmessageblock`
+                    CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                ALTER TABLE `chat_sync_chatmessage`
+                    CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                ALTER TABLE `chat_sync_chatthread`
+                    CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+                SET FOREIGN_KEY_CHECKS = 1;
                 ALTER TABLE `chat_sync_ai_run`
                     CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
                 ALTER TABLE `chat_sync_ai_run_event`

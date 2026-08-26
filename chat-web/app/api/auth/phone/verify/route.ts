@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { REFRESH_COOKIE, refreshCookieOptions } from "@/lib/server/auth-cookies";
 import { callSparkUpstream, failureEnvelope, isRecord, jsonEnvelope, requestIdFrom, stringField } from "@/lib/server/upstream";
-import { authDiagnosticLog, deviceLogSuffix, maskPhone } from "@/lib/auth/diagnostics";
+import { authDiagnosticLog, maskPhone } from "@/lib/auth/diagnostics";
 
 function publicTokenEnvelope(body: Record<string, unknown>) {
   const data = isRecord(body.data) ? body.data : null;
@@ -23,11 +23,10 @@ export async function POST(request: Request) {
     return failureEnvelope(400, "验证码信息不完整", requestId);
   }
   const startedAt = Date.now();
-  const deviceId = stringField(raw.device_id, 128) || `web-${requestId}`;
-  authDiagnosticLog("info", "bff", "phone_otp.verify.upstream_started", { request_id: requestId, phone: maskPhone(phone), device: deviceLogSuffix(deviceId) });
+  authDiagnosticLog("info", "bff", "phone_otp.verify.upstream_started", { request_id: requestId, phone: maskPhone(phone) });
   let result: Awaited<ReturnType<typeof callSparkUpstream>>;
   try {
-    result = await callSparkUpstream("/api/v1/otp/phone/verify/", { method: "POST", body: JSON.stringify({ otp_id: otpId, phone_number: phone, code, bundle_id: process.env.SPARK_WEB_SERVICE_ID || "cn.Zhaodk.Health.web", device_id: deviceId }) }, requestId);
+    result = await callSparkUpstream("/api/v1/auth/phone/web/otp/verify/", { method: "POST", body: JSON.stringify({ otp_id: otpId, phone_number: phone, code }) }, requestId);
   } catch (cause) {
     authDiagnosticLog("error", "bff", "phone_otp.verify.upstream_unreachable", { request_id: requestId, duration_ms: Date.now() - startedAt, error_type: cause instanceof Error ? cause.name : typeof cause });
     return failureEnvelope(503, "本地服务连接失败", requestId);

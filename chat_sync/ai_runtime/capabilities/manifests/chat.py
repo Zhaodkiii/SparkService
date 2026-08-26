@@ -16,7 +16,7 @@ manifest = CapabilityManifest(
         "additionalProperties": False,
     },
     required_context=("thread",),
-    result_kinds=("text", "toolCall", "toolResult"),
+    result_kinds=("text", "tool", "searchSummary"),
     max_rounds=8,
     max_context_tokens=8192,
 )

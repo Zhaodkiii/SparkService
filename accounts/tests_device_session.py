@@ -97,6 +97,17 @@ class DeviceSessionServiceTests(TestCase):
         self.assertTrue(old_device.is_revoked)
         self.assertFalse(new_device.is_revoked)
 
+    @patch("chat_sync.events.ChatSyncNotifier.notify_device_session_invalidated")
+    def test_replacement_notifies_only_old_mobile_session_after_commit(self, notify):
+        first = self._login_phone(device_id=self.device_a1)
+        with self.captureOnCommitCallbacks(execute=True):
+            self._login_phone(device_id=self.device_a2)
+
+        old_session = AccountDeviceSession.objects.get(
+            user_id=first["user_id"], device_id=self.device_a1
+        )
+        notify.assert_called_once_with(old_session.id, reason="replaced_by_new_device")
+
     def test_old_device_refresh_rejected_after_replacement(self):
         first = self._login_phone(device_id=self.device_a1)
         self._login_phone(device_id=self.device_a2)

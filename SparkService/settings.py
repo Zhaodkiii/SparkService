@@ -64,6 +64,45 @@ APPLE_ALLOWED_BUNDLE_IDS = [
 ]
 APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS = int(os.getenv("APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS", "30"))
 
+# CHAT-WEB-019: Chat Web independent Apple sign-in + Web session domain.
+# Web 上游与移动端入口完全隔离：audience 只允许 Web Service ID，nonce 必填，
+# JWKS 默认严格 TLS 校验（与移动端约定相反，Web 不复用其放宽配置）。
+WEB_APPLE_LOGIN_V2_ENABLED = os.getenv("WEB_APPLE_LOGIN_V2_ENABLED", "false").lower() in {
+    "1", "true", "yes", "on",
+}
+WEB_SESSION_DOMAIN_ENABLED = os.getenv("WEB_SESSION_DOMAIN_ENABLED", "true").lower() in {
+    "1", "true", "yes", "on",
+}
+APPLE_WEB_SERVICE_IDS = [
+    item.strip()
+    for item in os.getenv("APPLE_WEB_SERVICE_IDS", "").split(",")
+    if item.strip()
+]
+APPLE_WEB_ALLOWED_REDIRECT_URIS = [
+    item.strip()
+    for item in os.getenv("APPLE_WEB_ALLOWED_REDIRECT_URIS", "").split(",")
+    if item.strip()
+]
+APPLE_WEB_JWKS_VERIFY_SSL = os.getenv("APPLE_WEB_JWKS_VERIFY_SSL", "true").lower() in {
+    "1", "true", "yes", "y",
+}
+APPLE_WEB_JWKS_TTL_SECONDS = int(os.getenv("APPLE_WEB_JWKS_TTL_SECONDS", "3600"))
+APPLE_WEB_JWKS_TIMEOUT_SECONDS = int(os.getenv("APPLE_WEB_JWKS_TIMEOUT_SECONDS", "8"))
+# authorization code 兑换（client secret 仅服务端持有）
+APPLE_WEB_TEAM_ID = (os.getenv("APPLE_WEB_TEAM_ID") or "").strip()
+APPLE_WEB_KEY_ID = (os.getenv("APPLE_WEB_KEY_ID") or "").strip()
+APPLE_WEB_PRIVATE_KEY = (os.getenv("APPLE_WEB_PRIVATE_KEY") or "").strip()
+APPLE_WEB_TOKEN_ENDPOINT = (os.getenv("APPLE_WEB_TOKEN_ENDPOINT") or "https://appleid.apple.com/auth/token").strip()
+
+# CHAT-WEB-020: Chat Web 手机验证码独立登录。默认关闭，正式环境在 AccountWebSession
+# 迁移 0016 部署完成后才能开启；关闭时 Web 手机登录返回 503，不回退移动 OTP 入口。
+WEB_PHONE_OTP_LOGIN_ENABLED = os.getenv("WEB_PHONE_OTP_LOGIN_ENABLED", "false").lower() in {
+    "1", "true", "yes", "on",
+}
+# Web 手机登录的固定 Service ID：只来自服务端配置，不信任浏览器/BFF 传入。
+# 必须存在 ACCOUNT_IDENTITY_SCOPE_ALIASES 映射，否则无法命中同一 User。
+WEB_AUTH_SERVICE_ID = (os.getenv("WEB_AUTH_SERVICE_ID") or "cn.Zhaodk.Health.web").strip()
+
 # Account identity scope: which client bundle_ids share one SocialIdentity namespace.
 # SocialIdentity.bundle_id stores the resolved scope (not necessarily the real client bundle).
 # Bundles absent from this map resolve to themselves.
@@ -396,6 +435,13 @@ CHAT_AI_CLIENT_TOOLS_ENABLED = os.getenv("CHAT_AI_CLIENT_TOOLS_ENABLED", "false"
 CHAT_AI_AGENT_MAX_ROUNDS = int(os.getenv("CHAT_AI_AGENT_MAX_ROUNDS", "8"))
 CHAT_AI_TOOL_MAX_CALLS_PER_ROUND = int(os.getenv("CHAT_AI_TOOL_MAX_CALLS_PER_ROUND", "8"))
 CHAT_AI_TOOL_MAX_CONCURRENCY = int(os.getenv("CHAT_AI_TOOL_MAX_CONCURRENCY", "4"))
+# CHAT-WEB-027 W1: real Agentic final-answer streaming. Flag off keeps the
+# legacy behavior of writing the final answer in fixed-size slices only after
+# the full Provider response is available (CHAT_AI_FINAL_TEXT_CHUNK_CHARS).
+CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED = os.getenv("CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS = int(os.getenv("CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS", "40"))
+CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS = int(os.getenv("CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS", "150"))
+CHAT_AI_FINAL_TEXT_CHUNK_CHARS = int(os.getenv("CHAT_AI_FINAL_TEXT_CHUNK_CHARS", "160"))
 CELERY_BEAT_SCHEDULE = {
     "chat-ai-relay-events": {
         "task": "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox",

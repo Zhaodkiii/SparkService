@@ -21,6 +21,12 @@ from chat_sync.ai_models import (
 )
 from chat_sync.ai_models.run import assert_run_transition
 from chat_sync.ai_services.run_service import RunService
+from chat_sync.contracts import (
+    KIND_SEARCH_SUMMARY,
+    NODE_ROLE_TOOL_PRESENTATION,
+    search_summary_payload,
+    tool_result_presentation_payload,
+)
 from chat_sync.models import ChatMessageBlock
 from common.exceptions import APIError
 
@@ -169,16 +175,19 @@ class PendingInteractionService:
         run.lease_token = None
         run.lease_expires_at = None
         run.save(update_fields=["status", "lease_owner", "lease_token", "lease_expires_at", "updated_at"])
-        block_kind = "askUser" if kind == ChatPendingInteraction.Kind.ASK_USER else "clientTool"
+        block_kind = KIND_SEARCH_SUMMARY
         now = timezone.now()
         block = run.assistant_message.blocks.filter(tool_call_id=tool_call_id, kind=block_kind).first()
-        payload = {"interaction_id": str(interaction.public_id), "tool_name": tool_call.tool_name, "status": "pending", "request": request_schema}
+        payload = search_summary_payload(
+            provider_name=tool_call.tool_name,
+            query="等待用户输入" if kind == ChatPendingInteraction.Kind.ASK_USER else "等待客户端工具",
+        )
         if block is None:
             ChatMessageBlock.objects.create(
                 user=run.user, thread=run.thread, message=run.assistant_message,
                 kind=block_kind, status=ChatMessageBlock.Status.PENDING, revision=1,
                 order_key=2100 + tool_call.call_index, tool_call_id=tool_call_id,
-                node_role="interaction", payload=payload, created_at=now, updated_at=now,
+                node_role=NODE_ROLE_TOOL_PRESENTATION, payload=payload, created_at=now, updated_at=now,
             )
         else:
             block.status = ChatMessageBlock.Status.PENDING
@@ -334,18 +343,27 @@ class PendingInteractionService:
         tool.error_code = reason
         tool.finished_at = now
         tool.save(update_fields=["status", "result_content", "result_summary", "result_metadata", "error_code", "finished_at", "updated_at"])
-        block_kind = "askUser" if interaction.kind == ChatPendingInteraction.Kind.ASK_USER else "clientTool"
+        block_kind = KIND_SEARCH_SUMMARY
         block = run.assistant_message.blocks.filter(tool_call_id=tool.tool_call_id, kind=block_kind).first()
         if block:
             block.status = ChatMessageBlock.Status.READY
             block.revision += 1
-            block.payload = {**(block.payload or {}), "status": interaction.status, "resolution": resolution, "result_summary": interaction.result_summary, "error_code": reason}
+            block.payload = tool_result_presentation_payload(
+                tool_name=tool.tool_name,
+                display_name=tool.tool_name,
+                result_preview=interaction.result_summary,
+            )
             block.save(update_fields=["status", "revision", "payload", "updated_at", "server_updated_at"])
         ChatMessageBlock.objects.create(
             user=run.user, thread=run.thread, message=run.assistant_message,
-            kind="toolResult", status=ChatMessageBlock.Status.READY, revision=1,
+            kind=KIND_SEARCH_SUMMARY, status=ChatMessageBlock.Status.READY, revision=1,
             order_key=2200 + tool.call_index, tool_call_id=tool.tool_call_id,
-            node_role="toolExecution", payload={"tool_name": tool.tool_name, "success": resolution in {"answered", "resolved"}, "content": interaction.result_summary, "metadata": {"resolution": resolution}},
+            node_role=NODE_ROLE_TOOL_PRESENTATION,
+            payload=tool_result_presentation_payload(
+                tool_name=tool.tool_name,
+                display_name=tool.tool_name,
+                result_preview=interaction.result_summary,
+            ),
             created_at=now, updated_at=now,
         )
         checkpoint = None
@@ -491,17 +509,26 @@ class PendingInteractionService:
                     checkpoint.revision += 1
                     checkpoint.next_round_index = max(checkpoint.next_round_index, tool.round_index + 1)
                     checkpoint.save(update_fields=["transcript", "revision", "next_round_index", "updated_at"])
-                block = run.assistant_message.blocks.filter(tool_call_id=tool.tool_call_id, kind__in=["askUser", "clientTool"]).first()
+                block = run.assistant_message.blocks.filter(tool_call_id=tool.tool_call_id, kind=KIND_SEARCH_SUMMARY).first()
                 if block:
                     block.status = ChatMessageBlock.Status.READY
                     block.revision += 1
-                    block.payload = {**(block.payload or {}), "status": "expired", "error_code": "chat_interaction_expired"}
+                    block.payload = tool_result_presentation_payload(
+                        tool_name=tool.tool_name,
+                        display_name=tool.tool_name,
+                        result_preview=interaction.result_summary,
+                    )
                     block.save(update_fields=["status", "revision", "payload", "updated_at", "server_updated_at"])
                 ChatMessageBlock.objects.create(
                     user=run.user, thread=run.thread, message=run.assistant_message,
-                    kind="toolResult", status=ChatMessageBlock.Status.READY, revision=1,
+                    kind=KIND_SEARCH_SUMMARY, status=ChatMessageBlock.Status.READY, revision=1,
                     order_key=2200 + tool.call_index, tool_call_id=tool.tool_call_id,
-                    node_role="toolExecution", payload={"tool_name": tool.tool_name, "success": False, "content": interaction.result_summary, "metadata": {"error_code": "chat_interaction_expired"}},
+                    node_role=NODE_ROLE_TOOL_PRESENTATION,
+                    payload=tool_result_presentation_payload(
+                        tool_name=tool.tool_name,
+                        display_name=tool.tool_name,
+                        result_preview=interaction.result_summary,
+                    ),
                     created_at=now, updated_at=now,
                 )
                 assert_run_transition(run.status, RunStatus.QUEUED)

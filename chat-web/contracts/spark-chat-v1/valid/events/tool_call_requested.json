@@ -1,0 +1,32 @@
+{
+  "type": "tool.call.requested",
+  "event_id": "00000000-0000-0000-0000-000000000021",
+  "payload_version": 1,
+  "run_id": "00000000-0000-0000-0000-000000000010",
+  "thread_id": "00000000-0000-0000-0000-000000000001",
+  "sequence": 9,
+  "timestamp": "2026-08-25T02:00:09Z",
+  "payload": {
+    "tool_call_id": "call_p4_01",
+    "tool_name": "query_member_profile",
+    "round_index": 0,
+    "activity": {
+      "tool_call_id": "call_p4_01",
+      "name": "query_member_profile",
+      "version": "v1",
+      "display_name": "读取健康档案",
+      "target": "server",
+      "status": "requested",
+      "round_index": 0,
+      "call_index": 0,
+      "revision": 1,
+      "display_args": {"sections": ["过敏史", "慢性病"]},
+      "result_preview": null,
+      "source_refs": [],
+      "error": null,
+      "duplicate_of": null,
+      "started_at": null,
+      "finished_at": null
+    }
+  }
+}

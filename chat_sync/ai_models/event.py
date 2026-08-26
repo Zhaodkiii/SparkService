@@ -60,6 +60,7 @@ class ChatUsageRecord(models.Model):
     prompt_tokens = models.PositiveIntegerField(default=0)
     completion_tokens = models.PositiveIntegerField(default=0)
     reasoning_tokens = models.PositiveIntegerField(default=0)
+    model_calls = models.PositiveIntegerField(default=0)
     tool_calls = models.PositiveIntegerField(default=0)
     price_version = models.CharField(max_length=64, blank=True, default="")
     amount = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal("0"))

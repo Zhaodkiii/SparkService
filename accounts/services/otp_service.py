@@ -598,8 +598,23 @@ class OTPService:
         }
 
     @staticmethod
-    @transaction.atomic
     def verify_phone_otp_and_issue_tokens(*, otp_id: str, phone_number: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str, device_secret: str = ""):
+        # 移动端兼容外壳：不传 token_issuer，保持原 _issue_tokens（设备会话域）行为完全一致。
+        return OTPService.verify_phone_otp_and_resolve_account(
+            otp_id=otp_id,
+            phone_number=phone_number,
+            code=code,
+            request_id=request_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            bundle_id=bundle_id,
+            device_id=device_id,
+            device_secret=device_secret,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def verify_phone_otp_and_resolve_account(*, otp_id: str, phone_number: str, code: str, request_id: str, ip_address: str, user_agent: str, bundle_id: str, device_id: str, device_secret: str = "", token_issuer=None, audit_claims=None):
         normalized_bundle_id = (bundle_id or "").strip()
         flow_logger.info(
             "auth.phone_otp.verify.service.begin",
@@ -713,6 +728,8 @@ class OTPService:
             verified_claims={"phone_number": normalized_phone},
             create_user=_create_phone_user,
             login_audit_provider=LoginAudit.LoginProvider.PHONE_OTP,
+            token_issuer=token_issuer,
+            audit_claims=audit_claims,
         )
         flow_logger.info(
             "auth.phone_otp.verify.service.success",

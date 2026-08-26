@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from chat_sync.ai_models import ChatRun, ChatThreadRunLock, ChatUsageRecord, RunStatus
 from chat_sync.ai_services.run_service import RunService
+from chat_sync.contracts import NODE_ROLE_TIMELINE, payload_text, text_payload
 from chat_sync.models import ChatMessageBlock
 
 
@@ -45,6 +46,10 @@ class StreamWriter:
         if run.cancel_requested_at is not None:
             raise RunExecutionCancelled("run cancellation requested")
 
+    @staticmethod
+    def _text_value(payload: dict[str, Any]) -> str:
+        return payload_text(payload)
+
     @classmethod
     def append_text(cls, *, run_id, text: str, lease_token=None) -> int | None:
         if not text:
@@ -64,8 +69,8 @@ class StreamWriter:
                     status=ChatMessageBlock.Status.STREAMING,
                     revision=0,
                     order_key=1000,
-                    node_role="content",
-                    payload={"text": "", "content_type": "text/markdown"},
+                    node_role=NODE_ROLE_TIMELINE,
+                    payload=text_payload(""),
                     created_at=now,
                     updated_at=now,
                 )
@@ -86,14 +91,11 @@ class StreamWriter:
                             "revision": 0,
                             "order_key": block.order_key,
                             "node_role": block.node_role,
-                            "payload": {"text": "", "content_type": "text/markdown"},
+                            "payload": text_payload(""),
                         },
                     },
                 )
-            payload = dict(block.payload or {})
-            payload["text"] = f"{payload.get('text', '')}{text}"
-            payload["content_type"] = "text/markdown"
-            block.payload = payload
+            block.payload = text_payload(f"{cls._text_value(dict(block.payload or {}))}{text}")
             block.revision += 1
             block.status = ChatMessageBlock.Status.STREAMING
             block.updated_at = now
@@ -116,6 +118,117 @@ class StreamWriter:
             return block.revision
 
     @classmethod
+    def _append_run_payload(cls, *, run_id, event_type: str, payload: dict[str, Any], lease_token=None) -> None:
+        """Append a replayable run-scoped event under the execution guard."""
+        with transaction.atomic():
+            run = ChatRun.objects.select_for_update().get(pk=run_id)
+            cls._assert_execution(run, lease_token)
+            RunService._append_event_locked(run=run, event_type=event_type, payload=payload or {})
+
+    @classmethod
+    def round_started(cls, *, run_id, round_id: str, index: int, call_id: str | None = None, lease_token=None) -> None:
+        cls._append_run_payload(
+            run_id=run_id,
+            event_type="agent.round.started",
+            payload={"round_id": round_id, "index": index, "call_id": call_id, "status": "running"},
+            lease_token=lease_token,
+        )
+
+    @classmethod
+    def round_delta(
+        cls,
+        *,
+        run_id,
+        round_id: str,
+        index: int,
+        channel: str,
+        text_delta: str,
+        lease_token=None,
+    ) -> None:
+        if not text_delta:
+            return
+        cls._append_run_payload(
+            run_id=run_id,
+            event_type="agent.round.delta",
+            payload={"round_id": round_id, "index": index, "channel": channel, "text_delta": text_delta},
+            lease_token=lease_token,
+        )
+
+    @classmethod
+    def round_completed(
+        cls,
+        *,
+        run_id,
+        round_id: str,
+        index: int,
+        call_id: str | None,
+        call_role: str,
+        content: str,
+        finish_reason: str,
+        lease_token=None,
+    ) -> None:
+        cls._append_run_payload(
+            run_id=run_id,
+            event_type="agent.round.completed",
+            payload={
+                "round_id": round_id,
+                "index": index,
+                "call_id": call_id,
+                "status": "completed",
+                "call_role": call_role,
+                "content": content,
+                "finish_reason": finish_reason,
+            },
+            lease_token=lease_token,
+        )
+
+    @classmethod
+    def round_failed(
+        cls,
+        *,
+        run_id,
+        round_id: str,
+        index: int,
+        call_id: str | None,
+        error_code: str,
+        retryable: bool,
+        lease_token=None,
+    ) -> None:
+        cls._append_run_payload(
+            run_id=run_id,
+            event_type="agent.round.failed",
+            payload={
+                "round_id": round_id,
+                "index": index,
+                "call_id": call_id,
+                "status": "failed",
+                "error_code": error_code,
+                "retryable": retryable,
+            },
+            lease_token=lease_token,
+        )
+
+    @classmethod
+    def usage_updated(cls, *, run_id, usage: dict[str, Any], lease_token=None) -> None:
+        if not usage:
+            return
+        with transaction.atomic():
+            run = ChatRun.objects.select_for_update().get(pk=run_id)
+            cls._assert_execution(run, lease_token)
+            RunService._append_event_locked(
+                run=run,
+                event_type="usage.updated",
+                payload={
+                    "provider": run.provider,
+                    "model": run.model,
+                    "prompt_tokens": _usage_value(usage, "prompt_tokens", "input_tokens"),
+                    "completion_tokens": _usage_value(usage, "completion_tokens", "output_tokens"),
+                    "reasoning_tokens": _usage_value(usage, "reasoning_tokens"),
+                    "source": "provider",
+                },
+            )
+
+    @classmethod
     def finish(
         cls,
         *,
@@ -128,6 +241,8 @@ class StreamWriter:
         lease_token=None,
         usage: dict[str, Any] | None = None,
         provider_request_id: str = "",
+        model_calls: int = 0,
+        tool_calls: int = 0,
     ):
         usage = dict(usage or {})
         with transaction.atomic():
@@ -175,6 +290,8 @@ class StreamWriter:
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "reasoning_tokens": reasoning_tokens,
+                    "model_calls": max(0, int(model_calls)),
+                    "tool_calls": max(0, int(tool_calls)),
                     "usage_source": usage_source,
                 },
             )
@@ -188,6 +305,8 @@ class StreamWriter:
                     "completion_tokens": completion_tokens,
                     "reasoning_tokens": reasoning_tokens,
                     "total_tokens": total_tokens,
+                    "model_calls": max(0, int(model_calls)),
+                    "tool_calls": max(0, int(tool_calls)),
                     "source": usage_source,
                 },
             )

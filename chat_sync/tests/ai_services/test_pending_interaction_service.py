@@ -9,6 +9,7 @@ from chat_sync.ai_models import ChatPendingInteraction, ChatThreadRunLock, ChatT
 from chat_sync.ai_services.pending_interaction_service import PendingInteractionService
 from chat_sync.ai_services.run_service import RunService
 from chat_sync.models import ChatThread
+from chat_sync.tests.run_factory import canonical_run_payload
 
 
 @override_settings(CHAT_AI_SERVER_RUNS_ENABLED=True, CHAT_AI_RUN_EXECUTOR="disabled")
@@ -19,12 +20,7 @@ class PendingInteractionServiceTests(TestCase):
         self.run = RunService.create_run(
             user=self.user,
             thread_id=self.thread.id,
-            payload={
-                "client_message_id": uuid.uuid4(),
-                "content": "请分析我的睡眠",
-                "capability": "chat",
-                "client": {"platform": "web", "version": "test", "device_id": "web-device"},
-            },
+            payload=canonical_run_payload(self.thread.id, content="请分析我的睡眠", client={"platform": "web", "version": "test", "device_id": "web-device"}),
             idempotency_key=str(uuid.uuid4()),
         ).run
         RunService.claim_mock(run_id=self.run.id, expected_generation=1)

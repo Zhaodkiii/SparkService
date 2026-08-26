@@ -5,6 +5,8 @@ from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
+from chat_sync.ai_models.run import ChatRun
+from chat_sync.ai_models.event import ChatUsageRecord
 from chat_sync.serializers import ChatPushRequestSerializer, ChatRemoteMessageSerializer
 from chat_sync.views import (
     _to_block_push_ack,
@@ -48,7 +50,12 @@ class ChatRemoteMessageSerializerBlocksOnlyTests(SimpleTestCase):
                 {
                     "thread_id": "00000000-0000-0000-0000-000000000001",
                     "client_message_id": "00000000-0000-0000-0000-000000000002",
-                    "block": {"id": "00000000-0000-0000-0000-000000000003", "kind": "taskCards"},
+                    "block": {
+                        "id": "00000000-0000-0000-0000-000000000003",
+                        "kind": "taskCards",
+                        "node_role": "toolPresentation",
+                        "payload": {"task_cards": {"_0": []}},
+                    },
                 }
             ]
         }
@@ -59,6 +66,32 @@ class ChatRemoteMessageSerializerBlocksOnlyTests(SimpleTestCase):
 
 
 class ChatMessageBlockProjectionTests(TestCase):
+    def test_projects_ios_codable_envelope_with_snake_case_discriminator(self):
+        user = get_user_model().objects.create_user(username="ios-envelope")
+        thread = ChatThread.objects.create(user=user, title="iOS")
+        message = ChatMessage.objects.create(
+            user=user, thread=thread, role=ChatMessage.Role.ASSISTANT,
+            client_message_id=uuid.uuid4(), server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        block_id = uuid.uuid4()
+        ChatMessageBlock.objects.create(
+            id=block_id, user=user, thread=thread, message=message, kind="text",
+            status=ChatMessageBlock.Status.READY, revision=1, node_role="toolPresentation",
+            payload={
+                "id": str(block_id),
+                "node_role": "toolPresentation",
+                "payload": {"search_summary": {"_0": {"query": "乳腺结节", "references": []}}},
+            },
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        block = _to_payload(message)["blocks"][0]
+        self.assertEqual(block["kind"], "searchSummary")
+        self.assertEqual(block["node_role"], "toolPresentation")
+        self.assertEqual(block["payload"]["search_summary"]["_0"]["query"], "乳腺结节")
+
     def test_payload_reads_blocks_from_block_table(self):
         user = get_user_model().objects.create_user(username="chat-blocks")
         thread = ChatThread.objects.create(user=user, title="Blocks")
@@ -74,14 +107,15 @@ class ChatMessageBlockProjectionTests(TestCase):
             id=block_id, user=user, thread=thread, message=message, kind="text",
             status=ChatMessageBlock.Status.READY, revision=7, order_key=1000,
             node_role="timeline",
-            payload={"id": str(block_id), "kind": "text", "text": "from block row", "status": "ready", "revision": 7, "node_role": "timeline", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"},
+            payload={"text": {"_0": "from block row"}},
             created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         )
         payload = _to_payload(message)
         self.assertEqual(len(payload["blocks"]), 1)
-        self.assertEqual(payload["blocks"][0]["text"], "from block row")
+        self.assertEqual(payload["blocks"][0]["payload"]["text"]["_0"], "from block row")
         self.assertEqual(payload["blocks"][0]["node_role"], "timeline")
+        self.assertEqual(payload["blocks"][0]["kind"], "text")
 
     def test_block_update_upserts_single_block_without_deleting_siblings(self):
         user = get_user_model().objects.create_user(username="chat-block-update")
@@ -134,3 +168,33 @@ class ChatMessageBlockProjectionTests(TestCase):
         self.assertIn("server_updated_at", block_ack)
         self.assertNotIn("blocks", block_ack)
 
+    def test_usage_summary_projects_tokens_model_and_tool_calls(self):
+        user = get_user_model().objects.create_user(username="chat-usage")
+        thread = ChatThread.objects.create(user=user, title="Usage")
+        user_message = ChatMessage.objects.create(
+            user=user, thread=thread, role=ChatMessage.Role.USER,
+            client_message_id=uuid.uuid4(), server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        assistant = ChatMessage.objects.create(
+            user=user, thread=thread, role=ChatMessage.Role.ASSISTANT,
+            client_message_id=uuid.uuid4(), server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        run = ChatRun.objects.create(
+            user=user, thread=thread, user_message=user_message, assistant_message=assistant,
+            idempotency_key="usage-1", request_hash="h",
+        )
+        ChatUsageRecord.objects.create(
+            run=run, model="gpt", prompt_tokens=12, completion_tokens=2,
+            reasoning_tokens=1, tool_calls=3,
+        )
+        summary = _to_payload(assistant)["usage_summary"]
+        self.assertEqual(summary["model"], "gpt")
+        self.assertEqual(summary["prompt_tokens"], 12)
+        self.assertEqual(summary["completion_tokens"], 2)
+        self.assertEqual(summary["reasoning_tokens"], 1)
+        self.assertEqual(summary["tool_calls"], 3)
+        self.assertIsNone(_to_payload(user_message)["usage_summary"])

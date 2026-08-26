@@ -7,7 +7,7 @@ describe("Spark chat event reducer", () => {
     const state = reduceChatEvents(createInitialChatRuntimeState(), coherentEvents);
     expect(state.runsById[RUN_ID].status).toBe("completed");
     expect(state.runsById[RUN_ID].last_sequence).toBe(8);
-    expect(state.blocksById[TEXT_BLOCK_ID].payload.text).toContain("P0 静态契约回答");
+    expect((state.blocksById[TEXT_BLOCK_ID].payload.text as { _0: string })._0).toContain("P0 静态契约回答");
     expect(state.blocksById[TEXT_BLOCK_ID].status).toBe("ready");
   });
 
@@ -17,7 +17,7 @@ describe("Spark chat event reducer", () => {
     expect(duplicate).toEqual(state);
     const stale = { ...coherentEvents[4], event_id: "00000000-0000-0000-0000-000000009999", sequence: 9, payload: { ...coherentEvents[4].payload, revision: 1, delta: "旧内容" } };
     state = reduceChatEvent(state, stale);
-    expect(state.blocksById[TEXT_BLOCK_ID].payload.text).not.toContain("旧内容");
+    expect((state.blocksById[TEXT_BLOCK_ID].payload.text as { _0: string })._0).not.toContain("旧内容");
   });
 
   it("buffers a sequence gap and drains it when the missing event arrives", () => {

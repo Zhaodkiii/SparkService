@@ -5,6 +5,9 @@ import {
   type ChatMessageDTO,
   type ChatRuntimeState,
 } from "@/types/chat";
+import { isToolActivityEvent, reduceToolActivityEvent } from "@/lib/tools/tool-activity-reducer";
+import { isAgentRoundEvent, reduceAgentRoundEvent } from "@/lib/chat/turn-trace-reducer";
+import { payloadKind } from "@/lib/chat/block-normalizer";
 
 export function createInitialChatRuntimeState(): ChatRuntimeState {
   return {
@@ -19,6 +22,8 @@ export function createInitialChatRuntimeState(): ChatRuntimeState {
     unknownActivitiesByRun: {},
     assistantStatusByRun: {},
     usageByRun: {},
+    toolCallsByRun: {},
+    roundsByRun: {},
   };
 }
 
@@ -69,7 +74,10 @@ function applyBlockCreated(state: ChatRuntimeState, event: ChatEventEnvelope): C
   if (messageId) next = ensureMessage(next, messageId);
   const block: ChatBlockDTO = {
     id: blockId,
-    kind: String(raw.kind ?? "text"),
+    // Live blocks use the same iOS tagged payload as sync; never infer a
+    // second legacy shape from `kind`, otherwise malformed events render as
+    // empty/"文本" cards instead of the contract error surface.
+    kind: payloadKind(raw.payload) ?? "",
     status: (raw.status as ChatBlockDTO["status"]) ?? "pending",
     revision: Number(raw.revision ?? 0),
     order_key: typeof raw.order_key === "number" ? raw.order_key : null,
@@ -87,6 +95,20 @@ function applyBlockCreated(state: ChatRuntimeState, event: ChatEventEnvelope): C
   return next;
 }
 
+function applyBlockUpdated(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntimeState {
+  // Full-block refresh (e.g. toolCall requested -> running -> terminal).
+  const payload = payloadObject(event);
+  const raw = payload.block && typeof payload.block === "object" ? payload.block as Partial<ChatBlockDTO> : null;
+  const blockId = String(payload.block_id ?? raw?.id ?? "");
+  const current = state.blocksById[blockId];
+  if (!current) return state;
+  const revision = Number(raw?.revision ?? payload.revision ?? current.revision);
+  if (revision < current.revision) return state;
+  const nextPayload = raw?.payload && typeof raw.payload === "object" ? raw.payload as Record<string, unknown> : current.payload;
+  const status = typeof raw?.status === "string" && ["pending", "streaming", "ready", "failed"].includes(raw.status) ? raw.status : current.status;
+  return { ...state, blocksById: { ...state.blocksById, [blockId]: { ...current, revision, status, payload: nextPayload } } };
+}
+
 function applyBlockDelta(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntimeState {
   const payload = payloadObject(event);
   const blockId = String(payload.block_id ?? "");
@@ -95,8 +117,19 @@ function applyBlockDelta(state: ChatRuntimeState, event: ChatEventEnvelope): Cha
   const revision = Number(payload.revision ?? current.revision);
   if (revision <= current.revision) return state;
   const delta = typeof payload.delta === "string" ? payload.delta : "";
-  const currentText = typeof current.payload.text === "string" ? current.payload.text : "";
-  const block = { ...current, revision, status: "streaming" as const, payload: { ...current.payload, text: currentText + delta, content_type: payload.content_type ?? current.payload.content_type ?? "text/markdown" } };
+  const currentPayload = current.payload;
+  const textWrapper = currentPayload.text;
+  let nextPayload: Record<string, unknown>;
+  if (textWrapper && typeof textWrapper === "object" && !Array.isArray(textWrapper) && "_0" in textWrapper) {
+    const prev = typeof (textWrapper as Record<string, unknown>)._0 === "string" ? (textWrapper as Record<string, unknown>)._0 : "";
+    nextPayload = { ...currentPayload, text: { _0: prev + delta } };
+  } else {
+    const currentText = typeof textWrapper === "string" ? textWrapper : "";
+    // Never recreate the legacy flat payload.  All live text must remain
+    // iOS-compatible, even when a delta arrives before block.created.
+    nextPayload = { text: { _0: currentText + delta } };
+  }
+  const block = { ...current, revision, status: "streaming" as const, payload: nextPayload };
   return { ...state, blocksById: { ...state.blocksById, [blockId]: block } };
 }
 
@@ -114,12 +147,27 @@ function applyOne(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntim
   else if (event.type === "run.cancelled") next = updateRun(next, event, "cancelled");
   else if (event.type === "run.interrupted") next = updateRun(next, event, "interrupted");
   else if (event.type === "block.created") next = applyBlockCreated(next, event);
+  else if (event.type === "block.updated") next = applyBlockUpdated(next, event);
   else if (event.type === "block.delta") next = applyBlockDelta(next, event);
   else if (event.type === "assistant.status") {
     const status = String(payload.status ?? payload.state ?? "thinking");
     next = { ...next, assistantStatusByRun: { ...next.assistantStatusByRun, [event.run_id]: status } };
   }
   else if (event.type === "usage.final") next = { ...next, usageByRun: { ...next.usageByRun, [event.run_id]: payload } };
+  else if (event.type === "usage.updated") {
+    const current = next.usageByRun[event.run_id] ?? {};
+    next = { ...next, usageByRun: { ...next.usageByRun, [event.run_id]: { ...current, ...payload } } };
+  }
+  else if (isAgentRoundEvent(event.type)) {
+    const map = next.roundsByRun[event.run_id] ?? {};
+    const updated = reduceAgentRoundEvent(map, event);
+    if (updated !== map) next = { ...next, roundsByRun: { ...next.roundsByRun, [event.run_id]: updated } };
+  }
+  else if (isToolActivityEvent(event.type)) {
+    const map = next.toolCallsByRun[event.run_id] ?? {};
+    const updated = reduceToolActivityEvent(map, event);
+    if (updated !== map) next = { ...next, toolCallsByRun: { ...next.toolCallsByRun, [event.run_id]: updated } };
+  }
   else if (event.type === "block.completed") {
     const blockId = String(payload.block_id ?? "");
     const block = next.blocksById[blockId];

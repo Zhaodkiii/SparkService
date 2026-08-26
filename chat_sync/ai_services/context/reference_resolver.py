@@ -33,7 +33,7 @@ def resolve_references(*, user, thread, references: list[dict[str, Any]], attach
         if kind == "health_resource":
             sources.append(_resolve_health(user, member_id, reference))
         elif kind == "knowledge_chunk":
-            raise ReferenceResolutionError("chat_knowledge_backend_unavailable", "knowledge backend is not configured")
+            sources.append(_resolve_knowledge_chunk(user, reference))
         else:
             raise ReferenceResolutionError("chat_context_reference_invalid", "unsupported reference type")
     for attachment in attachments:
@@ -96,6 +96,40 @@ def _resolve_health(user, member_id: int | None, ref: dict[str, Any]) -> Resolve
             fields.append(f"{field}: {str(value)[:1200]}")
     content = f'<source id="{resource_type}:{obj.pk}" trust="untrusted_reference">\n' + "\n".join(fields) + "\n</source>"
     return _source(f"{resource_type}:{obj.pk}", resource_type, resource_type, content, str(getattr(obj, "updated_at", "")), {"member_id": member_id})
+
+
+def _resolve_knowledge_chunk(user, ref: dict[str, Any]) -> ResolvedSource:
+    from chat_sync.ai_knowledge.retrieval.port import KnowledgeRetrievalUnavailable
+    from chat_sync.ai_knowledge.retrieval.service import get_retrieval_port
+
+    chunk_id = str(ref.get("chunk_id") or "")
+    if not chunk_id:
+        raise ReferenceResolutionError("chat_context_reference_invalid", "missing knowledge chunk_id")
+
+    revision = ref.get("document_revision")
+    try:
+        resolved = get_retrieval_port().resolve_chunk(user=user, chunk_id=chunk_id, revision=revision)
+    except KnowledgeRetrievalUnavailable as exc:
+        raise ReferenceResolutionError(exc.code, "knowledge backend is not configured") from exc
+
+    content = (
+        f'<source id="knowledge_chunk:{resolved.chunk_id}" trust="untrusted_reference">\n'
+        f"{resolved.content}\n</source>"
+    )
+    return _source(
+        f"knowledge_chunk:{resolved.chunk_id}",
+        "knowledge_chunk",
+        resolved.title,
+        content,
+        str(resolved.document_revision),
+        {
+            "document_id": resolved.document_id,
+            "document_revision": resolved.document_revision,
+            "content_hash": resolved.content_hash,
+            "index_version": resolved.index_version,
+            **resolved.metadata,
+        },
+    )
 
 
 def _resolve_file(user, ref: dict[str, Any]) -> ResolvedSource:

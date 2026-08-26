@@ -50,8 +50,18 @@ def relay_chat_event_outbox(limit: int = 100):
             item.save(update_fields=["status", "lock_owner", "locked_at", "attempts", "updated_at"])
         try:
             async_to_sync(get_channel_layer().group_send)(item.channel_group, {"type": "chat.run.event", "event": item.payload})
-            ChatEventOutbox.objects.filter(pk=item.pk, lock_owner=owner).update(status=ChatEventOutbox.Status.PUBLISHED, published_at=timezone.now(), lock_owner="", locked_at=None)
+            published_at = timezone.now()
+            ChatEventOutbox.objects.filter(pk=item.pk, lock_owner=owner).update(status=ChatEventOutbox.Status.PUBLISHED, published_at=published_at, lock_owner="", locked_at=None)
             delivered += 1
+            # W0 observability: commit-to-publish latency, no new metrics infra required.
+            publish_elapsed_ms = int((published_at - item.created_at).total_seconds() * 1000)
+            logger.info(
+                "chat_event_outbox.relayed id=%s channel_group=%s attempts=%s publish_elapsed_ms=%s",
+                item.pk,
+                item.channel_group,
+                item.attempts,
+                publish_elapsed_ms,
+            )
         except Exception as exc:  # pragma: no cover - broker integration
             logger.exception("chat_event_outbox.relay_failed id=%s", item.pk)
             delay_seconds = min(60, 2 ** min(item.attempts, 6))

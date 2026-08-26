@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+from rest_framework import serializers
+
+MAX_MUTATIONS_PER_BATCH = 50
+OPERATION_CHOICES = ("create", "update", "delete", "restore")
+
+
+class KnowledgeMutationDocumentSerializer(serializers.Serializer):
+    """create/update 携带的文档完整快照；delete/restore 不需要该字段。"""
+
+    title = serializers.CharField(required=False, allow_blank=True, default="")
+    content = serializers.CharField(required=False, allow_blank=True, default="")
+    excerpt = serializers.CharField(required=False, allow_blank=True, default="")
+    scope = serializers.CharField(required=False, allow_blank=True, default="personal")
+    bound_model_id = serializers.CharField(required=False, allow_null=True, allow_blank=True, default=None)
+    source = serializers.CharField(required=False, allow_blank=True, default="user")
+    client_created_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
+    client_updated_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
+
+
+class KnowledgeMutationClientSerializer(serializers.Serializer):
+    platform = serializers.CharField(required=False, allow_blank=True, default="")
+    version = serializers.CharField(required=False, allow_blank=True, default="")
+    device_id = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
+
+
+class KnowledgeSyncMutationSerializer(serializers.Serializer):
+    mutation_id = serializers.UUIDField()
+    document_id = serializers.UUIDField()
+    operation = serializers.ChoiceField(choices=OPERATION_CHOICES)
+    base_revision = serializers.IntegerField(required=False, allow_null=True, default=None)
+    knowledge_base_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    document = KnowledgeMutationDocumentSerializer(required=False)
+    client = KnowledgeMutationClientSerializer(required=False)
+
+    def validate(self, attrs):
+        operation = attrs.get("operation")
+        if operation in ("create", "update") and not attrs.get("document"):
+            raise serializers.ValidationError({"document": "required for create/update mutations"})
+        if operation in ("update", "delete", "restore") and attrs.get("base_revision") is None:
+            raise serializers.ValidationError({"base_revision": "required for update/delete/restore mutations"})
+        return attrs
+
+
+class KnowledgeSyncPushRequestSerializer(serializers.Serializer):
+    mutations = KnowledgeSyncMutationSerializer(many=True, allow_empty=False)
+
+    def validate_mutations(self, value):
+        if len(value) > MAX_MUTATIONS_PER_BATCH:
+            raise serializers.ValidationError(f"at most {MAX_MUTATIONS_PER_BATCH} mutations per push batch")
+        return value

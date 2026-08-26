@@ -2,8 +2,16 @@ import { cookies } from "next/headers";
 import { REFRESH_COOKIE, refreshCookieOptions } from "@/lib/server/auth-cookies";
 import { callSparkUpstream, failureEnvelope, isRecord, jsonEnvelope, requestIdFrom, stringField } from "@/lib/server/upstream";
 import { refreshTokenDataFromUpstream } from "@/lib/server/token-response";
-import { authDiagnosticLog, deviceLogSuffix } from "@/lib/auth/diagnostics";
+import { authDiagnosticLog } from "@/lib/auth/diagnostics";
 
+/**
+ * Chat Web BFF 登录恢复入口（CHAT-WEB-019E）。
+ *
+ * 以 Web refresh Token 恢复 Session：请求体只携带 refresh_token，
+ * 不再提交随机移动 device_id / bundle_id。服务端按 token 内的
+ * web_session_id 分派到 AccountWebSession 域（与移动会话隔离）。
+ * 注意：本入口不是 /api/v1/ai/config/bootstrap，AI 配置 bootstrap 完全不变。
+ */
 export async function POST(request: Request) {
   const requestId = requestIdFrom(request);
   const store = await cookies();
@@ -12,12 +20,11 @@ export async function POST(request: Request) {
     authDiagnosticLog("info", "bff", "auth.bootstrap.refresh_cookie_missing", { request_id: requestId });
     return failureEnvelope(401, "登录已失效", requestId);
   }
-  const deviceId = stringField(request.headers.get("x-device-id"), 128) || "";
   const startedAt = Date.now();
-  authDiagnosticLog("info", "bff", "auth.bootstrap.started", { request_id: requestId, device: deviceLogSuffix(deviceId) });
+  authDiagnosticLog("info", "bff", "auth.bootstrap.started", { request_id: requestId, session_class: "web" });
   let tokenResult: Awaited<ReturnType<typeof callSparkUpstream>>;
   try {
-    tokenResult = await callSparkUpstream("/api/v1/auth/token/refresh/", { method: "POST", body: JSON.stringify({ refresh_token: refresh, bundle_id: process.env.SPARK_WEB_SERVICE_ID || "cn.Zhaodk.Health.web", device_id: deviceId }) }, requestId);
+    tokenResult = await callSparkUpstream("/api/v1/auth/token/refresh/", { method: "POST", body: JSON.stringify({ refresh_token: refresh }) }, requestId);
   } catch (cause) {
     authDiagnosticLog("error", "bff", "auth.bootstrap.upstream_unreachable", { request_id: requestId, duration_ms: Date.now() - startedAt, error_type: cause instanceof Error ? cause.name : typeof cause });
     return failureEnvelope(503, "本地服务连接失败", requestId);

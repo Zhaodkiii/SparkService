@@ -160,6 +160,10 @@ class ChatWebSocketTicket(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_ws_tickets")
+    # Nullable for legacy/mobile tickets. Web tickets bind to the exact WebSession
+    # so logout/revocation can terminate an already-open Run socket server-side.
+    web_session_id = models.UUIDField(null=True, blank=True, db_index=True)
+    web_session_version = models.PositiveIntegerField(null=True, blank=True)
     token_hash = models.CharField(max_length=64, unique=True)
     websocket_path = models.CharField(max_length=128, default="/ws/chat/runs/")
     expires_at = models.DateTimeField(db_index=True)

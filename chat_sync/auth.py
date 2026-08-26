@@ -13,25 +13,47 @@ logger = logging.getLogger("chat_sync.ws")
 
 @database_sync_to_async
 def resolve_user_from_ticket(raw_ticket: str | None, websocket_path: str):
+    user, _claims = resolve_auth_from_ticket_sync(raw_ticket, websocket_path)
+    return user
+
+
+def resolve_auth_from_ticket_sync(raw_ticket: str | None, websocket_path: str):
     if not raw_ticket:
-        return AnonymousUser()
+        return AnonymousUser(), {}
     from chat_sync.ai_models import ChatWebSocketTicket
+    from accounts.services.web_session_service import WebSessionService
 
     token_hash = hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest()
     with transaction.atomic():
         ticket = ChatWebSocketTicket.objects.select_for_update().select_related("user").filter(token_hash=token_hash).first()
         if ticket is None or ticket.used_at is not None or ticket.expires_at <= timezone.now():
-            return AnonymousUser()
+            return AnonymousUser(), {}
         if ticket.websocket_path != websocket_path:
-            return AnonymousUser()
+            return AnonymousUser(), {}
+        claims = {}
+        if ticket.web_session_id is not None:
+            claims = {
+                "web_session_id": str(ticket.web_session_id),
+                "web_session_version": ticket.web_session_version or 0,
+                "session_class": "web",
+            }
+            try:
+                WebSessionService.validate_access_claims(user=ticket.user, validated_token=claims)
+            except Exception:
+                return AnonymousUser(), {}
         ticket.used_at = timezone.now()
         ticket.save(update_fields=["used_at"])
-        return ticket.user
+        return ticket.user, claims
+
 
 @database_sync_to_async
-def resolve_user_from_token(raw_token: str):
+def resolve_auth_from_ticket(raw_ticket: str | None, websocket_path: str):
+    return resolve_auth_from_ticket_sync(raw_ticket, websocket_path)
+
+@database_sync_to_async
+def resolve_auth_from_token(raw_token: str):
     if raw_token is None or raw_token == "":
-        return AnonymousUser()
+        return AnonymousUser(), {}
 
     class _BearerRequest:
         META = {"HTTP_AUTHORIZATION": f"Bearer {raw_token}"}
@@ -39,12 +61,19 @@ def resolve_user_from_token(raw_token: str):
     try:
         result = SparkJWTAuthentication().authenticate(_BearerRequest())
         if result is None:
-            return AnonymousUser()
-        user, _token = result
-        return user
+            return AnonymousUser(), {}
+        user, validated_token = result
+        claims = dict(getattr(validated_token, "payload", {}) or {})
+        return user, claims
     except Exception:
         logger.warning("chat ws token validation failed")
-        return AnonymousUser()
+        return AnonymousUser(), {}
+
+
+async def resolve_user_from_token(raw_token: str):
+    """Backward-compatible user-only resolver for non-session WS callers."""
+    user, _claims = await resolve_auth_from_token(raw_token)
+    return user
 
 
 class JWTAuthMiddleware:
@@ -56,7 +85,9 @@ class JWTAuthMiddleware:
         ticket = (query.get("ticket") or [None])[0]
         websocket_path = scope.get("path") or ""
         if ticket is not None:
-            scope["user"] = await resolve_user_from_ticket(ticket, websocket_path)
+            user, claims = await resolve_auth_from_ticket(ticket, websocket_path)
+            scope["user"] = user
+            scope["auth_claims"] = claims
             return await self.inner(scope, receive, send)
         if websocket_path == "/ws/chat/runs/":
             # Browser Run sockets must never fall back to a long-lived JWT query.
@@ -72,7 +103,9 @@ class JWTAuthMiddleware:
                         token = value.split(" ", 1)[1].strip()
                     break
 
-        scope["user"] = await resolve_user_from_token(token)
+        user, claims = await resolve_auth_from_token(token)
+        scope["user"] = user
+        scope["auth_claims"] = claims
         return await self.inner(scope, receive, send)
 
 

@@ -84,6 +84,15 @@
       <a-descriptions-item label="ping 错误">{{ status?.ping.error || '-' }}</a-descriptions-item>
       <a-descriptions-item label="Redis (Broker)">{{ status?.redis?.display ?? '-' }}</a-descriptions-item>
       <a-descriptions-item label="Redis 错误">{{ status?.redis?.error || '-' }}</a-descriptions-item>
+      <a-descriptions-item label="Worker 队列">{{ workerQueuesText }}</a-descriptions-item>
+      <a-descriptions-item label="AI Run 执行器">
+        <a-space>
+          <a-tag :color="status?.chat_ai?.server_runs_enabled ? 'green' : 'red'">
+            {{ status?.chat_ai?.server_runs_enabled ? '已开启' : '未开启' }}
+          </a-tag>
+          <span>{{ status?.chat_ai?.run_executor ?? '-' }}</span>
+        </a-space>
+      </a-descriptions-item>
     </a-descriptions>
 
     <a-divider />
@@ -118,6 +127,7 @@ const redisManageable = computed(() => {
   if (!r) return false;
   return r.local_manageable === true || r.local_start_available === true;
 });
+const workerQueuesText = computed(() => status.value?.worker_queues?.join(', ') || '-');
 const loading = ref(false);
 const actionLoading = ref<ActionType | ''>('');
 const status = ref<TaskManagerStatusResponse | null>(null);

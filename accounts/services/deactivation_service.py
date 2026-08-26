@@ -322,6 +322,12 @@ class DeactivationService:
         user.is_active = False
         user.save(update_fields=["is_active"])
         TrustedDevice.objects.filter(user=user).update(is_revoked=True, push_token="")
+        # CHAT-WEB-019：账号注销/封禁显式撤销两个会话域（设备 + Web）。
+        from accounts.services.web_session_service import WebSessionService
+
+        web_sessions_revoked = WebSessionService.revoke_all_sessions_for_user(
+            user=user, reason="account_deactivated", request_id=request_id
+        )
         DeactivationService._blacklist_refresh_tokens(user=user)
 
         deactivation.state = AccountDeactivation.DeactivationState.ACCOUNT_DISABLED
@@ -330,7 +336,7 @@ class DeactivationService:
             deactivation=deactivation,
             action=AccountDeactivationAudit.AuditAction.ACCOUNT_DEACTIVATE,
             request_id=request_id or "",
-            details={"user_active": False, "trusted_devices_revoked": True},
+            details={"user_active": False, "trusted_devices_revoked": True, "web_sessions_revoked": web_sessions_revoked},
         )
 
     @staticmethod

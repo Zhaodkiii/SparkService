@@ -1,0 +1,35 @@
+{
+  "id": "00000000-0000-0000-0000-000000000112",
+  "kind": "searchSummary",
+  "status": "ready",
+  "revision": 1,
+  "order_key": 1850,
+  "tool_call_id": "call_p4_01",
+  "parent_tool_call_id": null,
+  "parent_block_id": null,
+  "node_role": "toolPresentation",
+  "anchor": null,
+  "payload": {
+    "searchSummary": {
+      "_0": {
+        "id": "00000000-0000-0000-0000-000000000113",
+        "provider_name": "读取健康档案",
+        "query": "已读取 2 个健康档案分区",
+        "keywords": [],
+        "references": [
+          {
+            "id": "00000000-0000-0000-0000-000000000114",
+            "title": "member_profile:42",
+            "url": "",
+            "snippet": null,
+            "source_name": "member_profile",
+            "published_at": null
+          }
+        ],
+        "total_estimated_matches": null
+      }
+    }
+  },
+  "created_at": "2026-08-25T02:00:11Z",
+  "updated_at": "2026-08-25T02:00:11Z"
+}

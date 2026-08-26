@@ -1,6 +1,6 @@
 import type { SparkHttpClient } from "@/lib/api/http-client";
 import type { ChatRunDTO } from "@/types/chat";
-import type { CreateRunData, CreateRunRequestDTO, RunEventsData, WebSocketTicketData } from "@/types/run";
+import type { ChatRunReadinessDTO, CreateRunData, CreateRunRequestDTO, RunEventsData, WebSocketTicketData } from "@/types/run";
 
 function pathSegment(value: string): string {
   return encodeURIComponent(value);
@@ -40,5 +40,9 @@ export class SparkRunApi {
 
   createWebSocketTicket(): Promise<WebSocketTicketData> {
     return this.http.requestOrThrow("POST", "/api/v1/ai/chat/ws-tickets/");
+  }
+
+  readiness(): Promise<ChatRunReadinessDTO> {
+    return this.http.requestOrThrow("GET", "/api/v1/ai/chat/readiness/");
   }
 }

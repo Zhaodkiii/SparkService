@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
@@ -111,6 +113,49 @@ class AccountDeviceSession(models.Model):
         db_table_comment = "账号设备登录会话：单用户单 ACTIVE，供 token 校验与 APNs 投递。"
         verbose_name = "设备登录会话"
         verbose_name_plural = "设备登录会话"
+        constraints = []
+
+
+class AccountWebSession(models.Model):
+    """
+    Chat Web 独立登录会话（CHAT-WEB-019）。
+
+    与 AccountDeviceSession 生命周期完全隔离：Web 登录/刷新/退出只影响本表，
+    移动端登录不影响本表，反之亦然。不保存原始 refresh token，只存 JTI 哈希；
+    不把浏览器随机 UUID 写入 TrustedDevice。
+    """
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "有效"
+        REVOKED = "revoked", "已失效"
+        LOGGED_OUT = "logged_out", "已退出"
+        EXPIRED = "expired", "已过期"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, db_comment="Web 会话 ID，写入 JWT web_session_id claim")
+    user = models.ForeignKey(User, related_name="web_sessions", on_delete=models.CASCADE, db_comment="所属用户；与移动设备会话共享同一 User 的对话数据")
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+        db_comment="会话状态",
+    )
+    session_version = models.PositiveIntegerField(default=1, db_index=True, db_comment="会话版本号，写入 JWT web_session_version claim；rotation 时递增")
+    refresh_jti_hash = models.CharField(max_length=128, blank=True, default="", db_index=True, db_comment="当前 refresh token jti 的哈希（不存原始 token）")
+    user_agent_hash = models.CharField(max_length=128, blank=True, default="", db_comment="登录时 User-Agent 哈希，用于异常环境审计")
+    ip_prefix_hash = models.CharField(max_length=128, blank=True, default="", db_comment="登录时 IP 前缀哈希（可选，脱敏存储）")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    last_refreshed_at = models.DateTimeField(null=True, blank=True, db_comment="最近一次 refresh 成功时间")
+    expires_at = models.DateTimeField(db_index=True, db_comment="会话过期时间（对齐 refresh token 生命周期）")
+    revoked_at = models.DateTimeField(null=True, blank=True, db_comment="失效时间")
+    revoked_reason = models.CharField(max_length=64, blank=True, default="", db_comment="失效原因（user_logout/replaced_by_replay/account_deactivated 等）")
+    request_id = models.CharField(max_length=64, blank=True, default="", db_comment="创建或最近失效请求的 request id，便于日志串联")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table_comment = "Chat Web 独立登录会话：与设备会话隔离，支持多浏览器并存，不参与单设备替换。"
+        verbose_name = "Web 登录会话"
+        verbose_name_plural = "Web 登录会话"
         constraints = []
 
 

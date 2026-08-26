@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { BookmarkPlus, Check, Download, PanelRight, Pencil, X } from "lucide-react";
 import { useOptionalThreads } from "@/context/ThreadContext";
-
-function messageText(blocks: Array<{ payload: Record<string, unknown> }>) {
-  return blocks.map((block) => typeof block.payload.text === "string" ? block.payload.text : "").filter(Boolean).join("\n\n");
-}
+import { blockAssociatedValue } from "@/lib/chat/block-normalizer";
 
 export function ChatHeader({ activityOpen, onToggleActivity }: { activityOpen: boolean; onToggleActivity: () => void }) {
   const threads = useOptionalThreads();
@@ -20,9 +17,67 @@ export function ChatHeader({ activityOpen, onToggleActivity }: { activityOpen: b
   };
   const download = () => {
     if (!threads?.messages.length) return;
-    const body = threads.messages.map((message) => `## ${message.role === "user" ? "我" : message.role === "assistant" ? "小鲸 AI" : "系统"}\n\n${messageText(message.blocks)}`).join("\n\n---\n\n");
-    const url = URL.createObjectURL(new Blob([`# ${title}\n\n${body}\n`], { type: "text/markdown;charset=utf-8" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${title.replace(/[\\/:*?\"<>|]/g, "-")}.md`; anchor.click(); URL.revokeObjectURL(url);
+    const messages = threads.messages;
+    const userMessages = messages.filter((message) => message.role === "user").length;
+    const assistantMessages = messages.filter((message) => message.role === "assistant").length;
+    const modelName = thread?.current_model_name?.trim();
+    const selectedModel = modelName ? modelName : "未设置";
+    const summary = [
+      "ChatView 对话调试信息:",
+      `- ThreadID: ${threads.selectedThreadId ?? ""}`,
+      `- 标题: ${title}`,
+      `- 选择模型: ${selectedModel}`,
+      `- 消息总数: ${messages.length} (用户: ${userMessages}, 助手: ${assistantMessages})`,
+      `- 参数: temperature=${thread?.temperature ?? 0}, topP=${thread?.top_p ?? 0}, maxTokens=${thread?.max_tokens ?? 0}, maxMessages=${thread?.max_messages ?? 0}`,
+      `- 图片送达方式(本会话): ${thread?.image_delivery_mode ?? "-"}`,
+    ].join("\n");
+
+    const rows = messages
+      .slice()
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((message) => {
+        const attachments = message.blocks
+          .filter((block) => block.kind === "imageGallery" || block.kind === "fileAttachments")
+          .flatMap((block) => {
+            const items = block.payload.images ?? block.payload.items ?? block.payload.files ?? block.payload.attachments;
+            return Array.isArray(items) ? items : [];
+          });
+        const contentPreview = message.blocks
+          .map((block) => {
+            const value = blockAssociatedValue(block);
+            return typeof value === "string" ? value : "";
+          })
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 300);
+        const row: Record<string, unknown> = {
+          id: message.server_message_id ?? message.client_message_id,
+          client_message_id: message.client_message_id,
+          role: message.role,
+          delivery_state: message.delivery_state,
+          created_at: message.created_at,
+          content_preview: contentPreview,
+          attachments_count: attachments.length,
+          blocks_count: message.blocks.length,
+        };
+        if (attachments.length) row.attachments = attachments;
+        row.blocks = message.blocks;
+        if (message.reasoning_content) row.reasoning_preview = message.reasoning_content.slice(-200);
+        if (message.model_name) row.model_name = message.model_name;
+        return row;
+      });
+
+    const exportData = {
+      thread_id: thread?.thread_id ?? threads.selectedThreadId ?? "",
+      title: thread?.title ?? "",
+      debug_time: new Date().toISOString(),
+      summary,
+      messages: rows,
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+    const url = URL.createObjectURL(new Blob([json], { type: "application/json;charset=utf-8" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${title.replace(/[\\/:*?\"<>|]/g, "-")}.json`; anchor.click(); URL.revokeObjectURL(url);
   };
   return <header className="chat-header">
     <div className="chat-header__title-wrap">
@@ -30,7 +85,7 @@ export function ChatHeader({ activityOpen, onToggleActivity }: { activityOpen: b
     </div>
     <div className="chat-header__actions">
       <button className="icon-button" type="button" disabled aria-label="保存到笔记本" title="保存到笔记本"><BookmarkPlus size={16} /></button>
-      <button className="icon-button" type="button" disabled={!threads?.messages.length} aria-label="下载 Markdown" title="下载 Markdown" onClick={download}><Download size={16} /></button>
+      <button className="icon-button" type="button" disabled={!threads?.messages.length} aria-label="下载对话记录" title="下载对话记录" onClick={download}><Download size={16} /></button>
       <button className="icon-button" type="button" aria-label="活动" aria-pressed={activityOpen} title="会话活动、附件与预览" onClick={onToggleActivity}><PanelRight size={16} /></button>
     </div>
   </header>;

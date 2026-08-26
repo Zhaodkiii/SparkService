@@ -1,5 +1,5 @@
 import { callSparkUpstream, failureEnvelope, isRecord, jsonEnvelope, requestIdFrom, stringField, upstreamResponse } from "@/lib/server/upstream";
-import { authDiagnosticLog, deviceLogSuffix, maskPhone } from "@/lib/auth/diagnostics";
+import { authDiagnosticLog, maskPhone } from "@/lib/auth/diagnostics";
 
 export async function POST(request: Request) {
   const requestId = requestIdFrom(request);
@@ -12,11 +12,10 @@ export async function POST(request: Request) {
     return failureEnvelope(400, "手机号格式错误", requestId);
   }
   const startedAt = Date.now();
-  const deviceId = stringField(raw.device_id, 128) || `web-${requestId}`;
-  authDiagnosticLog("info", "bff", "phone_otp.request.upstream_started", { request_id: requestId, phone: maskPhone(phone), device: deviceLogSuffix(deviceId) });
+  authDiagnosticLog("info", "bff", "phone_otp.request.upstream_started", { request_id: requestId, phone: maskPhone(phone) });
   let result: Awaited<ReturnType<typeof callSparkUpstream>>;
   try {
-    result = await callSparkUpstream("/api/v1/otp/phone/request/", { method: "POST", body: JSON.stringify({ phone_number: phone, bundle_id: process.env.SPARK_WEB_SERVICE_ID || "cn.Zhaodk.Health.web", device_id: deviceId, scene: stringField(raw.scene, 64) || "login" }) }, requestId);
+    result = await callSparkUpstream("/api/v1/auth/phone/web/otp/request/", { method: "POST", body: JSON.stringify({ phone_number: phone, scene: stringField(raw.scene, 64) || "login" }) }, requestId);
   } catch (cause) {
     authDiagnosticLog("error", "bff", "phone_otp.request.upstream_unreachable", { request_id: requestId, duration_ms: Date.now() - startedAt, error_type: cause instanceof Error ? cause.name : typeof cause });
     return failureEnvelope(503, "本地服务连接失败", requestId);

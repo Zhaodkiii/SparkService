@@ -28,6 +28,9 @@ export function userFacingApiError(failure: SparkApiFailure): string {
   const messages: Record<string, string> = {
     "api.network_error": "无法连接服务，请检查网络或前端 API 地址。",
     "chat.server_runs_disabled": "服务端对话尚未开启，请联系管理员。",
+    "chat.run_executor_unavailable": "对话服务暂未就绪，请稍后再试。",
+    "chat.run_model_binding_missing": "对话模型配置异常，请联系管理员。",
+    "chat.run_worker_unavailable": "服务暂时繁忙，请稍后重试。",
     "chat.thread_not_found": "当前对话不存在或已失效，请刷新页面。",
     "chat.run_already_active": "当前对话仍在生成中，请稍候或先停止上一轮。",
     "auth.unauthorized": "登录状态已失效，请重新登录。",

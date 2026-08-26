@@ -19,6 +19,7 @@ from chat_sync.ai_runtime.tools.composition import compose_enabled_tools, manife
 from chat_sync.ai_runtime.tools.registry import build_server_tool_registry
 from chat_sync.ai_runtime.capabilities import build_capability_registry
 from chat_sync.ai_services.deferred_tool_service import DeferredToolService
+from chat_sync.contracts import payload_text
 
 
 class ContextBuildError(Exception):
@@ -93,11 +94,11 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
     selected_ids: list[int] = []
     for message in rows:
         block = message.blocks.filter(kind="text", status__in=["ready", "streaming"]).order_by("order_key", "created_at").first()
-        text = str((block.payload or {}).get("text") or "") if block else ""
+        text = payload_text(block.payload) if block else ""
         if text:
             history.append({"id": message.id, "role": message.role, "content": text})
     current_block = run.user_message.blocks.filter(kind="text").order_by("order_key", "created_at").first()
-    current_text = str((current_block.payload or {}).get("text") or (run.request_snapshot or {}).get("content") or "") if current_block else str((run.request_snapshot or {}).get("content") or "")
+    current_text = payload_text(current_block.payload) if current_block else str((run.request_snapshot or {}).get("content") or "")
 
     route_snapshot = {"provider": run.provider, "model": run.model, "config_version": run.model_config_version}
     window = int((run.request_snapshot or {}).get("context_window") or getattr(settings, "CHAT_AI_CONTEXT_WINDOW", 8192))

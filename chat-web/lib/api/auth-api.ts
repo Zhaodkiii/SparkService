@@ -3,19 +3,19 @@ import type {
   AppleLoginDTO,
   AuthTokenWireDTO,
   CurrentSessionDTO,
-  PhoneOtpRequestDTO,
   PhoneOtpRequestData,
-  PhoneOtpVerifyDTO,
+  WebPhoneOtpRequestDTO,
+  WebPhoneOtpVerifyDTO,
 } from "@/types/auth";
 
 export class SparkAuthApi {
   constructor(private readonly http: SparkHttpClient) {}
 
-  requestPhoneOtp(payload: PhoneOtpRequestDTO, requestId?: string): Promise<PhoneOtpRequestData> {
+  requestPhoneOtp(payload: WebPhoneOtpRequestDTO, requestId?: string): Promise<PhoneOtpRequestData> {
     return this.http.requestOrThrow("POST", "/api/auth/phone/request", { body: payload, requestId });
   }
 
-  verifyPhoneOtp(payload: PhoneOtpVerifyDTO, requestId?: string): Promise<AuthTokenWireDTO> {
+  verifyPhoneOtp(payload: WebPhoneOtpVerifyDTO, requestId?: string): Promise<AuthTokenWireDTO> {
     return this.http.requestOrThrow("POST", "/api/auth/phone/verify", { body: payload, requestId });
   }
 
@@ -23,11 +23,9 @@ export class SparkAuthApi {
     return this.http.requestOrThrow("POST", "/api/auth/apple/callback", { body: payload });
   }
 
-  bootstrap(deviceId?: string, requestId?: string): Promise<AuthTokenWireDTO & { session?: CurrentSessionDTO }> {
-    return this.http.requestOrThrow("POST", "/api/auth/bootstrap", {
-      headers: deviceId ? { "X-Device-ID": deviceId } : undefined,
-      requestId,
-    });
+  /** 019E：Web Session 恢复不再提交移动 device_id；上游按 refresh token 内的 web_session_id 分派。 */
+  bootstrap(requestId?: string): Promise<AuthTokenWireDTO & { session?: CurrentSessionDTO }> {
+    return this.http.requestOrThrow("POST", "/api/auth/bootstrap", { requestId });
   }
 
   currentSession(): Promise<CurrentSessionDTO> {

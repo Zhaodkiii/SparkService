@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
@@ -9,6 +7,7 @@ from chat_sync.ai_models import RunStatus
 from chat_sync.ai_services.run_service import RunService
 from chat_sync.ai_tasks.run_tasks import run_chat
 from chat_sync.models import ChatThread
+from chat_sync.tests.run_factory import canonical_run_payload
 
 
 @override_settings(CHAT_AI_SERVER_RUNS_ENABLED=True, CHAT_AI_RUN_EXECUTOR="disabled")
@@ -19,14 +18,7 @@ class MockRunTaskTests(TestCase):
         result = RunService.create_run(
             user=user,
             thread_id=thread.id,
-            payload={
-                "client_message_id": uuid.uuid4(),
-                "content": "mock",
-                "capability": "chat",
-                "references": [],
-                "attachments": [],
-                "client": {},
-            },
+            payload=canonical_run_payload(thread.id, content="mock", client={}),
             idempotency_key="mock-1",
         )
 

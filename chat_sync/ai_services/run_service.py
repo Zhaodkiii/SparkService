@@ -22,6 +22,7 @@ from chat_sync.ai_models import (
 )
 from chat_sync.ai_models.run import assert_run_transition
 from chat_sync.ai_runtime.capabilities import CapabilityUnavailable, build_capability_registry
+from chat_sync.contracts import BlockContractError, NODE_ROLE_TIMELINE, decode_block
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from common.exceptions import APIError
 
@@ -58,6 +59,12 @@ class RunService:
     def _canonical_json(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
+    @staticmethod
+    def _to_json_value(value: Any) -> Any:
+        if value is None:
+            return None
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
+
     @classmethod
     def _request_snapshot(cls, payload: dict[str, Any], operation: str = "create", target_run_id: str | None = None) -> dict[str, Any]:
         client = payload.get("client") or {}
@@ -72,6 +79,8 @@ class RunService:
             "references": payload.get("references") or [],
             "attachments": payload.get("attachments") or [],
             "capability_config": payload.get("capability_config") or {},
+            "input_message": cls._to_json_value(payload.get("input_message")),
+            "run_options": cls._to_json_value(payload.get("run_options")),
             "client": {
                 "platform": str(client.get("platform") or "")[:32],
                 "version": str(client.get("version") or "")[:64],
@@ -86,6 +95,68 @@ class RunService:
         if target_run_id:
             snapshot["target_run_id"] = str(target_run_id)
         return snapshot
+
+    @classmethod
+    def _create_input_message_blocks(
+        cls,
+        user,
+        thread: ChatThread,
+        message: ChatMessage,
+        input_message: dict[str, Any],
+        now,
+    ) -> None:
+        """Persist the canonical input_message blocks (Create Run v2)."""
+        message.created_at = cls._parse_datetime(input_message.get("created_at")) or now
+        message.save(update_fields=["created_at"])
+        for index, raw_block in enumerate(input_message.get("blocks") or []):
+            raw_block = raw_block or {}
+            try:
+                canonical = decode_block(
+                    {
+                        "kind": raw_block.get("kind"),
+                        "node_role": raw_block.get("node_role"),
+                        "payload": raw_block.get("payload") or {},
+                        "anchor": raw_block.get("anchor"),
+                    },
+                    block_index=index,
+                )
+            except BlockContractError as exc:
+                raise cls._api_error(
+                    exc.code,
+                    40022,
+                    400,
+                    {"field": f"input_message.blocks[{index}]", "error": exc.code},
+                ) from exc
+            ChatMessageBlock.objects.create(
+                user=user,
+                thread=thread,
+                message=message,
+                id=raw_block.get("id") or uuid.uuid4(),
+                kind=canonical.kind,
+                status=raw_block.get("status") or ChatMessageBlock.Status.READY,
+                revision=int(raw_block.get("revision") or 0),
+                order_key=raw_block.get("order_key") if raw_block.get("order_key") is not None else 1000 + index,
+                tool_call_id=raw_block.get("tool_call_id") or "",
+                parent_tool_call_id=raw_block.get("parent_tool_call_id") or "",
+                parent_block_id=raw_block.get("parent_block_id"),
+                node_role=canonical.node_role,
+                anchor=canonical.anchor,
+                payload=canonical.payload,
+                created_at=now,
+                updated_at=now,
+            )
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> Any:
+        if not value:
+            return None
+        try:
+            from django.utils.dateparse import parse_datetime
+
+            parsed = parse_datetime(str(value))
+            return parsed if parsed else None
+        except (TypeError, ValueError):
+            return None
 
     @classmethod
     def _freeze_preferences(cls, thread: ChatThread, requested_revision: int | None) -> tuple[dict[str, Any], int, ChatMessage | None]:
@@ -186,7 +257,26 @@ class RunService:
         )
         if getattr(settings, "CHAT_AI_OUTBOX_IMMEDIATE_RELAY", True):
             transaction.on_commit(cls._enqueue_outbox_relay, robust=True)
+        cls._log_event_commit_timing(run=run, sequence=sequence, event_type=event_type)
         return event
+
+    @staticmethod
+    def _log_event_commit_timing(*, run: ChatRun, sequence: int, event_type: str) -> None:
+        """W0 observability: elapsed time from run start to durable event commit.
+
+        Cheap structured log line (no new metrics infra) so a run's end-to-end
+        waterfall (Provider Chunk -> Event Commit -> Outbox Publish -> Web
+        Receive -> UI Paint) can be reconstructed offline for P95 analysis.
+        """
+        reference = run.started_at or run.created_at
+        elapsed_ms = int((timezone.now() - reference).total_seconds() * 1000) if reference else None
+        logger.info(
+            "chat_event.committed run_id=%s sequence=%s event_type=%s elapsed_ms=%s",
+            run.id,
+            sequence,
+            event_type,
+            elapsed_ms,
+        )
 
     @staticmethod
     def _enqueue_outbox_relay() -> None:
@@ -278,6 +368,9 @@ class RunService:
 
             now = timezone.now()
             client_message_id = payload["client_message_id"]
+            input_message = payload["input_message"]
+            if str(input_message.get("thread_id")) != str(thread.id):
+                raise cls._api_error("chat_input_thread_mismatch", 40091, 400, {"field": "input_message.thread_id"})
             user_message = ChatMessage.objects.create(
                 user=user,
                 thread=thread,
@@ -287,19 +380,7 @@ class RunService:
                 delivery_state=ChatMessage.DeliveryState.SENT,
                 created_at=now,
             )
-            ChatMessageBlock.objects.create(
-                user=user,
-                thread=thread,
-                message=user_message,
-                kind="text",
-                status=ChatMessageBlock.Status.READY,
-                revision=1,
-                order_key=1000,
-                node_role="content",
-                payload={"text": snapshot["content"], "content_type": "text/plain"},
-                created_at=now,
-                updated_at=now,
-            )
+            cls._create_input_message_blocks(user, thread, user_message, input_message, now)
             assistant_message = ChatMessage.objects.create(
                 user=user,
                 thread=thread,

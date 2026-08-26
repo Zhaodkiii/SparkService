@@ -16,10 +16,7 @@ export function maskPhone(value: string): string {
   return `${digits.slice(0, 2)}***${digits.slice(-4)}`;
 }
 
-export function deviceLogSuffix(value: string): string {
-  const normalized = value.trim();
-  return normalized ? `***${normalized.slice(-8)}` : "missing";
-}
+import { sparkDiagnosticLogsEnabled } from "@/lib/diagnostics";
 
 export function authDiagnosticLog(
   level: AuthLogLevel,
@@ -27,6 +24,7 @@ export function authDiagnosticLog(
   event: string,
   fields: AuthLogFields = {},
 ): void {
+  if (!sparkDiagnosticLogsEnabled()) return;
   const payload = {
     timestamp: new Date().toISOString(),
     source,

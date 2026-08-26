@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -17,6 +16,7 @@ from chat_sync.ai_tasks.outbox_tasks import relay_chat_event_outbox
 from chat_sync.ai_tasks.run_tasks import run_chat
 from chat_sync.ai_runtime.providers.types import ProviderChunk, ProviderRoute
 from chat_sync.models import ChatThread
+from chat_sync.tests.run_factory import canonical_run_payload
 
 
 @override_settings(
@@ -31,14 +31,7 @@ class P2StreamingProjectionTests(TestCase):
         self.run = RunService.create_run(
             user=self.user,
             thread_id=self.thread.id,
-            payload={
-                "client_message_id": uuid.uuid4(),
-                "content": "请回答",
-                "capability": "chat",
-                "references": [],
-                "attachments": [],
-                "client": {"platform": "web", "version": "p2", "device_id": "test"},
-            },
+            payload=canonical_run_payload(self.thread.id, content="请回答", client={"platform": "web", "version": "p2", "device_id": "test"}),
             idempotency_key="p2-stream-1",
         ).run
         self.run = RunService.claim_for_execution(run_id=self.run.id, expected_generation=1)
@@ -72,7 +65,7 @@ class P2StreamingProjectionTests(TestCase):
             ],
         )
         block = finished.assistant_message.blocks.get(kind="text")
-        self.assertEqual(block.payload["text"], "你好")
+        self.assertEqual(block.payload["text"]["_0"], "你好")
         self.assertEqual(block.revision, 3)
         self.assertEqual(block.status, "ready")
         usage = ChatUsageRecord.objects.get(run=finished)
@@ -127,7 +120,7 @@ class P2OutboxTests(TestCase):
         RunService.create_run(
             user=user,
             thread_id=thread.id,
-            payload={"client_message_id": uuid.uuid4(), "content": "hello", "capability": "chat", "references": [], "attachments": [], "client": {}},
+            payload=canonical_run_payload(thread.id, content="hello", client={}),
             idempotency_key="p2-outbox-1",
         )
         layer = _ChannelLayer()
@@ -164,7 +157,7 @@ class P2ProviderTaskIntegrationTests(TransactionTestCase):
         run = RunService.create_run(
             user=user,
             thread_id=thread.id,
-            payload={"client_message_id": uuid.uuid4(), "content": "question", "capability": "chat", "references": [], "attachments": [], "client": {}},
+            payload=canonical_run_payload(thread.id, content="question", client={}),
             idempotency_key="p2-provider-1",
         ).run
         route = ProviderRoute("doubao", "fake-model", "https://provider.test/v1", "secret")
@@ -178,7 +171,7 @@ class P2ProviderTaskIntegrationTests(TransactionTestCase):
 
         run.refresh_from_db()
         self.assertEqual(result["status"], RunStatus.COMPLETED)
-        self.assertEqual(run.assistant_message.blocks.get(kind="text").payload["text"], "真实回答")
+        self.assertEqual(run.assistant_message.blocks.get(kind="text").payload["text"]["_0"], "真实回答")
         self.assertEqual(run.usage.prompt_tokens, 5)
         self.assertEqual(run.provider_request_id, "fake-provider-request")
         self.assertEqual(run.events.filter(type="run.done").count(), 1)
