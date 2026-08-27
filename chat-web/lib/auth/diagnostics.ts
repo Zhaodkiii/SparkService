@@ -24,7 +24,8 @@ export function authDiagnosticLog(
   event: string,
   fields: AuthLogFields = {},
 ): void {
-  if (!sparkDiagnosticLogsEnabled()) return;
+  // Server-side Apple troubleshooting can be enabled without enabling all browser logs.
+  if (!sparkDiagnosticLogsEnabled() && process.env.SPARK_AUTH_DIAGNOSTIC_LOGS !== "1" && process.env.SPARK_AUTH_DIAGNOSTIC_LOGS !== "true") return;
   const payload = {
     timestamp: new Date().toISOString(),
     source,

@@ -5,6 +5,7 @@ import json
 from datetime import timedelta
 from typing import Any
 
+from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
 from chat_sync.ai_models.knowledge import KnowledgeMutationReceipt
@@ -30,7 +31,13 @@ def compute_request_hash(
         "base_revision": base_revision,
         "document": document or {},
     }
-    raw = json.dumps(canonical, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    raw = json.dumps(
+        canonical,
+        cls=DjangoJSONEncoder,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
 

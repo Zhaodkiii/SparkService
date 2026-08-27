@@ -18,6 +18,22 @@ class AIScenarioModelBindingAdmin(admin.ModelAdmin):
     list_filter = ("scenario", "is_active", "is_default")
     search_fields = ("scenario", "display_name", "model__name", "model__display_name")
     ordering = ("scenario", "position")
+    fields = (
+        "scenario",
+        "identity",
+        "model",
+        "display_name",
+        "temperature",
+        "max_tokens",
+        "position",
+        "is_default",
+        "is_active",
+        "system_provision",
+        "brief_description",
+        "ai_tool_scenarios",
+        "server_tool_scenarios",
+        "related_task_codes",
+    )
 
 
 @admin.register(SmallTask)

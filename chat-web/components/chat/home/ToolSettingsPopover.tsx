@@ -14,6 +14,7 @@ const UNAVAILABLE_COPY: Record<ToolUnavailableReason, string> = {
   model_unsupported: "当前模型不支持工具调用",
   member_required: "需要先选择成员",
   source_required: "需要先附加健康资料",
+  knowledge_base_required: "需要先选择知识库",
 };
 
 type LoadState = "loading" | "ready" | "error";

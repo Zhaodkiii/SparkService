@@ -64,6 +64,25 @@ class KnowledgeSyncPushTests(TestCase):
         self.assertEqual(ack["revision"], 1)
         self.assertEqual(KnowledgeDocument.objects.filter(user=self.user, id=document_id).count(), 1)
 
+    def test_create_with_client_timestamps_is_accepted_and_replayable(self):
+        """贴近 iOS 真实报文：document 携带 ISO client_created_at / client_updated_at。"""
+        document_id = uuid.uuid4()
+        mutation_id = uuid.uuid4()
+        mutation = _create_mutation(document_id=document_id, mutation_id=mutation_id)
+        mutation["document"]["client_created_at"] = "2026-08-26T02:49:48.658Z"
+        mutation["document"]["client_updated_at"] = "2026-08-26T02:50:13.474Z"
+
+        first = self._push([mutation])[0]
+        second = self._push([mutation])[0]
+
+        self.assertEqual(first["status"], "accepted")
+        self.assertFalse(first["replayed"])
+        self.assertEqual(first["revision"], 1)
+        self.assertEqual(second["status"], "accepted")
+        self.assertTrue(second["replayed"])
+        self.assertEqual(second["revision"], first["revision"])
+        self.assertEqual(KnowledgeDocument.objects.filter(user=self.user, id=document_id).count(), 1)
+
     def test_replaying_same_mutation_returns_original_ack_without_new_revision(self):
         document_id = uuid.uuid4()
         mutation_id = uuid.uuid4()

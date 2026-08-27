@@ -34,6 +34,7 @@ def short_catalog(registry: ToolRegistry, names: Iterable[str] | None = None) ->
                 "version": entry.policy.version,
                 "description": _clean_description(entry.tool.get_definition().description),
                 "target": entry.policy.target,
+                "execution_mode": entry.policy.execution_mode,
                 "risk": entry.policy.risk,
                 "required_context": list(entry.policy.required_context),
                 "schema_hash": entry.schema_hash,

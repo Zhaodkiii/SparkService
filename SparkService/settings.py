@@ -63,10 +63,28 @@ APPLE_ALLOWED_BUNDLE_IDS = [
     if item.strip()
 ]
 APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS = int(os.getenv("APPLE_IDENTITY_TOKEN_LEEWAY_SECONDS", "30"))
+APPLE_JWKS_VERIFY_SSL = os.getenv("APPLE_JWKS_VERIFY_SSL", "true").lower() in {
+    "1", "true", "yes", "y",
+}
+APPLE_JWKS_TTL_SECONDS = int(os.getenv("APPLE_JWKS_TTL_SECONDS", "3600"))
+APPLE_JWKS_TIMEOUT_SECONDS = int(os.getenv("APPLE_JWKS_TIMEOUT_SECONDS", "8"))
+
+# Sign in with Apple 开发者密钥：移动端与 Web 共用同一套 Team / Key / Private Key。
+# 任一侧未单独配置时，回退到另一侧或 APNs 同名配置。
+_APPLE_TEAM_ID = (
+    os.getenv("APPLE_TEAM_ID") or os.getenv("APPLE_WEB_TEAM_ID") or os.getenv("APNS_TEAM_ID") or ""
+).strip()
+_APPLE_KEY_ID = (
+    os.getenv("APPLE_KEY_ID") or os.getenv("APPLE_WEB_KEY_ID") or os.getenv("APNS_KEY_ID") or ""
+).strip()
+_APPLE_PRIVATE_KEY = (os.getenv("APPLE_PRIVATE_KEY") or os.getenv("APPLE_WEB_PRIVATE_KEY") or "").strip()
+APPLE_TEAM_ID = _APPLE_TEAM_ID
+APPLE_KEY_ID = _APPLE_KEY_ID
+APPLE_PRIVATE_KEY = _APPLE_PRIVATE_KEY
 
 # CHAT-WEB-019: Chat Web independent Apple sign-in + Web session domain.
-# Web 上游与移动端入口完全隔离：audience 只允许 Web Service ID，nonce 必填，
-# JWKS 默认严格 TLS 校验（与移动端约定相反，Web 不复用其放宽配置）。
+# Web 上游与移动端入口完全隔离：audience 只允许 Web Service ID，nonce 必填。
+# JWKS TLS 与移动端一样默认严格校验；开发者密钥与移动端共用。
 WEB_APPLE_LOGIN_V2_ENABLED = os.getenv("WEB_APPLE_LOGIN_V2_ENABLED", "false").lower() in {
     "1", "true", "yes", "on",
 }
@@ -89,9 +107,9 @@ APPLE_WEB_JWKS_VERIFY_SSL = os.getenv("APPLE_WEB_JWKS_VERIFY_SSL", "true").lower
 APPLE_WEB_JWKS_TTL_SECONDS = int(os.getenv("APPLE_WEB_JWKS_TTL_SECONDS", "3600"))
 APPLE_WEB_JWKS_TIMEOUT_SECONDS = int(os.getenv("APPLE_WEB_JWKS_TIMEOUT_SECONDS", "8"))
 # authorization code 兑换（client secret 仅服务端持有）
-APPLE_WEB_TEAM_ID = (os.getenv("APPLE_WEB_TEAM_ID") or "").strip()
-APPLE_WEB_KEY_ID = (os.getenv("APPLE_WEB_KEY_ID") or "").strip()
-APPLE_WEB_PRIVATE_KEY = (os.getenv("APPLE_WEB_PRIVATE_KEY") or "").strip()
+APPLE_WEB_TEAM_ID = (os.getenv("APPLE_WEB_TEAM_ID") or _APPLE_TEAM_ID).strip()
+APPLE_WEB_KEY_ID = (os.getenv("APPLE_WEB_KEY_ID") or _APPLE_KEY_ID).strip()
+APPLE_WEB_PRIVATE_KEY = (os.getenv("APPLE_WEB_PRIVATE_KEY") or _APPLE_PRIVATE_KEY).strip()
 APPLE_WEB_TOKEN_ENDPOINT = (os.getenv("APPLE_WEB_TOKEN_ENDPOINT") or "https://appleid.apple.com/auth/token").strip()
 
 # CHAT-WEB-020: Chat Web 手机验证码独立登录。默认关闭，正式环境在 AccountWebSession
@@ -373,6 +391,11 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if item.strip()
 ]
+CSRF_TRUSTED_ORIGINS = [
+    item.strip()
+    for item in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+    if item.strip()
+]
 
 # -------------------------
 # Celery
@@ -391,8 +414,13 @@ CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"))
 CELERY_TASK_ROUTES = {
     "chat_sync.ai_tasks.run_tasks.run_chat": {"queue": "chat.ai"},
+    "chat_sync.ai_tasks.run_tasks.resume_chat_run": {"queue": "chat.ai"},
     "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox": {"queue": "chat.events"},
     "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs": {"queue": "chat.recovery"},
+    "chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions": {"queue": "chat.recovery"},
+    "chat_sync.ai_tasks.knowledge_tasks.index_document_task": {"queue": "chat.ai"},
+    "chat_sync.ai_tasks.knowledge_tasks.rebuild_index_version_task": {"queue": "chat.ai"},
+    "chat_sync.ai_tasks.knowledge_tasks.extract_document_task": {"queue": "chat.ai"},
     "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
@@ -429,6 +457,12 @@ CHAT_AI_CONTEXT_PROMPT_VERSION = os.getenv("CHAT_AI_CONTEXT_PROMPT_VERSION", "ch
 CHAT_AI_MAX_REFERENCES_PER_RUN = int(os.getenv("CHAT_AI_MAX_REFERENCES_PER_RUN", "16"))
 CHAT_AI_MAX_PERSONA_CHARS = int(os.getenv("CHAT_AI_MAX_PERSONA_CHARS", "4000"))
 CHAT_AI_AGENTIC_TOOLS_ENABLED = os.getenv("CHAT_AI_AGENTIC_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+KNOWLEDGE_CENTER_WEB_ENABLED = os.getenv("KNOWLEDGE_CENTER_WEB_ENABLED", "true").lower() in ("1", "true", "yes", "y")
+KNOWLEDGE_FILE_IMPORT_ENABLED = os.getenv("KNOWLEDGE_FILE_IMPORT_ENABLED", "true").lower() in ("1", "true", "yes", "y")
+KNOWLEDGE_CHAT_SELECTOR_ENABLED = os.getenv("KNOWLEDGE_CHAT_SELECTOR_ENABLED", "true").lower() in ("1", "true", "yes", "y")
+KNOWLEDGE_RAG_TOOL_ENABLED = os.getenv("KNOWLEDGE_RAG_TOOL_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+KNOWLEDGE_DEEPTUTOR_ADAPTER_ENABLED = os.getenv("KNOWLEDGE_DEEPTUTOR_ADAPTER_ENABLED", "false").lower() in ("1", "true", "yes", "y")
+KNOWLEDGE_NAMED_BASE_QUOTA = int(os.getenv("KNOWLEDGE_NAMED_BASE_QUOTA", "20"))
 CHAT_AI_WAITING_ENABLED = os.getenv("CHAT_AI_WAITING_ENABLED", "false").lower() in ("1", "true", "yes", "y")
 CHAT_AI_ASK_USER_ENABLED = os.getenv("CHAT_AI_ASK_USER_ENABLED", "false").lower() in ("1", "true", "yes", "y")
 CHAT_AI_CLIENT_TOOLS_ENABLED = os.getenv("CHAT_AI_CLIENT_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
@@ -450,6 +484,11 @@ CELERY_BEAT_SCHEDULE = {
     },
     "chat-ai-recover-runs": {
         "task": "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs",
+        "schedule": crontab(minute="*/1"),
+        "options": {"queue": "chat.recovery"},
+    },
+    "chat-ai-expire-interactions": {
+        "task": "chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions",
         "schedule": crontab(minute="*/1"),
         "options": {"queue": "chat.recovery"},
     },

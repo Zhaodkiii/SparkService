@@ -9,13 +9,29 @@ from .openai_compatible import OpenAICompatibleGateway
 from .types import ProviderRoute
 
 
-def resolve_chat_route() -> ProviderRoute:
-    binding = (
+def resolve_chat_binding():
+    return (
         AIScenarioModelBinding.objects.select_related("model")
         .filter(scenario=ScenarioKey.CHAT, is_active=True, model__is_active=True, model__supports_text=True)
         .order_by("-is_default", "position", "id")
         .first()
     )
+
+
+def resolve_scenario_binding(scenario_key: str | None = None):
+    key = str(scenario_key or ScenarioKey.CHAT).strip() or ScenarioKey.CHAT
+    if key == ScenarioKey.CHAT:
+        return resolve_chat_binding()
+    return (
+        AIScenarioModelBinding.objects.select_related("model")
+        .filter(scenario=key, is_active=True, model__is_active=True)
+        .order_by("-is_default", "position", "id")
+        .first()
+    )
+
+
+def resolve_chat_route() -> ProviderRoute:
+    binding = resolve_chat_binding()
     if binding is None:
         raise LLMConfigError("no active chat model binding")
     provider = (

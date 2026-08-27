@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -39,6 +40,11 @@ class RunServiceTests(TestCase):
         self.assertEqual(run.last_sequence, 1)
         self.assertEqual(run.user_message.role, "user")
         self.assertEqual(run.assistant_message.delivery_state, "pending")
+        self.assertLess(run.user_message.created_at, run.assistant_message.created_at)
+        self.assertEqual(
+            run.assistant_message.created_at - run.user_message.created_at,
+            timedelta(microseconds=1),
+        )
         event = ChatRunEvent.objects.get(run=run, sequence=1)
         self.assertEqual(event.type, "run.queued")
         self.assertEqual(event.outbox.status, "pending")

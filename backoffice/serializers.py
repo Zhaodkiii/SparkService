@@ -664,6 +664,7 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
             "system_provision",
             "brief_description",
             "ai_tool_scenarios",
+            "server_tool_scenarios",
             "related_task_codes",
             "updated_at",
             "created_at",
@@ -672,6 +673,14 @@ class AdminAIScenarioModelBindingSerializer(serializers.ModelSerializer):
 
     def validate_ai_tool_scenarios(self, value):
         return _normalize_ai_tool_scenarios(value)
+
+    def validate_server_tool_scenarios(self, value):
+        from chat_sync.ai_runtime.tools.server_tool_config import prepare_server_tool_scenarios
+
+        names, error, offending = prepare_server_tool_scenarios(value)
+        if error:
+            raise serializers.ValidationError(error if offending is None else f"{error}:{offending}")
+        return names
 
     def validate_related_task_codes(self, value):
         return _normalize_string_list(value, "related_task_codes")

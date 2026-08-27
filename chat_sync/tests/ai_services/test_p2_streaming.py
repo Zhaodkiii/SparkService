@@ -175,3 +175,6 @@ class P2ProviderTaskIntegrationTests(TransactionTestCase):
         self.assertEqual(run.usage.prompt_tokens, 5)
         self.assertEqual(run.provider_request_id, "fake-provider-request")
         self.assertEqual(run.events.filter(type="run.done").count(), 1)
+        self.assertEqual(run.events.filter(type="agent.round.started").count(), 1)
+        self.assertEqual(run.events.filter(type="agent.round.completed").count(), 1)
+        self.assertFalse(run.assistant_message.blocks.filter(kind="deepThought").exists())

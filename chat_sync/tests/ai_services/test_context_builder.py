@@ -63,3 +63,52 @@ class ContextBuilderTests(TestCase):
         prefs.save()
         context = build_context_for_run(run.id)
         self.assertIn("en", context.messages[0]["content"])
+
+    def test_tool_manifest_is_frozen_across_rebuilds(self):
+        from unittest.mock import patch
+
+        run = self._run("hello")
+        build_context_for_run(run.id)
+        snapshot = ChatTurnContextSnapshot.objects.get(run=run)
+        snapshot.tool_manifest = [{"name": "frozen_tool", "target": "server", "execution_mode": "immediate"}]
+        snapshot.save(update_fields=["tool_manifest"])
+        with patch("chat_sync.ai_services.context.context_builder._persist_snapshot"):
+            second = build_context_for_run(run.id)
+        self.assertEqual(
+            list(second.tool_manifest),
+            [{"name": "frozen_tool", "target": "server", "execution_mode": "immediate"}],
+        )
+
+    @override_settings(
+        CHAT_AI_AGENTIC_TOOLS_ENABLED=True,
+        CHAT_AI_WAITING_ENABLED=True,
+        CHAT_AI_ASK_USER_ENABLED=True,
+    )
+    def test_snapshot_stores_manifest_source_filtered_and_hash(self):
+        from unittest.mock import patch
+
+        from chat_sync.ai_services.effective_tool_manifest_service import EffectiveToolManifest
+
+        frozen = EffectiveToolManifest(
+            scenario_key="chat",
+            resolved_model="doubao-pro",
+            source_server_tool_scenarios=("ask_user",),
+            effective_tools=({"name": "ask_user", "version": "v1", "schema_hash": "abc"},),
+            filtered_tools=({"name": "read_source", "reason": "user_disabled"},),
+            manifest_hash="deadbeef",
+            generated_at="2026-08-27T10:00:00Z",
+        )
+        with patch(
+            "chat_sync.ai_services.context.context_builder.build_effective_tool_manifest",
+            return_value=frozen,
+        ):
+            run = self._run("hello")
+            build_context_for_run(run.id)
+        snapshot = ChatTurnContextSnapshot.objects.get(run=run)
+        self.assertEqual(snapshot.tool_manifest_hash, "deadbeef")
+        self.assertEqual(snapshot.tool_manifest_source, ["ask_user"])
+        self.assertEqual(snapshot.tool_manifest_filtered, [{"name": "read_source", "reason": "user_disabled"}])
+        rebuilt = build_context_for_run(run.id)
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.tool_manifest_hash, "deadbeef")
+        self.assertEqual(list(rebuilt.tool_manifest), list(frozen.effective_tools))

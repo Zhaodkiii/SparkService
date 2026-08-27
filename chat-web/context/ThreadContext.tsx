@@ -7,6 +7,7 @@ import { SparkChatSyncApi } from "@/lib/api/chat-sync-api";
 import { useOptionalAuth } from "@/context/AuthContext";
 import type { ChatMessageWireDTO, ChatThreadWireDTO } from "@/types/sync";
 import { clientErrorDetails, sparkClientLog } from "@/lib/diagnostics";
+import { sortChatMessagesForDisplay } from "@/lib/chat/message-order";
 
 export type NewChatDraftStatus = "draft" | "materializing" | "materialized" | "failed";
 
@@ -45,6 +46,23 @@ function pathThreadId(): string | null {
   return id ? decodeURIComponent(id) : null;
 }
 
+function threadTimestamp(thread: ChatThreadWireDTO): number | null {
+  const value = thread.server_updated_at ?? thread.updated_at;
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** 会话列表演示顺序：最新→最早（同步游标仍按 server_updated_at + id 升序）。 */
+function newestThreadFirst(a: ChatThreadWireDTO, b: ChatThreadWireDTO): number {
+  const aTime = threadTimestamp(a);
+  const bTime = threadTimestamp(b);
+  if (aTime !== null && bTime !== null && aTime !== bTime) return bTime - aTime;
+  if (aTime !== null && bTime === null) return -1;
+  if (aTime === null && bTime !== null) return 1;
+  return a.thread_id.localeCompare(b.thread_id);
+}
+
 export function ThreadProvider({ children }: { children: React.ReactNode }) {
   const auth = useOptionalAuth();
   const router = useRouter();
@@ -60,10 +78,22 @@ export function ThreadProvider({ children }: { children: React.ReactNode }) {
     if (!auth || auth.status !== "authenticated") return;
     setStatus("loading"); setError(null);
     try {
-      const data = await new SparkChatSyncApi(auth.client).pullThreads(undefined, 100);
-      setThreads(data.threads.filter((thread) => !thread.is_deleted));
+      const api = new SparkChatSyncApi(auth.client);
+      const collected: ChatThreadWireDTO[] = [];
+      let cursor: string | undefined;
+      let hasMore = true;
+      // 服务端 thread-pull 按 server_updated_at 升序分页，只取首页会漏掉最新创建的会话；
+      // 这里翻页到底后统一按“最新→最早”排序展示，保证刷新后能看到刚创建的对话。
+      while (hasMore) {
+        const data = await api.pullThreads(cursor, 100);
+        collected.push(...data.threads.filter((thread) => !thread.is_deleted));
+        cursor = data.cursor ?? undefined;
+        hasMore = data.has_more;
+      }
+      collected.sort(newestThreadFirst);
+      setThreads(collected);
       // 023：/home 永远代表新 Draft，绝不在加载后自动回退到最近 Thread。
-      setSelectedThreadId((current) => (current && data.threads.some((thread) => thread.thread_id === current) ? current : null));
+      setSelectedThreadId((current) => (current && collected.some((thread) => thread.thread_id === current) ? current : null));
       setStatus("ready");
     } catch (cause) { setStatus("error"); setError(cause instanceof Error ? cause.message : "线程加载失败"); sparkClientLog("error", "thread.load.failed", clientErrorDetails(cause)); }
   }, [auth]);
@@ -77,7 +107,7 @@ export function ThreadProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const data = await new SparkChatSyncApi(auth.client).pullMessages(targetThreadId, undefined, 100);
-      setMessages(data.messages.filter((message) => !message.tombstone));
+      setMessages(sortChatMessagesForDisplay(data.messages.filter((message) => !message.tombstone)));
     } catch (cause) {
       setMessages([]);
       sparkClientLog("warn", "message.history.load.failed", { thread_id: targetThreadId, ...clientErrorDetails(cause) });

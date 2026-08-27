@@ -335,6 +335,101 @@ def _celery_ping_status() -> dict:
         return {"healthy": False, "returncode": -1, "output": "", "error": str(exc)[:500]}
 
 
+CHAT_AI_REQUIRED_TASKS = (
+    "chat_sync.ai_tasks.run_tasks.run_chat",
+    "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox",
+    "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs",
+)
+
+# Every Celery task that can be executed by the SparkService worker.  Keep
+# this inventory alongside the runtime probe so the admin page can detect a
+# partially booted worker instead of only checking the chat pipeline.
+CELERY_MANAGED_TASKS = (
+    ("accounts.deactivation.tasks.cleanup_deactivation_backups_task", "账号注销", "cleanup"),
+    ("accounts.deactivation.tasks.deactivation_health_check_task", "账号注销", "monitoring"),
+    ("accounts.deactivation.tasks.process_deactivation_task", "账号注销", "deactivation"),
+    ("accounts.deactivation.tasks.schedule_deactivation_processing_task", "账号注销", "deactivation"),
+    ("accounts.notification_tasks.send_notification_campaign_task", "账号通知", "notification.bulk"),
+    ("ai_config.tasks.approve_trial_application_request_task", "AI 配置", "celery"),
+    ("chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox", "AI 对话", "chat.events"),
+    ("chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions", "AI 对话", "chat.recovery"),
+    ("chat_sync.ai_tasks.recovery_tasks.recover_chat_runs", "AI 对话", "chat.recovery"),
+    ("chat_sync.ai_tasks.run_tasks.resume_chat_run", "AI 对话", "chat.ai"),
+    ("chat_sync.ai_tasks.run_tasks.run_chat", "AI 对话", "chat.ai"),
+    ("content.tasks.publish_due_content_articles_task", "内容", "celery"),
+    ("notification_center.tasks.execute_email_otp_intent_task", "通知中心", "notification.security.high"),
+    ("notification_center.tasks.execute_notification_campaign_task", "通知中心", "notification.bulk"),
+    ("notification_center.tasks.execute_sms_otp_intent_task", "通知中心", "notification.security.high"),
+    ("notification_center.tasks.poll_sms_delivery_receipts_task", "通知中心", "notification.receipt"),
+    ("notification_center.tasks.reconcile_notification_outbox_task", "通知中心", "notification.receipt"),
+    ("notification_center.tasks.relay_notification_outbox_task", "通知中心", "notification.transactional"),
+    ("task_system.notification_tasks.dispatch_task_notification_task", "任务通知", "celery"),
+)
+
+
+def _celery_registered_tasks_status() -> dict:
+    """Verify task registration, not merely worker process/queue health.
+
+    A worker can answer ping and consume ``chat.events`` while rejecting every
+    event relay job when the module defining that task was never imported.
+    ``inspect registered`` is the only useful readiness signal for this class
+    of failure.
+    """
+
+    timeout_seconds = 4
+    cmd = [sys.executable, "-m", "celery", "-A", "SparkService", "inspect", "registered", "--timeout=2"]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        output = (proc.stdout or "").strip()
+        registered = [name for name in CHAT_AI_REQUIRED_TASKS if name in output]
+        missing = [name for name in CHAT_AI_REQUIRED_TASKS if name not in output]
+        all_required = [name for name, _domain, _queue in CELERY_MANAGED_TASKS]
+        all_registered = [name for name in all_required if name in output]
+        all_missing = [name for name in all_required if name not in output]
+        return {
+            "healthy": proc.returncode == 0 and not missing,
+            "required": list(CHAT_AI_REQUIRED_TASKS),
+            "registered": registered,
+            "missing": missing,
+            "all_healthy": proc.returncode == 0 and not all_missing,
+            "all_required": all_required,
+            "all_registered": all_registered,
+            "all_missing": all_missing,
+            "inventory": [
+                {"name": name, "domain": domain, "queue": queue, "registered": name in all_registered}
+                for name, domain, queue in CELERY_MANAGED_TASKS
+            ],
+            "returncode": proc.returncode,
+            "output": output[:2000],
+            "error": (proc.stderr or "").strip()[:500],
+        }
+    except Exception as exc:
+        return {
+            "healthy": False,
+            "required": list(CHAT_AI_REQUIRED_TASKS),
+            "registered": [],
+            "missing": list(CHAT_AI_REQUIRED_TASKS),
+            "all_healthy": False,
+            "all_required": [name for name, _domain, _queue in CELERY_MANAGED_TASKS],
+            "all_registered": [],
+            "all_missing": [name for name, _domain, _queue in CELERY_MANAGED_TASKS],
+            "inventory": [
+                {"name": name, "domain": domain, "queue": queue, "registered": False}
+                for name, domain, queue in CELERY_MANAGED_TASKS
+            ],
+            "returncode": -1,
+            "output": "",
+            "error": str(exc)[:500],
+        }
+
+
 def _celery_worker_queue_names() -> list[str]:
     configured = (os.getenv("CELERY_QUEUES") or getattr(settings, "CELERY_QUEUES", "") or "").strip()
     names = [item.strip() for item in configured.split(",") if item.strip()]
@@ -545,6 +640,15 @@ def _get_celery_runtime_status() -> dict:
     worker_running = _is_pid_running(worker_pid)
     beat_running = _is_pid_running(beat_pid)
     ping = _celery_ping_status() if worker_running else {"healthy": False, "returncode": -1, "output": "", "error": "worker_not_running"}
+    registered_tasks = _celery_registered_tasks_status() if worker_running and ping["healthy"] else {
+        "healthy": False,
+        "required": list(CHAT_AI_REQUIRED_TASKS),
+        "registered": [],
+        "missing": list(CHAT_AI_REQUIRED_TASKS),
+        "returncode": -1,
+        "output": "",
+        "error": "worker_not_running_or_unreachable",
+    }
     redis_status = _celery_redis_status()
     broker_url = (getattr(settings, "CELERY_BROKER_URL", None) or "").strip()
     redis_status["local_manageable"] = _redis_locally_manageable(broker_url)
@@ -554,7 +658,9 @@ def _get_celery_runtime_status() -> dict:
         "worker": {"pid": worker_pid, "running": worker_running},
         "beat": {"pid": beat_pid, "running": beat_running},
         "overall_running": worker_running and beat_running,
+        "overall_healthy": worker_running and beat_running and ping["healthy"] and redis_status["healthy"] and registered_tasks["all_healthy"],
         "ping": ping,
+        "registered_tasks": registered_tasks,
         "redis": redis_status,
         "worker_queues": _celery_worker_queue_names(),
         "chat_ai": {
@@ -1520,6 +1626,15 @@ class AdminAIToolOptionsView(APIView):
     def get(self, request):
         payload = [{"value": item.value, "label": item.label} for item in SparkToolName]
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminAIServerToolOptionsView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        from chat_sync.ai_runtime.tools.server_tool_config import list_admin_server_tool_options
+
+        return success_response(list_admin_server_tool_options(), msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminAIScenarioBindingListCreateView(APIView):

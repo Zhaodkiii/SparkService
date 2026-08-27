@@ -34,13 +34,22 @@ export async function POST(request: Request) {
     return jsonEnvelope(tokenResult.body, tokenResult.response.status || 401, requestId);
   }
   const tokenData = refreshTokenDataFromUpstream(tokenResult.body);
-  if (!tokenData) return failureEnvelope(502, "刷新响应缺少令牌", requestId);
+  if (!tokenData) {
+    authDiagnosticLog("error", "bff", "auth.bootstrap.refresh_response_invalid", { request_id: requestId, duration_ms: Date.now() - startedAt });
+    return failureEnvelope(502, "刷新响应缺少令牌", requestId);
+  }
   const access = stringField(tokenData.access_token, 4096);
   const rotated = stringField(tokenData.refresh_token, 4096) || refresh;
-  if (!access) return failureEnvelope(502, "刷新响应缺少令牌", requestId);
+  if (!access) {
+    authDiagnosticLog("error", "bff", "auth.bootstrap.access_token_missing", { request_id: requestId, duration_ms: Date.now() - startedAt });
+    return failureEnvelope(502, "刷新响应缺少令牌", requestId);
+  }
   store.set(REFRESH_COOKIE, rotated, refreshCookieOptions());
   const sessionResult = await callSparkUpstream("/api/v1/auth/session/", { method: "GET", headers: { authorization: `Bearer ${access}` } }, requestId);
-  if (!sessionResult.response.ok) return jsonEnvelope(sessionResult.body, sessionResult.response.status, requestId);
+  if (!sessionResult.response.ok) {
+    authDiagnosticLog("warn", "bff", "auth.bootstrap.session_failed", { request_id: requestId, duration_ms: Date.now() - startedAt, http_status: sessionResult.response.status });
+    return jsonEnvelope(sessionResult.body, sessionResult.response.status, requestId);
+  }
   const session = isRecord(sessionResult.body) ? sessionResult.body.data ?? null : null;
   authDiagnosticLog("info", "bff", "auth.bootstrap.succeeded", { request_id: requestId, duration_ms: Date.now() - startedAt });
   return jsonEnvelope({ code: 0, msg: "ok", data: { access_token: access, expires_in: tokenData.expires_in, token_type: tokenData.token_type || "Bearer", session } }, sessionResult.response.status, requestId);

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { APPLE_NONCE_COOKIE, APPLE_RETURN_COOKIE, APPLE_STATE_COOKIE, REFRESH_COOKIE, clearCookieOptions, refreshCookieOptions } from "@/lib/server/auth-cookies";
 import { appleWebUpstreamError } from "@/lib/auth/apple-web-errors";
 import { authDiagnosticLog } from "@/lib/auth/diagnostics";
+import { publicWebOrigin } from "@/lib/server/public-origin";
 import { callSparkUpstream, isRecord, requestIdFrom } from "@/lib/server/upstream";
 
 /**
@@ -36,14 +37,30 @@ function safePath(value: string | undefined) {
 
 export async function POST(request: Request) {
   const requestId = requestIdFrom(request);
-  const origin = new URL(request.url).origin;
+  const origin = publicWebOrigin(request);
   const store = await cookies();
   const stateCookie = store.get(APPLE_STATE_COOKIE)?.value;
   const nonce = store.get(APPLE_NONCE_COOKIE)?.value;
   const returnTo = safePath(store.get(APPLE_RETURN_COOKIE)?.value);
+  authDiagnosticLog("info", "bff", "auth.apple.web.callback.received", {
+    request_id: requestId,
+    request_origin: origin,
+    content_type: request.headers.get("content-type") || "",
+    has_state_cookie: Boolean(stateCookie),
+    has_nonce_cookie: Boolean(nonce),
+    has_return_cookie: Boolean(store.get(APPLE_RETURN_COOKIE)?.value),
+    user_agent_present: Boolean(request.headers.get("user-agent")),
+  });
 
   // state/nonce 单次消费：Cookie 缺失即视为已消费（重放）或过期。
   const consumed = (code: string) => {
+    authDiagnosticLog("warn", "bff", "auth.apple.web.callback.redirected_error", {
+      request_id: requestId,
+      error_code: code,
+      return_to: returnTo,
+      had_state_cookie: Boolean(stateCookie),
+      had_nonce_cookie: Boolean(nonce),
+    });
     const response = redirectWithError(code, origin, requestId, returnTo);
     response.cookies.set(APPLE_STATE_COOKIE, "", clearCookieOptions());
     response.cookies.set(APPLE_NONCE_COOKIE, "", clearCookieOptions());
@@ -73,8 +90,21 @@ export async function POST(request: Request) {
     authDiagnosticLog("info", "bff", "auth.apple.web.callback.user_cancelled", { request_id: requestId });
     return consumed("apple_web_user_cancelled");
   }
-  if (!stateCookie) return consumed("apple_web_transaction_replayed");
-  if (!nonce || !state || state !== stateCookie || !identityToken) return consumed("apple_web_callback_invalid");
+  if (!stateCookie) {
+    authDiagnosticLog("warn", "bff", "auth.apple.web.callback.state_cookie_missing", { request_id: requestId, has_state_field: Boolean(state), has_identity_token: Boolean(identityToken), has_code: Boolean(fields.get("code")) });
+    return consumed("apple_web_transaction_replayed");
+  }
+  if (!nonce || !state || state !== stateCookie || !identityToken) {
+    authDiagnosticLog("warn", "bff", "auth.apple.web.callback.state_nonce_rejected", {
+      request_id: requestId,
+      has_nonce_cookie: Boolean(nonce),
+      has_state_field: Boolean(state),
+      state_matches: Boolean(state && stateCookie && state === stateCookie),
+      has_identity_token: Boolean(identityToken),
+      has_code: Boolean(fields.get("code")),
+    });
+    return consumed("apple_web_callback_invalid");
+  }
 
   const serviceId = process.env.SPARK_WEB_SERVICE_ID || "";
   const redirectUri = process.env.SPARK_APPLE_WEB_REDIRECT_URI || "";
@@ -82,6 +112,7 @@ export async function POST(request: Request) {
     authDiagnosticLog("error", "bff", "auth.apple.web.callback.config_missing", { request_id: requestId });
     return consumed("apple_web_login_unavailable");
   }
+  authDiagnosticLog("info", "bff", "auth.apple.web.callback.validated", { request_id: requestId, service_id: serviceId, redirect_uri: redirectUri, has_authorization_code: Boolean(fields.get("code")), has_user_field: Boolean(fields.get("user")) });
 
   const startedAt = Date.now();
   const result = await callSparkUpstream(

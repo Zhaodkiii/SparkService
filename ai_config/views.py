@@ -16,6 +16,7 @@ from ai_config.models import (
     AIProviderKeyConfig,
     AIScenarioModelBinding,
     IdentityKind,
+    ScenarioKey,
     SmallTask,
     TrialApplication,
     TrialModelPolicy,
@@ -403,3 +404,54 @@ class AIProviderConnectionTestView(APIView):
             return success_response({"reachable": False, "message": f"http_{exc.code}"}, msg="ok", code=0)
         except Exception:
             return success_response({"reachable": False, "message": "network_error"}, msg="ok", code=0)
+
+
+class ScenarioToolPreviewView(APIView):
+    """Preview scenario/model tool bindings. This is not a Run permission snapshot."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, scenario_key: str):
+        key = str(scenario_key or "").strip()
+        if key not in {item.value for item in ScenarioKey}:
+            return error_response(msg="invalid_scenario", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
+        from chat_sync.ai_runtime.tools.public_projector import public_display_name
+        from chat_sync.ai_runtime.tools.registry import build_server_tool_registry
+        from chat_sync.ai_runtime.tools.server_names import server_tool_name_values
+        from chat_sync.ai_runtime.providers.factory import resolve_scenario_binding
+
+        binding = resolve_scenario_binding(key)
+        registry = build_server_tool_registry()
+        server_names = server_tool_name_values()
+        ai_tool_scenarios = list(getattr(binding, "ai_tool_scenarios", None) or []) if binding is not None else []
+        server_tool_scenarios = list(getattr(binding, "server_tool_scenarios", None) or []) if binding is not None else []
+
+        def _describe(name: str, *, server_field: bool) -> dict:
+            entry = registry.get(name)
+            registered = entry is not None
+            requires_client = bool(entry and entry.policy.target == "client") or (
+                not server_field and name not in server_names
+            )
+            return {
+                "name": name,
+                "display_name": public_display_name(name) if name in server_names else name,
+                "version": entry.policy.version if entry else "",
+                "registered": registered,
+                "has_executor": registered and entry.tool is not None and entry.policy.target == "server",
+                "requires_client_capability": requires_client,
+            }
+
+        tools = [_describe(str(name), server_field=True) for name in server_tool_scenarios if str(name).strip()]
+        declared = [_describe(str(name), server_field=False) for name in ai_tool_scenarios if str(name).strip()]
+        return success_response(
+            {
+                "scenario_key": key,
+                "resolved_model": binding.model.name if binding is not None else "",
+                "binding_id": binding.pk if binding is not None else None,
+                "is_run_permission": False,
+                "note": "This preview is the scenario/model binding declaration, not the current Run tool permission.",
+                "ai_tool_scenarios": declared,
+                "server_tool_scenarios": tools,
+            },
+            msg="ok",
+        )

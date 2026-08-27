@@ -22,6 +22,7 @@ class ChatToolCall(models.Model):
     tool_name = models.CharField(max_length=128)
     tool_version = models.CharField(max_length=64, blank=True, default="")
     target = models.CharField(max_length=32, blank=True, default="server")
+    execution_mode = models.CharField(max_length=32, blank=True, default="immediate")
     arguments = models.JSONField(default=dict)
     round_index = models.PositiveIntegerField(default=0)
     call_index = models.PositiveIntegerField(default=0)

@@ -123,6 +123,20 @@
           <a-button size="small" type="link" @click="clearToolScenarios">清空</a-button>
         </a-space>
       </a-form-item>
+      <a-form-item label="服务端工具场景（server_tool_scenarios）" extra="仅可勾选 SparkService 已注册且有 Executor 的服务端工具">
+        <a-select
+          v-model:value="form.server_tool_scenarios"
+          mode="multiple"
+          allow-clear
+          show-search
+          :options="serverToolSelectOptions"
+          style="width: 100%"
+        />
+        <a-space size="small" style="margin-top: 8px">
+          <a-button size="small" type="link" @click="selectAllServerToolScenarios">全选可用</a-button>
+          <a-button size="small" type="link" @click="clearServerToolScenarios">清空</a-button>
+        </a-space>
+      </a-form-item>
       <a-form-item label="关联小任务">
         <a-select
           v-model:value="form.related_task_codes"
@@ -150,11 +164,13 @@ import {
   deleteScenarioBinding,
   derivedAgentBootstrapName,
   fetchAIToolOptions,
+  fetchAIServerToolOptions,
   fetchAIModelCatalog,
   fetchSmallTasks,
   fetchScenarioBindings,
   updateScenarioBinding,
   type AIToolOption,
+  type AIServerToolOption,
   type AIScenarioModelBinding,
   type AIModelCatalog,
   type SmallTask,
@@ -172,6 +188,7 @@ const bindings = ref<AIScenarioModelBinding[]>([]);
 const catalogRows = ref<AIModelCatalog[]>([]);
 const smallTasks = ref<SmallTask[]>([]);
 const toolOptions = ref<AIToolOption[]>([]);
+const serverToolOptions = ref<AIServerToolOption[]>([]);
 const loading = ref(false);
 const saving = ref(false);
 const modalOpen = ref(false);
@@ -267,6 +284,14 @@ const smallTaskOptions = computed(() =>
   })),
 );
 
+const serverToolSelectOptions = computed(() =>
+  serverToolOptions.value.map((item) => ({
+    value: item.value,
+    label: `${item.label}（${item.value} / ${item.version} / ${item.risk}${item.has_executor ? '' : ' / 无 Executor'}）`,
+    disabled: !item.has_executor,
+  })),
+);
+
 function filterModelOption(input: string, option: { label?: string }) {
   return (option.label || '').toLowerCase().includes(input.trim().toLowerCase());
 }
@@ -277,6 +302,16 @@ function selectAllToolScenarios() {
 
 function clearToolScenarios() {
   form.ai_tool_scenarios = [];
+}
+
+function selectAllServerToolScenarios() {
+  form.server_tool_scenarios = serverToolOptions.value
+    .filter((item) => item.has_executor)
+    .map((item) => item.value);
+}
+
+function clearServerToolScenarios() {
+  form.server_tool_scenarios = [];
 }
 
 function selectAllRelatedTaskCodes() {
@@ -293,16 +328,18 @@ async function load() {
   }
   loading.value = true;
   try {
-    const [b, cat, tasks, tools] = await Promise.all([
+    const [b, cat, tasks, tools, serverTools] = await Promise.all([
       fetchScenarioBindings(scenarioKey.value),
       fetchAIModelCatalog(),
       fetchSmallTasks(),
       fetchAIToolOptions(),
+      fetchAIServerToolOptions(),
     ]);
     bindings.value = b;
     catalogRows.value = cat;
     smallTasks.value = tasks;
     toolOptions.value = tools;
+    serverToolOptions.value = serverTools;
   } finally {
     loading.value = false;
   }
@@ -323,6 +360,7 @@ function openCreate() {
     system_provision: '',
     brief_description: '',
     ai_tool_scenarios: [],
+    server_tool_scenarios: [],
     related_task_codes: [],
   });
   modalOpen.value = true;
@@ -343,6 +381,7 @@ function openEdit(row: AIScenarioModelBinding) {
     system_provision: row.system_provision ?? '',
     brief_description: row.brief_description ?? '',
     ai_tool_scenarios: row.ai_tool_scenarios ?? [],
+    server_tool_scenarios: row.server_tool_scenarios ?? [],
     related_task_codes: row.related_task_codes ?? [],
   });
   modalOpen.value = true;
@@ -385,6 +424,7 @@ async function submit() {
     }
     const displayName = String(form.display_name ?? '').trim();
     const tools = normalizeStringArray(form.ai_tool_scenarios);
+    const serverTools = normalizeStringArray(form.server_tool_scenarios);
     if (isCreate.value) {
       await createScenarioBinding(scenarioKey.value, {
         model: form.model,
@@ -398,6 +438,7 @@ async function submit() {
         system_provision: form.system_provision,
         brief_description: form.brief_description,
         ai_tool_scenarios: tools,
+        server_tool_scenarios: serverTools,
         related_task_codes: form.related_task_codes,
       });
       message.success('已添加');
@@ -414,6 +455,7 @@ async function submit() {
         system_provision: form.system_provision,
         brief_description: form.brief_description,
         ai_tool_scenarios: tools,
+        server_tool_scenarios: serverTools,
         related_task_codes: form.related_task_codes,
       });
       message.success('已更新');

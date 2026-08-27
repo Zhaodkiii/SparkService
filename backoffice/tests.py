@@ -779,6 +779,52 @@ class AdminAIScenarioMultiAgentTests(TestCase):
         self.assertEqual(second.status_code, 400)
         self.assertIn("model_already_bound_to_this_scenario_with_same_identity", str(second.data))
 
+    def test_server_tool_options_only_list_server_enum(self):
+        response = self.client.get("/api/admin/v1/ai/server-tool-options/")
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["data"]
+        names = {item["value"] for item in rows}
+        self.assertIn("ask_user", names)
+        self.assertIn("read_source", names)
+        self.assertNotIn("get_current_location", names)
+        self.assertTrue(all(item["has_executor"] for item in rows))
+
+    def test_server_tool_scenarios_reject_client_tools(self):
+        payload = {
+            "model": self.catalog_model.name,
+            "identity": "model",
+            "temperature": 0.2,
+            "max_tokens": 2048,
+            "position": 8,
+            "is_active": True,
+            "server_tool_scenarios": ["read_source", "get_current_location"],
+        }
+        response = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("server_tool_client_only_not_allowed", str(response.data))
+
+    def test_server_tool_scenarios_accept_and_sort(self):
+        payload = {
+            "model": self.catalog_model.name,
+            "identity": "model",
+            "temperature": 0.2,
+            "max_tokens": 2048,
+            "position": 9,
+            "is_active": True,
+            "server_tool_scenarios": ["read_source", "ask_user", "ask_user"],
+        }
+        response = self.client.post(
+            f"/api/admin/v1/ai/scenarios/{self.scenario_key}/models/",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["data"]["server_tool_scenarios"], ["ask_user", "read_source"])
+
 
 class BackofficeBlacklistTests(TestCase):
     def setUp(self):

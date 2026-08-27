@@ -8,6 +8,7 @@ import { useChatRuntime } from "@/context/ChatRuntimeContext";
 import { useOptionalThreads } from "@/context/ThreadContext";
 import { useOptionalRunControl } from "@/context/RunControlContext";
 import { SidebarShell } from "@/components/sidebar/SidebarShell";
+import { UserMenu } from "@/components/sidebar/UserMenu";
 
 const PRIMARY_NAV = [
   { href: "/home", label: "主页", icon: Home }, { href: "/medical", label: "医疗", icon: HeartPulse },
@@ -58,7 +59,7 @@ export function WorkspaceSidebar({ collapsed = false, onNavigate }: { collapsed?
     </section>
     <nav className="sidebar__bottom" aria-label="资源与设置">
       {BOTTOM_NAV.map(({ href, label, icon: Icon }) => { const active = pathname === href || pathname.startsWith(`${href}/`); return <Link key={href} href={href as never} className="sidebar-nav-item" aria-current={active ? "page" : undefined} onClick={onNavigate} title={label}><Icon size={16} /><span className="sidebar__label">{label}</span></Link>; })}
-      <div className="sidebar__version"><span className="sidebar__label">Spark AI · Web</span></div>
+      <UserMenu />
     </nav>
   </SidebarShell>;
 }

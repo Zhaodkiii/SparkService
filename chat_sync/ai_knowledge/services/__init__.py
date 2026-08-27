@@ -13,6 +13,9 @@ from .document_sync_service import (
 )
 from .idempotency_service import IdempotencyConflict, IdempotencyService
 from .knowledge_base_service import KnowledgeBaseService
+from .knowledge_base_query_service import KnowledgeBaseQueryService
+from .document_command_service import DocumentCommandService
+from .file_service import KnowledgeFileService
 
 __all__ = [
     "DocumentQueryService",
@@ -29,4 +32,8 @@ __all__ = [
     "IdempotencyConflict",
     "IdempotencyService",
     "KnowledgeBaseService",
+    "KnowledgeBaseQueryService",
+    "DocumentCommandService",
+    "KnowledgeFileService",
 ]
+

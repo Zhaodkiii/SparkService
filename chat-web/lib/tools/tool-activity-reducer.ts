@@ -114,7 +114,7 @@ function mergeActivity(current: ToolActivityDTO | undefined, next: ToolActivityD
 export function reduceToolActivityEvent(map: ToolActivityMap, event: ChatEventEnvelope): ToolActivityMap {
   const payload = objectValue(event.payload);
   let next: ToolActivityDTO | null = null;
-  if (event.type === "tool.call.requested" || event.type === "tool.result" || event.type === "tool.call.cancelled") {
+  if (event.type === "tool.call.requested" || event.type === "tool.result" || event.type === "tool.result.completed" || event.type === "tool.result.failed" || event.type === "tool.call.cancelled") {
     next = normalizeToolActivity(payload.activity);
   } else if (event.type === "tool.call.started") {
     // Partial patch: only meaningful when the requested projection exists.
@@ -160,6 +160,8 @@ export const TOOL_ACTIVITY_EVENT_TYPES: readonly string[] = [
   "tool.call.started",
   "tool.call.progress",
   "tool.result",
+  "tool.result.completed",
+  "tool.result.failed",
   "tool.call.cancelled",
 ];
 

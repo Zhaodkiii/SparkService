@@ -72,6 +72,9 @@ class P4ToolStateServiceTests(TestCase):
         self.assertEqual(activity["status"], "requested")
         self.assertEqual(activity["revision"], 1)
         self.assertEqual(activity["display_args"], {"sections": ["过敏史"]})
+        self.assertEqual(activity["target"], "server")
+        self.assertEqual(row.execution_mode, "immediate")
+        self.assertEqual(row.target, "server")
         # Raw arguments / hashes / execution keys never leak.
         self.assertNotIn("arguments", activity)
         self.assertNotIn("arguments_hash", activity)
@@ -145,8 +148,9 @@ class P4ToolStateServiceTests(TestCase):
                 )
             ],
         )
-        results = _tool_event_payloads(self.run, "tool.result")
+        results = _tool_event_payloads(self.run, "tool.result.completed")
         self.assertEqual(len(results), 1)
+        self.assertEqual(_tool_event_payloads(self.run, "tool.result"), [])
         activity = results[0]["activity"]
         self.assertEqual(activity["status"], "completed")
         self.assertEqual(activity["revision"], 3)
@@ -179,10 +183,11 @@ class P4ToolStateServiceTests(TestCase):
                 )
             ],
         )
-        activity = _tool_event_payloads(self.run, "tool.result")[0]["activity"]
+        activity = _tool_event_payloads(self.run, "tool.result.failed")[0]["activity"]
         self.assertEqual(activity["status"], "failed")
         self.assertEqual(activity["error"], {"code": "tool_unavailable", "message_key": "tool_unavailable", "retryable": False})
         self.assertIsNone(activity["result_preview"])
+        self.assertFalse(self.run.assistant_message.blocks.filter(kind="searchSummary", tool_call_id="call_02").exists())
 
     def test_round_encoded_order_keys_do_not_collide_across_rounds(self):
         # Mimic the real flow: one batch per round with parallel calls.
@@ -254,9 +259,24 @@ class P4ToolStateServiceTests(TestCase):
                 )
             ],
         )
-        activity = _tool_event_payloads(self.run, "tool.result")[-1]["activity"]
+        activity = _tool_event_payloads(self.run, "tool.result.failed")[-1]["activity"]
         self.assertEqual(activity["duplicate_of"], "orig")
         self.assertEqual(activity["result_preview"], "已复用相同请求的结果")
+
+    def test_ask_user_freezes_pause_execution_mode(self):
+        registry = ScopedToolRegistry(build_server_tool_registry(), ["ask_user"])
+        rows = record_tool_requests(
+            self.run.id,
+            0,
+            [{"id": "call_ask", "name": "ask_user", "arguments": {"question": "分析几天？"}}],
+            registry,
+        )
+        self.assertEqual(rows[0].execution_mode, "pause")
+        self.assertEqual(rows[0].target, "server")
+        activity = _tool_event_payloads(self.run, "tool.call.requested")[-1]["activity"]
+        self.assertEqual(activity["target"], "server")
+        self.assertNotIn("execution_mode", activity)
+        self.assertNotIn("question", str(activity.get("display_args") or {}))
 
 
 class P4PublicProjectorTests(TestCase):
@@ -268,6 +288,7 @@ class P4PublicProjectorTests(TestCase):
         )
         self.assertEqual(public_args("read_source", {"source_id": "health_exam_report:42"}), {"source_id": "体检报告"})
         self.assertEqual(public_args("unknown_tool", {"a": 1}), {})
+        self.assertEqual(public_args("ask_user", {"question": "分析几天？", "options": ["7 天"]}), {})
 
     def test_result_preview(self):
         self.assertEqual(public_result_preview("get_current_member", success=True, arguments={}), "已确认当前成员")
@@ -277,6 +298,7 @@ class P4PublicProjectorTests(TestCase):
             "找到 3 项可用资料",
         )
         self.assertIsNone(public_result_preview("query_member_profile", success=False, arguments={}))
+        self.assertEqual(public_result_preview("ask_user", success=True, arguments={"question": "secret"}), "已收到你的确认")
 
     def test_error_projection_hides_existence(self):
         denied = public_error("tool_permission_denied")
@@ -294,6 +316,7 @@ class P4PublicProjectorTests(TestCase):
     def test_display_name_falls_back_safely(self):
         self.assertEqual(public_display_name("query_member_profile"), "读取健康档案")
         self.assertEqual(public_display_name("mcp_unknown"), "服务工具")
+        self.assertEqual(public_display_name("ask_user"), "确认信息")
 
 
 @override_settings(CHAT_AI_AGENTIC_TOOLS_ENABLED=False, CHAT_AI_OUTBOX_IMMEDIATE_RELAY=False)
@@ -308,13 +331,13 @@ class P4ToolCatalogTests(TestCase):
         response = self.client.get(f"/api/v1/ai/chat/threads/{thread.id}/tools/")
         self.assertEqual(response.status_code, 200)
         tools = response.json()["data"]["tools"]
-        self.assertEqual(len(tools), 5)
+        self.assertEqual(len(tools), 6)
         self.assertTrue(all(tool["available"] is False for tool in tools))
         self.assertTrue(all(tool["unavailable_reason"] == "feature_disabled" for tool in tools))
         names = {tool["name"] for tool in tools}
         self.assertEqual(
             names,
-            {"get_current_member", "query_member_profile", "list_member_health_sources", "get_health_resource_context", "read_source"},
+            {"get_current_member", "query_member_profile", "list_member_health_sources", "get_health_resource_context", "read_source", "search_knowledge_bag"},
         )
         self.assertNotIn("ask_user", names)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,13 +9,18 @@ from uuid import UUID
 
 
 TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+logger = logging.getLogger("chat_sync.ai.tools")
+
+ToolTarget = Literal["server", "client"]
+ToolExecutionMode = Literal["immediate", "pause", "consent"]
 
 
 @dataclass(frozen=True, slots=True)
 class ToolPolicy:
     name: str
     version: str = "v1"
-    target: Literal["server", "client"] = "server"
+    target: ToolTarget = "server"
+    execution_mode: ToolExecutionMode = "immediate"
     supported_platforms: tuple[str, ...] = ()
     risk: Literal["read_only"] = "read_only"
     side_effect: Literal["none"] = "none"
@@ -28,14 +34,75 @@ class ToolPolicy:
     def validate(self) -> None:
         if not TOOL_NAME_RE.fullmatch(self.name):
             raise ValueError(f"invalid tool name: {self.name}")
-        if self.target not in {"server", "client"} or self.risk != "read_only" or self.side_effect != "none":
+        if self.target not in {"server", "client"}:
+            raise ValueError(f"invalid tool target: {self.name}")
+        if self.execution_mode not in {"immediate", "pause", "consent"}:
+            raise ValueError(f"invalid execution_mode: {self.name}")
+        if self.risk != "read_only" or self.side_effect != "none":
             raise ValueError(f"only read-only tools are permitted: {self.name}")
-        if self.timeout_seconds <= 0 or self.timeout_seconds > 120:
+        max_timeout = 600.0 if self.execution_mode in {"pause", "consent"} else 120.0
+        if self.timeout_seconds <= 0 or self.timeout_seconds > max_timeout:
             raise ValueError(f"invalid tool timeout: {self.name}")
         if self.max_result_tokens < 1 or self.max_result_tokens > 10000:
             raise ValueError(f"invalid tool result limit: {self.name}")
         if self.max_attempts < 1 or self.max_attempts > 2:
             raise ValueError(f"invalid tool attempt limit: {self.name}")
+
+
+@dataclass(frozen=True, slots=True)
+class ToolManifestEntry:
+    """Unified Tool Manifest Entry frozen before a Provider request (CHAT-AI-029)."""
+
+    name: str
+    version: str
+    description: str
+    parameters: dict[str, Any]
+    schema: dict[str, Any]
+    schema_hash: str
+    policy_version: str
+    target: ToolTarget
+    execution_mode: ToolExecutionMode
+    supported_platforms: tuple[str, ...]
+    required_permissions: tuple[str, ...]
+    required_context: tuple[str, ...]
+    risk: str
+    side_effect: str
+    timeout_seconds: float
+    max_result_tokens: int
+    max_attempts: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "parameters": self.parameters,
+            "schema": self.schema,
+            "schema_hash": self.schema_hash,
+            "policy_version": self.policy_version,
+            "target": self.target,
+            "execution_mode": self.execution_mode,
+            "supported_platforms": list(self.supported_platforms),
+            "required_permissions": list(self.required_permissions),
+            "required_context": list(self.required_context),
+            "risk": self.risk,
+            "side_effect": self.side_effect,
+            "timeout_seconds": self.timeout_seconds,
+            "max_result_tokens": self.max_result_tokens,
+            "max_attempts": self.max_attempts,
+        }
+
+    def to_openai_schema(self) -> dict[str, Any]:
+        function = (self.schema or {}).get("function") if isinstance(self.schema, dict) else None
+        parameters = (function or {}).get("parameters") if isinstance(function, dict) else self.parameters
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": parameters or {"type": "object", "properties": {}},
+            },
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,4 +179,12 @@ def validate_schema(schema: dict[str, Any], value: Any, *, path: str = "argument
     return errors
 
 
-__all__ = ["ToolExecutionContext", "ToolPolicy", "canonical_tool_args", "validate_schema"]
+__all__ = [
+    "ToolExecutionContext",
+    "ToolExecutionMode",
+    "ToolManifestEntry",
+    "ToolPolicy",
+    "ToolTarget",
+    "canonical_tool_args",
+    "validate_schema",
+]

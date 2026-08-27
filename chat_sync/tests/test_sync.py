@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
-from chat_sync.ai_models.run import ChatRun
+from chat_sync.ai_models.run import ChatRun, RunStatus
 from chat_sync.ai_models.event import ChatUsageRecord
 from chat_sync.serializers import ChatPushRequestSerializer, ChatRemoteMessageSerializer
 from chat_sync.views import (
@@ -198,3 +198,33 @@ class ChatMessageBlockProjectionTests(TestCase):
         self.assertEqual(summary["reasoning_tokens"], 1)
         self.assertEqual(summary["tool_calls"], 3)
         self.assertIsNone(_to_payload(user_message)["usage_summary"])
+        self.assertIsNone(_to_payload(user_message)["turn_summary"])
+
+    def test_turn_summary_projects_duration_for_terminal_runs(self):
+        user = get_user_model().objects.create_user(username="chat-turn-summary")
+        thread = ChatThread.objects.create(user=user, title="Turn")
+        user_message = ChatMessage.objects.create(
+            user=user, thread=thread, role=ChatMessage.Role.USER,
+            client_message_id=uuid.uuid4(), server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        assistant = ChatMessage.objects.create(
+            user=user, thread=thread, role=ChatMessage.Role.ASSISTANT,
+            client_message_id=uuid.uuid4(), server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        started = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        finished = datetime(2026, 1, 1, 0, 0, 8, tzinfo=timezone.utc)
+        run = ChatRun.objects.create(
+            user=user, thread=thread, user_message=user_message, assistant_message=assistant,
+            idempotency_key="turn-summary-1", request_hash="h",
+            status=RunStatus.COMPLETED, started_at=started, finished_at=finished,
+        )
+        summary = _to_payload(assistant)["turn_summary"]
+        self.assertEqual(summary["run_id"], str(run.id))
+        self.assertEqual(summary["status"], RunStatus.COMPLETED)
+        self.assertEqual(summary["duration_ms"], 8000)
+        self.assertTrue(summary["regenerate_allowed"])
+        self.assertTrue(summary["delete_allowed"])

@@ -46,8 +46,23 @@ export interface TaskManagerStatusResponse {
   worker: { pid: number | null; running: boolean };
   beat: { pid: number | null; running: boolean };
   overall_running: boolean;
+  overall_healthy?: boolean;
   ping: {
     healthy: boolean;
+    returncode: number;
+    output: string;
+    error: string;
+  };
+  registered_tasks?: {
+    healthy: boolean;
+    required: string[];
+    registered: string[];
+    missing: string[];
+    all_healthy?: boolean;
+    all_required?: string[];
+    all_registered?: string[];
+    all_missing?: string[];
+    inventory?: Array<{ name: string; domain: string; queue: string; registered: boolean }>;
     returncode: number;
     output: string;
     error: string;

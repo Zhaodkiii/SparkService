@@ -5,15 +5,19 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useOptionalAuth } from "@/context/AuthContext";
 import { useOptionalThreads } from "@/context/ThreadContext";
 import { SparkRunApi } from "@/lib/api/run-api";
-import { createInitialChatRuntimeState, reduceChatEvent, reduceChatEvents } from "@/lib/event-reducer";
+import { SparkInteractionApi } from "@/lib/api/interaction-api";
+import { createInitialChatRuntimeState, reduceChatEvents, upsertInteractions } from "@/lib/event-reducer";
 import { isTerminalRunStatus } from "@/types/chat";
-import type { ChatEventEnvelope, ChatRunDTO, ChatRuntimeState } from "@/types/chat";
+import type { ChatEventEnvelope, ChatRunDTO, ChatRunStatus, ChatRuntimeState } from "@/types/chat";
 import type { CreateTurnContextInput } from "@/types/context";
 import type { ChatMessageWireDTO } from "@/types/sync";
+import type { InteractionSubmitBody } from "@/types/interaction";
 import { clientErrorDetails, sparkClientLog } from "@/lib/diagnostics";
 import { SparkApiError, userFacingApiError } from "@/lib/api/http-client";
 
 type ConnectionState = "idle" | "connecting" | "live" | "replaying" | "polling";
+
+type InteractionCommandOutcome = { ok: true } | { ok: false; error: string; httpStatus?: number; code?: number };
 
 interface RunValue {
   run: ChatRunDTO | null;
@@ -26,9 +30,25 @@ interface RunValue {
   cancelRun: () => Promise<boolean>;
   regenerate: () => Promise<void>;
   settleActiveRun: () => Promise<boolean>;
+  refreshPending: (runId: string) => Promise<void>;
+  submitInteraction: (interactionId: string, body: InteractionSubmitBody) => Promise<InteractionCommandOutcome>;
+  refuseInteraction: (interactionId: string, reason?: string) => Promise<InteractionCommandOutcome>;
 }
 
 const RunContext = createContext<RunValue | null>(null);
+
+function applyRunPatch(
+  current: ChatRunDTO | null,
+  patch: { id: string; thread_id?: string; status: string; last_sequence?: number },
+): ChatRunDTO | null {
+  if (!current || current.id !== patch.id) return current;
+  return {
+    ...current,
+    status: patch.status as ChatRunStatus,
+    last_sequence: patch.last_sequence ?? current.last_sequence,
+    ...(patch.thread_id ? { thread_id: patch.thread_id } : {}),
+  };
+}
 
 function websocketUrl(path: string, ticket: string): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -47,6 +67,11 @@ function statusFromEvent(event: ChatEventEnvelope): ChatRunDTO["status"] | null 
     const terminal = String((event.payload as Record<string, unknown>)?.terminal_status ?? "");
     if (["completed", "failed", "cancelled", "interrupted"].includes(terminal)) return terminal as ChatRunDTO["status"];
   }
+  if (event.type === "run.waiting") {
+    const waiting = String((event.payload as Record<string, unknown>)?.status ?? "");
+    if (waiting === "waiting_for_user_input" || waiting === "waiting_for_client_tool") return waiting;
+  }
+  if (event.type === "run.resumed" || event.type === "run.queued") return "queued";
   return statuses[event.type] ?? null;
 }
 
@@ -62,6 +87,7 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
   const [error, setError] = useState<string | null>(null);
   const lastSequenceRef = useRef<Record<string, number>>({});
   const api = useMemo(() => auth ? new SparkRunApi(auth.client) : null, [auth]);
+  const interactionApi = useMemo(() => auth ? new SparkInteractionApi(auth.client) : null, [auth]);
   const activeRunId = run?.id ?? null;
   const activeRunStatus = run?.status ?? null;
   const reloadMessages = threads?.reloadMessages;
@@ -91,6 +117,16 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     });
   }, [events, run, state.lastAppliedSequenceByRun]);
 
+  useEffect(() => {
+    if (!run) return;
+    const projected = state.runsById[run.id];
+    if (!projected?.status || projected.status === run.status) return;
+    setRun((current) => {
+      if (!current || current.id !== run.id || current.status === projected.status) return current;
+      return { ...current, status: projected.status, last_sequence: Math.max(current.last_sequence, projected.last_sequence) };
+    });
+  }, [run, state.runsById]);
+
   const replay = useCallback(async (runId: string, after?: number) => {
     if (!api) return;
     try {
@@ -107,6 +143,16 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     }
   }, [api, applyEvents]);
 
+  const refreshPending = useCallback(async (runId: string) => {
+    if (!interactionApi || !runId) return;
+    try {
+      const data = await interactionApi.getPendingForRun(runId);
+      setState((current) => upsertInteractions(current, runId, data.interactions ?? []));
+    } catch (cause) {
+      sparkClientLog("warn", "interaction.pending_lookup.failed", { run_id: runId, ...clientErrorDetails(cause) });
+    }
+  }, [interactionApi]);
+
   const refresh = useCallback(async () => {
     if (!api || !threadId || auth?.status !== "authenticated") return;
     try {
@@ -115,12 +161,17 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
       setState(createInitialChatRuntimeState());
       setEvents([]);
       lastSequenceRef.current = {};
-      if (result.run) await replay(result.run.id, 0);
+      if (result.run) {
+        await replay(result.run.id, 0);
+        if (result.run.status === "waiting_for_user_input" || result.run.status === "waiting_for_client_tool") {
+          await refreshPending(result.run.id);
+        }
+      }
     } catch {
       sparkClientLog("warn", "run.active_lookup.failed", { thread_id: threadId });
       setRun(null);
     }
-  }, [api, auth?.status, replay, threadId]);
+  }, [api, auth?.status, refreshPending, replay, threadId]);
 
   useEffect(() => {
     setRun(null);
@@ -318,7 +369,61 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     if (activeRunStatus && isTerminalRunStatus(activeRunStatus)) void reloadMessages?.();
   }, [activeRunStatus, reloadMessages]);
 
-  const value = useMemo(() => ({ run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun }), [run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun]);
+  useEffect(() => {
+    if (!activeRunId || (activeRunStatus !== "waiting_for_user_input" && activeRunStatus !== "waiting_for_client_tool")) return;
+    void refreshPending(activeRunId);
+  }, [activeRunId, activeRunStatus, refreshPending]);
+
+  const recoverInteraction = useCallback(async (runId: string, interactionId: string) => {
+    if (!interactionApi) return;
+    try {
+      const fresh = await interactionApi.get(interactionId);
+      setState((current) => upsertInteractions(current, runId, [fresh.interaction]));
+    } catch (cause) {
+      sparkClientLog("warn", "interaction.refresh.failed", { run_id: runId, interaction_id: interactionId, ...clientErrorDetails(cause) });
+    }
+    await replay(runId);
+    await refreshPending(runId);
+  }, [interactionApi, refreshPending, replay]);
+
+  const submitInteraction = useCallback(async (interactionId: string, body: InteractionSubmitBody): Promise<InteractionCommandOutcome> => {
+    if (!interactionApi || !run) return { ok: false, error: "当前无法提交" };
+    try {
+      const data = await interactionApi.submitResponse(interactionId, body, crypto.randomUUID());
+      if (data.run) setRun((current) => applyRunPatch(current, data.run));
+      if (data.interaction) setState((current) => upsertInteractions(current, run.id, [data.interaction]));
+      await replay(run.id);
+      return { ok: true };
+    } catch (cause) {
+      if (cause instanceof SparkApiError && (cause.failure.httpStatus === 409 || cause.failure.httpStatus === 410)) {
+        await recoverInteraction(run.id, interactionId);
+        return { ok: false, error: userFacingApiError(cause.failure), httpStatus: cause.failure.httpStatus, code: cause.failure.code };
+      }
+      const error = cause instanceof SparkApiError ? userFacingApiError(cause.failure) : cause instanceof Error ? cause.message : "提交失败";
+      sparkClientLog("warn", "interaction.submit.failed", { run_id: run.id, interaction_id: interactionId, ...clientErrorDetails(cause) });
+      return { ok: false, error };
+    }
+  }, [interactionApi, recoverInteraction, replay, run]);
+
+  const refuseInteraction = useCallback(async (interactionId: string, reason = "user_refused"): Promise<InteractionCommandOutcome> => {
+    if (!interactionApi || !run) return { ok: false, error: "当前无法跳过" };
+    try {
+      const data = await interactionApi.refuse(interactionId, reason, crypto.randomUUID());
+      if (data.run) setRun((current) => applyRunPatch(current, data.run));
+      if (data.interaction) setState((current) => upsertInteractions(current, run.id, [data.interaction]));
+      await replay(run.id);
+      return { ok: true };
+    } catch (cause) {
+      if (cause instanceof SparkApiError && (cause.failure.httpStatus === 409 || cause.failure.httpStatus === 410)) {
+        await recoverInteraction(run.id, interactionId);
+        return { ok: false, error: userFacingApiError(cause.failure), httpStatus: cause.failure.httpStatus, code: cause.failure.code };
+      }
+      const error = cause instanceof SparkApiError ? userFacingApiError(cause.failure) : cause instanceof Error ? cause.message : "跳过失败";
+      return { ok: false, error };
+    }
+  }, [interactionApi, recoverInteraction, replay, run]);
+
+  const value = useMemo(() => ({ run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun, refreshPending, submitInteraction, refuseInteraction }), [run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun, refreshPending, submitInteraction, refuseInteraction]);
   return <RunContext.Provider value={value}>{children}</RunContext.Provider>;
 }
 

@@ -243,6 +243,43 @@ def assistant_status_payload(status_type: str, message: str) -> dict[str, Any]:
     }
 
 
+def tool_question_cards_payload(
+    *,
+    run_id: str,
+    interaction_id: str,
+    interaction_key: str,
+    tool_call_id: str,
+    tool_name: str,
+    tool_version: str,
+    schema_version: int,
+    status: str,
+    question_ids: list[str],
+    request: dict[str, Any],
+    expires_at: str | None,
+    answers: list[dict[str, Any]] | None = None,
+    error_code: str | None = None,
+) -> dict[str, Any]:
+    """Canonical ask_user interaction card. Never carries raw tool arguments."""
+    inner: dict[str, Any] = {
+        "run_id": run_id,
+        "interaction_id": interaction_id,
+        "interaction_key": interaction_key,
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_version": tool_version,
+        "schema_version": schema_version,
+        "status": status,
+        "question_ids": question_ids,
+        "request": request if isinstance(request, dict) else {},
+        "expires_at": expires_at,
+    }
+    if answers is not None:
+        inner["answers"] = answers
+    if error_code:
+        inner["error_code"] = error_code
+    return {KIND_TO_PAYLOAD_KEY[KIND_TOOL_QUESTION_CARDS]: _wrap(inner)}
+
+
 # --- Tool result → presentation card registry --------------------------------
 #
 # Tool results are projected to one of the 36 iOS presentation kinds (never a

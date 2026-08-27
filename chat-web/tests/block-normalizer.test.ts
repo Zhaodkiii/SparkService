@@ -33,6 +33,7 @@ describe("decodeBlockPayload", () => {
 describe("payloadKind", () => {
   it("derives the kind solely from the discriminator", () => {
     expect(payloadKind({ search_summary: { _0: { summary: "x" } } })).toBe("searchSummary");
+    expect(payloadKind({ tool_question_cards: { _0: { interaction_id: "int-1", status: "pending" } } })).toBe("toolQuestionCards");
   });
 
   it("rejects a flat payload", () => {

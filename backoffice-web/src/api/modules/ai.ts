@@ -29,6 +29,7 @@ export interface AIScenarioModelBinding {
   system_provision?: string;
   brief_description?: string;
   ai_tool_scenarios?: string[];
+  server_tool_scenarios?: string[];
   related_task_codes?: string[];
 }
 
@@ -129,8 +130,24 @@ export function fetchSmallTasks() {
   return http.get<unknown, SmallTask[]>('/api/admin/v1/ai/small-tasks/');
 }
 
+export interface AIServerToolOption {
+  value: string;
+  label: string;
+  version: string;
+  risk: string;
+  side_effect: string;
+  has_executor: boolean;
+  required_permissions: string[];
+  required_context: string[];
+  enabled: boolean;
+}
+
 export function fetchAIToolOptions() {
   return http.get<unknown, AIToolOption[]>('/api/admin/v1/ai/tool-options/');
+}
+
+export function fetchAIServerToolOptions() {
+  return http.get<unknown, AIServerToolOption[]>('/api/admin/v1/ai/server-tool-options/');
 }
 
 export function createSmallTask(payload: Record<string, unknown>) {

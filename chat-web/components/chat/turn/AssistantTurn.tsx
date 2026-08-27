@@ -1,6 +1,5 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
 import { renderBlock } from "@/components/chat/blocks/registry";
 import { TurnActivity } from "@/components/chat/turn/TurnActivity";
 import { TurnActions } from "@/components/chat/turn/TurnActions";
@@ -35,7 +34,7 @@ interface AssistantTurnProps {
   onFeedback?: (value: "up" | "down") => void;
 }
 
-/** 统一助手回合外壳（能力一/二/三/五/六）：活动头 + 正文 + 结构化结果 + 操作 + 用量。 */
+/** 统一助手回合外壳：Activity 状态头是唯一入口，不再渲染固定头像。 */
 export function AssistantTurn({ blocks, messageId, activityByCallId, run, assistantStatus, contentStreaming, turnSummary, usageSummary, rounds, onRegenerate, onDelete, onFeedback }: AssistantTurnProps) {
   const presentation = buildTurnPresentation(blocks, messageId, "assistant");
   const toolRows = collectToolActivityRows(blocks, activityByCallId);
@@ -53,7 +52,6 @@ export function AssistantTurn({ blocks, messageId, activityByCallId, run, assist
   const startedAt = run?.started_at ?? turnSummary?.started_at ?? null;
 
   return <article className="message message--assistant">
-    <div className="message__avatar" aria-hidden="true"><Sparkles size={14} /></div>
     <div className="message__content">
       <div className="message__body">
         <TurnActivity activity={activity} thinkingBlocks={presentation.thinkingBlocks} traceNodes={traceNodes} durationMs={durationMs} startedAt={startedAt} activityId={messageId} />

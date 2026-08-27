@@ -1,4 +1,5 @@
 import type { ToolActivityDTO } from "@/types/tool";
+import type { PendingInteractionDTO } from "@/types/interaction";
 
 export type ChatRunStatus =
   | "queued"
@@ -162,6 +163,8 @@ export interface ChatRuntimeState {
   toolCallsByRun: Record<string, Record<string, ToolActivityDTO>>;
   /** Public agent round traces, keyed by run id then round_id. */
   roundsByRun: Record<string, Record<string, AgentRoundTraceDTO>>;
+  /** Pending ask_user / client-tool interactions keyed by run id then interaction_id. */
+  interactionsByRun: Record<string, Record<string, PendingInteractionDTO>>;
 }
 
 /** Turn-level activity phase, derived from run/tool/content signals. */
@@ -190,6 +193,8 @@ export interface TurnActivityViewModel {
   anyToolRunning: boolean;
   isRunning: boolean;
   isTerminal: boolean;
+  isFinalAnswerPhase: boolean;
+  autoExpanded: boolean;
 }
 
 export const TERMINAL_RUN_STATUSES: ReadonlySet<ChatRunStatus> = new Set([

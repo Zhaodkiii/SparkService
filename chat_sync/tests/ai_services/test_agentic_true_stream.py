@@ -1,9 +1,9 @@
-"""CHAT-WEB-027 W1: real Agentic final-answer streaming.
+"""CHAT-WEB-028: real Agentic final-answer streaming.
 
 Covers the DeferredFinalAnswerBuffer classification state machine in
 ``round_runner.run_agentic_round`` / ``loop.run_agentic_loop`` (pure, no DB),
-and the end-to-end wiring in ``run_tasks._execute_provider`` behind
-``CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED`` (DB-backed).
+and the end-to-end wiring in ``run_tasks._execute_provider`` (DB-backed).
+Plain-text and tool-using turns share this single pipeline.
 """
 
 from __future__ import annotations
@@ -295,11 +295,10 @@ class AgenticTrueStreamIntegrationTests(TransactionTestCase):
         return run
 
     @override_settings(
-        CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED=True,
         CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS=1,
         CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS=1,
     )
-    def test_final_answer_streams_before_provider_finishes_when_flag_enabled(self):
+    def test_final_answer_streams_before_provider_finishes(self):
         run = self._make_run("agentic-stream-on")
         gateway = _InterleavedFinalAnswerGateway()
         write_times: list[float] = []
@@ -323,29 +322,7 @@ class AgenticTrueStreamIntegrationTests(TransactionTestCase):
         self.assertTrue(write_times, "expected at least one append_text call")
         self.assertLess(min(write_times), gateway.finished_at, "first write must happen before the provider stream finished")
 
-    @override_settings(CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED=False)
-    def test_legacy_slicing_preserved_when_flag_disabled(self):
-        run = self._make_run("agentic-stream-off")
-        gateway = _InterleavedFinalAnswerGateway()
-
-        with (
-            patch("chat_sync.ai_tasks.run_tasks.resolve_chat_route", return_value=_ProviderRouteFactory.make()),
-            patch("chat_sync.ai_tasks.run_tasks.create_chat_gateway", return_value=gateway),
-            patch("chat_sync.ai_tasks.run_tasks.build_context_for_run", return_value=_agentic_context()),
-        ):
-            result = run_chat.run(str(run.id), expected_generation=1, request_id="test-request")
-
-        run.refresh_from_db()
-        self.assertEqual(result["status"], RunStatus.COMPLETED)
-        self.assertEqual(run.assistant_message.blocks.get(kind="text").payload["text"]["_0"], "真实流式回答")
-        # Legacy path writes the complete text through on_final_text only
-        # after the round finished, sliced into CHAT_AI_FINAL_TEXT_CHUNK_CHARS
-        # windows (single slice here, since the text is short).
-        deltas = list(run.events.filter(type="block.delta").values_list("payload__delta", flat=True))
-        self.assertEqual(deltas, ["真实流式回答"])
-
     @override_settings(
-        CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED=True,
         CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS=1,
         CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS=1,
     )

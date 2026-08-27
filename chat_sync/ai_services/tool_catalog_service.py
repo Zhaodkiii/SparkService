@@ -3,13 +3,12 @@
 Computes, per user/thread/model/context, which read-only server tools the Web
 may display and toggle. The catalog is an allowlist projection of the internal
 registry: no JSON schema, prompt hints, timeouts or auth internals leak.
+Availability uses the same filter pipeline as Effective Tool Manifest.
 """
 from __future__ import annotations
 
 import hashlib
 from typing import Any
-
-from django.conf import settings
 
 from chat_sync.ai_models import ChatThreadPreferences
 from chat_sync.ai_runtime.tools.public_projector import (
@@ -19,13 +18,10 @@ from chat_sync.ai_runtime.tools.public_projector import (
     public_display_name,
 )
 from chat_sync.ai_runtime.tools.registry import build_server_tool_registry
-
-_REASONS = {
-    "feature_disabled",
-    "model_unsupported",
-    "member_required",
-    "source_required",
-}
+from chat_sync.ai_services.effective_tool_manifest_service import (
+    evaluate_public_catalog_tools,
+    feature_flags_from_settings,
+)
 
 
 def _model_supports_tools() -> bool:
@@ -53,39 +49,36 @@ def _thread_has_sources(thread) -> bool:
 
 def build_thread_tool_catalog(*, thread) -> dict[str, Any]:
     prefs, _ = ChatThreadPreferences.objects.get_or_create(thread=thread)
+    flags = feature_flags_from_settings()
     registry = build_server_tool_registry()
-    feature_enabled = bool(getattr(settings, "CHAT_AI_AGENTIC_TOOLS_ENABLED", False))
-    model_supports = _model_supports_tools() if feature_enabled else False
-    has_member = thread.member_id is not None
-    has_sources = _thread_has_sources(thread) if feature_enabled else False
-    enabled_names = {str(name) for name in (prefs.enabled_tools or [])}
+    model_supports = _model_supports_tools() if flags.agentic_tools_enabled else False
+    has_sources = _thread_has_sources(thread) if flags.agentic_tools_enabled else False
+    knowledge_base_ids = [str(item) for item in (prefs.knowledge_bases or []) if str(item).strip()]
+    evaluated = evaluate_public_catalog_tools(
+        member_id=thread.member_id,
+        has_sources=has_sources,
+        knowledge_base_ids=knowledge_base_ids,
+        model_supports_tools=model_supports,
+        thread_enabled_tools=prefs.enabled_tools or [],
+        feature_flags=flags,
+        registry=registry,
+    )
 
     tools: list[dict[str, Any]] = []
-    for name in P4_SERVER_TOOL_NAMES:
-        entry = registry.get(name)
-        version = entry.policy.version if entry else "v1"
-        required_context = list(entry.policy.required_context) if entry else []
-        reason: str | None = None
-        if not feature_enabled:
-            reason = "feature_disabled"
-        elif not model_supports:
-            reason = "model_unsupported"
-        elif "member" in required_context and not has_member:
-            reason = "member_required"
-        elif "source" in required_context and not has_sources:
-            reason = "source_required"
+    for item in evaluated:
+        name = item["name"]
         tools.append(
             {
                 "name": name,
-                "version": version,
+                "version": item["version"],
                 "display_name": public_display_name(name),
                 "description": public_description(name),
-                "target": "server",
+                "target": item["target"],
                 "risk": "read_only",
-                "enabled": name in enabled_names,
-                "available": reason is None,
-                "unavailable_reason": reason,
-                "requires": required_context,
+                "enabled": item["enabled"],
+                "available": item["available"],
+                "unavailable_reason": item["unavailable_reason"],
+                "requires": item["requires"],
             }
         )
 

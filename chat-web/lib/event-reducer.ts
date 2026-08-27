@@ -8,6 +8,7 @@ import {
 import { isToolActivityEvent, reduceToolActivityEvent } from "@/lib/tools/tool-activity-reducer";
 import { isAgentRoundEvent, reduceAgentRoundEvent } from "@/lib/chat/turn-trace-reducer";
 import { payloadKind } from "@/lib/chat/block-normalizer";
+import { isInteractionEventType, type PendingInteractionDTO } from "@/types/interaction";
 
 export function createInitialChatRuntimeState(): ChatRuntimeState {
   return {
@@ -24,6 +25,7 @@ export function createInitialChatRuntimeState(): ChatRuntimeState {
     usageByRun: {},
     toolCallsByRun: {},
     roundsByRun: {},
+    interactionsByRun: {},
   };
 }
 
@@ -133,6 +135,78 @@ function applyBlockDelta(state: ChatRuntimeState, event: ChatEventEnvelope): Cha
   return { ...state, blocksById: { ...state.blocksById, [blockId]: block } };
 }
 
+function asInteraction(raw: unknown): PendingInteractionDTO | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const item = raw as Record<string, unknown>;
+  const interactionId = typeof item.interaction_id === "string" ? item.interaction_id : "";
+  const runId = typeof item.run_id === "string" ? item.run_id : "";
+  if (!interactionId || !runId) return null;
+  const request = item.request && typeof item.request === "object" && !Array.isArray(item.request) ? item.request as PendingInteractionDTO["request"] : {};
+  return {
+    run_id: runId,
+    interaction_id: interactionId,
+    interaction_key: typeof item.interaction_key === "string" ? item.interaction_key : "",
+    kind: typeof item.kind === "string" ? item.kind : "ask_user",
+    status: typeof item.status === "string" ? item.status : "pending",
+    tool_call_id: typeof item.tool_call_id === "string" ? item.tool_call_id : null,
+    tool_name: typeof item.tool_name === "string" ? item.tool_name : undefined,
+    tool_version: typeof item.tool_version === "string" ? item.tool_version : undefined,
+    schema_version: typeof item.schema_version === "number" ? item.schema_version : 1,
+    question_ids: Array.isArray(item.question_ids) ? item.question_ids.map(String) : [],
+    request,
+    expires_at: typeof item.expires_at === "string" ? item.expires_at : null,
+    result_summary: typeof item.result_summary === "string" ? item.result_summary : undefined,
+    error_code: typeof item.error_code === "string" ? item.error_code : undefined,
+  };
+}
+
+export function upsertInteractions(state: ChatRuntimeState, runId: string, items: PendingInteractionDTO[]): ChatRuntimeState {
+  if (!runId || !items.length) return state;
+  const current = { ...(state.interactionsByRun[runId] ?? {}) };
+  let changed = false;
+  for (const item of items) {
+    if (!item.interaction_id) continue;
+    current[item.interaction_id] = item;
+    changed = true;
+  }
+  if (!changed) return state;
+  return { ...state, interactionsByRun: { ...state.interactionsByRun, [runId]: current } };
+}
+
+function applyInteractionEvent(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntimeState {
+  const payload = payloadObject(event);
+  const fromPayload = asInteraction(payload.interaction);
+  const interactionId = fromPayload?.interaction_id || String(payload.interaction_id ?? "");
+  const runId = fromPayload?.run_id || event.run_id;
+  if (!interactionId || !runId) return state;
+  const current = state.interactionsByRun[runId]?.[interactionId];
+  const statusFromType: Record<string, PendingInteractionDTO["status"]> = {
+    "interaction.requested": "pending",
+    "interaction.resolved": "resolved",
+    "interaction.refused": "refused",
+    "interaction.expired": "expired",
+    "interaction.cancelled": "cancelled",
+    "interaction.claimed": "claimed",
+  };
+  const next: PendingInteractionDTO = {
+    run_id: runId,
+    interaction_id: interactionId,
+    interaction_key: fromPayload?.interaction_key || current?.interaction_key || "",
+    kind: fromPayload?.kind || current?.kind || "ask_user",
+    status: fromPayload?.status || statusFromType[event.type] || current?.status || "pending",
+    tool_call_id: fromPayload?.tool_call_id ?? current?.tool_call_id ?? null,
+    tool_name: fromPayload?.tool_name ?? current?.tool_name,
+    tool_version: fromPayload?.tool_version ?? current?.tool_version,
+    schema_version: fromPayload?.schema_version ?? current?.schema_version ?? 1,
+    question_ids: fromPayload?.question_ids?.length ? fromPayload.question_ids : current?.question_ids ?? [],
+    request: fromPayload?.request && Object.keys(fromPayload.request).length ? fromPayload.request : current?.request ?? {},
+    expires_at: fromPayload?.expires_at ?? current?.expires_at ?? null,
+    result_summary: fromPayload?.result_summary ?? current?.result_summary,
+    error_code: fromPayload?.error_code ?? (typeof payload.reason_code === "string" ? payload.reason_code : current?.error_code),
+  };
+  return upsertInteractions(state, runId, [next]);
+}
+
 function applyOne(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntimeState {
   const payload = payloadObject(event);
   let next = setSeen(state, event);
@@ -140,6 +214,11 @@ function applyOne(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntim
   next = { ...next, lastAppliedSequenceByRun: { ...next.lastAppliedSequenceByRun, [event.run_id]: last } };
   if (event.type === "run.queued") next = updateRun(next, event, "queued");
   else if (event.type === "run.started") next = updateRun(next, event, "running");
+  else if (event.type === "run.waiting") {
+    const waiting = asRunStatus(payload.status);
+    if (waiting === "waiting_for_user_input" || waiting === "waiting_for_client_tool") next = updateRun(next, event, waiting);
+  }
+  else if (event.type === "run.resumed") next = updateRun(next, event, "queued");
   else if (event.type === "run.waiting_for_user_input") next = updateRun(next, event, "waiting_for_user_input");
   else if (event.type === "run.waiting_for_client_tool") next = updateRun(next, event, "waiting_for_client_tool");
   else if (event.type === "run.completed") next = updateRun(next, event, "completed");
@@ -167,6 +246,9 @@ function applyOne(state: ChatRuntimeState, event: ChatEventEnvelope): ChatRuntim
     const map = next.toolCallsByRun[event.run_id] ?? {};
     const updated = reduceToolActivityEvent(map, event);
     if (updated !== map) next = { ...next, toolCallsByRun: { ...next.toolCallsByRun, [event.run_id]: updated } };
+  }
+  else if (isInteractionEventType(event.type)) {
+    next = applyInteractionEvent(next, event);
   }
   else if (event.type === "block.completed") {
     const blockId = String(payload.block_id ?? "");
@@ -211,5 +293,5 @@ export function reduceChatEvents(state: ChatRuntimeState, events: ChatEventEnvel
 }
 
 export function runStatusLabel(status: ChatRuntimeState["runsById"][string]["status"]): string {
-  return { queued: "排队中", running: "运行中", waiting_for_user_input: "等待你的回复", waiting_for_client_tool: "等待设备授权", completed: "已完成", failed: "生成失败", cancelled: "已取消", interrupted: "已中断", unknown: "需要更新版本" }[status];
+  return { queued: "排队中", running: "运行中", waiting_for_user_input: "等待你的回复", waiting_for_client_tool: "等待设备授权", completed: "已完成", failed: "生成失败", cancelled: "已停止", interrupted: "已中断", unknown: "需要更新版本" }[status];
 }

@@ -22,3 +22,23 @@ def test_ai_request_logging_redacts_content_references_and_credentials():
     assert headers["Authorization"] == "<redacted>"
     assert headers["Idempotency-Key"] == "<redacted>"
     assert headers["Content-Type"] == "application/json"
+
+
+def test_ai_request_logging_redacts_interaction_answers_and_claim_header():
+    body = _redact_chat_ai_body(
+        {
+            "response": {
+                "answers": [{"question_id": "q1", "free_text": "secret-note", "selected_labels": ["7 天"]}],
+            },
+            "free_text": "secret-note",
+            "claim_token": "claim-secret",
+        }
+    )
+    assert body["free_text"] == "<redacted>"
+    assert body["claim_token"] == "<redacted>"
+    assert body["response"] == "<redacted>"
+    headers = _headers_for_log(
+        {"X-Interaction-Claim": "claim-secret", "Content-Type": "application/json"},
+        redact_sensitive=True,
+    )
+    assert headers["X-Interaction-Claim"] == "<redacted>"

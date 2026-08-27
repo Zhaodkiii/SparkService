@@ -4,6 +4,7 @@ import { useState } from "react";
 import { BookmarkPlus, Check, Download, PanelRight, Pencil, X } from "lucide-react";
 import { useOptionalThreads } from "@/context/ThreadContext";
 import { blockAssociatedValue } from "@/lib/chat/block-normalizer";
+import { sortChatMessagesForDisplay } from "@/lib/chat/message-order";
 
 export function ChatHeader({ activityOpen, onToggleActivity }: { activityOpen: boolean; onToggleActivity: () => void }) {
   const threads = useOptionalThreads();
@@ -32,9 +33,7 @@ export function ChatHeader({ activityOpen, onToggleActivity }: { activityOpen: b
       `- 图片送达方式(本会话): ${thread?.image_delivery_mode ?? "-"}`,
     ].join("\n");
 
-    const rows = messages
-      .slice()
-      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    const rows = sortChatMessagesForDisplay(messages)
       .map((message) => {
         const attachments = message.blocks
           .filter((block) => block.kind === "imageGallery" || block.kind === "fileAttachments")

@@ -11,12 +11,14 @@ baseline (including its `apple_jwks_unavailable` behavior) is untouched.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import ssl
 import time
 from typing import Any
 from urllib.error import URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import jwt
@@ -78,7 +80,7 @@ class WebAppleIdentityService:
         if not presented_nonce or not token_nonce:
             raise APIError("apple_web_nonce_mismatch", code=40171, status_code=401)
         expected = hashlib.sha256(presented_nonce.encode("utf-8")).hexdigest()
-        if token_nonce != expected:
+        if not hmac.compare_digest(token_nonce, expected):
             raise APIError("apple_web_nonce_mismatch", code=40171, status_code=401)
 
     @staticmethod
@@ -189,9 +191,21 @@ class WebAppleIdentityService:
 
     @staticmethod
     def _build_client_secret(*, service_id: str) -> str:
-        team_id = (getattr(settings, "APPLE_WEB_TEAM_ID", "") or "").strip()
-        key_id = (getattr(settings, "APPLE_WEB_KEY_ID", "") or "").strip()
-        private_key = (getattr(settings, "APPLE_WEB_PRIVATE_KEY", "") or "").strip()
+        team_id = (
+            getattr(settings, "APPLE_WEB_TEAM_ID", "")
+            or getattr(settings, "APPLE_TEAM_ID", "")
+            or ""
+        ).strip()
+        key_id = (
+            getattr(settings, "APPLE_WEB_KEY_ID", "")
+            or getattr(settings, "APPLE_KEY_ID", "")
+            or ""
+        ).strip()
+        private_key = (
+            getattr(settings, "APPLE_WEB_PRIVATE_KEY", "")
+            or getattr(settings, "APPLE_PRIVATE_KEY", "")
+            or ""
+        ).strip()
         if not team_id or not key_id or not private_key:
             raise APIError("apple_web_code_exchange_unavailable", code=50372, status_code=503)
         now = int(time.time())
@@ -226,7 +240,7 @@ class WebAppleIdentityService:
         client_secret = WebAppleIdentityService._build_client_secret(service_id=service_id)
 
         endpoint = (getattr(settings, "APPLE_WEB_TOKEN_ENDPOINT", "") or "").strip()
-        form = json.dumps(
+        form = urlencode(
             {
                 "client_id": service_id,
                 "client_secret": client_secret,
@@ -234,11 +248,14 @@ class WebAppleIdentityService:
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
             }
-        ).encode("utf-8")
+        ).encode("ascii")
         request = Request(
             endpoint,
             data=form,
-            headers={"content-type": "application/json", "accept": "application/json"},
+            headers={
+                "content-type": "application/x-www-form-urlencoded",
+                "accept": "application/json",
+            },
             method="POST",
         )
         try:

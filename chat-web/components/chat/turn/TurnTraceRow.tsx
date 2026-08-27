@@ -2,9 +2,8 @@
 
 import { CheckCircle2, CircleAlert, Loader2, XCircle } from "lucide-react";
 import type { ToolActivityDTO } from "@/types/tool";
-import { projectToolActivity, projectToolTrace } from "@/lib/chat/activity-projection";
-import type { ToolActivityViewModel, ToolTraceViewModel } from "@/lib/chat/activity-projection";
-import { CHAT_DEEPTUTOR_TURN_UI_ENABLED } from "@/lib/feature-flags";
+import { projectToolTrace } from "@/lib/chat/activity-projection";
+import type { ToolTraceViewModel } from "@/lib/chat/activity-projection";
 
 function rowIcon(status: ToolActivityDTO["status"]) {
   if (status === "running" || status === "requested") return <Loader2 size={13} className="turn-trace__spin" aria-hidden="true" />;
@@ -13,24 +12,11 @@ function rowIcon(status: ToolActivityDTO["status"]) {
   return <XCircle size={13} aria-hidden="true" />;
 }
 
-function LegacyToolRow({ activity }: { activity: ToolActivityDTO }) {
-  const view: ToolActivityViewModel = projectToolActivity(activity);
-  const summary = view.errorLine ?? view.resultLine ?? (view.argSummary ? `${view.argSummary} · ${view.statusLabel}` : view.statusLabel);
-  return <li className={`turn-trace turn-trace--${view.tone}`}>
-    <span className="turn-trace__icon">{rowIcon(activity.status)}</span>
-    <strong>{view.displayName}</strong>
-    <span className="turn-trace__summary">{summary}</span>
-  </li>;
-}
-
 /**
- * CHAT-WEB-027 W3: DeepTutor-aligned tool row — action verb anchors the line
- * (never truncates), an optional artifact chip names what it acted on, and
- * a result/error line follows. Terminal calls with extra detail (source
- * count, full error text) become a native `<details>` disclosure so the
- * collapsed row stays compact without losing the information.
+ * 单条工具调用轨迹 Row：一个 tool_call_id 只渲染一条。动作动词不截断，
+ * 脱敏 Chip 可截断；原始 arguments 不进入 DOM。
  */
-function DeepTutorToolRow({ activity }: { activity: ToolActivityDTO }) {
+export function TurnTraceRow({ activity }: { activity: ToolActivityDTO }) {
   const view: ToolTraceViewModel = projectToolTrace(activity);
   const summary = view.errorLine ?? view.resultLine;
   const canExpand = view.isTerminal && Boolean(view.detail) && view.detail !== summary;
@@ -48,9 +34,4 @@ function DeepTutorToolRow({ activity }: { activity: ToolActivityDTO }) {
       <p className="turn-trace__details-body">{view.detail}</p>
     </details>
   </li>;
-}
-
-/** 单条工具调用轨迹 Row（能力三）：一个 tool_call_id 只渲染一条。 */
-export function TurnTraceRow({ activity }: { activity: ToolActivityDTO }) {
-  return CHAT_DEEPTUTOR_TURN_UI_ENABLED ? <DeepTutorToolRow activity={activity} /> : <LegacyToolRow activity={activity} />;
 }

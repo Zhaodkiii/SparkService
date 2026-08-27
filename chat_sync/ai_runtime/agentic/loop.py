@@ -8,7 +8,6 @@ from .round_runner import (
     DEFAULT_STREAM_CLASSIFY_WINDOW_MS,
     AgenticRoundResult,
     run_agentic_round,
-    run_text_round,
 )
 from chat_sync.ai_runtime.providers.types import ProviderGateway, ProviderChunk
 from chat_sync.ai_runtime.tools.dispatcher import ToolDispatchItem, dispatch_tool_calls
@@ -20,7 +19,11 @@ from .messages import assistant_message_with_tool_calls
 
 @dataclass
 class RoundTraceEvent:
-    """Round-granular trace projection (narration vs final answer, usage)."""
+    """Round-granular trace projection (narration vs final answer, usage).
+
+    ``index`` is the stable round identifier for this Run; callers stringify it
+    as ``round_id`` (it is not reassigned or reordered during the Run).
+    """
 
     event: str  # started / completed / failed
     index: int
@@ -31,15 +34,6 @@ class RoundTraceEvent:
     error_code: str = ""
     retryable: bool = False
     usage: dict[str, Any] = field(default_factory=dict)
-
-
-async def run_text_loop(
-    gateway: ProviderGateway,
-    messages: list[dict[str, str]],
-    on_chunk: Callable[[ProviderChunk], Awaitable[None]],
-) -> None:
-    # P2 deliberately has one bounded text round; Agentic tool loops start in P4.
-    await run_text_round(gateway, messages, on_chunk)
 
 
 async def run_agentic_loop(
@@ -54,6 +48,7 @@ async def run_agentic_loop(
     on_tool_started: Callable[[str], Awaitable[None]] | None = None,
     on_progress: Callable[[str, str, float | None], Awaitable[None]] | None = None,
     on_narration_delta: Callable[[int, str], Awaitable[None]] | None = None,
+    on_reasoning_delta: Callable[[int, str], Awaitable[None]] | None = None,
     on_tool_results: Callable[[int, list[ToolDispatchItem]], Awaitable[None]] | None = None,
     on_pause: Callable[[int, ToolDispatchItem, list[dict[str, Any]]], Awaitable[None]] | None = None,
     on_final_text: Callable[[str], Awaitable[None]] | None = None,
@@ -67,33 +62,35 @@ async def run_agentic_loop(
 ) -> str | AgentLoopOutcome:
     """Bounded Think/Act/Observe loop. Mutates ``messages`` into the model transcript.
 
-    When ``on_final_chunk`` is provided, a round that turns out to have no tool
-    calls streams its text in real time (CHAT-WEB-027 W1) instead of only
-    being available once ``on_final_text`` fires with the complete string.
-    ``on_final_text`` still fires once per terminal round, but callers that
-    already streamed via ``on_final_chunk`` must treat it as a finalize signal
-    rather than something to write again.
+    ``tools=[]`` is a plain-text conversation: one Provider round, no tool
+    dispatch, same stream classification and reasoning callbacks.
     """
     final_text = ""
     seen_calls: dict[str, str] = {}
+    offered_tools = list(tool_schemas)
     for round_index in range(max(1, max_rounds)):
         if on_round is not None:
             await on_round(RoundTraceEvent(event="started", index=round_index))
         result: AgenticRoundResult
         try:
-            async def _narration(delta: str) -> None:
+            async def _narration(delta: str, *, _round=round_index) -> None:
                 if on_narration_delta is not None:
-                    await on_narration_delta(round_index, delta)
+                    await on_narration_delta(_round, delta)
+
+            async def _reasoning(delta: str, *, _round=round_index) -> None:
+                if on_reasoning_delta is not None:
+                    await on_reasoning_delta(_round, delta)
 
             result = await run_agentic_round(
                 gateway,
                 messages,
-                tools=tool_schemas,
+                tools=offered_tools,
                 on_chunk=on_chunk,
                 on_narration_delta=_narration,
                 on_final_chunk=on_final_chunk,
-                stream_classify_chars=stream_classify_chars,
-                stream_classify_window_ms=stream_classify_window_ms,
+                on_reasoning_delta=_reasoning,
+                stream_classify_chars=stream_classify_chars if offered_tools else 0,
+                stream_classify_window_ms=stream_classify_window_ms if offered_tools else 0,
             )
         except Exception:
             if on_round is not None:
@@ -157,17 +154,20 @@ async def run_agentic_loop(
             if on_pause is not None:
                 await on_pause(round_index, pause_item, messages)
             return AgentLoopOutcome(kind="paused", pause=pause, pause_tool_call_id=pause_item.call_id)
-    # Force a final answer without tools after the loop budget is exhausted.
     if on_round is not None:
         await on_round(RoundTraceEvent(event="started", index=max_rounds))
-    # No tools are offered on the forced round, so there is no tool-call
-    # ambiguity to wait out; stream from the very first delta.
+
+    async def _forced_reasoning(delta: str) -> None:
+        if on_reasoning_delta is not None:
+            await on_reasoning_delta(max_rounds, delta)
+
     forced = await run_agentic_round(
         gateway,
         messages,
         tools=[],
         on_chunk=on_chunk,
         on_final_chunk=on_final_chunk,
+        on_reasoning_delta=_forced_reasoning,
         stream_classify_chars=0,
         stream_classify_window_ms=0,
     )

@@ -76,7 +76,7 @@
     },
     {
       "path": "schemas/block.v1.schema.json",
-      "sha256": "f18fd2cb6f8adfdfa9a7f51317b54a6c521abd866ec0b1a8523e094db1312883"
+      "sha256": "df18beb73b5f3f4ed27050a5be64736ebde56ea4e1614e0b3c8afc077bdcc53e"
     },
     {
       "path": "schemas/event.v1.schema.json",
@@ -84,7 +84,7 @@
     },
     {
       "path": "schemas/pending_interaction.v1.schema.json",
-      "sha256": "dbf19a6a782f5f192356f2eaa9be1cf8c01528f86c78a025352e403206d71bff"
+      "sha256": "8d75acf937d42ae1d6ba1c7083d1efdd890bb8d302729fd2eafc1541fbf61226"
     },
     {
       "path": "schemas/run.v1.schema.json",
@@ -108,7 +108,7 @@
     },
     {
       "path": "valid/blocks/tool_result.json",
-      "sha256": "a36bd570f8f827e010d691b03a58c253609d31ab8bef9e752db4d79c60ce487c"
+      "sha256": "be2770665487f69d5be32435e3cb9d3beb027d190643e940de3290ff6b1fd5b7"
     },
     {
       "path": "valid/blocks/unknown_kind.json",
@@ -149,6 +149,6 @@
   ],
   "spark_web_snapshot": {
     "source": "chat_sync/tests/contracts",
-    "synced_at": "2026-08-25T05:39:41.868Z"
+    "synced_at": "2026-08-27T05:59:21.238Z"
   }
 }

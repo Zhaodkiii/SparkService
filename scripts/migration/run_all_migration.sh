@@ -48,7 +48,7 @@ SERVICES_STOPPED_BY_MIGRATION=0
 SERVICE_RESTORE_RUNNING=0
 SERVICE_BASE="${MIGRATION_SERVICE_BASE:-}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-2026}"
-AFFECTED_SERVICES=(web celery_worker celery_beat frontend)
+AFFECTED_SERVICES=(web celery_worker celery_beat frontend open_web chat_web)
 
 fail() {
   echo "❌ $*" >&2
@@ -297,6 +297,8 @@ print_affected_services() {
   echo "  - celery_worker：Celery Worker 后台任务"
   echo "  - celery_beat：Celery Beat 定时任务"
   echo "  - frontend：backoffice-web 前端 Nginx"
+  echo "  - open_web：开放端前端 Nginx"
+  echo "  - chat_web：Web AI 对话前端 Next.js"
 }
 
 print_service_status() {

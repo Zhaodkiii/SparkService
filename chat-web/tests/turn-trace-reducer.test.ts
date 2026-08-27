@@ -114,4 +114,38 @@ describe("buildTurnTrace", () => {
     expect(nodes[0].kind).toBe("round");
     expect(nodes[1].kind).toBe("tool");
   });
+
+  it("collapses 100 reasoning deltas into a single round row", () => {
+    let rounds = reduceAgentRoundEvent({}, event("agent.round.started", { round_id: "r0", index: 0 }, 1));
+    for (let index = 0; index < 100; index += 1) {
+      rounds = reduceAgentRoundEvent(rounds, event("agent.round.delta", { round_id: "r0", channel: "public_reasoning_summary", text_delta: "x" }, index + 2));
+    }
+    rounds = reduceAgentRoundEvent(rounds, event("agent.round.completed", { round_id: "r0", call_role: "finish", finish_reason: "stop" }, 102));
+    const nodes = buildTurnTrace(rounds, []);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].kind).toBe("round");
+    if (nodes[0].kind === "round") {
+      expect(nodes[0].round.public_summary).toBe("x".repeat(100));
+      expect(nodes[0].round.status).toBe("completed");
+    }
+  });
+
+  it("replays duplicate and out-of-order events into a stable order", () => {
+    const replay = [
+      event("agent.round.delta", { round_id: "r0", channel: "public_reasoning_summary", text_delta: "后到" }, 3),
+      event("agent.round.completed", { round_id: "r0", call_role: "finish", finish_reason: "stop" }, 4),
+      event("agent.round.started", { round_id: "r0", index: 0, call_id: "c0" }, 1),
+      event("agent.round.delta", { round_id: "r0", channel: "public_reasoning_summary", text_delta: "先查" }, 2),
+      event("agent.round.started", { round_id: "r0", index: 0, call_id: "c0" }, 5),
+      event("agent.round.completed", { round_id: "r0", call_role: "finish", finish_reason: "stop" }, 6),
+    ];
+    const chronological = [...replay].sort((a, b) => a.sequence - b.sequence);
+    const rounds = chronological.reduce(reduceAgentRoundEvent, {});
+    const again = chronological.reduce(reduceAgentRoundEvent, {});
+    expect(rounds).toEqual(again);
+    const nodes = buildTurnTrace(rounds, [tool({ tool_call_id: "k1", round_index: 0, call_index: 0 })]);
+    expect(nodes.map((node) => (node.kind === "round" ? node.round.round_id : node.tool.tool_call_id))).toEqual(["r0", "k1"]);
+    expect(rounds["r0"].public_summary).toBe("先查后到");
+    expect(rounds["r0"].status).toBe("completed");
+  });
 });

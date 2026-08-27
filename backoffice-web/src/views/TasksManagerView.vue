@@ -76,7 +76,7 @@
 
     <a-descriptions bordered :column="1" size="small">
       <a-descriptions-item label="总体状态">
-        <a-tag :color="status?.overall_running ? 'green' : 'red'">{{ status?.overall_running ? 'Worker+Beat 均运行' : '部分/全部未运行' }}</a-tag>
+        <a-tag :color="overallHealthy ? 'green' : 'red'">{{ overallHealthy ? 'Worker+Beat 运行且核心任务已注册' : '异步任务未完全就绪' }}</a-tag>
       </a-descriptions-item>
       <a-descriptions-item label="run 目录">{{ status?.run_dir ?? '-' }}</a-descriptions-item>
       <a-descriptions-item label="log 目录">{{ status?.log_dir ?? '-' }}</a-descriptions-item>
@@ -85,6 +85,40 @@
       <a-descriptions-item label="Redis (Broker)">{{ status?.redis?.display ?? '-' }}</a-descriptions-item>
       <a-descriptions-item label="Redis 错误">{{ status?.redis?.error || '-' }}</a-descriptions-item>
       <a-descriptions-item label="Worker 队列">{{ workerQueuesText }}</a-descriptions-item>
+      <a-descriptions-item label="AI 核心任务注册">
+        <a-space direction="vertical" size="small">
+          <a-tag :color="status?.registered_tasks?.healthy ? 'green' : 'red'">
+            {{ status?.registered_tasks?.healthy ? '已全部注册' : '存在缺失' }}
+          </a-tag>
+          <span>Run：{{ taskRegistrationLabel('chat_sync.ai_tasks.run_tasks.run_chat') }}</span>
+          <span>Outbox：{{ taskRegistrationLabel('chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox') }}</span>
+          <span>Recovery：{{ taskRegistrationLabel('chat_sync.ai_tasks.recovery_tasks.recover_chat_runs') }}</span>
+          <span v-if="status?.registered_tasks?.error" style="color: #cf1322">{{ status.registered_tasks.error }}</span>
+        </a-space>
+      </a-descriptions-item>
+      <a-descriptions-item label="全量 Celery 任务注册">
+        <a-space direction="vertical" size="small" style="width: 100%">
+          <a-tag :color="status?.registered_tasks?.all_healthy ? 'green' : 'red'">
+            {{ status?.registered_tasks?.all_healthy ? '已全部注册' : '存在缺失' }}
+          </a-tag>
+          <a-table
+            v-if="status?.registered_tasks?.inventory?.length"
+            :data-source="status.registered_tasks.inventory"
+            row-key="name"
+            :pagination="false"
+            size="small"
+          >
+            <a-table-column title="模块" data-index="domain" :width="100" />
+            <a-table-column title="任务" data-index="name" />
+            <a-table-column title="队列" data-index="queue" :width="170" />
+            <a-table-column title="状态" key="registered" :width="90">
+              <template #default="{ record }">
+                <a-tag :color="record.registered ? 'green' : 'red'">{{ record.registered ? '已注册' : '缺失' }}</a-tag>
+              </template>
+            </a-table-column>
+          </a-table>
+        </a-space>
+      </a-descriptions-item>
       <a-descriptions-item label="AI Run 执行器">
         <a-space>
           <a-tag :color="status?.chat_ai?.server_runs_enabled ? 'green' : 'red'">
@@ -127,6 +161,12 @@ const redisManageable = computed(() => {
   if (!r) return false;
   return r.local_manageable === true || r.local_start_available === true;
 });
+const overallHealthy = computed(() => status.value?.overall_healthy ?? (
+  Boolean(status.value?.overall_running) &&
+  Boolean(status.value?.ping?.healthy) &&
+  Boolean(status.value?.redis?.healthy) &&
+  Boolean(status.value?.registered_tasks?.healthy)
+));
 const workerQueuesText = computed(() => status.value?.worker_queues?.join(', ') || '-');
 const loading = ref(false);
 const actionLoading = ref<ActionType | ''>('');
@@ -134,6 +174,11 @@ const status = ref<TaskManagerStatusResponse | null>(null);
 const autoRefresh = ref(true);
 const lastUpdatedText = ref('-');
 const operationRows = ref<Array<{ id: string; time: string | Date; action: string; name: string; result: string; pid: string }>>([]);
+
+function taskRegistrationLabel(taskName: string) {
+  if (!status.value?.registered_tasks) return '未检查';
+  return status.value.registered_tasks.registered.includes(taskName) ? '已注册' : '未注册';
+}
 
 async function loadStatus() {
   try {

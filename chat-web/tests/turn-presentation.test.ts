@@ -4,6 +4,7 @@ import {
   classifyTurnBlock,
   collectToolActivityRows,
   selectPresentationBlocks,
+  dedupeToolQuestionCards,
   turnVisibleText,
 } from "@/lib/chat/turn-presentation";
 import { projectTurnActivity } from "@/lib/chat/turn-activity-projector";
@@ -74,6 +75,36 @@ describe("selectPresentationBlocks", () => {
     const blocks = [block({ id: "generic", kind: "tool", parent_tool_call_id: "k9" })];
     expect(selectPresentationBlocks(blocks).map((b) => b.id)).toEqual(["generic"]);
   });
+
+  it("keeps one toolQuestionCards block per interaction_id with the higher revision", () => {
+    const payload = (revision: number) => ({ tool_question_cards: { _0: { interaction_id: "int-1", status: revision === 1 ? "pending" : "resolved", request: { questions: [] } } } });
+    const blocks = [
+      block({ id: "old", kind: "toolQuestionCards", revision: 1, payload: payload(1) }),
+      block({ id: "new", kind: "toolQuestionCards", revision: 2, payload: payload(2) }),
+    ];
+    expect(dedupeToolQuestionCards(blocks).map((item) => item.id)).toEqual(["new"]);
+  });
+
+  it("keeps multiple domain cards for the same call in order_key order", () => {
+    const blocks = [
+      block({ id: "later", kind: "healthCards", tool_call_id: "k1", order_key: 30 }),
+      block({ id: "generic", kind: "tool", parent_tool_call_id: "k1", order_key: 20 }),
+      block({ id: "earlier", kind: "searchSummary", parent_tool_call_id: "k1", order_key: 10 }),
+    ];
+    const presentation = buildTurnPresentation(blocks, "m1", "assistant");
+    expect(selectPresentationBlocks(presentation.presentationBlocks).map((b) => b.id)).toEqual(["earlier", "later"]);
+  });
+
+  it("does not surface a failed tool with no readable result as a blank card", () => {
+    const blocks = [
+      block({ id: "call", kind: "toolCall", tool_call_id: "k1", payload: { tool_call_id: "k1", status: "failed" } }),
+      block({ id: "empty", kind: "searchSummary", status: "failed", tool_call_id: "k1", payload: {} }),
+    ];
+    const presentation = buildTurnPresentation(blocks, "m1", "assistant");
+    expect(selectPresentationBlocks(presentation.presentationBlocks)).toEqual([]);
+    expect(collectToolActivityRows(blocks)).toHaveLength(1);
+    expect(collectToolActivityRows(blocks)[0].status).toBe("failed");
+  });
 });
 
 describe("collectToolActivityRows", () => {
@@ -108,7 +139,8 @@ describe("projectTurnActivity", () => {
     expect(vm.anyToolRunning).toBe(true);
     expect(vm.isRunning).toBe(true);
     expect(vm.isTerminal).toBe(false);
-    expect(vm.publicStatusLabel).toBe("正在使用工具");
+    expect(vm.publicStatusLabel).toBe("正在调用工具…");
+    expect(vm.autoExpanded).toBe(true);
   });
 
   it("maps terminal run status to a collapsed completed phase", () => {
@@ -117,10 +149,19 @@ describe("projectTurnActivity", () => {
     expect(vm.isRunning).toBe(false);
     expect(vm.isTerminal).toBe(true);
     expect(vm.publicStatusLabel).toBe("已完成");
+    expect(vm.autoExpanded).toBe(false);
   });
 
-  it("degrades unknown assistant status to a generic label", () => {
+  it("degrades unknown assistant status to a generic composing label", () => {
     const vm = projectTurnActivity({ runId: "r1", runStatus: "running", assistantStatus: "future_status", toolRows: [], contentStreaming: true });
-    expect(vm.publicStatusLabel).toBe("正在组织回答");
+    expect(vm.publicStatusLabel).toBe("小鲸正在回答…");
+    expect(vm.isFinalAnswerPhase).toBe(true);
+    expect(vm.autoExpanded).toBe(false);
+  });
+
+  it("maps cancelled to 已停止 and keeps failed/interrupted expanded", () => {
+    expect(projectTurnActivity({ runId: "r1", runStatus: "cancelled", assistantStatus: null, toolRows: [], contentStreaming: false }).publicStatusLabel).toBe("已停止");
+    expect(projectTurnActivity({ runId: "r1", runStatus: "failed", assistantStatus: null, toolRows: [], contentStreaming: false }).autoExpanded).toBe(true);
+    expect(projectTurnActivity({ runId: "r1", runStatus: "interrupted", assistantStatus: null, toolRows: [], contentStreaming: false }).autoExpanded).toBe(true);
   });
 });

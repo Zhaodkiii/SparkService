@@ -1,5 +1,4 @@
 import json
-import os
 import ssl
 from typing import Any
 from urllib.request import urlopen
@@ -14,10 +13,6 @@ from common.exceptions import APIError
 APPLE_KEYS_URL = "https://appleid.apple.com/auth/keys"
 APPLE_ISSUER = "https://appleid.apple.com"
 APPLE_JWKS_CACHE_KEY = "sparkservice:apple:jwks"
-APPLE_JWKS_TTL_SECONDS = int(os.getenv("APPLE_JWKS_TTL_SECONDS", "3600"))
-# 按当前项目约定：Apple 登录链路不做证书校验，避免本地/测试环境因证书链问题导致登录失败。
-# 如需恢复严格校验，可将 APPLE_JWKS_VERIFY_SSL 设为 true。
-APPLE_JWKS_VERIFY_SSL = os.getenv("APPLE_JWKS_VERIFY_SSL", "false").lower() in ("1", "true", "yes", "y")
 
 logger = logging.getLogger(__name__)
 flow_logger = logging.getLogger("accounts.flow")
@@ -140,9 +135,11 @@ class AppleIdentityService:
 
         payload: dict[str, Any] | None = None
         last_error: Exception | None = None
+        verify_ssl = bool(getattr(settings, "APPLE_JWKS_VERIFY_SSL", True))
+        timeout = int(getattr(settings, "APPLE_JWKS_TIMEOUT_SECONDS", 8))
         try:
-            context: ssl.SSLContext | None = ssl.create_default_context() if APPLE_JWKS_VERIFY_SSL else ssl._create_unverified_context()
-            with urlopen(APPLE_KEYS_URL, timeout=8, context=context) as response:  # noqa: S310
+            context: ssl.SSLContext | None = ssl.create_default_context() if verify_ssl else ssl._create_unverified_context()
+            with urlopen(APPLE_KEYS_URL, timeout=timeout, context=context) as response:  # noqa: S310
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception as exc:  # noqa: BLE001
             last_error = exc
@@ -173,7 +170,8 @@ class AppleIdentityService:
             )
             raise APIError("apple_jwks_invalid", code=50322, status_code=503)
 
-        cache.set(APPLE_JWKS_CACHE_KEY, keys, timeout=APPLE_JWKS_TTL_SECONDS)
+        ttl = int(getattr(settings, "APPLE_JWKS_TTL_SECONDS", 3600))
+        cache.set(APPLE_JWKS_CACHE_KEY, keys, timeout=ttl)
         flow_logger.info(
             "从 Apple 获取 JWKS 公钥列表成功",
             extra={"action": "auth.apple.jwks.fetch", "outcome": "success", "keys_count": len(keys)},

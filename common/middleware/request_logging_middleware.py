@@ -54,7 +54,7 @@ def _headers_for_log(headers: dict | None, *, redact_sensitive: bool = False) ->
     result = {str(k): str(v) for k, v in headers.items()}
     if redact_sensitive:
         for key in list(result):
-            if key.lower() in {"authorization", "cookie", "idempotency-key", "x-api-key"}:
+            if key.lower() in {"authorization", "cookie", "set-cookie", "idempotency-key", "x-api-key", "x-interaction-claim"}:
                 result[key] = "<redacted>"
     return result
 
@@ -100,6 +100,10 @@ def _redact_chat_ai_body(value):
         "attachments",
         "references",
         "arguments",
+        "free_text",
+        "answers",
+        "response",
+        "claim_token",
         "healthkit_raw_samples",
         "ticket",
         "access_token",
@@ -121,6 +125,38 @@ def _redact_chat_ai_body(value):
     return value
 
 
+def _is_sensitive_auth_path(path: str) -> bool:
+    return path.startswith("/api/auth/") or path.startswith("/api/v1/auth/")
+
+
+def _redact_sensitive_auth_body(value):
+    """Keep authentication request shape while removing reusable credentials."""
+    sensitive_keys = {
+        "authorization",
+        "authorization_code",
+        "code",
+        "cookie",
+        "id_token",
+        "identity_token",
+        "nonce",
+        "password",
+        "refresh_token",
+        "access_token",
+        "token",
+    }
+    if isinstance(value, dict):
+        redacted = {}
+        for key, child in value.items():
+            if str(key).lower() in sensitive_keys:
+                redacted[key] = "<redacted>"
+            else:
+                redacted[key] = _redact_sensitive_auth_body(child)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive_auth_body(child) for child in value]
+    return value
+
+
 class RequestLoggingMiddleware:
     """
     Emit one structured access log per request.
@@ -133,10 +169,16 @@ class RequestLoggingMiddleware:
         start = time.perf_counter()
         request_io_logger = self._io_logger_for_path(request.path)
         is_chat_ai_path = request.path.startswith("/api/v1/ai/chat/")
-        request_headers = _headers_for_log(dict(request.headers), redact_sensitive=is_chat_ai_path)
+        is_sensitive_auth_path = _is_sensitive_auth_path(request.path)
+        request_headers = _headers_for_log(
+            dict(request.headers),
+            redact_sensitive=is_chat_ai_path or is_sensitive_auth_path,
+        )
         request_body = _body_for_log(request.body, request.content_type)
         if is_chat_ai_path:
             request_body = _redact_chat_ai_body(request_body)
+        if is_sensitive_auth_path:
+            request_body = _redact_sensitive_auth_body(request_body)
         user_id = None
         client_ip = request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR", "")) or ""
         user_agent = request.META.get("HTTP_USER_AGENT", "") or ""
@@ -219,6 +261,8 @@ class RequestLoggingMiddleware:
             response_body = _body_for_log(response_content, response_content_type)
             if is_chat_ai_path:
                 response_body = _redact_chat_ai_body(response_body)
+            if is_sensitive_auth_path:
+                response_body = _redact_sensitive_auth_body(response_body)
             response_bytes = len(response_content or b"")
 
         summary_level = _log_level_by_status(status_code)

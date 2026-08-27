@@ -26,6 +26,13 @@ class ToolRegistry:
 
     def register(self, tool: BaseTool, policy: ToolPolicy | None = None) -> None:
         definition = tool.get_definition()
+        if policy is None:
+            import logging
+
+            logging.getLogger("chat_sync.ai.tools").warning(
+                "tool_manifest.implicit_server_target tool=%s",
+                definition.name,
+            )
         resolved_policy = policy or ToolPolicy(name=definition.name)
         if definition.name != resolved_policy.name:
             raise ValueError("tool definition and policy names differ")
@@ -69,7 +76,21 @@ class ToolRegistry:
         return [entry.schema for entry in entries]
 
 
+def server_tool_entries(registry: ToolRegistry) -> list[RegisteredTool]:
+    """Registry entries that are both ``target=server`` and in ``SparkServerToolName``."""
+    from .server_names import server_tool_name_values
+
+    allowed = server_tool_name_values()
+    result: list[RegisteredTool] = []
+    for name in registry.list_names():
+        entry = registry.get(name)
+        if entry is not None and name in allowed and entry.policy.target == "server":
+            result.append(entry)
+    return result
+
+
 def build_server_tool_registry() -> ToolRegistry:
+    from .adapters.search_knowledge_bag import SearchKnowledgeBagTool
     from .adapters.ask_user import AskUserTool
     from .adapters.client import (
         FetchEnergyDetailsTool,
@@ -87,13 +108,14 @@ def build_server_tool_registry() -> ToolRegistry:
 
     registry = ToolRegistry()
     for tool, policy in (
-        (AskUserTool(), ToolPolicy("ask_user", max_result_tokens=800)),
-        (FetchStepDetailsTool(), ToolPolicy("fetch_step_details", target="client", supported_platforms=("ios",), max_result_tokens=1800)),
-        (FetchEnergyDetailsTool(), ToolPolicy("fetch_energy_details", target="client", supported_platforms=("ios",), max_result_tokens=1800)),
-        (FetchNutritionDetailsTool(), ToolPolicy("fetch_nutrition_details", target="client", supported_platforms=("ios",), max_result_tokens=1800)),
-        (FetchSleepDetailsTool(), ToolPolicy("fetch_sleep_details", target="client", supported_platforms=("ios",), max_result_tokens=1800)),
-        (FetchWorkoutDetailsTool(), ToolPolicy("fetch_workout_details", target="client", supported_platforms=("ios",), max_result_tokens=1800)),
-        (GetCurrentLocationTool(), ToolPolicy("get_current_location", target="client", supported_platforms=("ios",), max_result_tokens=800)),
+        (AskUserTool(), ToolPolicy("ask_user", execution_mode="pause", max_result_tokens=800)),
+        (SearchKnowledgeBagTool(), ToolPolicy("search_knowledge_bag", required_context=("knowledge_base",), max_result_tokens=1800)),
+        (FetchStepDetailsTool(), ToolPolicy("fetch_step_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
+        (FetchEnergyDetailsTool(), ToolPolicy("fetch_energy_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
+        (FetchNutritionDetailsTool(), ToolPolicy("fetch_nutrition_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
+        (FetchSleepDetailsTool(), ToolPolicy("fetch_sleep_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
+        (FetchWorkoutDetailsTool(), ToolPolicy("fetch_workout_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
+        (GetCurrentLocationTool(), ToolPolicy("get_current_location", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=800)),
         (CurrentMemberTool(), ToolPolicy("get_current_member", required_context=("member",), max_result_tokens=800)),
         (MemberProfileTool(), ToolPolicy("query_member_profile", required_context=("member",), max_result_tokens=1600)),
         (HealthSourcesTool(), ToolPolicy("list_member_health_sources", required_context=("member",), max_result_tokens=1800)),
@@ -104,4 +126,4 @@ def build_server_tool_registry() -> ToolRegistry:
     return registry
 
 
-__all__ = ["RegisteredTool", "ToolRegistry", "build_server_tool_registry"]
+__all__ = ["RegisteredTool", "ToolRegistry", "build_server_tool_registry", "server_tool_entries"]

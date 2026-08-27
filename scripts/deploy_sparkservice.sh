@@ -11,12 +11,16 @@ SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$(cd "$SRC_DIR/.." && pwd)/2026}"
 FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
 # 开放端前端目录（承载分享、内容等公开页面）
 OPEN_WEB_DIR="${OPEN_WEB_DIR:-$SRC_DIR/open-web}"
+# Web AI 对话前端目录（Next.js standalone）
+CHAT_WEB_DIR="${CHAT_WEB_DIR:-$SRC_DIR/chat-web}"
 # 远程服务器地址（用户名@IP）
 REMOTE_HOST="${REMOTE_HOST:-root@139.196.215.51}"
 # 远程服务器部署根目录
 REMOTE_BASE="${REMOTE_BASE:-/root/2026}"
 # 开放端前端静态目录（由 Docker open_web 容器托管）
 OPEN_WEB_REMOTE_DIR="${OPEN_WEB_REMOTE_DIR:-$REMOTE_BASE/shared/open-web-dist}"
+# Web AI 对话前端 standalone 目录（由 Docker chat_web 容器托管）
+CHAT_WEB_REMOTE_DIR="${CHAT_WEB_REMOTE_DIR:-$REMOTE_BASE/shared/chat-web-standalone}"
 # 远程上传文件存放目录
 UPLOAD_DIR="$REMOTE_BASE/uploads"
 # 远程脚本存放目录
@@ -35,10 +39,14 @@ PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 VITE_API_BASE_URL="${VITE_API_BASE_URL:-https://api.dreamhua.top}"
 # 开放端前端 API 地址；默认留空，使用同域 /api/ 反代到后端
 OPEN_WEB_API_BASE_URL="${OPEN_WEB_API_BASE_URL:-}"
+# Web AI 对话前端 WebSocket 地址；默认留空，使用同域 wss://chat.dreamwhale.top/ws/
+NEXT_PUBLIC_SPARK_WS_BASE_URL="${NEXT_PUBLIC_SPARK_WS_BASE_URL:-}"
 # 是否在本地构建前端并上传 dist，避免 2C2G 服务器构建时卡死
 BUILD_FRONTEND_LOCAL="${BUILD_FRONTEND_LOCAL:-1}"
 # 是否在本地构建开放端前端并上传 dist
 BUILD_OPEN_WEB_LOCAL="${BUILD_OPEN_WEB_LOCAL:-1}"
+# 是否在本地构建 Web AI 对话前端并上传 Next standalone
+BUILD_CHAT_WEB_LOCAL="${BUILD_CHAT_WEB_LOCAL:-1}"
 # 是否使用 rsync 同步（1=启用，0=关闭）
 USE_RSYNC="${USE_RSYNC:-1}"
 # 是否在新部署前取消服务器上未完成的旧部署（1=启用）
@@ -71,6 +79,12 @@ EXCLUDES=(
   --exclude "share-web"
   --exclude "open-web/node_modules"
   --exclude "open-web/dist"
+  --exclude "chat-web/node_modules"
+  --exclude "chat-web/.next"
+  --exclude "chat-web/test-results"
+  --exclude "chat-web/playwright-report"
+  --exclude "chat-web/coverage"
+  --exclude "chat-web/.env.local"
   --exclude "logs"
   --exclude "run"
   --exclude "media"
@@ -100,6 +114,10 @@ if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
 fi
 if [[ "$BUILD_OPEN_WEB_LOCAL" == "1" ]]; then
   [[ -d "$OPEN_WEB_DIR" ]] || { echo "OPEN_WEB_DIR not found: $OPEN_WEB_DIR" >&2; exit 2; }
+  command -v pnpm >/dev/null || { echo "pnpm not found" >&2; exit 2; }
+fi
+if [[ "$BUILD_CHAT_WEB_LOCAL" == "1" ]]; then
+  [[ -d "$CHAT_WEB_DIR" ]] || { echo "CHAT_WEB_DIR not found: $CHAT_WEB_DIR" >&2; exit 2; }
   command -v pnpm >/dev/null || { echo "pnpm not found" >&2; exit 2; }
 fi
 
@@ -239,6 +257,24 @@ if [[ "$BUILD_OPEN_WEB_LOCAL" == "1" ]]; then
   (cd "$OPEN_WEB_DIR" && pnpm install --frozen-lockfile && VITE_API_BASE_URL="$OPEN_WEB_API_BASE_URL" pnpm build)
   ssh "$REMOTE_HOST" "mkdir -p '$OPEN_WEB_REMOTE_DIR'"
   rsync -az --delete "$OPEN_WEB_DIR/dist"/ "$REMOTE_HOST:$OPEN_WEB_REMOTE_DIR/"
+fi
+
+# ========== 6.2 本地构建 Web AI 对话前端并上传 ==========
+# chat-web 是 Next.js 服务端应用，本机产出 standalone，服务器只运行轻量 Node 容器。
+if [[ "$BUILD_CHAT_WEB_LOCAL" == "1" ]]; then
+  echo "==> 本地构建 Web AI 对话前端：chat.dreamwhale.top -> ${NEXT_PUBLIC_SPARK_WS_BASE_URL:-同域 /ws/}"
+  (
+    cd "$CHAT_WEB_DIR"
+    pnpm install --frozen-lockfile
+    NEXT_PUBLIC_SPARK_WS_BASE_URL="$NEXT_PUBLIC_SPARK_WS_BASE_URL" pnpm build
+  )
+  [[ -s "$CHAT_WEB_DIR/.next/standalone/server.js" ]] || { echo "没有找到 chat-web standalone server.js，请检查 next.config.ts output=standalone" >&2; exit 2; }
+  ssh "$REMOTE_HOST" "mkdir -p '$CHAT_WEB_REMOTE_DIR/.next'"
+  rsync -az --delete "$CHAT_WEB_DIR/.next/standalone"/ "$REMOTE_HOST:$CHAT_WEB_REMOTE_DIR/"
+  rsync -az --delete "$CHAT_WEB_DIR/.next/static"/ "$REMOTE_HOST:$CHAT_WEB_REMOTE_DIR/.next/static/"
+  if [[ -d "$CHAT_WEB_DIR/public" ]]; then
+    rsync -az --delete "$CHAT_WEB_DIR/public"/ "$REMOTE_HOST:$CHAT_WEB_REMOTE_DIR/public/"
+  fi
 fi
 
 # ========== 7. 代码打包并上传到远程 ==========

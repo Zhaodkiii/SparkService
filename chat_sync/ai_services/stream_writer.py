@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from chat_sync.ai_models import ChatRun, ChatThreadRunLock, ChatUsageRecord, RunStatus
 from chat_sync.ai_services.run_service import RunService
-from chat_sync.contracts import NODE_ROLE_TIMELINE, payload_text, text_payload
+from chat_sync.contracts import KIND_DEEP_THOUGHT, KIND_TEXT, NODE_ROLE_TIMELINE, deep_thought_payload, payload_text, text_payload
 from chat_sync.models import ChatMessageBlock
 
 
@@ -104,6 +104,83 @@ class StreamWriter:
                 run.first_token_at = now
                 run.save(update_fields=["first_token_at", "updated_at"])
                 RunService._append_event_locked(run=run, event_type="assistant.status", payload={"state": "answering", "status": "answering"})
+            RunService._append_event_locked(
+                run=run,
+                event_type="block.delta",
+                payload={
+                    "message_id": str(run.assistant_message_id),
+                    "block_id": str(block.id),
+                    "revision": block.revision,
+                    "delta": text,
+                    "content_type": "text/markdown",
+                },
+            )
+            return block.revision
+
+    @staticmethod
+    def _deep_thought_inner(payload: dict[str, Any] | None) -> dict[str, Any]:
+        wrapper = (payload or {}).get("deep_thought") or {}
+        inner = wrapper.get("_0") if isinstance(wrapper, dict) else None
+        return dict(inner) if isinstance(inner, dict) else {}
+
+    @classmethod
+    def append_reasoning(cls, *, run_id, text: str, lease_token=None) -> int | None:
+        """Incrementally grow a single canonical deepThought Block for this Run."""
+        if not text:
+            return None
+        with transaction.atomic():
+            run = ChatRun.objects.select_for_update().select_related("assistant_message").get(pk=run_id)
+            cls._assert_execution(run, lease_token)
+            block = run.assistant_message.blocks.filter(kind=KIND_DEEP_THOUGHT).first()
+            now = timezone.now()
+            if block is None:
+                block = ChatMessageBlock.objects.create(
+                    user=run.user,
+                    thread=run.thread,
+                    message=run.assistant_message,
+                    kind=KIND_DEEP_THOUGHT,
+                    status=ChatMessageBlock.Status.STREAMING,
+                    revision=0,
+                    order_key=900,
+                    node_role=NODE_ROLE_TIMELINE,
+                    payload=deep_thought_payload("", None, True, "summary"),
+                    created_at=now,
+                    updated_at=now,
+                )
+                RunService._append_event_locked(
+                    run=run,
+                    event_type="block.created",
+                    payload={
+                        "message_id": str(run.assistant_message_id),
+                        "block_id": str(block.id),
+                        "kind": KIND_DEEP_THOUGHT,
+                        "status": "streaming",
+                        "revision": 0,
+                        "order_key": block.order_key,
+                        "block": {
+                            "id": str(block.id),
+                            "kind": KIND_DEEP_THOUGHT,
+                            "status": "streaming",
+                            "revision": 0,
+                            "order_key": block.order_key,
+                            "node_role": block.node_role,
+                            "payload": deep_thought_payload("", None, True, "summary"),
+                        },
+                    },
+                )
+                inner_content = text
+            else:
+                inner_content = f"{cls._deep_thought_inner(dict(block.payload or {})).get('reasoning_content') or ''}{text}"
+            block.payload = deep_thought_payload(
+                reasoning_content=inner_content,
+                reasoning_duration_ms=None,
+                reasoning_expanded=True,
+                reasoning_visibility="summary",
+            )
+            block.revision += 1
+            block.status = ChatMessageBlock.Status.STREAMING
+            block.updated_at = now
+            block.save(update_fields=["payload", "revision", "status", "updated_at", "server_updated_at"])
             RunService._append_event_locked(
                 run=run,
                 event_type="block.delta",
@@ -258,18 +335,31 @@ class StreamWriter:
                 error_message = ""
                 retryable = False
             lock = ChatThreadRunLock.objects.select_for_update().get(thread=run.thread)
-            block = run.assistant_message.blocks.filter(kind="text").first()
-            if block is not None:
+            now = timezone.now()
+            for block in run.assistant_message.blocks.filter(kind__in=[KIND_TEXT, KIND_DEEP_THOUGHT]).order_by("order_key", "created_at"):
+                if block.kind == KIND_DEEP_THOUGHT:
+                    inner = cls._deep_thought_inner(dict(block.payload or {}))
+                    duration_ms = None
+                    if block.created_at:
+                        end_at = run.first_token_at or now
+                        duration_ms = max(0, int((end_at - block.created_at).total_seconds() * 1000))
+                    block.payload = deep_thought_payload(
+                        reasoning_content=str(inner.get("reasoning_content") or ""),
+                        reasoning_duration_ms=duration_ms,
+                        reasoning_expanded=False,
+                        reasoning_visibility=str(inner.get("reasoning_visibility") or "summary"),
+                    )
                 block.revision += 1
                 block.status = ChatMessageBlock.Status.READY if status == RunStatus.COMPLETED else ChatMessageBlock.Status.FAILED
-                block.updated_at = timezone.now()
-                block.save(update_fields=["revision", "status", "updated_at", "server_updated_at"])
+                block.updated_at = now
+                block.save(update_fields=["payload", "revision", "status", "updated_at", "server_updated_at"] if block.kind == KIND_DEEP_THOUGHT else ["revision", "status", "updated_at", "server_updated_at"])
                 RunService._append_event_locked(
                     run=run,
                     event_type="block.completed" if status == RunStatus.COMPLETED else "block.failed",
                     payload={
                         "message_id": str(run.assistant_message_id),
                         "block_id": str(block.id),
+                        "kind": block.kind,
                         "revision": block.revision,
                         "status": block.status,
                         "payload_hash": _payload_hash(block.payload or {}),

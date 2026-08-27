@@ -15,10 +15,13 @@ from chat_sync.ai_services.context.budget import resolve_budget
 from chat_sync.ai_services.context.summary import summarize_messages
 from chat_sync.ai_services.context.token_counter import count_message, count_tokens
 from chat_sync.ai_services.prompt_assembler import PROMPT_VERSION, PromptBlock, assemble_messages
-from chat_sync.ai_runtime.tools.composition import compose_enabled_tools, manifest_entries
 from chat_sync.ai_runtime.tools.registry import build_server_tool_registry
 from chat_sync.ai_runtime.capabilities import build_capability_registry
 from chat_sync.ai_services.deferred_tool_service import DeferredToolService
+from chat_sync.ai_services.effective_tool_manifest_service import (
+    build_effective_tool_manifest,
+    feature_flags_from_settings,
+)
 from chat_sync.contracts import payload_text
 
 
@@ -55,33 +58,46 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
     capability = build_capability_registry().require(run.capability, run.capability_version)
     from ai_config.models import AIModelCatalog
     model_supports_tools = bool(run.model and AIModelCatalog.objects.filter(name=run.model, supports_tool_use=True, is_active=True).exists())
-    registry = build_server_tool_registry()
     client_snapshot = (run.request_snapshot or {}).get("client") or {}
     client_capabilities = client_snapshot.get("client_tools") or []
     client_tool_names = [item.get("name") if isinstance(item, dict) else str(item) for item in client_capabilities]
-    requested_tools = list(prefs.enabled_tools or [])
-    requested_tools.extend(capability.owned_tools)
-    requested_tools.extend(
-        DeferredToolService.active_names(
-            thread_id=run.thread_id,
+    from chat_sync.ai_knowledge.services.preference_validation import freeze_knowledge_bases
+
+    frozen_bases = freeze_knowledge_bases(run.user, prefs.knowledge_bases or [])
+    eligible_base_ids = [item["id"] for item in frozen_bases if item.get("retrieval_eligible")]
+    existing_snapshot = ChatTurnContextSnapshot.objects.filter(run=run).first()
+    if existing_snapshot is not None:
+        tool_manifest = list(existing_snapshot.tool_manifest or [])
+        tool_manifest_source = list(existing_snapshot.tool_manifest_source or [])
+        tool_manifest_filtered = list(existing_snapshot.tool_manifest_filtered or [])
+        tool_manifest_hash = str(existing_snapshot.tool_manifest_hash or "")
+    else:
+        auto_context_tools = ["search_knowledge_bag"] if eligible_base_ids else []
+        manifest = build_effective_tool_manifest(
             capability=run.capability,
-            capability_version=run.capability_version,
+            scenario_key="chat",
+            resolved_model=str(run.model or ""),
+            model_supports_tools=model_supports_tools,
+            member_id=run.thread.member_id,
+            source_ids=[item.source_id for item in source_rows],
+            knowledge_base_ids=eligible_base_ids,
+            capability_owned_tools=capability.owned_tools,
+            auto_context_tools=auto_context_tools,
+            deferred_active_names=DeferredToolService.active_names(
+                thread_id=run.thread_id,
+                capability=run.capability,
+                capability_version=run.capability_version,
+            ),
+            thread_enabled_tools=prefs.enabled_tools or [],
+            feature_flags=feature_flags_from_settings(),
+            registry=build_server_tool_registry(),
+            client_platform=str(client_snapshot.get("platform") or ""),
+            client_tool_names=client_tool_names,
         )
-    )
-    if not getattr(settings, "CHAT_AI_WAITING_ENABLED", False) or not getattr(settings, "CHAT_AI_ASK_USER_ENABLED", False):
-        requested_tools = [name for name in requested_tools if name not in {"ask_user", "ask_user_question"}]
-    composition = compose_enabled_tools(
-        registry=registry,
-        requested=requested_tools,
-        member_id=run.thread.member_id,
-        source_ids=[item.source_id for item in source_rows],
-        model_supports_tools=model_supports_tools,
-        feature_enabled=getattr(settings, "CHAT_AI_AGENTIC_TOOLS_ENABLED", False),
-        client_tools_enabled=getattr(settings, "CHAT_AI_WAITING_ENABLED", False) and getattr(settings, "CHAT_AI_CLIENT_TOOLS_ENABLED", False),
-        client_platform=str(client_snapshot.get("platform") or ""),
-        client_tool_names=client_tool_names,
-    )
-    tool_manifest = manifest_entries(registry, composition.effective_names)
+        tool_manifest = list(manifest.effective_tools)
+        tool_manifest_source = list(manifest.source_server_tool_scenarios)
+        tool_manifest_filtered = list(manifest.filtered_tools)
+        tool_manifest_hash = manifest.manifest_hash
     language = prefs.language or "zh-CN"
     parent = run.context_parent_message
     rows = run.thread.messages.filter(tombstone=False, role__in=["user", "assistant"])
@@ -150,7 +166,23 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
     canonical = {"prompt_version": PROMPT_VERSION, "capability": capability.key, "capability_manifest_hash": capability.manifest_hash, "run_id": str(run.id), "messages": messages, "source_ids": [item.source_id for item in source_rows], "source_hashes": [item.content_hash for item in source_rows], "selected_ids": selected_ids, "budget": report, "tool_manifest": tool_manifest}
     context_hash = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
     trim_trace = tuple(list(selected.trim_trace) + ([summary_trace] if summary_trace else []))
-    _persist_snapshot(run, prefs, source_rows, selected_ids, trim_trace, report, context_hash, route_snapshot, messages, history_summary, tool_manifest)
+    _persist_snapshot(
+        run,
+        prefs,
+        source_rows,
+        selected_ids,
+        trim_trace,
+        report,
+        context_hash,
+        route_snapshot,
+        messages,
+        history_summary,
+        tool_manifest,
+        frozen_bases,
+        tool_manifest_source=tool_manifest_source,
+        tool_manifest_filtered=tool_manifest_filtered,
+        tool_manifest_hash=tool_manifest_hash,
+    )
     return UnifiedChatContext(tuple(messages), tuple(ordered_blocks), tuple({"source_id": item.source_id, "type": item.source_type, "title": item.title, "version": item.version, "content_hash": item.content_hash, "metadata": item.metadata} for item in source_rows), report, trim_trace, context_hash, tuple(tool_manifest))
 
 
@@ -172,7 +204,23 @@ def _preferences_from_snapshot(run, current):
     return current
 
 
-def _persist_snapshot(run, prefs, source_rows, selected_ids, trim_trace, report, context_hash, route_snapshot, messages, history_summary, tool_manifest):
+def _persist_snapshot(
+    run,
+    prefs,
+    source_rows,
+    selected_ids,
+    trim_trace,
+    report,
+    context_hash,
+    route_snapshot,
+    messages,
+    history_summary,
+    tool_manifest,
+    frozen_bases=None,
+    tool_manifest_source=None,
+    tool_manifest_filtered=None,
+    tool_manifest_hash="",
+):
     existing = ChatTurnContextSnapshot.objects.filter(run=run).first()
     if existing is not None:
         if existing.build_status == "ready" and existing.snapshot_hash != context_hash:
@@ -187,8 +235,22 @@ def _persist_snapshot(run, prefs, source_rows, selected_ids, trim_trace, report,
             "history_head_message_id": run.context_parent_message_id,
             "selected_message_ids": selected_ids,
             "history_summary": history_summary,
-            "sources": [{"source_id": item.source_id, "type": item.source_type, "title": item.title, "version": item.version, "content_hash": item.content_hash, "metadata": item.metadata} for item in source_rows],
+            "sources": [{"source_id": item.source_id, "type": item.source_type, "title": item.title, "version": item.version, "content_hash": item.content_hash, "metadata": item.metadata} for item in source_rows]
+            + [
+                {
+                    "source_id": item["id"],
+                    "type": "knowledge_base",
+                    "title": item["name"],
+                    "version": str(item.get("revision") or ""),
+                    "content_hash": "",
+                    "metadata": {"active_index_version": item.get("active_index_version"), "index_status": item.get("index_status"), "retrieval_eligible": item.get("retrieval_eligible")},
+                }
+                for item in (frozen_bases or [])
+            ],
             "tool_manifest": tool_manifest,
+            "tool_manifest_source": list(tool_manifest_source or []),
+            "tool_manifest_filtered": list(tool_manifest_filtered or []),
+            "tool_manifest_hash": str(tool_manifest_hash or ""),
             "token_budget": report,
             "trim_trace": list(trim_trace),
             "route_snapshot": route_snapshot,

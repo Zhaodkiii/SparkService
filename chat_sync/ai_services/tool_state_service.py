@@ -70,7 +70,7 @@ def _activity_payload(
         "name": row.tool_name,
         "version": row.tool_version or "v1",
         "display_name": public_display_name(row.tool_name),
-        "target": "server",
+        "target": row.target or "server",
         "status": status,
         "round_index": int(row.round_index or 0),
         "call_index": int(row.call_index or 0),
@@ -167,6 +167,7 @@ def record_tool_requests(run_id, round_index: int, calls: list[dict[str, Any]], 
                 "tool_name": name,
                 "tool_version": entry.policy.version if entry else "",
                 "target": entry.policy.target if entry else "server",
+                "execution_mode": getattr(entry.policy, "execution_mode", "immediate") if entry else "immediate",
                 "arguments": args,
                 "round_index": round_index,
                 "call_index": call_index,
@@ -322,17 +323,15 @@ def record_tool_results(run_id, items: list[ToolDispatchItem]) -> None:
             started_at=row.started_at,
             finished_at=row.finished_at,
         )
-        RunService._append_event_locked(
-            run=run,
-            event_type="tool.result",
-            payload={
-                "tool_call_id": row.tool_call_id,
-                "tool_name": row.tool_name,
-                "success": success,
-                "error_code": (error or {}).get("code", ""),
-                "activity": activity,
-            },
-        )
+        result_event = "tool.result.completed" if success else "tool.result.failed"
+        result_payload = {
+            "tool_call_id": row.tool_call_id,
+            "tool_name": row.tool_name,
+            "success": success,
+            "error_code": (error or {}).get("code", ""),
+            "activity": activity,
+        }
+        RunService._append_event_locked(run=run, event_type=result_event, payload=result_payload)
         call_block = (
             ChatMessageBlock.objects.select_for_update()
             .filter(message=run.assistant_message, tool_call_id=row.tool_call_id, kind="tool")
@@ -351,46 +350,49 @@ def record_tool_results(run_id, items: list[ToolDispatchItem]) -> None:
                 event_type="block.updated",
                 payload=_block_event_payload(run=run, block=call_block, payload=dict(call_block.payload or {})),
             )
-        result_kind = tool_presentation_kind(row.tool_name)
-        result_block = ChatMessageBlock.objects.create(
-            user=run.user,
-            thread=run.thread,
-            message=run.assistant_message,
-            kind=result_kind,
-            status=ChatMessageBlock.Status.READY if success else ChatMessageBlock.Status.FAILED,
-            revision=1,
-            order_key=_order_key(TOOL_RESULT_ORDER_BASE, row.round_index, row.call_index),
-            tool_call_id=row.tool_call_id,
-            node_role=NODE_ROLE_TOOL_PRESENTATION,
-            payload=_tool_result_block_payload(
-                row,
-                status=status.lower(),
-                success=success,
-                result_preview=result_preview,
-                source_refs=source_refs,
-                error=error,
-            ),
-            created_at=now,
-            updated_at=now,
-        )
-        RunService._append_event_locked(
-            run=run,
-            event_type="block.created",
-            payload=_block_event_payload(run=run, block=result_block, payload=dict(result_block.payload or {})),
-        )
-        RunService._append_event_locked(
-            run=run,
-            event_type="block.completed" if success else "block.failed",
-            payload={
-                "message_id": str(run.assistant_message_id),
-                "block_id": str(result_block.id),
-                "kind": result_kind,
-                "status": result_block.status,
-                "revision": 2,
-                "order_key": result_block.order_key,
-                "tool_call_id": row.tool_call_id,
-            },
-        )
+        # Failed tools without a user-readable preview stay in the activity
+        # trace; they must not mint an empty presentation card.
+        if success or result_preview or source_refs:
+            result_kind = tool_presentation_kind(row.tool_name)
+            result_block = ChatMessageBlock.objects.create(
+                user=run.user,
+                thread=run.thread,
+                message=run.assistant_message,
+                kind=result_kind,
+                status=ChatMessageBlock.Status.READY if success else ChatMessageBlock.Status.FAILED,
+                revision=1,
+                order_key=_order_key(TOOL_RESULT_ORDER_BASE, row.round_index, row.call_index),
+                tool_call_id=row.tool_call_id,
+                node_role=NODE_ROLE_TOOL_PRESENTATION,
+                payload=_tool_result_block_payload(
+                    row,
+                    status=status.lower(),
+                    success=success,
+                    result_preview=result_preview,
+                    source_refs=source_refs,
+                    error=error,
+                ),
+                created_at=now,
+                updated_at=now,
+            )
+            RunService._append_event_locked(
+                run=run,
+                event_type="block.created",
+                payload=_block_event_payload(run=run, block=result_block, payload=dict(result_block.payload or {})),
+            )
+            RunService._append_event_locked(
+                run=run,
+                event_type="block.completed" if success else "block.failed",
+                payload={
+                    "message_id": str(run.assistant_message_id),
+                    "block_id": str(result_block.id),
+                    "kind": result_kind,
+                    "status": result_block.status,
+                    "revision": 2,
+                    "order_key": result_block.order_key,
+                    "tool_call_id": row.tool_call_id,
+                },
+            )
 
 
 @transaction.atomic

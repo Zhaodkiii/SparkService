@@ -160,3 +160,72 @@ class RoundRunnerNarrationTests(SimpleTestCase):
         result = asyncio.run(run())
         self.assertEqual(result.text, "这是最终答案")
         self.assertEqual(deltas, [])
+
+
+@override_settings(CHAT_AI_SERVER_RUNS_ENABLED=True, CHAT_AI_RUN_EXECUTOR="disabled", CHAT_AI_OUTBOX_IMMEDIATE_RELAY=False)
+class RoundTraceGroupingTests(TestCase):
+    def test_many_reasoning_deltas_grow_a_single_deep_thought_block(self):
+        run = _make_run()
+        lease = run.lease_token
+        StreamWriter.round_started(run_id=run.id, round_id="0", index=0, lease_token=lease)
+        for index in range(100):
+            StreamWriter.round_delta(
+                run_id=run.id, round_id="0", index=0,
+                channel="public_reasoning_summary", text_delta="x", lease_token=lease,
+            )
+        StreamWriter.append_reasoning(run_id=run.id, text="x" * 100, lease_token=lease)
+        StreamWriter.round_completed(
+            run_id=run.id, round_id="0", index=0, call_id="req-0", call_role="finish",
+            content="答案", finish_reason="stop", lease_token=lease,
+        )
+        StreamWriter.append_text(run_id=run.id, text="答案", lease_token=lease)
+        finished = StreamWriter.finish(run_id=run.id, status=RunStatus.COMPLETED, lease_token=lease)
+
+        self.assertEqual(finished.assistant_message.blocks.filter(kind="deepThought").count(), 1)
+        thought = finished.assistant_message.blocks.get(kind="deepThought")
+        self.assertEqual(thought.payload["deep_thought"]["_0"]["reasoning_content"], "x" * 100)
+        self.assertEqual(finished.events.filter(type="agent.round.delta").count(), 100)
+        self.assertEqual(finished.events.filter(type="agent.round.started").count(), 1)
+        self.assertEqual(finished.events.filter(type="agent.round.completed").count(), 1)
+
+    def test_one_tool_call_stays_one_row_across_progress_updates(self):
+        from chat_sync.ai_runtime.protocols.tool_protocol import ToolResult
+        from chat_sync.ai_runtime.tools.dispatcher import ToolDispatchItem
+        from chat_sync.ai_runtime.tools.registry import build_server_tool_registry
+        from chat_sync.ai_runtime.tools.scoped_registry import ScopedToolRegistry
+        from chat_sync.ai_services.tool_state_service import (
+            mark_tool_started,
+            record_tool_progress,
+            record_tool_requests,
+            record_tool_results,
+        )
+        from chat_sync.ai_models import ChatToolCall
+
+        run = _make_run()
+        registry = ScopedToolRegistry(build_server_tool_registry(), ["query_member_profile"])
+        record_tool_requests(
+            run.id,
+            0,
+            [{"id": "call-1", "name": "query_member_profile", "arguments": {"sections": ["allergies"]}}],
+            registry,
+        )
+        mark_tool_started(run.id, "call-1")
+        for percent in range(10, 101, 10):
+            record_tool_progress(run.id, "call-1", f"进度 {percent}", percent)
+        record_tool_results(
+            run.id,
+            [
+                ToolDispatchItem(
+                    call_id="call-1",
+                    name="query_member_profile",
+                    arguments={"sections": ["allergies"]},
+                    result=ToolResult(content="ok"),
+                )
+            ],
+        )
+        self.assertEqual(ChatToolCall.objects.filter(run=run, tool_call_id="call-1").count(), 1)
+        self.assertEqual(run.assistant_message.blocks.filter(kind="tool", tool_call_id="call-1").count(), 1)
+        self.assertEqual(run.events.filter(type="tool.call.requested").count(), 1)
+        self.assertEqual(run.events.filter(type="tool.call.progress").count(), 10)
+        self.assertEqual(run.events.filter(type="tool.result.completed").count(), 1)
+        self.assertEqual(run.events.filter(type="tool.result").count(), 0)

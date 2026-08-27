@@ -21,6 +21,8 @@ const EVENT_LABELS: Record<string, string> = {
   "tool.call.requested": "准备调用服务工具",
   "tool.call.started": "工具开始执行",
   "tool.result": "工具返回结果",
+  "tool.result.completed": "工具返回结果",
+  "tool.result.failed": "工具执行失败",
   "tool.call.cancelled": "工具调用已取消",
 };
 

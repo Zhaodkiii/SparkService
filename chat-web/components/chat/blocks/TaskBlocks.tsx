@@ -37,7 +37,7 @@ function SelectionList({ block, label }: BlockRenderProps & { label: string }) {
 }
 
 export function PendingMemberToolCardsBlock(props: BlockRenderProps) { return <SelectionList {...props} label="成员选择" />; }
-export function ToolQuestionCardsBlock(props: BlockRenderProps) { return <SelectionList {...props} label="确认信息" />; }
+export { ToolQuestionCardsBlock } from "@/components/chat/blocks/ToolQuestionCardsBlock";
 export function ToolMemberSelectionCardsBlock(props: BlockRenderProps) { return <SelectionList {...props} label="成员选择" />; }
 export function HealthResourceCandidateCardsBlock(props: BlockRenderProps) { return <SelectionList {...props} label="健康资料" />; }
 export function ToolConsentCardsBlock(props: BlockRenderProps) { return <SelectionList {...props} label="授权确认" />; }

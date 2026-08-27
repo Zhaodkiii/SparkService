@@ -16,6 +16,7 @@ P4_SERVER_TOOL_NAMES: tuple[str, ...] = (
     "list_member_health_sources",
     "get_health_resource_context",
     "read_source",
+    "search_knowledge_bag",
 )
 
 # revision of the public catalog contract itself; bump when display rules change.
@@ -38,6 +39,10 @@ RESOURCE_TYPE_LABELS: dict[str, str] = {
 }
 
 TOOL_DISPLAY: dict[str, dict[str, str]] = {
+    "ask_user": {
+        "display_name": "确认信息",
+        "description": "向你确认继续分析所需的信息",
+    },
     "get_current_member": {
         "display_name": "查看当前成员",
         "description": "确认当前对话选择的成员",
@@ -58,6 +63,10 @@ TOOL_DISPLAY: dict[str, dict[str, str]] = {
         "display_name": "读取参考资料",
         "description": "读取本轮对话已附加的参考资料",
     },
+    "search_knowledge_bag": {
+        "display_name": "检索知识库",
+        "description": "在已选择的知识库中检索相关资料",
+    },
 }
 
 # error_code -> (public code, message_key, retryable)
@@ -76,7 +85,8 @@ ERROR_PROJECTION: dict[str, tuple[str, str, bool]] = {
     "tool_permission_denied": ("tool_unavailable", "tool_unavailable", False),
     "tool_resource_not_found": ("tool_unavailable", "tool_unavailable", False),
     "tool_source_missing": ("tool_unavailable", "tool_unavailable", False),
-    "chat_attachment_content_unavailable": ("chat_attachment_content_unavailable", "chat_attachment_content_unavailable", False),
+    "knowledge_retrieval_unavailable": ("tool_unavailable", "tool_unavailable", True),
+    "knowledge_index_unavailable": ("tool_unavailable", "tool_unavailable", True),
 }
 
 DEFAULT_ERROR_PROJECTION: tuple[str, str, bool] = ("tool_execution_failed", "tool_execution_failed", True)
@@ -141,7 +151,11 @@ def public_args(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
         if isinstance(source_id, str) and source_id:
             return {"source_id": _label_resource_type(source_id)}
         return {}
-    # get_current_member and unknown tools expose no arguments.
+    if tool == "search_knowledge_bag":
+        projected: dict[str, Any] = {}
+        if isinstance(args.get("query"), str) and args.get("query"):
+            projected["query"] = str(args["query"])[:80]
+        return projected
     return {}
 
 
@@ -173,6 +187,13 @@ def public_result_preview(
         return "已读取健康资料"
     if tool == "read_source":
         return "已读取参考资料"
+    if tool == "ask_user":
+        return "已收到你的确认"
+    if tool == "search_knowledge_bag":
+        count = len(list(source_refs or ()))
+        if count:
+            return f"已引用 {count} 条资料"
+        return "未检索到可用资料"
     return "已完成"
 
 

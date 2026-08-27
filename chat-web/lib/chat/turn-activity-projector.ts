@@ -4,10 +4,9 @@ import type { ToolActivityDTO } from "@/types/tool";
 import { isTerminalToolActivityStatus } from "@/types/tool";
 
 /**
- * Turn activity projector (能力二/三)：把公开的 Run/assistant.status/工具活动
- * 投影为可展示的回合状态模型。这里只做 allowlist 映射，绝不读取 raw reasoning、
- * raw arguments 或 raw result；未知状态一律降级为通用文案，避免新服务端遗漏
- * 字段时反向泄露。
+ * Turn activity projector：把公开的 Run/assistant.status/工具活动投影为可展示的
+ * 回合状态模型。这里只做 allowlist 映射，绝不读取 raw reasoning、raw arguments
+ * 或 raw result；未知状态一律降级为通用文案。
  */
 
 export interface TurnActivityInput {
@@ -21,21 +20,21 @@ export interface TurnActivityInput {
 /** 公开 assistant.status allowlist → 用户可见阶段文案。 */
 const PUBLIC_ASSISTANT_STATUS_LABELS: Record<string, string> = {
   idle: "准备开始",
-  thinking: "正在思考",
-  searching: "正在查找资料",
-  exploring: "正在查找资料",
-  using_tools: "正在使用工具",
-  composing: "正在组织回答",
+  thinking: "小鲸探索中…",
+  searching: "小鲸探索中…",
+  exploring: "小鲸探索中…",
+  using_tools: "正在调用工具…",
+  composing: "小鲸正在回答…",
 };
 
 const PHASE_LABELS: Record<TurnActivityPhase, string> = {
-  exploring: "正在思考",
-  using_tools: "正在使用工具",
-  composing: "正在组织回答",
+  exploring: "小鲸探索中…",
+  using_tools: "正在调用工具…",
+  composing: "小鲸正在回答…",
   waiting: "等待回复",
   completed: "已完成",
   failed: "生成失败",
-  cancelled: "已取消",
+  cancelled: "已停止",
   interrupted: "已中断",
 };
 
@@ -59,14 +58,21 @@ function publicStatusLabel(input: TurnActivityInput, phase: TurnActivityPhase): 
   if (runStatus === "waiting_for_user_input") return "等待你的回复";
   if (runStatus === "waiting_for_client_tool") return "等待设备授权";
   if (runStatus === "unknown") return "正在处理";
-  if (runStatus && isTerminalRunStatus(runStatus)) return PHASE_LABELS[phase];
+  if (!runStatus || isTerminalRunStatus(runStatus)) return PHASE_LABELS[phase];
   const mapped = assistantStatus ? PUBLIC_ASSISTANT_STATUS_LABELS[assistantStatus] : null;
   return mapped ?? PHASE_LABELS[phase];
+}
+
+function autoExpanded(phase: TurnActivityPhase, isRunning: boolean): boolean {
+  if (phase === "failed" || phase === "cancelled" || phase === "interrupted") return true;
+  if (phase === "composing" || phase === "completed") return false;
+  return isRunning;
 }
 
 export function projectTurnActivity(input: TurnActivityInput): TurnActivityViewModel {
   const phase = derivePhase(input);
   const isRunning = input.runStatus !== null && !isTerminalRunStatus(input.runStatus);
+  const isTerminal = input.runStatus === null || isTerminalRunStatus(input.runStatus);
   const anyToolRunning = input.toolRows.some((row) => !isTerminalToolActivityStatus(row.status));
   return {
     runId: input.runId,
@@ -77,6 +83,8 @@ export function projectTurnActivity(input: TurnActivityInput): TurnActivityViewM
     hasToolActivity: input.toolRows.length > 0,
     anyToolRunning,
     isRunning,
-    isTerminal: input.runStatus !== null && isTerminalRunStatus(input.runStatus),
+    isTerminal,
+    isFinalAnswerPhase: phase === "composing",
+    autoExpanded: autoExpanded(phase, isRunning),
   };
 }

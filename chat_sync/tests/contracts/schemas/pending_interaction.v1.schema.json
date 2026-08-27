@@ -2,14 +2,35 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "spark.chat.pending-interaction.v1",
   "type": "object",
-  "required": ["interaction_id", "kind", "status", "expires_at"],
+  "required": [
+    "run_id",
+    "interaction_id",
+    "interaction_key",
+    "kind",
+    "status",
+    "tool_call_id",
+    "schema_version",
+    "question_ids",
+    "request",
+    "expires_at"
+  ],
   "properties": {
+    "run_id": {"type": "string", "format": "uuid"},
     "interaction_id": {"type": "string", "format": "uuid"},
-    "kind": {"enum": ["ask_user", "client_tool"]},
+    "interaction_key": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["ask_user", "client_tool", "consent"]},
+    "status": {"enum": ["pending", "claimed", "resolved", "refused", "expired", "cancelled"]},
     "tool_call_id": {"type": ["string", "null"]},
-    "status": {"enum": ["pending", "resolved", "refused", "expired", "cancelled"]},
-    "schema": {"type": "object"},
-    "expires_at": {"type": "string", "format": "date-time"}
+    "tool_name": {"type": "string"},
+    "tool_version": {"type": "string"},
+    "schema_version": {"type": "integer", "minimum": 1},
+    "question_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "request": {"type": "object"},
+    "expires_at": {"type": ["string", "null"], "format": "date-time"}
   },
   "additionalProperties": true
 }

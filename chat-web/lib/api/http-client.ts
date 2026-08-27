@@ -33,6 +33,11 @@ export function userFacingApiError(failure: SparkApiFailure): string {
     "chat.run_worker_unavailable": "服务暂时繁忙，请稍后重试。",
     "chat.thread_not_found": "当前对话不存在或已失效，请刷新页面。",
     "chat.run_already_active": "当前对话仍在生成中，请稍候或先停止上一轮。",
+    "chat.interaction_conflict": "这份回答与已提交内容冲突，已为你刷新当前状态。",
+    "chat.interaction_already_resolved": "这个问题已经回答过了。",
+    "chat.interaction_expired": "确认已过期，请等待小鲸继续。",
+    "chat.interaction_response_invalid": "提交内容不完整，请重新选择后再试。",
+    "chat.interaction_idempotency_required": "提交失败，请稍后重试。",
     "auth.unauthorized": "登录状态已失效，请重新登录。",
   };
   return messages[failure.messageKey] ?? (failure.httpStatus >= 500 ? "服务暂时不可用，请稍后重试。" : "请求未完成，请稍后重试。");

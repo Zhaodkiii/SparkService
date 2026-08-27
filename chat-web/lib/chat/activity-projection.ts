@@ -35,6 +35,7 @@ const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "list_member_health_sources",
   "get_health_resource_context",
   "read_source",
+  "search_knowledge_bag",
 ]);
 
 const STATUS_LABELS: Record<ToolActivityDTO["status"], string> = {
@@ -89,6 +90,7 @@ function argSummary(activity: ToolActivityDTO): string | null {
   if (types.length) return `资料类型：${joinList(types)}`;
   if (typeof args.resource_type === "string" && args.resource_type) return `资料类型：${args.resource_type}`;
   if (typeof args.source_id === "string" && args.source_id) return `资料：${args.source_id}`;
+  if (typeof args.query === "string" && args.query) return `检索：${args.query}`;
   if (typeof args.limit === "number") return `最多返回 ${args.limit} 项`;
   return null;
 }
@@ -147,6 +149,7 @@ const TOOL_VERBS: Record<string, string> = {
   list_member_health_sources: "列出健康资料",
   get_health_resource_context: "读取健康资料",
   read_source: "读取资料来源",
+  search_knowledge_bag: "检索知识库",
 };
 
 /** Artifact chip: the same allow-listed `display_args` as {@link argSummary},

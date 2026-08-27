@@ -166,3 +166,15 @@ class DeferredToolLoadSerializer(serializers.Serializer):
 class DeferredToolRevokeSerializer(serializers.Serializer):
     names = serializers.ListField(child=serializers.CharField(max_length=64), min_length=1, max_length=8)
     reason = serializers.CharField(required=False, allow_blank=True, max_length=128)
+
+
+class RunToolManifestSerializer(serializers.Serializer):
+    run_id = serializers.UUIDField()
+    scenario_key = serializers.CharField()
+    resolved_model = serializers.CharField(allow_blank=True)
+    source_server_tool_scenarios = serializers.ListField(child=serializers.CharField())
+    effective_tools = serializers.ListField()
+    filtered_tools = serializers.ListField()
+    manifest_hash = serializers.CharField(allow_blank=True)
+    generated_at = serializers.CharField(allow_null=True, allow_blank=True)
+    build_status = serializers.CharField()

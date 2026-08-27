@@ -125,6 +125,11 @@ class AIScenarioModelBinding(models.Model):
     system_provision = models.TextField(blank=True, default="", db_comment="场景绑定systemProvision_bootstrap优先试用策略行覆盖")
     brief_description = models.TextField(blank=True, default="", db_comment="场景绑定briefDescription_bootstrap优先试用策略行覆盖")
     ai_tool_scenarios = models.JSONField(default=list, blank=True, db_comment="场景绑定aiToolScenarios_JSON_bootstrap优先试用策略行覆盖")
+    server_tool_scenarios = models.JSONField(
+        default=list,
+        blank=True,
+        db_comment="场景模型绑定的 SparkService 服务端工具场景编码列表",
+    )
     related_task_codes = models.JSONField(default=list, blank=True, db_comment="场景绑定关联小任务唯一编码列表")
     updated_at = models.DateTimeField(auto_now=True, db_comment="更新时间")
     created_at = models.DateTimeField(auto_now_add=True, db_comment="创建时间")

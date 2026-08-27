@@ -71,7 +71,8 @@ export type ToolUnavailableReason =
   | "feature_disabled"
   | "model_unsupported"
   | "member_required"
-  | "source_required";
+  | "source_required"
+  | "knowledge_base_required";
 
 /** One entry of the per-thread public tool catalog (GET /threads/:id/tools/). */
 export interface ToolCatalogItemDTO {

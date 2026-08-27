@@ -3,6 +3,7 @@ import type { ToolActivityDTO } from "@/types/tool";
 import { sortBlocksForMessage } from "@/lib/chat/block-order";
 import { extractAnswerText } from "@/lib/chat/answer-text";
 import { activityFromToolBlock, isToolActivityBlock } from "@/lib/tools/tool-block-normalizer";
+import { blockAssociatedValue } from "@/lib/chat/block-normalizer";
 
 /**
  * Turn presentation (能力一/六)：把一条消息的 Block 按“活动 / 正文 /
@@ -61,18 +62,50 @@ export function buildTurnPresentation(
 /**
  * Deduplicate presentation cards (能力六)：当“通用 `tool` 结果卡”与某个领域结果卡
  * 共享同一 parent_tool_call_id 时，省略通用卡，保留领域卡，避免同一结果展示两次。
+ * 失败且没有可读 payload 的结果卡也不进入插槽，避免空白卡。
  */
+function isBlankFailedPresentation(block: ChatBlockDTO): boolean {
+  if (block.status !== "failed") return false;
+  const payload = block.payload;
+  if (!payload || typeof payload !== "object") return true;
+  return Object.keys(payload).length === 0;
+}
+
 export function selectPresentationBlocks(presentationBlocks: ChatBlockDTO[]): ChatBlockDTO[] {
   const domainCallIds = new Set<string>();
   for (const block of presentationBlocks) {
-    if (block.kind === "tool") continue;
+    if (block.kind === "tool" || isBlankFailedPresentation(block)) continue;
     const callId = block.parent_tool_call_id ?? block.tool_call_id;
     if (typeof callId === "string" && callId) domainCallIds.add(callId);
   }
   return presentationBlocks.filter((block) => {
+    if (isBlankFailedPresentation(block)) return false;
     if (block.kind !== "tool") return true;
     const callId = block.parent_tool_call_id ?? block.tool_call_id;
     return !(typeof callId === "string" && callId && domainCallIds.has(callId));
+  });
+}
+
+function interactionIdFromBlock(block: ChatBlockDTO): string {
+  const value = blockAssociatedValue(block);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const id = (value as Record<string, unknown>).interaction_id;
+    if (typeof id === "string" && id) return id;
+  }
+  return block.id;
+}
+
+export function dedupeToolQuestionCards(blocks: ChatBlockDTO[]): ChatBlockDTO[] {
+  const latest = new Map<string, ChatBlockDTO>();
+  for (const block of blocks) {
+    if (block.kind !== "toolQuestionCards") continue;
+    const id = interactionIdFromBlock(block);
+    const current = latest.get(id);
+    if (!current || Number(block.revision) >= Number(current.revision)) latest.set(id, block);
+  }
+  return blocks.filter((block) => {
+    if (block.kind !== "toolQuestionCards") return true;
+    return latest.get(interactionIdFromBlock(block)) === block;
   });
 }
 
@@ -108,7 +141,11 @@ export function formatTurnDuration(ms: number | null | undefined): string | null
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
+  if (seconds < 60) {
+    const tenths = Math.round(seconds * 10) / 10;
+    if (seconds < 10 && !Number.isInteger(tenths)) return `${tenths.toFixed(1)}s`;
+    return `${Math.round(seconds)}s`;
+  }
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${Math.round(seconds % 60)}s`;
 }

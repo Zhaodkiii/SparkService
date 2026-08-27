@@ -40,7 +40,22 @@ export function ToolActivityDisclosure({ block, activity }: { block: ChatBlockDT
       <div className="tool-disclosure__detail">
         {view.argSummary && <p><Database size={12} />{view.argSummary}</p>}
         {view.duplicate && <p>已复用相同请求的结果</p>}
-        {view.sourceCount > 0 && <p>引用了 {view.sourceCount} 项健康资料</p>}
+        {view.sourceCount > 0 && (
+          <div className="knowledge-citations">
+            <p>已引用 {view.sourceCount} 条资料</p>
+            <ul>
+              {(activity?.source_refs ?? []).map((ref) => (
+                <li key={ref.source_id}>
+                  {ref.type === "knowledge_chunk" && ref.title ? (
+                    <span>当时版本 · {ref.title}</span>
+                  ) : (
+                    <span>{ref.title || ref.source_id}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {view.errorLine && <p className="tool-disclosure__error">{view.errorLine}{view.retryable ? "，可重试" : ""}</p>}
       </div>
     )}

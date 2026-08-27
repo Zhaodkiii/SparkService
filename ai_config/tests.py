@@ -221,3 +221,51 @@ class AIBootstrapMultiAgentTests(APITestCase):
 
         by_name = {row["name"]: row for row in response.json()["data"]["scenarios"]["chat"]["models"]}
         self.assertEqual(by_name[self.agent_one.bootstrap_name()]["display_name"], self.catalog_model.display_name)
+
+
+class ScenarioToolPreviewTests(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(username="preview-user", email="preview@example.com", password="secret123")
+        AIProviderKeyConfig.objects.create(
+            kind=AIProviderKeyConfig.Kind.API,
+            name="Test Provider",
+            company="TESTCO",
+            key="test-key",
+            request_url="https://api.example.com/v1",
+            is_using=True,
+        )
+        catalog = AIModelCatalog.objects.create(
+            name="preview-model",
+            display_name="Preview Model",
+            company="TESTCO",
+            supports_text=True,
+            supports_tool_use=True,
+        )
+        AIScenarioModelBinding.objects.create(
+            scenario=ScenarioKey.CHAT,
+            model=catalog,
+            identity=IdentityKind.MODEL,
+            is_default=True,
+            is_active=True,
+            ai_tool_scenarios=["get_current_location", "read_source"],
+            server_tool_scenarios=["read_source", "ask_user"],
+        )
+
+    def test_preview_returns_binding_declaration_not_run_permission(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/ai/config/scenarios/chat/tools/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()["data"]
+        self.assertFalse(data["is_run_permission"])
+        self.assertEqual(data["resolved_model"], "preview-model")
+        server_names = {item["name"] for item in data["server_tool_scenarios"]}
+        self.assertEqual(server_names, {"read_source", "ask_user"})
+        self.assertTrue(all(item["has_executor"] for item in data["server_tool_scenarios"]))
+        client_row = next(item for item in data["ai_tool_scenarios"] if item["name"] == "get_current_location")
+        self.assertTrue(client_row["requires_client_capability"])
+
+    def test_invalid_scenario_is_rejected(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/v1/ai/config/scenarios/not-a-scenario/tools/")
+        self.assertEqual(response.status_code, 400)

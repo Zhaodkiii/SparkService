@@ -21,6 +21,7 @@ from chat_sync.ai_api.serializers import (
     ContextSummarySerializer,
     DeferredToolLoadSerializer,
     DeferredToolRevokeSerializer,
+    RunToolManifestSerializer,
 )
 from chat_sync.ai_models import ChatThreadPreferences, ChatTurnContextSnapshot, ChatWebSocketTicket
 from chat_sync.models import ChatThread
@@ -205,9 +206,17 @@ class ThreadPreferencesView(APIView):
             for key, value in serializer.validated_data.items():
                 if key != "revision":
                     setattr(prefs, key, list(dict.fromkeys(value)) if key in {"enabled_tools", "knowledge_bases"} else value)
+            if "knowledge_bases" in serializer.validated_data:
+                from chat_sync.ai_knowledge.services.preference_validation import validate_knowledge_base_ids
+
+                validated = validate_knowledge_base_ids(request.user, prefs.knowledge_bases)
+                prefs.knowledge_bases = validated["knowledge_bases"]
             prefs.revision += 1
             prefs.save()
-        response = success_response(PreferencesSerializer(prefs).data, msg="updated")
+        payload = PreferencesSerializer(prefs).data
+        if "knowledge_bases" in serializer.validated_data:
+            payload["rejected_ids"] = validated["rejected_ids"]
+        response = success_response(payload, msg="updated")
         response["ETag"] = f'"{prefs.revision}"'
         return response
 
@@ -275,6 +284,67 @@ class RunContextSummaryView(APIView):
             "sources": sources,
         }
         return success_response(ContextSummarySerializer(data).data, msg="ok")
+
+
+class RunToolManifestView(APIView):
+    """Return the frozen Effective Tool Manifest for a Run."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, run_id):
+        run = RunService.get_run(user_id=request.user.id, run_id=run_id)
+        snapshot = ChatTurnContextSnapshot.objects.filter(run=run).first()
+        if snapshot is None:
+            payload = {
+                "run_id": run.id,
+                "scenario_key": "chat",
+                "resolved_model": str(run.model or ""),
+                "source_server_tool_scenarios": [],
+                "effective_tools": [],
+                "filtered_tools": [],
+                "manifest_hash": "",
+                "generated_at": None,
+                "build_status": "pending",
+            }
+            return success_response(RunToolManifestSerializer(payload).data, msg="ok")
+
+        effective_tools = []
+        for item in snapshot.tool_manifest or []:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            effective_tools.append(
+                {
+                    "name": str(item.get("name") or ""),
+                    "version": str(item.get("version") or "v1"),
+                    "status": "enabled",
+                    "execution_mode": str(item.get("execution_mode") or ""),
+                    "reason": "scenario_enabled_and_server_executor_available",
+                }
+            )
+        filtered_tools = []
+        for item in snapshot.tool_manifest_filtered or []:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            filtered_tools.append(
+                {
+                    "name": str(item.get("name") or ""),
+                    "status": "filtered",
+                    "reason": str(item.get("reason") or ""),
+                }
+            )
+        generated_at = snapshot.built_at.isoformat() if snapshot.built_at else None
+        payload = {
+            "run_id": run.id,
+            "scenario_key": "chat",
+            "resolved_model": str((snapshot.route_snapshot or {}).get("model") or run.model or ""),
+            "source_server_tool_scenarios": list(snapshot.tool_manifest_source or []),
+            "effective_tools": effective_tools,
+            "filtered_tools": filtered_tools,
+            "manifest_hash": str(snapshot.tool_manifest_hash or ""),
+            "generated_at": generated_at,
+            "build_status": snapshot.build_status,
+        }
+        return success_response(RunToolManifestSerializer(payload).data, msg="ok")
 
 
 class RunEventsView(APIView):

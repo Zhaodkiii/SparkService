@@ -3,6 +3,7 @@ export interface ThreadPreferencesDTO {
   capability: "chat";
   enabled_tools: string[];
   knowledge_bases: string[];
+  rejected_ids?: Array<{ id: string; reason: string }>;
   subagent: Record<string, unknown>;
   persona: { custom_text?: string; preset_key?: string };
   llm_selection: { provider_key?: string; model?: string; config_version?: string };

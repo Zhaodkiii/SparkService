@@ -84,7 +84,7 @@
     },
     {
       "path": "schemas/pending_interaction.v1.schema.json",
-      "sha256": "dbf19a6a782f5f192356f2eaa9be1cf8c01528f86c78a025352e403206d71bff"
+      "sha256": "8d75acf937d42ae1d6ba1c7083d1efdd890bb8d302729fd2eafc1541fbf61226"
     },
     {
       "path": "schemas/run.v1.schema.json",

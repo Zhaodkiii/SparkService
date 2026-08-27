@@ -68,6 +68,20 @@ describe("tool activity reducer", () => {
     expect(map["call_p4_01"]).toBe(before);
   });
 
+  it("keeps one row when requested, ten progress patches, then completed", () => {
+    let map: ToolActivityMap = reduceToolActivityEvent({}, toolEvent("tool.call.requested", 1, { activity: activity() }));
+    map = reduceToolActivityEvent(map, toolEvent("tool.call.started", 2, { tool_call_id: "call_p4_01", status: "running", revision: 2, started_at: "2026-08-25T02:00:10Z" }));
+    for (let percent = 10; percent <= 100; percent += 10) {
+      map = reduceToolActivityEvent(map, toolEvent("tool.call.progress", 2 + percent / 10, { tool_call_id: "call_p4_01", progress_message: `进度 ${percent}`, progress_percent: percent }));
+    }
+    expect(Object.keys(map)).toEqual(["call_p4_01"]);
+    expect(map["call_p4_01"].status).toBe("running");
+    expect(map["call_p4_01"].progress_percent).toBe(100);
+    map = reduceToolActivityEvent(map, toolEvent("tool.result.completed", 13, { activity: activity({ status: "completed", revision: 3, result_preview: "已读取 2 个健康档案分区" }) }));
+    expect(Object.keys(map)).toEqual(["call_p4_01"]);
+    expect(map["call_p4_01"].status).toBe("completed");
+  });
+
   it("degrades malformed payloads to null without throwing", () => {
     expect(normalizeToolActivity(null)).toBeNull();
     expect(normalizeToolActivity({ tool_call_id: "" })).toBeNull();
@@ -170,7 +184,7 @@ describe("event reducer integration", () => {
         message_id: "1002", block_id: "b1", kind: "toolCall", status: "streaming", revision: 2, order_key: 1800,
         block: { id: "b1", kind: "toolCall", status: "streaming", revision: 2, order_key: 1800, node_role: "toolExecution", tool_call_id: "call_p4_01", payload: { tool_call_id: "call_p4_01", status: "running", revision: 2 } },
       }),
-      toolEvent("tool.result", 5, { activity: activity({ status: "completed", revision: 3, result_preview: "已读取 2 个健康档案分区" }) }),
+      toolEvent("tool.result.completed", 5, { activity: activity({ status: "completed", revision: 3, result_preview: "已读取 2 个健康档案分区" }) }),
     ];
     const state = reduceChatEvents(createInitialChatRuntimeState(), events);
     expect(state.toolCallsByRun[RUN_ID]["call_p4_01"].status).toBe("completed");

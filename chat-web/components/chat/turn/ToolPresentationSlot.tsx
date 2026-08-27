@@ -1,7 +1,7 @@
 "use client";
 
 import { renderBlock } from "@/components/chat/blocks/registry";
-import { selectPresentationBlocks } from "@/lib/chat/turn-presentation";
+import { selectPresentationBlocks, dedupeToolQuestionCards } from "@/lib/chat/turn-presentation";
 import type { ChatBlockDTO } from "@/types/chat";
 
 /**
@@ -10,7 +10,7 @@ import type { ChatBlockDTO } from "@/types/chat";
  * parent_tool_call_id 则被省略，避免“是活动还是结果”两层重复展示。
  */
 export function ToolPresentationSlot({ blocks }: { blocks: ChatBlockDTO[] }) {
-  const selected = selectPresentationBlocks(blocks);
+  const selected = dedupeToolQuestionCards(selectPresentationBlocks(blocks));
   if (!selected.length) return null;
   return <div className="turn-presentation">
     {selected.map((block) => <div className="turn-presentation__item" key={block.id}>{renderBlock({ block })}</div>)}

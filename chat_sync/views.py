@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from chat_sync.events import ChatSyncNotifier
 from chat_sync.ai_models.event import ChatUsageRecord
+from chat_sync.ai_models.run import TERMINAL_RUN_STATUSES
 from chat_sync.contracts import BlockContractError, decode_block
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from chat_sync.serializers import (
@@ -142,7 +143,32 @@ def _to_payload(message: ChatMessage) -> dict:
         "reasoning_expanded": metadata.get("reasoning_expanded"),
         "reasoning_visibility": metadata.get("reasoning_visibility"),
         "usage_summary": _usage_summary_for_message(message),
+        "turn_summary": _turn_summary_for_message(message),
     }
+
+
+def _turn_summary_for_message(message: ChatMessage) -> dict | None:
+    """Project a public Run summary for Activity timing. Extra JSON keys are
+    ignored by iOS Codable; duration_ms is omitted when the server cannot
+    compute a reliable interval.
+    """
+    if message.role != "assistant":
+        return None
+    for run in message.ai_assistant_runs.all():
+        duration_ms = None
+        if run.status in TERMINAL_RUN_STATUSES and run.started_at and run.finished_at:
+            duration_ms = max(0, int((run.finished_at - run.started_at).total_seconds() * 1000))
+        return {
+            "run_id": str(run.id),
+            "status": run.status,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "duration_ms": duration_ms,
+            "regenerate_allowed": run.status in TERMINAL_RUN_STATUSES,
+            "delete_allowed": True,
+            "usage": None,
+        }
+    return None
 
 
 def _usage_summary_for_message(message: ChatMessage) -> dict | None:
