@@ -32,14 +32,6 @@ class KnowledgeMutationOperation(models.TextChoices):
     RESTORE = "restore", "Restore"
 
 
-class KnowledgeIndexStatus(models.TextChoices):
-    PENDING = "pending", "Pending"
-    PROCESSING = "processing", "Processing"
-    READY = "ready", "Ready"
-    FAILED = "failed", "Failed"
-    STALE = "stale", "Stale"
-
-
 class KnowledgeSyncStatus(models.TextChoices):
     SYNCED = "synced", "Synced"
     PENDING = "pending", "Pending"
@@ -48,6 +40,7 @@ class KnowledgeSyncStatus(models.TextChoices):
 
 
 def default_retrieval_config() -> dict:
+    """Kept for historical migration 0014 import path only."""
     return {"top_k": 6, "score_threshold": 0.72, "rerank_enabled": False}
 
 
@@ -66,7 +59,6 @@ class KnowledgeBase(models.Model):
     is_default = models.BooleanField(default=False)
     default_slot = models.PositiveSmallIntegerField(null=True, blank=True)
     revision = models.BigIntegerField(default=1)
-    retrieval_config = models.JSONField(default=default_retrieval_config, blank=True)
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -118,84 +110,6 @@ class KnowledgeDocument(models.Model):
         ]
 
 
-class KnowledgeChunk(models.Model):
-    """服务端派生的检索单元。"""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(KnowledgeDocument, on_delete=models.CASCADE, related_name="chunks")
-    document_revision = models.BigIntegerField(default=0)
-    sequence = models.IntegerField(default=0)
-    content = models.TextField(blank=True, default="")
-    content_hash = models.CharField(max_length=64, default="")
-    token_count = models.IntegerField(default=0)
-    metadata = models.JSONField(default=dict, blank=True)
-    vector_ref = models.CharField(max_length=255, blank=True, default="")
-    embedding = models.JSONField(default=list, blank=True)
-    embedding_norm = models.FloatField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "chat_sync_ai_knowledge_chunk"
-        constraints = [
-            models.UniqueConstraint(fields=("document", "document_revision", "sequence"), name="uniq_kchunk_doc_rev_seq"),
-        ]
-        indexes = [
-            models.Index(fields=["document", "document_revision"], name="idx_kchunk_doc_rev"),
-        ]
-
-
-class KnowledgeIndexState(models.Model):
-    """文档当前索引状态快照。"""
-
-    id = models.BigAutoField(primary_key=True)
-    document = models.OneToOneField(KnowledgeDocument, on_delete=models.CASCADE, related_name="index_state")
-    document_revision = models.BigIntegerField(default=0)
-    status = models.CharField(max_length=16, choices=KnowledgeIndexStatus.choices, default=KnowledgeIndexStatus.PENDING, db_index=True)
-    chunk_count = models.IntegerField(default=0)
-    embedding_provider = models.CharField(max_length=128, blank=True, default="")
-    embedding_model = models.CharField(max_length=128, blank=True, default="")
-    embedding_dimension = models.IntegerField(null=True, blank=True)
-    embedding_signature = models.CharField(max_length=255, blank=True, default="")
-    index_version = models.CharField(max_length=64, blank=True, default="")
-    last_error_code = models.CharField(max_length=128, null=True, blank=True)
-    error_message = models.CharField(max_length=512, blank=True, default="")
-    attempt_count = models.PositiveSmallIntegerField(default=0)
-    indexed_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "chat_sync_ai_knowledge_index_state"
-
-
-class KnowledgeIndexVersion(models.Model):
-    """知识库整库重建的不可变版本历史。"""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    knowledge_base = models.ForeignKey(KnowledgeBase, on_delete=models.CASCADE, related_name="index_versions")
-    status = models.CharField(max_length=16, choices=KnowledgeIndexStatus.choices, default=KnowledgeIndexStatus.PENDING, db_index=True)
-    is_active = models.BooleanField(default=False, db_index=True)
-    signature = models.CharField(max_length=128, blank=True, default="")
-    document_count = models.IntegerField(default=0)
-    chunk_count = models.IntegerField(default=0)
-    embedding_provider = models.CharField(max_length=128, blank=True, default="")
-    embedding_model = models.CharField(max_length=128, blank=True, default="")
-    embedding_dimension = models.IntegerField(null=True, blank=True)
-    chunker_version = models.CharField(max_length=32, blank=True, default="char.v1")
-    started_at = models.DateTimeField(null=True, blank=True)
-    completed_at = models.DateTimeField(null=True, blank=True)
-    error_code = models.CharField(max_length=128, blank=True, default="")
-    error_message = models.CharField(max_length=512, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "chat_sync_ai_knowledge_index_version"
-        indexes = [
-            models.Index(fields=["knowledge_base", "-created_at"], name="idx_kidxver_base_created"),
-        ]
-
-
 class KnowledgeMutationReceipt(models.Model):
     """Push 幂等回执：`(user, mutation_id)` 唯一，命中且 `request_hash` 相同即回放原 ACK。"""
 
@@ -237,27 +151,4 @@ class KnowledgeCommandReceipt(models.Model):
         db_table = "chat_sync_ai_knowledge_command_receipt"
         constraints = [
             models.UniqueConstraint(fields=("user", "idempotency_key"), name="uniq_kcmd_user_idempotency"),
-        ]
-
-
-class KnowledgeRetrievalAudit(models.Model):
-    """检索请求审计；不保存正文、向量或密钥。"""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="knowledge_retrieval_audits")
-    run_id = models.UUIDField(null=True, blank=True, db_index=True)
-    knowledge_base_ids = models.JSONField(default=list, blank=True)
-    query_hash = models.CharField(max_length=64, blank=True, default="")
-    top_k = models.PositiveSmallIntegerField(default=8)
-    score_threshold = models.FloatField(default=0.72)
-    hit_count = models.IntegerField(default=0)
-    duration_ms = models.IntegerField(default=0)
-    outcome = models.CharField(max_length=32, default="succeeded")
-    error_code = models.CharField(max_length=128, blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "chat_sync_ai_knowledge_retrieval_audit"
-        indexes = [
-            models.Index(fields=["user", "-created_at"], name="idx_kretrieval_user_created"),
         ]

@@ -31,6 +31,8 @@ class KnowledgeBasesApiTests(TestCase):
         data = response.json()["data"]
         self.assertEqual(data["name"], "糖尿病随访资料")
         self.assertIn("permissions", data)
+        self.assertNotIn("retrieval_config", data)
+        self.assertNotIn("index_status", data)
         self.assertFalse(data["is_default"])
         detail = self.client_api.get(f"/api/v1/ai/knowledge/bases/{data['id']}/")
         self.assertEqual(detail.status_code, 200)
@@ -94,6 +96,9 @@ class KnowledgeBasesApiTests(TestCase):
         )
         self.assertEqual(updated.status_code, 200, updated.content)
         self.assertEqual(KnowledgeDocument.objects.get(id=document_id).title, "新标题")
+        listed_item = listed.json()["data"]["items"][0]
+        self.assertNotIn("index_state", listed_item)
+        self.assertNotIn("source_file", listed_item)
         deleted = self.client_api.delete(f"/api/v1/ai/knowledge/documents/{document_id}/")
         self.assertEqual(deleted.status_code, 200)
         self.assertTrue(KnowledgeDocument.objects.get(id=document_id).is_deleted)
@@ -102,3 +107,33 @@ class KnowledgeBasesApiTests(TestCase):
         anonymous = APIClient()
         response = anonymous.get("/api/v1/ai/knowledge/bases/")
         self.assertIn(response.status_code, (401, 403))
+
+    def test_removed_index_and_file_routes_are_not_found(self):
+        created = self.client_api.post("/api/v1/ai/knowledge/bases/", {"name": "gone"}, format="json")
+        base_id = created.json()["data"]["id"]
+        for path in (
+            f"/api/v1/ai/knowledge/bases/{base_id}/files/",
+            f"/api/v1/ai/knowledge/bases/{base_id}/index-versions/",
+            f"/api/v1/ai/knowledge/bases/{base_id}/index-jobs/",
+            "/api/v1/ai/knowledge/search/",
+        ):
+            response = self.client_api.get(path)
+            self.assertEqual(response.status_code, 404, path)
+
+    def test_document_text_filter_matches_title_or_content(self):
+        created = self.client_api.post("/api/v1/ai/knowledge/bases/", {"name": "filter"}, format="json")
+        base_id = created.json()["data"]["id"]
+        self.client_api.post(
+            f"/api/v1/ai/knowledge/bases/{base_id}/documents/",
+            {"title": "空腹血糖", "content": "随访规范"},
+            format="json",
+        )
+        self.client_api.post(
+            f"/api/v1/ai/knowledge/bases/{base_id}/documents/",
+            {"title": "睡眠建议", "content": "规律作息"},
+            format="json",
+        )
+        listed = self.client_api.get(f"/api/v1/ai/knowledge/bases/{base_id}/documents/?q=血糖")
+        self.assertEqual(len(listed.json()["data"]["items"]), 1)
+        self.assertEqual(listed.json()["data"]["items"][0]["title"], "空腹血糖")
+

@@ -52,23 +52,15 @@ class KnowledgeSyncPushRequestSerializer(serializers.Serializer):
         return value
 
 
-class RetrievalConfigSerializer(serializers.Serializer):
-    top_k = serializers.IntegerField(required=False, min_value=1, max_value=20)
-    score_threshold = serializers.FloatField(required=False, min_value=0, max_value=1)
-    rerank_enabled = serializers.BooleanField(required=False)
-
-
 class KnowledgeBaseCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=128)
     kind = serializers.CharField(required=False, default="personal")
     make_default = serializers.BooleanField(required=False, default=False)
-    retrieval_config = RetrievalConfigSerializer(required=False)
 
 
 class KnowledgeBaseUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, max_length=128)
     make_default = serializers.BooleanField(required=False)
-    retrieval_config = RetrievalConfigSerializer(required=False)
     revision = serializers.IntegerField(required=False)
 
 
@@ -78,15 +70,3 @@ class KnowledgeDocumentWriteSerializer(serializers.Serializer):
     scope = serializers.CharField(required=False, default="personal")
     source = serializers.CharField(required=False, default="user")
     revision = serializers.IntegerField(required=False)
-
-
-class KnowledgeFileBindSerializer(serializers.Serializer):
-    file_uuid = serializers.UUIDField()
-    reuse = serializers.BooleanField(required=False, default=False)
-
-
-class KnowledgeSearchSerializer(serializers.Serializer):
-    query = serializers.CharField(max_length=2000)
-    knowledge_base_ids = serializers.ListField(child=serializers.UUIDField(), required=False)
-    top_k = serializers.IntegerField(required=False, min_value=1, max_value=20)
-    score_threshold = serializers.FloatField(required=False, min_value=0, max_value=1)

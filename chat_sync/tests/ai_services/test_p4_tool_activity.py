@@ -331,13 +331,13 @@ class P4ToolCatalogTests(TestCase):
         response = self.client.get(f"/api/v1/ai/chat/threads/{thread.id}/tools/")
         self.assertEqual(response.status_code, 200)
         tools = response.json()["data"]["tools"]
-        self.assertEqual(len(tools), 6)
+        self.assertEqual(len(tools), 5)
         self.assertTrue(all(tool["available"] is False for tool in tools))
         self.assertTrue(all(tool["unavailable_reason"] == "feature_disabled" for tool in tools))
         names = {tool["name"] for tool in tools}
         self.assertEqual(
             names,
-            {"get_current_member", "query_member_profile", "list_member_health_sources", "get_health_resource_context", "read_source", "search_knowledge_bag"},
+            {"get_current_member", "query_member_profile", "list_member_health_sources", "get_health_resource_context", "read_source"},
         )
         self.assertNotIn("ask_user", names)
 

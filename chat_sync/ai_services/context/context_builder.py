@@ -61,10 +61,6 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
     client_snapshot = (run.request_snapshot or {}).get("client") or {}
     client_capabilities = client_snapshot.get("client_tools") or []
     client_tool_names = [item.get("name") if isinstance(item, dict) else str(item) for item in client_capabilities]
-    from chat_sync.ai_knowledge.services.preference_validation import freeze_knowledge_bases
-
-    frozen_bases = freeze_knowledge_bases(run.user, prefs.knowledge_bases or [])
-    eligible_base_ids = [item["id"] for item in frozen_bases if item.get("retrieval_eligible")]
     existing_snapshot = ChatTurnContextSnapshot.objects.filter(run=run).first()
     if existing_snapshot is not None:
         tool_manifest = list(existing_snapshot.tool_manifest or [])
@@ -72,7 +68,7 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
         tool_manifest_filtered = list(existing_snapshot.tool_manifest_filtered or [])
         tool_manifest_hash = str(existing_snapshot.tool_manifest_hash or "")
     else:
-        auto_context_tools = ["search_knowledge_bag"] if eligible_base_ids else []
+        auto_context_tools = ["write_memory", "read_memory"]
         manifest = build_effective_tool_manifest(
             capability=run.capability,
             scenario_key="chat",
@@ -80,7 +76,6 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
             model_supports_tools=model_supports_tools,
             member_id=run.thread.member_id,
             source_ids=[item.source_id for item in source_rows],
-            knowledge_base_ids=eligible_base_ids,
             capability_owned_tools=capability.owned_tools,
             auto_context_tools=auto_context_tools,
             deferred_active_names=DeferredToolService.active_names(
@@ -178,7 +173,6 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
         messages,
         history_summary,
         tool_manifest,
-        frozen_bases,
         tool_manifest_source=tool_manifest_source,
         tool_manifest_filtered=tool_manifest_filtered,
         tool_manifest_hash=tool_manifest_hash,
@@ -216,7 +210,6 @@ def _persist_snapshot(
     messages,
     history_summary,
     tool_manifest,
-    frozen_bases=None,
     tool_manifest_source=None,
     tool_manifest_filtered=None,
     tool_manifest_hash="",
@@ -235,18 +228,7 @@ def _persist_snapshot(
             "history_head_message_id": run.context_parent_message_id,
             "selected_message_ids": selected_ids,
             "history_summary": history_summary,
-            "sources": [{"source_id": item.source_id, "type": item.source_type, "title": item.title, "version": item.version, "content_hash": item.content_hash, "metadata": item.metadata} for item in source_rows]
-            + [
-                {
-                    "source_id": item["id"],
-                    "type": "knowledge_base",
-                    "title": item["name"],
-                    "version": str(item.get("revision") or ""),
-                    "content_hash": "",
-                    "metadata": {"active_index_version": item.get("active_index_version"), "index_status": item.get("index_status"), "retrieval_eligible": item.get("retrieval_eligible")},
-                }
-                for item in (frozen_bases or [])
-            ],
+            "sources": [{"source_id": item.source_id, "type": item.source_type, "title": item.title, "version": item.version, "content_hash": item.content_hash, "metadata": item.metadata} for item in source_rows],
             "tool_manifest": tool_manifest,
             "tool_manifest_source": list(tool_manifest_source or []),
             "tool_manifest_filtered": list(tool_manifest_filtered or []),

@@ -25,6 +25,7 @@ class ScenarioKey(models.TextChoices):
     REPORT_INTERPRETATION = "report_interpretation"
     NUTRITION_INTAKE_EXTRACTION = "nutrition_intake_extraction"
     MEDICAL_EXAM_PLAN_GENERATION = "medical_exam_plan_generation"
+    MEMORY_CONSOLIDATION = "memory_consolidation"
 
 
 class IdentityKind(models.TextChoices):

@@ -36,14 +36,6 @@ export function NutritionCardsBlock({ block }: BlockRenderProps) {
   </ReadOnlyCard></BlockShell>;
 }
 
-export function KnowledgeCardsBlock({ block }: BlockRenderProps) {
-  const value = blockValueObject(block);
-  const items = asList(value.cards ?? value.sources ?? value.items);
-  return <BlockShell block={block}><ReadOnlyCard title={asString(value.title) ?? "知识参考"}>
-    {items.length === 0 ? null : <ul className="block block--list" role="list">{items.map((item, index) => <li key={index}>{itemTitle(item)}{item.url ? <a href={asString(item.url) ?? "#"} target="_blank" rel="noreferrer noopener">查看</a> : null}</li>)}</ul>}
-  </ReadOnlyCard></BlockShell>;
-}
-
 export function SearchSummaryBlock({ block }: BlockRenderProps) {
   const value = blockValueObject(block);
   const query = asString(value.query) ?? asString(value.keyword);

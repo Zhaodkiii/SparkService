@@ -14,12 +14,13 @@ export default function KnowledgePage() {
   const [items, setItems] = useState<KnowledgeBaseSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
 
-  const load = async () => {
+  const load = async (q = query) => {
     if (!api) return;
     setError(null);
     try {
-      const data = await api.listBases();
+      const data = await api.listBases({ q: q.trim() || undefined });
       setItems(data.items);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "知识库列表加载失败");
@@ -35,9 +36,16 @@ export default function KnowledgePage() {
         <div>
           <p className="feature-page__eyebrow">KNOWLEDGE</p>
           <h1>知识中心</h1>
-          <p>管理可在对话中引用的资料库。同步与索引都在后台进行，不会打断聊天。</p>
+          <p>创建知识库并撰写纯文本文档。这里只做资料管理，不会参与对话检索。</p>
         </div>
         <div className="knowledge-page__actions">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void load(query); }}
+            placeholder="按名称筛选"
+            aria-label="按名称筛选"
+          />
           <button type="button" className="secondary" onClick={() => void load()} aria-label="刷新"><RefreshCw size={15} /></button>
           <button type="button" onClick={() => setCreating(true)}><Plus size={15} />新建知识库</button>
         </div>
@@ -48,7 +56,7 @@ export default function KnowledgePage() {
         <div className="knowledge-empty">
           <BookOpen size={22} />
           <h2>创建第一个知识库</h2>
-          <p>把随访资料、指南摘要放进知识库，对话时即可检索引用。</p>
+          <p>把随访资料、指南摘要写成纯文本文档，保存在这里方便查阅。</p>
           <button type="button" onClick={() => setCreating(true)}>立即创建</button>
         </div>
       )}

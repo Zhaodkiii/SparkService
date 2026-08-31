@@ -3,10 +3,9 @@ from __future__ import annotations
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from chat_sync.ai_knowledge.api.dto import sanitize_retrieval_config
 from chat_sync.ai_knowledge.constants import NAMED_BASE_QUOTA
 from chat_sync.ai_knowledge.errors import KnowledgeError
-from chat_sync.ai_models.knowledge import KnowledgeBase, KnowledgeBaseKind, KnowledgeIndexStatus
+from chat_sync.ai_models.knowledge import KnowledgeBase, KnowledgeBaseKind
 
 DEFAULT_SLOT = 1
 DEFAULT_BASE_NAME = "个人知识库"
@@ -47,7 +46,7 @@ class KnowledgeBaseService:
         return base
 
     @staticmethod
-    def create(*, user, name: str, kind: str = KnowledgeBaseKind.PERSONAL, make_default: bool = False, retrieval_config=None) -> KnowledgeBase:
+    def create(*, user, name: str, kind: str = KnowledgeBaseKind.PERSONAL, make_default: bool = False) -> KnowledgeBase:
         cleaned_name = (name or "").strip()[:128] or "未命名知识库"
         if kind not in KnowledgeBaseKind.values:
             kind = KnowledgeBaseKind.PERSONAL
@@ -70,12 +69,11 @@ class KnowledgeBaseService:
                 kind=kind,
                 is_default=make_default,
                 default_slot=DEFAULT_SLOT if make_default else None,
-                retrieval_config=sanitize_retrieval_config(retrieval_config),
             )
         return base
 
     @staticmethod
-    def update(user, base_id, *, revision: int | None, name: str | None = None, make_default: bool | None = None, retrieval_config=None) -> KnowledgeBase:
+    def update(user, base_id, *, revision: int | None, name: str | None = None, make_default: bool | None = None) -> KnowledgeBase:
         with transaction.atomic():
             base = KnowledgeBase.objects.select_for_update().filter(user=user, id=base_id, is_deleted=False).first()
             if base is None:
@@ -87,8 +85,6 @@ class KnowledgeBaseService:
                 )
             if name is not None:
                 base.name = name.strip()[:128] or base.name
-            if retrieval_config is not None:
-                base.retrieval_config = sanitize_retrieval_config(retrieval_config)
             if make_default is True and not base.is_default:
                 KnowledgeBase.objects.filter(user=user, is_default=True, is_deleted=False).exclude(pk=base.pk).update(
                     is_default=False,

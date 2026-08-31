@@ -110,14 +110,23 @@ class EffectiveToolManifestTests(SimpleTestCase):
         manifest = build_effective_tool_manifest(
             binding=_binding([]),
             model_supports_tools=True,
-            knowledge_base_ids=["kb-1"],
-            auto_context_tools=["search_knowledge_bag"],
+            auto_context_tools=["write_memory", "read_memory"],
             thread_enabled_tools=[],
             feature_flags=_flags(),
             registry=build_server_tool_registry(),
         )
         names = {item["name"] for item in manifest.effective_tools}
-        self.assertIn("search_knowledge_bag", names)
+        self.assertIn("write_memory", names)
+        self.assertIn("read_memory", names)
+        self.assertEqual(names, {"write_memory", "read_memory"})
+
+    def test_memory_tools_are_not_p4_catalog_names(self):
+        from chat_sync.ai_runtime.tools.public_projector import P4_SERVER_TOOL_NAMES, is_p4_server_tool
+
+        self.assertNotIn("read_memory", P4_SERVER_TOOL_NAMES)
+        self.assertNotIn("write_memory", P4_SERVER_TOOL_NAMES)
+        self.assertFalse(is_p4_server_tool("read_memory"))
+        self.assertFalse(is_p4_server_tool("write_memory"))
 
     def test_manifest_hash_is_stable(self):
         kwargs = dict(

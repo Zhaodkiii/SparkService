@@ -191,7 +191,6 @@ class DocumentSyncService:
             last_device_id_hash=device_hash,
             **fields,
         )
-        _schedule_index(document)
         return {**document_to_payload(document), "status": "accepted", "replayed": False}
 
     @staticmethod
@@ -219,7 +218,6 @@ class DocumentSyncService:
         if device_hash:
             document.last_device_id_hash = device_hash
         document.save()
-        _schedule_index(document)
         return {**document_to_payload(document), "status": "accepted", "replayed": False}
 
     @staticmethod
@@ -274,13 +272,4 @@ def _hash_device_id(device_id: Any) -> str | None:
     if not device_id:
         return None
     return hashlib.sha256(str(device_id).encode("utf-8")).hexdigest()
-
-
-def _schedule_index(document: KnowledgeDocument) -> None:
-    try:
-        from chat_sync.ai_knowledge.services.index_jobs import enqueue_document_index
-
-        enqueue_document_index(document)
-    except Exception:
-        pass
 

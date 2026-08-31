@@ -418,9 +418,6 @@ CELERY_TASK_ROUTES = {
     "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox": {"queue": "chat.events"},
     "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs": {"queue": "chat.recovery"},
     "chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions": {"queue": "chat.recovery"},
-    "chat_sync.ai_tasks.knowledge_tasks.index_document_task": {"queue": "chat.ai"},
-    "chat_sync.ai_tasks.knowledge_tasks.rebuild_index_version_task": {"queue": "chat.ai"},
-    "chat_sync.ai_tasks.knowledge_tasks.extract_document_task": {"queue": "chat.ai"},
     "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
@@ -457,11 +454,6 @@ CHAT_AI_CONTEXT_PROMPT_VERSION = os.getenv("CHAT_AI_CONTEXT_PROMPT_VERSION", "ch
 CHAT_AI_MAX_REFERENCES_PER_RUN = int(os.getenv("CHAT_AI_MAX_REFERENCES_PER_RUN", "16"))
 CHAT_AI_MAX_PERSONA_CHARS = int(os.getenv("CHAT_AI_MAX_PERSONA_CHARS", "4000"))
 CHAT_AI_AGENTIC_TOOLS_ENABLED = os.getenv("CHAT_AI_AGENTIC_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-KNOWLEDGE_CENTER_WEB_ENABLED = os.getenv("KNOWLEDGE_CENTER_WEB_ENABLED", "true").lower() in ("1", "true", "yes", "y")
-KNOWLEDGE_FILE_IMPORT_ENABLED = os.getenv("KNOWLEDGE_FILE_IMPORT_ENABLED", "true").lower() in ("1", "true", "yes", "y")
-KNOWLEDGE_CHAT_SELECTOR_ENABLED = os.getenv("KNOWLEDGE_CHAT_SELECTOR_ENABLED", "true").lower() in ("1", "true", "yes", "y")
-KNOWLEDGE_RAG_TOOL_ENABLED = os.getenv("KNOWLEDGE_RAG_TOOL_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-KNOWLEDGE_DEEPTUTOR_ADAPTER_ENABLED = os.getenv("KNOWLEDGE_DEEPTUTOR_ADAPTER_ENABLED", "false").lower() in ("1", "true", "yes", "y")
 KNOWLEDGE_NAMED_BASE_QUOTA = int(os.getenv("KNOWLEDGE_NAMED_BASE_QUOTA", "20"))
 CHAT_AI_WAITING_ENABLED = os.getenv("CHAT_AI_WAITING_ENABLED", "false").lower() in ("1", "true", "yes", "y")
 CHAT_AI_ASK_USER_ENABLED = os.getenv("CHAT_AI_ASK_USER_ENABLED", "false").lower() in ("1", "true", "yes", "y")

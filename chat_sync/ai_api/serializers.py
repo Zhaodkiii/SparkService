@@ -65,7 +65,7 @@ class CreateRunSerializer(serializers.Serializer):
         if len(attrs.get("references") or []) + len(attrs.get("attachments") or []) > 16:
             raise serializers.ValidationError({"references": "too_many_context_items"})
         for item in attrs.get("references") or []:
-            if not isinstance(item, dict) or item.get("type") not in {"health_resource", "knowledge_chunk"}:
+            if not isinstance(item, dict) or item.get("type") not in {"health_resource"}:
                 raise serializers.ValidationError({"references": "invalid_reference"})
         for item in attrs.get("attachments") or []:
             if not isinstance(item, dict) or not item.get("file_id"):

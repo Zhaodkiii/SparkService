@@ -166,11 +166,10 @@ class RunService:
         if requested_revision is not None and int(requested_revision) != prefs.revision:
             raise cls._api_error("chat_preferences_revision_conflict", 40993, 409, {"revision": prefs.revision})
         data = {key: getattr(prefs, key) for key in ("capability", "enabled_tools", "knowledge_bases", "subagent", "persona", "llm_selection", "language", "voice_preferences")}
-        from chat_sync.ai_knowledge.services.preference_validation import freeze_knowledge_bases, validate_knowledge_base_ids
+        from chat_sync.ai_knowledge.services.preference_validation import validate_knowledge_base_ids
 
         validated = validate_knowledge_base_ids(thread.user, data.get("knowledge_bases") or [])
         data["knowledge_bases"] = validated["knowledge_bases"]
-        data["knowledge_base_snapshot"] = freeze_knowledge_bases(thread.user, validated["knowledge_bases"])
         return data, prefs.revision, prefs.active_head_message
 
     @classmethod
@@ -722,3 +721,4 @@ class RunService:
             generation = lock.generation
             transaction.on_commit(lambda: cls._enqueue_run(run.id, generation, request_id), robust=True)
             return RunCommandResult(run, replayed=False)
+

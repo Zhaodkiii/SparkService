@@ -4,11 +4,12 @@
 >
 > 创建日期：2026-08-27
 >
-> 范围：SparkService `chat_sync` 服务端、iOS SparkClient、AI Agent 工具、Memory Workbench、跨设备同步。
+> 范围：SparkService `chat_sync` 服务端、`chat-web` 个人记忆看板、iOS SparkClient、AI Agent 工具、Memory Workbench、跨设备同步。
 >
 > 约束：本文是目标设计，不代表代码已经实现；本次只创建/维护 Markdown 文档，不修改 Python、Swift、数据库迁移或配置。
 >
 > 上游模型文档：[`数据模型文档.md`](./数据模型文档.md)
+> Web 交互规格：[`Web记忆看板需求文档.md`](./Web记忆看板需求文档.md)
 
 ## 1. 目标与结论
 
@@ -73,6 +74,7 @@ Memory Workbench
 | 上下文快照 | Run 冻结 `tool_manifest`、`sources`、Token 预算 | 已实现 | 在 `sources` 保存使用过的 memory 引用，不复制正文 |
 | 记忆模型/API | 当前没有权威记忆模型与接口 | 未实现 | 新增 `ai_models/memory.py` 与 `ai_memory` 业务模块，不新增 Django app |
 | 异步执行 | Chat Run、知识索引使用 Celery | 已实现基础设施 | Workbench Run 与记忆维护任务复用 Celery、状态持久化和事件重放思路 |
+| Web 记忆页 | `chat-web/app/(workspace)/memory/page.tsx` 仅渲染占位组件 | 仅入口/占位 | P1 建立用户个人总览、L1/L2/L3、偏好、工作台和设置；不建设管理员后台 |
 
 服务端证据：
 
@@ -190,7 +192,7 @@ chat_sync/
 
 | 层 | SparkService 表达 | 输入 | 输出/消费者 |
 | --- | --- | --- | --- |
-| L1 | `AIMemoryTraceEvent` + 原业务实体引用 | chat、knowledge、health、task、手工操作 | Workbench update/audit |
+| L1 | `AIMemoryTraceEvent` + 原业务实体引用 | chat、knowledge、medical、nutrition、preference | Workbench update/audit |
 | L2 | `AIMemory(layer=L2, document_key=surface)` | 单 surface 的 L1 证据 | L3 update、工作台 |
 | L3 | `AIMemory(layer=L3, document_key=slot)` | 多个 L2 或显式偏好 | `read_memory`、管理页、跨端同步 |
 
@@ -404,7 +406,7 @@ Schema：
 1. 检查 `AIMemorySettings.is_enabled=true` 且 `allow_tool_write=true`。
 2. 校验当前工具确实来自本 Run 的冻结 Manifest。
 3. 根据 `ChatToolCall.execution_key` 或稳定 tool call ID 生成服务端 mutation 幂等键。
-4. 写入一条 `AIMemoryTraceEvent(surface=chat,event_type=preference_stated)`。
+4. 写入一条 `AIMemoryTraceEvent(surface=preference,event_type=preference_stated)`，并以实体引用关联原始 chat 消息或 Run。
 5. `add` 先按规范化文本和 dedup key 查重；重复时成功返回原条目，不新增。
 6. `edit` 锁定目标条目；目标不存在、已删除、非 preferences 或不属于当前用户时拒绝。
 7. 在同一数据库事务中更新 `AIMemory`、Evidence、DocumentState revision、MutationReceipt 和 ChangeSet。
@@ -583,6 +585,8 @@ queued → running → preview_ready → applying → completed
 错误必须保留 HTTP 状态、稳定业务 code 和 `data.request_id`。
 
 ### 8.1 概览与设置
+
+Web 个人看板和 iOS 必须复用同一套 `/api/v1/ai/memory/` 领域接口、响应、revision 与错误码；Web 不新增平行 API。具体页面、状态与字段消费见《Web记忆看板需求文档》。
 
 | Method | Path | 用途 |
 | --- | --- | --- |
@@ -916,6 +920,8 @@ MemorySyncCoordinator
 
 ### 10.5 设置页和工作台 UI
 
+P1 同时交付 `chat-web` 用户个人记忆总览、L1/L2/L3、偏好页、工作台运行抽屉和 `/settings/memory`。UI 延续 Spark Web 的知识库页面、`SparkHttpClient`、`Idempotency-Key` 与 `If-Match` 范式；不复制 DeepTutor 的 Markdown 编辑器或视觉样式。
+
 设置页需要区分：
 
 - 记忆总开关；
@@ -1075,13 +1081,14 @@ MemorySyncCoordinator
 
 - Trace、DocumentState、Run、RunEvent、ChangeSet；
 - update/audit/dedup/merge；
-- 预览、应用、取消、重放、撤销；
-- iOS 工作台页面和运行状态。
+- 自动应用、取消、重放、撤销；高风险删除与重置操作二次确认；
+- `chat-web` 用户个人工作台页面和运行状态：总览、L1/L2/L3、偏好、证据追溯与设置；
+- 不在本阶段建设图谱或管理员运营后台。
 
 ### P5：自动整理与更多 surface
 
 - 在用户开启自动整理后异步触发；
-- 接入 knowledge、health、task 等来源；
+- 接入 knowledge、medical、nutrition 等来源；
 - 健康/身份候选确认流程；
 - 根据真实容量评估是否增加向量索引。
 
@@ -1137,7 +1144,7 @@ MemorySyncCoordinator
 | Q2 | 首期是否开放 member 作用域手工创建 | 涉及成员权限和健康敏感内容 | 首期只开放 account preferences；member 先只支持受控候选和确认 |
 | Q3 | `agent` 作用域用什么稳定实体 | 当前未发现稳定 Agent 模型 | 首期关闭，待 Agent 模型冻结后再启用 |
 | Q4 | 自动整理默认是否开启 | 会产生模型调用成本和隐私预期 | 默认关闭，由用户主动开启；手工作台始终可用 |
-| Q5 | 工作台首期放 iOS、Web 还是两端 | 影响 API 事件形式与 UI 排期 | 先实现通用 HTTP + events since；iOS 先轮询，后续可升级 SSE |
+| Q5 | 工作台首期放 iOS、Web 还是两端 | 已确认：P1 先交付 Web 个人看板；iOS 消费同一 API 和同步快照 | API 保留 `after_sequence` 事件重放；Web 可使用 SSE，iOS 先轮询 |
 | Q6 | 删除墓碑保留多久 | 影响长期离线设备能否正确忘记 | 至少覆盖最长支持离线周期，建议先按 180 天评审 |
 | Q7 | receipt 保留多久 | 影响重复提交保护和存储成本 | 30～90 天；移动端不得在此窗口后重放旧 mutation |
 | Q8 | `read_memory` 是否向模型暴露 entry ID/revision | edit 需要稳定 target_id，但也会增加模型可见元数据 | 暴露短 ID/UUID 与 revision，不暴露内部用户或设备信息 |
@@ -1162,4 +1169,3 @@ MemorySyncCoordinator
 - 设备 A/B 创建、更新、删除、冲突、离线恢复最终一致；
 - 关闭/清空、账号切换、成员权限和日志脱敏均有可验证行为；
 - 文档中 Q1～Q14 已决策并回填，不再保留会改变协议的未确认项。
-

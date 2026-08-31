@@ -16,7 +16,6 @@ P4_SERVER_TOOL_NAMES: tuple[str, ...] = (
     "list_member_health_sources",
     "get_health_resource_context",
     "read_source",
-    "search_knowledge_bag",
 )
 
 # revision of the public catalog contract itself; bump when display rules change.
@@ -63,9 +62,13 @@ TOOL_DISPLAY: dict[str, dict[str, str]] = {
         "display_name": "读取参考资料",
         "description": "读取本轮对话已附加的参考资料",
     },
-    "search_knowledge_bag": {
-        "display_name": "检索知识库",
-        "description": "在已选择的知识库中检索相关资料",
+    "read_memory": {
+        "display_name": "读取记忆",
+        "description": "在需要个性化回答时读取已确认的长期记忆",
+    },
+    "write_memory": {
+        "display_name": "保存偏好",
+        "description": "仅保存你明确表达的长期回答偏好",
     },
 }
 
@@ -85,8 +88,13 @@ ERROR_PROJECTION: dict[str, tuple[str, str, bool]] = {
     "tool_permission_denied": ("tool_unavailable", "tool_unavailable", False),
     "tool_resource_not_found": ("tool_unavailable", "tool_unavailable", False),
     "tool_source_missing": ("tool_unavailable", "tool_unavailable", False),
-    "knowledge_retrieval_unavailable": ("tool_unavailable", "tool_unavailable", True),
-    "knowledge_index_unavailable": ("tool_unavailable", "tool_unavailable", True),
+    "memory_disabled": ("tool_unavailable", "tool_unavailable", False),
+    "memory_write_not_allowed": ("tool_unavailable", "tool_unavailable", False),
+    "memory_invalid_preference": ("invalid_arguments", "tool_invalid_arguments", False),
+    "memory_target_not_found": ("tool_unavailable", "tool_unavailable", False),
+    "memory_target_conflict": ("tool_unavailable", "tool_unavailable", False),
+    "memory_duplicate": ("duplicate_tool_call", "tool_duplicate_call", False),
+    "memory_unavailable": ("tool_execution_failed", "tool_execution_failed", True),
 }
 
 DEFAULT_ERROR_PROJECTION: tuple[str, str, bool] = ("tool_execution_failed", "tool_execution_failed", True)
@@ -151,11 +159,6 @@ def public_args(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
         if isinstance(source_id, str) and source_id:
             return {"source_id": _label_resource_type(source_id)}
         return {}
-    if tool == "search_knowledge_bag":
-        projected: dict[str, Any] = {}
-        if isinstance(args.get("query"), str) and args.get("query"):
-            projected["query"] = str(args["query"])[:80]
-        return projected
     return {}
 
 
@@ -189,11 +192,13 @@ def public_result_preview(
         return "已读取参考资料"
     if tool == "ask_user":
         return "已收到你的确认"
-    if tool == "search_knowledge_bag":
+    if tool == "read_memory":
         count = len(list(source_refs or ()))
         if count:
-            return f"已引用 {count} 条资料"
-        return "未检索到可用资料"
+            return f"已读取 {count} 条记忆"
+        return "没有可读取的长期记忆"
+    if tool == "write_memory":
+        return "已保存回答偏好"
     return "已完成"
 
 

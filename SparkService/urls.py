@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/v1/ai/', include('ai_config.urls')),
     path('api/v1/ai/chat/', include('chat_sync.urls')),
     path('api/v1/ai/knowledge/', include('chat_sync.ai_knowledge.urls')),
+    path('api/v1/ai/memory/', include('chat_sync.ai_memory.urls')),
     path('api/v1/medical/', include('medical.urls')),
     path('api/v1/nutrition/', include('nutrition.urls')),
     path('api/v1/tasks/', include('task_system.urls')),

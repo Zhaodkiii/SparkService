@@ -40,7 +40,7 @@ export function userFacingApiError(failure: SparkApiFailure): string {
     "chat.interaction_idempotency_required": "提交失败，请稍后重试。",
     "auth.unauthorized": "登录状态已失效，请重新登录。",
   };
-  return messages[failure.messageKey] ?? (failure.httpStatus >= 500 ? "服务暂时不可用，请稍后重试。" : "请求未完成，请稍后重试。");
+  return messages[failure.messageKey] ?? failure.message ?? (failure.httpStatus >= 500 ? "服务暂时不可用，请稍后重试。" : "请求未完成，请稍后重试。");
 }
 
 export class SparkHttpClient {

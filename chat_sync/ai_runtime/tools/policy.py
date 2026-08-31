@@ -13,6 +13,16 @@ logger = logging.getLogger("chat_sync.ai.tools")
 
 ToolTarget = Literal["server", "client"]
 ToolExecutionMode = Literal["immediate", "pause", "consent"]
+ToolRisk = Literal["read_only", "personal_data_read", "personal_data_write"]
+ToolSideEffect = Literal["none", "memory_write"]
+
+ALLOWED_RISK_SIDE_EFFECT: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("read_only", "none"),
+        ("personal_data_read", "none"),
+        ("personal_data_write", "memory_write"),
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,8 +32,8 @@ class ToolPolicy:
     target: ToolTarget = "server"
     execution_mode: ToolExecutionMode = "immediate"
     supported_platforms: tuple[str, ...] = ()
-    risk: Literal["read_only"] = "read_only"
-    side_effect: Literal["none"] = "none"
+    risk: ToolRisk = "read_only"
+    side_effect: ToolSideEffect = "none"
     required_permissions: tuple[str, ...] = ()
     required_context: tuple[str, ...] = ()
     concurrency_safe: bool = True
@@ -38,8 +48,10 @@ class ToolPolicy:
             raise ValueError(f"invalid tool target: {self.name}")
         if self.execution_mode not in {"immediate", "pause", "consent"}:
             raise ValueError(f"invalid execution_mode: {self.name}")
-        if self.risk != "read_only" or self.side_effect != "none":
-            raise ValueError(f"only read-only tools are permitted: {self.name}")
+        if (self.risk, self.side_effect) not in ALLOWED_RISK_SIDE_EFFECT:
+            raise ValueError(f"unsupported risk/side_effect combination: {self.name}")
+        if self.side_effect == "memory_write" and self.name != "write_memory":
+            raise ValueError(f"only write_memory may declare memory_write: {self.name}")
         max_timeout = 600.0 if self.execution_mode in {"pause", "consent"} else 120.0
         if self.timeout_seconds <= 0 or self.timeout_seconds > max_timeout:
             raise ValueError(f"invalid tool timeout: {self.name}")
@@ -184,6 +196,8 @@ __all__ = [
     "ToolExecutionMode",
     "ToolManifestEntry",
     "ToolPolicy",
+    "ToolRisk",
+    "ToolSideEffect",
     "ToolTarget",
     "canonical_tool_args",
     "validate_schema",

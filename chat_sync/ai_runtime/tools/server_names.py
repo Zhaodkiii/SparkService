@@ -14,12 +14,13 @@ from django.db import models
 
 class SparkServerToolName(models.TextChoices):
     ASK_USER = "ask_user", "询问用户"
-    SEARCH_KNOWLEDGE_BAG = "search_knowledge_bag", "搜索知识库"
     GET_CURRENT_MEMBER = "get_current_member", "获取当前成员"
     QUERY_MEMBER_PROFILE = "query_member_profile", "查询成员资料"
     LIST_MEMBER_HEALTH_SOURCES = "list_member_health_sources", "检索成员健康资料"
     GET_HEALTH_RESOURCE_CONTEXT = "get_health_resource_context", "获取健康资料解读上下文"
     READ_SOURCE = "read_source", "读取资料"
+    READ_MEMORY = "read_memory", "读取记忆"
+    WRITE_MEMORY = "write_memory", "写入记忆"
 
 
 def server_tool_name_values() -> frozenset[str]:

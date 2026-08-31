@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from SparkService.celery import CHAT_AI_TASK_MODULES, app
-from backoffice.views import CHAT_AI_REQUIRED_TASKS, _celery_registered_tasks_status
+from backoffice.views import CELERY_MANAGED_TASKS, CHAT_AI_REQUIRED_TASKS, _celery_registered_tasks_status
 
 
 class CeleryAITaskRegistrationTests(SimpleTestCase):
@@ -52,3 +52,12 @@ class CeleryAITaskRegistrationTests(SimpleTestCase):
             result["missing"],
             ["chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox"],
         )
+
+    def test_managed_inventory_excludes_memory_tasks(self):
+        names = {name for name, _domain, _queue in CELERY_MANAGED_TASKS}
+        self.assertFalse(any("memory_tasks" in name for name in names))
+
+    def test_managed_inventory_excludes_knowledge_index_tasks(self):
+        names = {name for name, _domain, _queue in CELERY_MANAGED_TASKS}
+        self.assertFalse(any("knowledge_tasks" in name for name in names))
+        self.assertFalse(any(domain == "AI 知识库" for _name, domain, _queue in CELERY_MANAGED_TASKS))

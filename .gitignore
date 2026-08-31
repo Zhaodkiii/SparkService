@@ -50,6 +50,9 @@ logs/*.stderr.log
 # Redis dump
 dump.rdb
 
+# Local temp artifacts
+tmp/
+
 # Editor swap
 *.swp
 *~

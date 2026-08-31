@@ -3,10 +3,9 @@
 import { ChevronDown, Database, FileText, Plus, UserRound, X } from "lucide-react";
 import { useState } from "react";
 import { ToolSettingsPopover } from "@/components/chat/home/ToolSettingsPopover";
-import { KnowledgeSelector } from "@/components/knowledge/KnowledgeSelector";
 import { useOptionalChatContext } from "@/context/ChatContextProvider";
 import { useOptionalThreads } from "@/context/ThreadContext";
-import { CHAT_TOOL_SETTINGS_ENABLED, KNOWLEDGE_CHAT_SELECTOR_ENABLED } from "@/lib/feature-flags";
+import { CHAT_TOOL_SETTINGS_ENABLED } from "@/lib/feature-flags";
 import type { HealthResourceType } from "@/types/context";
 
 const RESOURCE_TYPES: Array<{ value: HealthResourceType; label: string }> = [
@@ -37,7 +36,6 @@ export function ContextToolbar() {
     {open && <div className="context-panel" role="dialog" aria-label="上下文设置">
       <header><div><strong>本轮上下文</strong><span>{status === "saving" ? "正在保存" : error ?? `${draft.items.length}/16 项`}</span></div><button type="button" aria-label="关闭上下文设置" onClick={() => setOpen(false)}><X size={16} /></button></header>
       <div className="context-panel__section"><div className="context-section-title"><UserRound size={15} /><strong>回答偏好</strong></div><label>自定义回答风格<textarea value={personaDraft} maxLength={4000} onChange={(event) => setPersonaDraft(event.target.value)} placeholder="例如：简洁、审慎地解释" /></label><div className="context-inline"><button type="button" onClick={() => void updatePreferences({ persona: { ...preferences.persona, custom_text: personaDraft.trim() } })}>保存风格</button><button type="button" className="secondary" onClick={() => void updatePreferences({ language: preferences.language === "zh-CN" ? "en-US" : "zh-CN" })}>{preferences.language === "zh-CN" ? "中文" : "English"}</button></div></div>
-      {KNOWLEDGE_CHAT_SELECTOR_ENABLED && <div className="context-panel__section"><KnowledgeSelector selectedIds={preferences.knowledge_bases ?? []} onChange={(ids) => updatePreferences({ knowledge_bases: ids })} /></div>}
       <div className="context-panel__section"><div className="context-section-title"><FileText size={15} /><strong>文件引用</strong></div><div className="context-inline"><input value={fileId} onChange={(event) => setFileId(event.target.value)} placeholder="ManagedFile ID" aria-label="文件 ID" /><button type="button" onClick={addFile}>添加</button></div><small>服务端会校验文件访问权限。</small></div>
       <div className="context-panel__section"><div className="context-section-title"><Database size={15} /><strong>健康资源</strong></div><div className="context-resource-row"><select value={resourceType} onChange={(event) => setResourceType(event.target.value as HealthResourceType)} aria-label="健康资源类型">{RESOURCE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><input value={resourceId} onChange={(event) => setResourceId(event.target.value)} placeholder={selectedThread?.member_id ? "资源 ID" : "当前对话未绑定成员"} aria-label="资源 ID" /><button type="button" onClick={addResource} disabled={!selectedThread?.member_id}>添加</button></div></div>
       <button className="context-panel__done" type="button" onClick={() => setOpen(false)}>完成</button>

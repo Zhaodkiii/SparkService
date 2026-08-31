@@ -19,6 +19,5 @@ CHAT_AI_TASK_MODULES = (
     "chat_sync.ai_tasks.run_tasks",
     "chat_sync.ai_tasks.outbox_tasks",
     "chat_sync.ai_tasks.recovery_tasks",
-    "chat_sync.ai_tasks.knowledge_tasks",
 )
 app.conf.imports = tuple(dict.fromkeys((*tuple(app.conf.imports or ()), *CHAT_AI_TASK_MODULES)))

@@ -90,7 +90,6 @@ def server_tool_entries(registry: ToolRegistry) -> list[RegisteredTool]:
 
 
 def build_server_tool_registry() -> ToolRegistry:
-    from .adapters.search_knowledge_bag import SearchKnowledgeBagTool
     from .adapters.ask_user import AskUserTool
     from .adapters.client import (
         FetchEnergyDetailsTool,
@@ -105,11 +104,12 @@ def build_server_tool_registry() -> ToolRegistry:
     from .adapters.health_sources import HealthSourcesTool
     from .adapters.member_profile import MemberProfileTool
     from .adapters.read_source import ReadSourceTool
+    from .adapters.read_memory import ReadMemoryTool
+    from .adapters.write_memory import WriteMemoryTool
 
     registry = ToolRegistry()
     for tool, policy in (
         (AskUserTool(), ToolPolicy("ask_user", execution_mode="pause", max_result_tokens=800)),
-        (SearchKnowledgeBagTool(), ToolPolicy("search_knowledge_bag", required_context=("knowledge_base",), max_result_tokens=1800)),
         (FetchStepDetailsTool(), ToolPolicy("fetch_step_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
         (FetchEnergyDetailsTool(), ToolPolicy("fetch_energy_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
         (FetchNutritionDetailsTool(), ToolPolicy("fetch_nutrition_details", target="client", execution_mode="pause", supported_platforms=("ios",), timeout_seconds=600, max_result_tokens=1800)),
@@ -121,6 +121,27 @@ def build_server_tool_registry() -> ToolRegistry:
         (HealthSourcesTool(), ToolPolicy("list_member_health_sources", required_context=("member",), max_result_tokens=1800)),
         (HealthResourceContextTool(), ToolPolicy("get_health_resource_context", required_context=("member",), max_result_tokens=2000)),
         (ReadSourceTool(), ToolPolicy("read_source", required_context=("source",), max_result_tokens=2000)),
+        (
+            ReadMemoryTool(),
+            ToolPolicy(
+                "read_memory",
+                risk="personal_data_read",
+                timeout_seconds=5.0,
+                max_result_tokens=2000,
+                max_attempts=1,
+            ),
+        ),
+        (
+            WriteMemoryTool(),
+            ToolPolicy(
+                "write_memory",
+                risk="personal_data_write",
+                side_effect="memory_write",
+                timeout_seconds=8.0,
+                max_result_tokens=400,
+                max_attempts=1,
+            ),
+        ),
     ):
         registry.register(tool, policy)
     return registry

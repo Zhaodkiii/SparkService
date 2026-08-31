@@ -9,14 +9,12 @@ from chat_sync.ai_knowledge.services.document_sync_service import (
     DocumentDeletedError,
     DocumentNotFoundError,
     DocumentSyncService,
-    KnowledgeBaseNotFoundError,
     RevisionConflictError,
 )
 from chat_sync.ai_knowledge.services.knowledge_base_service import KnowledgeBaseService
-from chat_sync.ai_knowledge.services.payloads import decode_cursor, document_to_payload, encode_cursor
+from chat_sync.ai_knowledge.services.payloads import decode_cursor, encode_cursor
 from chat_sync.ai_models.knowledge import KnowledgeDocument
 from django.db.models import Q
-from file_manager.models import ManagedFile
 
 
 class DocumentCommandService:
@@ -97,25 +95,25 @@ class DocumentCommandService:
 
     @staticmethod
     def get(*, user, document_id) -> KnowledgeDocument:
-        document = KnowledgeDocument.objects.select_related("index_state").filter(user=user, id=document_id).first()
+        document = KnowledgeDocument.objects.filter(user=user, id=document_id).first()
         if document is None or document.is_deleted:
             raise KnowledgeError("knowledge_document_not_found")
         return document
 
     @staticmethod
-    def list_documents(*, user, base_id, cursor: str | None = None, limit: int = 20) -> dict[str, Any]:
+    def list_documents(*, user, base_id, cursor: str | None = None, limit: int = 20, q: str = "") -> dict[str, Any]:
         KnowledgeBaseService.get_owned(user, base_id)
         limit = max(1, min(int(limit or 20), 50))
-        queryset = KnowledgeDocument.objects.select_related("index_state").filter(
-            user=user, knowledge_base_id=base_id, is_deleted=False
-        )
+        queryset = KnowledgeDocument.objects.filter(user=user, knowledge_base_id=base_id, is_deleted=False)
+        if q:
+            query = q.strip()[:64]
+            queryset = queryset.filter(Q(title__icontains=query) | Q(content__icontains=query))
         cursor_dt, cursor_tie = decode_cursor(cursor)
         if cursor_dt is not None and cursor_tie is not None:
             queryset = queryset.filter(Q(server_updated_at__lt=cursor_dt) | Q(server_updated_at=cursor_dt, id__lt=cursor_tie))
         rows = list(queryset.order_by("-server_updated_at", "-id")[: limit + 1])
         page = rows[:limit]
-        files = _files_for_documents(user, page)
-        items = [document_to_dto(doc, include_content=False, file_record=files.get(str(doc.source_file_uuid))) for doc in page]
+        items = [document_to_dto(doc, include_content=False) for doc in page]
         last = page[-1] if page else None
         next_cursor = (
             encode_cursor(server_updated_at=last.server_updated_at, tie_breaker=str(last.id)) if last is not None and len(rows) > limit else None
@@ -124,14 +122,4 @@ class DocumentCommandService:
 
     @staticmethod
     def to_detail(document: KnowledgeDocument, user) -> dict[str, Any]:
-        file_record = None
-        if document.source_file_uuid:
-            file_record = ManagedFile.objects.filter(user=user, file_uuid=document.source_file_uuid, is_deleted=False).first()
-        return document_to_dto(document, include_content=True, file_record=file_record)
-
-
-def _files_for_documents(user, documents: list[KnowledgeDocument]) -> dict[str, ManagedFile]:
-    uuids = [doc.source_file_uuid for doc in documents if doc.source_file_uuid]
-    if not uuids:
-        return {}
-    return {str(item.file_uuid): item for item in ManagedFile.objects.filter(user=user, file_uuid__in=uuids, is_deleted=False)}
+        return document_to_dto(document, include_content=True)

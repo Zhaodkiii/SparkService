@@ -41,16 +41,12 @@ export function ToolActivityDisclosure({ block, activity }: { block: ChatBlockDT
         {view.argSummary && <p><Database size={12} />{view.argSummary}</p>}
         {view.duplicate && <p>已复用相同请求的结果</p>}
         {view.sourceCount > 0 && (
-          <div className="knowledge-citations">
+          <div className="tool-disclosure__sources">
             <p>已引用 {view.sourceCount} 条资料</p>
             <ul>
               {(activity?.source_refs ?? []).map((ref) => (
                 <li key={ref.source_id}>
-                  {ref.type === "knowledge_chunk" && ref.title ? (
-                    <span>当时版本 · {ref.title}</span>
-                  ) : (
-                    <span>{ref.title || ref.source_id}</span>
-                  )}
+                  <span>{ref.title || ref.source_id}</span>
                 </li>
               ))}
             </ul>

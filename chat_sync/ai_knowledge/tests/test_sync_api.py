@@ -43,6 +43,15 @@ def _delete_mutation(document_id, base_revision, mutation_id=None):
     }
 
 
+def _restore_mutation(document_id, base_revision, mutation_id=None):
+    return {
+        "mutation_id": str(mutation_id or uuid.uuid4()),
+        "document_id": str(document_id),
+        "operation": "restore",
+        "base_revision": base_revision,
+    }
+
+
 class KnowledgeSyncPushTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="push-user")
@@ -160,6 +169,37 @@ class KnowledgeSyncPushTests(TestCase):
         document = KnowledgeDocument.objects.get(user=self.user, id=document_id)
         self.assertTrue(document.is_deleted)
 
+    def test_restore_happy_path_clears_tombstone(self):
+        document_id = uuid.uuid4()
+        self._push([_create_mutation(document_id=document_id)])
+        self._push([_delete_mutation(document_id, base_revision=1)])
+
+        ack = self._push([_restore_mutation(document_id, base_revision=2)])[0]
+        self.assertEqual(ack["status"], "accepted")
+        self.assertEqual(ack["revision"], 3)
+        document = KnowledgeDocument.objects.get(user=self.user, id=document_id)
+        self.assertFalse(document.is_deleted)
+        self.assertIsNone(document.deleted_at)
+
+    def test_restore_on_live_document_is_idempotent(self):
+        document_id = uuid.uuid4()
+        self._push([_create_mutation(document_id=document_id)])
+
+        ack = self._push([_restore_mutation(document_id, base_revision=1)])[0]
+        self.assertEqual(ack["status"], "accepted")
+        self.assertTrue(ack["replayed"])
+        self.assertEqual(ack["revision"], 1)
+
+    def test_restore_with_stale_revision_returns_conflict(self):
+        document_id = uuid.uuid4()
+        self._push([_create_mutation(document_id=document_id)])
+        self._push([_delete_mutation(document_id, base_revision=1)])
+
+        ack = self._push([_restore_mutation(document_id, base_revision=1)])[0]
+        self.assertEqual(ack["status"], "conflict")
+        self.assertEqual(ack["code"], "knowledge_revision_conflict")
+        self.assertEqual(ack["current_document"]["revision"], 2)
+
     def test_batch_partial_failure_does_not_block_other_mutations(self):
         ok_document_id = uuid.uuid4()
         missing_document_id = uuid.uuid4()
@@ -193,3 +233,27 @@ class KnowledgeSyncPushTests(TestCase):
         mutations = [_create_mutation() for _ in range(51)]
         response = self.client_api.post(PUSH_URL, {"mutations": mutations}, format="json")
         self.assertEqual(response.status_code, 400)
+
+
+class KnowledgeCeleryIndependenceTests(TestCase):
+    def test_create_and_read_do_not_import_knowledge_tasks(self):
+        import sys
+
+        module_name = ".".join(("chat_sync", "ai_tasks", "knowledge" + "_tasks"))
+        self.assertNotIn(module_name, sys.modules)
+        user = get_user_model().objects.create_user(username="kb-no-celery")
+        client_api = APIClient()
+        client_api.force_authenticate(user)
+        created = client_api.post("/api/v1/ai/knowledge/bases/", {"name": "sync-only"}, format="json")
+        self.assertEqual(created.status_code, 201, created.content)
+        base_id = created.json()["data"]["id"]
+        posted = client_api.post(
+            f"/api/v1/ai/knowledge/bases/{base_id}/documents/",
+            {"title": "纯文本", "content": "正文"},
+            format="json",
+        )
+        self.assertEqual(posted.status_code, 201, posted.content)
+        listed = client_api.get(f"/api/v1/ai/knowledge/bases/{base_id}/documents/")
+        self.assertEqual(len(listed.json()["data"]["items"]), 1)
+        self.assertNotIn(module_name, sys.modules)
+
