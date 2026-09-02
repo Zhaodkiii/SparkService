@@ -4,7 +4,23 @@ from datetime import date, datetime
 from backoffice.models import AdminAuditLog
 
 
-SENSITIVE_KEYS = {"password", "refresh", "access", "token", "key", "api_key"}
+SENSITIVE_KEYS = {
+    "password",
+    "refresh",
+    "access",
+    "token",
+    "key",
+    "api_key",
+    "text",
+    "content",
+    "message",
+    "introduction",
+    "attention_note",
+    "id_card",
+    "phone",
+    "mobile",
+    "secret",
+}
 
 
 def _sanitize(data: Any):

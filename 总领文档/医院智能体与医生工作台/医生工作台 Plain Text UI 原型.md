@@ -259,6 +259,55 @@ Composer 状态：
 | 无权限 / 身份停用 | 隐藏输入能力并退出敏感内容 |
 | 发送失败 | 保留草稿、错误文案、request_id 与重试 |
 
+### 5.5 医生工作台服务端交付契约
+
+医生界面只消费 `/api/hospital/v1/`，不调用患者 `/api/v1/ai/chat/` 写接口，也不调用平台后台 `/api/admin/v1/` 接口。登录成功后，服务端基于统一 `accounts.User` 查找 active 的 `HospitalStaffMembership` 与 `DoctorProfile`；前端不能以 URL 中的医院或医生 ID 声明自己的身份。
+
+| UI 动作 | 目标接口 | 关键输入 | 服务端原子结果 | 页面更新 |
+| --- | --- | --- | --- | --- |
+| 加载工作台 | `GET me/workspace` | `hospital_id`（仅多院区医生选择时） | 返回当前医生身份、医院、科室、智能体与计数 | 填充左栏身份和未选中空态 |
+| 查询卡片 | `GET conversations` | `status`、`attention`、`q`、`cursor` | 按医生、医院、服务状态过滤并返回卡片与统计同口径数据 | 替换当前列表；失败保留上次成功结果 |
+| 打开会话 | `GET conversations/{thread_id}` | thread ID | 校验医生范围后返回 Binding、消息时间线及授权摘要 | 更新 URL、Header、消息和右侧面板 |
+| 接管 | `POST conversations/{thread_id}/join` | `Idempotency-Key` | 锁定绑定，校验未结束与医生权限，记录接管人与系统事件 | 卡片/标题改为“医生已接管” |
+| 发送回复 | `POST conversations/{thread_id}/messages` | `content`、可访问资料引用、`Idempotency-Key` | 创建现有 ChatMessage + `actor_type=doctor` 归属、更新会话时间、审计 | 服务端确认后插入医生消息；不能先假装已发送 |
+| 更新关注 | `POST conversations/{thread_id}/attention` | `attention_level`、`version`、幂等键 | 锁定绑定、校验版本，更新医生关注而不改变风险信号 | 星标/筛选计数按返回 Binding 更新 |
+| 结束服务 | `POST conversations/{thread_id}/end` | `reason_code`、可选备注、`version`、幂等键 | 写结束人/时间/原因和系统事件，保留全部聊天记录 | 关闭 Composer，移到已结束筛选 |
+| 维护本人智能体 | `GET/PUT me/agent` | 仅允许编辑字段与 `version` | 校验本人归属和医院审核规则，写变更审计 | 仅以服务端返回的发布状态更新页面 |
+
+所有成功接口采用项目统一 `{ code, msg, data }` 包裹。所有失败显示服务端 `request_id` 供医院信息科排查；不依赖浏览器本地状态推断“已接管”“已结束”或“发送成功”。
+
+#### 会话读取 DTO（目标）
+
+```text
+DoctorConversationDetail
+├── thread: { id, created_at, updated_at }
+├── binding: { hospital_id, department, agent, service_status,
+│              doctor_attention_level, risk_signal_level, version, ended_at }
+├── patient: { member_id, masked_name, consent_summary }
+├── doctor_access: { can_join, can_send, can_update_attention, can_end }
+├── risk_summary: { level, generated_at, action_text, source_message_id }
+├── messages[]
+│   ├── id, role, content/blocks, created_at
+│   └── attribution: { actor_type, doctor_snapshot?, agent_snapshot? }
+└── next_cursor
+```
+
+`masked_name`、授权摘要和资料引用由服务端按当前医生权限裁剪。患者真实身份信息、完整档案、内部 AI 运行调试信息、Provider Key 不属于此 DTO。`doctor_snapshot` 是消息生成时的姓名/职称/科室展示快照，不能用后来修改的医生主页覆盖历史发言身份。
+
+#### 关键状态与错误处理
+
+| 服务端状态 / 业务码 | UI 语义 |
+| --- | --- |
+| `service_status=ai_serving` | 显示“接管后可回复”；不显示可编辑 Composer |
+| `service_status=doctor_active` | 展示真人医生身份并开放 Composer |
+| `service_status=ended` 或 `CONVERSATION_ENDED` | 立即收起输入区，展示结束说明和历史浏览 |
+| `DOCTOR_PROFILE_NOT_ACTIVE` / `HOSPITAL_MEMBERSHIP_REQUIRED` | 清空敏感会话缓存，回到权限失效页 |
+| `CONVERSATION_NOT_ASSIGNED` | 不展示会话是否存在或属于谁，移除列表卡片 |
+| `CONVERSATION_VERSION_CONFLICT` | 拉取新详情，提示本次操作未覆盖他人更新 |
+| `IDEMPOTENCY_CONFLICT` | 保留草稿与当前选择，要求用户确认后以新键重试 |
+
+实时事件只用于加速刷新，最终以服务端详情为准。收到其他医生接管、医院暂停、会话结束事件时，前端必须重新拉取 Binding 后再更新 Composer 和卡片，不能仅在本地改标签。
+
 ## 6. 右侧患者资料与会话控制面板
 
 直接改造现有 `SessionActivityPanel`，沿用右侧滑入、关闭、移动端全宽覆盖和 Escape 关闭行为。

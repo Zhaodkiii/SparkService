@@ -43,6 +43,9 @@ urlpatterns = [
     path('api/v1/oss/', include('file_manager.oss_urls')),
     path('api/v1/version/', include('app_version.urls')),
     path('api/v1/content/', include('content.urls')),
+    path('api/v1/hospital-care/', include('hospital_care.api.patient.urls')),
+    path('api/hospital/v1/', include('hospital_care.api.staff.urls')),
+    path('api/admin/v1/hospital-care/', include('hospital_care.api.backoffice.urls')),
     path('api/admin/v1/', include('backoffice.urls')),
 ]
 

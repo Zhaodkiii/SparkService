@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from celery.schedules import crontab
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 
 # Use PyMySQL as the MySQLdb driver for Django's mysql backend.
@@ -234,6 +235,7 @@ INSTALLED_APPS = [
     'content',
     'notification_center',
     'backoffice',
+    'hospital_care',
     'zdk_migration',
 ]
 
@@ -379,6 +381,14 @@ AI_TRIAL_AUTO_GRANT_COUNTRY_CODES = [
 # CORS
 # -------------------------
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "false").lower() in ("1", "true", "yes", "y")
+# Custom write headers used by chat-web / backoffice-web. Missing these makes
+# the browser succeed on OPTIONS then block the real POST as "Network Error".
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "idempotency-key",
+    "x-request-id",
+    "if-match",
+    "x-device-id",
+]
 CORS_ALLOWED_ORIGINS = [
     item.strip()
     for item in os.getenv(

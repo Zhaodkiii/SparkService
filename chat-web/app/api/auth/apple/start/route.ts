@@ -5,10 +5,7 @@ import { failureEnvelope, jsonEnvelope, requestIdFrom } from "@/lib/server/upstr
 import { authDiagnosticLog } from "@/lib/auth/diagnostics";
 import { appleNonceDigest } from "@/lib/server/apple-nonce";
 import { publicWebOrigin } from "@/lib/server/public-origin";
-
-function safeReturnPath(value: string | null) {
-  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/chat";
-}
+import { safeReturnPath } from "@/lib/auth/return-path";
 
 export async function GET(request: Request) {
   const requestId = requestIdFrom(request);

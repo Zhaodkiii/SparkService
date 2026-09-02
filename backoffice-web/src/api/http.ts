@@ -52,6 +52,13 @@ function toDisplayError(error: AxiosError): Error {
   if (body && typeof body === 'object' && 'msg' in body) {
     const msg = body.msg;
     if (typeof msg === 'string' && msg) {
+      const details = body.data;
+      if (details && typeof details === 'object' && Array.isArray((details as { checks?: unknown }).checks)) {
+        const checks = (details as { checks: unknown[] }).checks.filter((item) => typeof item === 'string');
+        if (checks.length) {
+          return new Error(`${msg}：${checks.join('；')}`);
+        }
+      }
       return new Error(msg);
     }
     if (msg && typeof msg === 'object' && 'detail' in msg) {

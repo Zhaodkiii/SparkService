@@ -44,6 +44,26 @@ const BUSINESS_MESSAGE_KEYS: Record<number, string> = {
   50393: "chat.run_executor_unavailable",
   50394: "chat.run_model_binding_missing",
   50395: "chat.run_worker_unavailable",
+  40381: "hospital.doctor_profile_not_active",
+  40383: "hospital.membership_required",
+  40385: "hospital.conversation_not_assigned",
+  40485: "hospital.conversation_not_found",
+  40987: "hospital.agent_version_conflict",
+  40989: "hospital.conversation_ended",
+  40990: "hospital.conversation_version_conflict",
+  40083: "hospital.idempotency_key_required",
+};
+
+const HOSPITAL_ERROR_KEYS: Record<string, string> = {
+  HOSPITAL_MEMBERSHIP_REQUIRED: "hospital.membership_required",
+  DOCTOR_PROFILE_NOT_ACTIVE: "hospital.doctor_profile_not_active",
+  CONVERSATION_NOT_ASSIGNED: "hospital.conversation_not_assigned",
+  CONVERSATION_NOT_FOUND: "hospital.conversation_not_found",
+  CONVERSATION_ENDED: "hospital.conversation_ended",
+  CONVERSATION_VERSION_CONFLICT: "hospital.conversation_version_conflict",
+  AGENT_VERSION_CONFLICT: "hospital.agent_version_conflict",
+  IDEMPOTENCY_CONFLICT: "hospital.idempotency_conflict",
+  IDEMPOTENCY_KEY_REQUIRED: "hospital.idempotency_key_required",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,7 +95,10 @@ function retryableFor(status: number, details: unknown): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
-export function messageKeyForApiError(code: number, status: number): string {
+export function messageKeyForApiError(code: number, status: number, details?: unknown): string {
+  if (isRecord(details) && typeof details.error_code === "string" && HOSPITAL_ERROR_KEYS[details.error_code]) {
+    return HOSPITAL_ERROR_KEYS[details.error_code];
+  }
   return BUSINESS_MESSAGE_KEYS[code] ?? (status >= 500 ? "api.server_error" : status === 401 ? "auth.unauthorized" : "api.request_failed");
 }
 
@@ -88,7 +111,7 @@ export function failureFromEnvelope(
     ok: false,
     httpStatus: response.status,
     code: envelope.code,
-    messageKey: messageKeyForApiError(envelope.code, response.status),
+    messageKey: messageKeyForApiError(envelope.code, response.status, details),
     message: messageText(envelope.msg),
     details,
     requestId: readRequestId(response, envelope),

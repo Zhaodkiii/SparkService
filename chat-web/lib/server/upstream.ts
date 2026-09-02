@@ -18,6 +18,14 @@ export function sparkApiPathFromRequest(request: Request) {
   return `${url.pathname}${url.search}`;
 }
 
+export function hospitalApiPathFromRequest(request: Request) {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/hospital/v1/")) {
+    throw new Error(`Unsupported hospital API proxy path: ${url.pathname}`);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
 export async function callSparkUpstream(path: string, init: RequestInit = {}, requestId: string = randomUUID()) {
   const headers = new Headers(init.headers);
   headers.set("accept", "application/json");

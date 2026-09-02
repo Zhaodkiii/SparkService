@@ -66,6 +66,7 @@ import { computed, provide, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { updateTabTitleKey } from '../composables/useAdminTabs';
+import type { MenuNode } from '../types';
 
 interface TabItem {
   key: string;
@@ -122,6 +123,14 @@ const fallbackMenus = [
       { code: 'menu:users:devices', name: '设备管理', path: '/users/devices', children: [] },
       { code: 'menu:users:deactivations', name: '注销管理', path: '/users/deactivations', children: [] },
       { code: 'menu:users:blacklist', name: '黑名单管理', path: '/users/blacklist', children: [] },
+    ],
+  },
+  {
+    code: 'menu:hospital_care',
+    name: '医院管理',
+    path: '/hospital-care',
+    children: [
+      { code: 'menu:hospital_care:hospitals', name: '医院列表', path: '/hospital-care/hospitals', children: [] },
     ],
   },
   {
@@ -217,12 +226,35 @@ const fallbackMenus = [
   },
 ];
 
-const menus = computed(() => {
-  const source = auth.menus.length ? auth.menus : fallbackMenus;
-  if (auth.user?.is_superuser) {
+const hospitalCareMenu = {
+  code: 'menu:hospital_care',
+  name: '医院管理',
+  path: '/hospital-care',
+  children: [
+    { code: 'menu:hospital_care:hospitals', name: '医院列表', path: '/hospital-care/hospitals', children: [] },
+  ],
+};
+
+function withHospitalCareMenu(source: MenuNode[]) {
+  if (source.some((item) => item.code === 'menu:hospital_care')) {
     return source;
   }
-  return source.filter((item) => item.code !== 'menu:conversations');
+  if (!auth.user?.is_superuser && !auth.hasPermission('menu:hospital_care')) {
+    return source;
+  }
+  const next = source.map((item) => ({ ...item, children: item.children ? [...item.children] : [] }));
+  const usersIndex = next.findIndex((item) => item.code === 'menu:users');
+  next.splice(usersIndex >= 0 ? usersIndex + 1 : next.length, 0, hospitalCareMenu);
+  return next;
+}
+
+const menus = computed(() => {
+  const source = auth.menus.length ? auth.menus : fallbackMenus;
+  const withHospital = withHospitalCareMenu(source);
+  if (auth.user?.is_superuser) {
+    return withHospital;
+  }
+  return withHospital.filter((item) => item.code !== 'menu:conversations');
 });
 
 const menuItems = computed(() =>
@@ -252,6 +284,9 @@ function resolveOpenKeys(path: string) {
   }
   if (path.startsWith('/users/')) {
     return ['/users'];
+  }
+  if (path === '/hospital-care' || path.startsWith('/hospital-care/')) {
+    return ['/hospital-care'];
   }
   if (path.startsWith('/conversations/')) {
     return ['/conversations'];
@@ -306,6 +341,10 @@ function onMenuClick(info: { key: string }) {
   }
   if (info.key === '/articles') {
     router.push('/articles/overview');
+    return;
+  }
+  if (info.key === '/hospital-care') {
+    router.push('/hospital-care/hospitals');
     return;
   }
   router.push(info.key);

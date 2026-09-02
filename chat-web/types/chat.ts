@@ -16,7 +16,7 @@ export type ChatBlockStatus = "pending" | "streaming" | "ready" | "failed";
 
 /**
  * Canonical block kinds, aligned with the iOS `ChatMessageBlock.Kind` Swift
- * enum (36 case names). `toolCall`/`toolResult` are intentionally absent here:
+ * enum (37 case names). `toolCall`/`toolResult` are intentionally absent here:
  * they are browser-internal projections produced by the P4 tool activity loop,
  * not canonical wire kinds (see `WebToolActivityBlockKind`).
  */
@@ -56,7 +56,8 @@ export type ChatBlockKind =
   | "healthResourceReference"
   | "medicalRiskNotice"
   | "medicalDisclaimerCard"
-  | "chatGuideCard";
+  | "chatGuideCard"
+  | "hospitalDoctorIntroCard";
 
 /**
  * Browser-internal projection kind produced by the P4 tool activity loop from
@@ -75,6 +76,7 @@ export const CHAT_BLOCK_KINDS: readonly ChatBlockKind[] = [
   "searchSummary", "nutritionCards", "workoutVisualization", "captureCard", "html",
   "smallTaskCard", "taskCards", "error", "assistantStatusCard",
   "healthResourceReference", "medicalRiskNotice", "medicalDisclaimerCard", "chatGuideCard",
+  "hospitalDoctorIntroCard",
 ];
 
 export const WEB_TOOL_ACTIVITY_BLOCK_KINDS: readonly WebToolActivityBlockKind[] = ["toolCall", "toolResult"];

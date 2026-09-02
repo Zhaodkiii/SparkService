@@ -162,7 +162,7 @@ backoffice-web/src/
 │ < 医院列表   [Logo] 天长市中医院   TCZY-001   [已启用]                    │
 │ 安徽省滁州市 · Demo 模式                         [暂停服务] [更多⌄]       │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ [概览] [基础资料] [科室] [职工与医生] [智能体] [服务接入] [审计记录]      │
+│ [概览] [基础资料] [科室] [职工与医生] [智能体] [知识库] [服务接入] [审计记录] │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ 当前 Tab 内容                                                              │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -211,12 +211,13 @@ backoffice-web/src/
 ```text
 │ [职工] [医生资料]                              [+ 邀请职工] │
 │ 姓名    工号    角色      科室    资质状态    账号状态  操作│
-│ 张医生  10086   医生      心内科  已核验      有效      详情│
-│ 李主任  10010   医院管理员 --     --          已邀请    重发│
+│ 张医生  10086   医生      心内科  已核验      有效      编辑│
+│ 李主任  10010   医院管理员 --     --          已邀请    编辑│
 ```
 
 - 职工身份关联现有 User，不新建用户名密码表。
 - 邀请医院管理员不等于授予平台 SuperAdmin。
+- 职工操作可维护工号、角色和账号状态；医生角色创建后不可在职工页改成其他角色。
 - 医生资料维护包括职称、科室、擅长、简介、头像和资质状态。
 - 证件材料属于敏感文件，只向获准角色展示，列表不显示完整证件号。
 
@@ -322,6 +323,7 @@ HIS 接入状态  [未配置]
 | 暂停 | POST `.../{id}/suspend/` | 状态改为暂停 | 保留原因输入 |
 | 新增科室 | POST `.../{id}/departments/` | 插入科室行 | 保留表单 |
 | 邀请职工 | POST `.../{id}/staff/` | 显示 invited 状态 | 不在前端创建假账号 |
+| 编辑职工 | PATCH `.../staff/{staff_id}/` | 刷新工号、角色、账号状态 | 最后一位有效医院管理员不可停用；医生角色不可降级 |
 | 审核智能体 | POST `.../agents/{id}/review/` | 更新审核状态 | 保留审核意见 |
 
 ## 10. 验收标准
@@ -338,3 +340,65 @@ HIS 接入状态  [未配置]
 10. 所有目标页面均延续现有 backoffice-web 的表格、表单、Modal、Drawer 和审计交互，不另建管理框架。
 
 本文件只定义目标模块；当前 `backoffice-web` 和 `hospital_care` 尚未实现上述医院管理代码。
+
+医院智能体新增与维护的具体字段、一次创建两类实体的事务语义，见 `需求文档/后台管理系统/BACKOFFICE-HOSPITAL-AGENT-000001-医院智能体新建与维护及场景绑定原子创建工单.md`。
+
+医院知识库的归属、文本资料维护、手工向量生成、智能体绑定及 iOS 会话异步同步，见 `医院知识库产品需求与落地方案.md`；历史访谈见 `需求文档/后台管理系统/BACKOFFICE-HOSPITAL-KNOWLEDGE-000001-医院知识库管理与智能体绑定及iOS会话异步获取工单.md`。
+
+## 11. 后台服务端落地契约
+
+后台页面只经由 `/api/admin/v1/hospital-care/` 调用 `hospital_care.api.backoffice`。认证沿用后台登录和 `AdminCodePermission`；具体医院、科室、医生和智能体的状态机全部收敛到 `hospital_care.services`，Vue 页面不能通过 PATCH 任意写状态字段。
+
+### 11.1 页面、接口与服务命令
+
+| 页面动作 | 目标接口 | 进入的唯一 Service | 关键服务端约束 |
+| --- | --- | --- | --- |
+| 医院列表与统计 | `GET hospitals/` | `BackofficeHospitalCatalog` selector | 搜索、排序、统计与分页在服务端同一查询口径完成 |
+| 保存草稿医院 | `POST hospitals/` | `HospitalAdminService.create_hospital` | `code` 全局唯一；携带 `Idempotency-Key`；只创建 `draft` |
+| 更新基础资料 | `PATCH hospitals/{id}/` | `HospitalAdminService.update_hospital` | 必须携带 `version`；编码不是普通可写字段 |
+| 启用/暂停 | `POST hospitals/{id}/activate/` / `suspend/` | `HospitalAdminService.activate/suspend_hospital` | 事务锁定医院，验证状态路径并写审计；不物理删除 |
+| 科室维护 | `GET/POST/PATCH hospitals/{id}/departments/` | `HospitalAdminService` | 同院编码唯一，父科室同医院；隐藏前核对受影响智能体 |
+| 职工/医生维护 | `GET/POST/PATCH hospitals/{id}/staff/`、`doctors/` | `HospitalAdminService` | 绑定既有 User；医院角色不能提升为平台管理员 |
+| 智能体审核 | `GET agents/`、`POST agents/{id}/review/` | `AgentService.review/publish/disable` | 校验医生、科室、场景绑定和知识引用同院；不得读写 Provider Key |
+| 审计查询 | `GET hospitals/{id}/audit/` | `BackofficeHospitalCatalog` selector | 复用 `AdminAuditLog`，响应中不返回敏感 payload |
+
+创建、启用、暂停、审核、隐藏科室等写操作必须使用 `transaction.atomic()`；状态更新先 `select_for_update()`，再校验当前状态与 `version`。网络重试按管理员账号和 `Idempotency-Key` 返回同一资源结果，若同一键对应不同请求摘要，返回 `IDEMPOTENCY_CONFLICT`。
+
+### 11.2 后台可写字段白名单
+
+| 资源 | 后台可写 | 后台不可直接写 |
+| --- | --- | --- |
+| Hospital | 名称、简称、等级、Logo file ID、地址、电话、网站、简介、服务模式、可信跳转地址 | `status`、`version`、创建/更新时间、会话计数、HIS Secret |
+| Department | 名称、编码、上级、排序、展示状态 | 医生/智能体计数、跨医院 parent、已关联历史的物理删除 |
+| Staff / Doctor | 角色、在职状态、职称、科室关系、公开资料、资质审核状态 | 用户密码、平台管理员角色、患者资料、其他医院身份 |
+| ClinicalAgentProfile | 展示名、简介、服务边界、审核意见、发布/停用动作、知识绑定申请 | 模型密钥、底层 Prompt 全量、AI Run、患者消息归属 |
+
+浏览器将 `status`、`published_at`、`doctor_id`、`hospital_id` 等字段回传时，Serializer 必须拒绝或忽略并由 URL、当前对象和 Service 推导，不能信任隐藏输入框。
+
+### 11.3 前端需要的统一响应语义
+
+```text
+HospitalDetail
+├── hospital: { id, code, name, status, service_mode, version, updated_at }
+├── summary: { department_count, active_doctor_count,
+│              published_agent_count, active_conversation_count }
+├── activation_check: { can_activate, items[] }
+└── allowed_actions: { update, activate, suspend, manage_staff, review_agent }
+```
+
+`allowed_actions` 由服务端权限计算，前端仅用于按钮显隐；真正授权必须在接口端再次判定。`activation_check.items` 返回机器码、名称、是否通过、处理提示，支持启用弹窗逐项说明，不能只返回一个笼统的 400。
+
+| HTTP / 业务码 | 页面恢复方式 |
+| --- | --- |
+| 401 | 走现有后台登录失效流程 |
+| 403 / 权限码不足 | 隐藏操作并返回安全页面；不把接口错误显示为“数据不存在” |
+| `HOSPITAL_CODE_CONFLICT` | 标记医院编码字段，保留其他输入 |
+| `CONVERSATION_VERSION_CONFLICT` | 弹出最新服务端值与重新编辑入口，不自动覆盖 |
+| `HOSPITAL_INACTIVE` | 禁止与该医院相关的新配置/发布动作，并刷新详情状态 |
+| `IDEMPOTENCY_CONFLICT` | 保留当前表单，阻断静默再次提交 |
+
+### 11.4 审计与服务接入安全
+
+每次后台写操作均由 Service 返回审计所需的资源 ID、前后状态和变更字段白名单，并调用既有 `write_audit_log`。审计只记录掩码后的字段变更；不记录患者正文、身份证件、完整附件 URL、登录凭证、HIS 签名或 Provider Key。
+
+HIS/挂号“连接测试”只能触发服务端受控适配器。前端接收的结果只能是连接状态、掩码配置标识、测试时间和 request ID；不可获得密钥，也不能把浏览器直接连到医院内网接口。`demo`、`redirect`、`integrated` 三种服务模式必须由服务端决定可用菜单和患者端展示，不能仅靠前端开关。

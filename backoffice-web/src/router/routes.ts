@@ -8,6 +8,19 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/hospital-system/:hospitalId',
+    component: () => import('../layouts/HospitalSystemLayout.vue'),
+    children: [
+      { path: '', redirect: 'overview' },
+      {
+        path: ':tab(overview|base|departments|people|agents|knowledge|integration|audit)',
+        name: 'HospitalSystemSection',
+        component: () => import('../views/hospital-care/HospitalDetailView.vue'),
+        meta: { title: '医院系统' },
+      },
+    ],
+  },
+  {
     path: '/',
     component: () => import('../layouts/AdminLayout.vue'),
     children: [
@@ -19,6 +32,10 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/users/devices', name: 'Devices', component: () => import('../views/DevicesView.vue'), meta: { title: '设备管理' } },
       { path: '/users/deactivations', name: 'Deactivations', component: () => import('../views/DeactivationsView.vue'), meta: { title: '注销管理' } },
       { path: '/users/blacklist', name: 'Blacklist', component: () => import('../views/BlacklistView.vue'), meta: { title: '黑名单管理' } },
+      { path: '/hospital-care', redirect: '/hospital-care/hospitals' },
+      { path: '/hospital-care/hospitals', name: 'HospitalList', component: () => import('../views/hospital-care/HospitalListView.vue'), meta: { title: '医院列表', keepAlive: true } },
+      { path: '/hospital-care/hospitals/new', name: 'HospitalCreate', component: () => import('../views/hospital-care/HospitalCreateView.vue'), meta: { title: '新增医院' } },
+      { path: '/hospital-care/hospitals/:hospitalId', name: 'HospitalDetail', component: () => import('../views/hospital-care/HospitalDetailView.vue'), meta: { title: '医院详情' } },
       { path: '/conversations/users', name: 'ConversationUsers', component: () => import('../views/ConversationUsersView.vue'), meta: { title: '用户对话', superAdminOnly: true, keepAlive: true } },
       { path: '/conversations/users/:userId', name: 'ConversationUserThreads', component: () => import('../views/ConversationUserThreadsView.vue'), meta: { title: '用户会话详情', superAdminOnly: true, keepAlive: true } },
       { path: '/conversations/quick-questions', name: 'ConversationQuickQuestions', component: () => import('../views/ConversationQuickQuestionsView.vue'), meta: { title: '快捷问题配置', superAdminOnly: true, keepAlive: true } },

@@ -22,33 +22,41 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef<string | null>(null);
+  const refreshInFlight = useRef<Promise<string | null> | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [session, setSession] = useState<CurrentSessionDTO | null>(null);
   const [status, setStatus] = useState<AuthStatus>("bootstrapping");
 
   const refresh = useCallback(async () => {
+    if (refreshInFlight.current) return refreshInFlight.current;
     const requestId = createAuthRequestId("refresh");
     const startedAt = Date.now();
     authDiagnosticLog("info", "browser", "auth.bootstrap.started", { request_id: requestId, session_class: "web" });
     setStatus((current) => current === "authenticated" ? "refreshing" : "bootstrapping");
-    try {
-      const bootstrapClient = new SparkHttpClient({ baseUrl: "" });
-      const data = await new SparkAuthApi(bootstrapClient).bootstrap(requestId);
-      if (!data.access_token) throw new Error("missing access token");
-      tokenRef.current = data.access_token;
-      setAccessToken(data.access_token);
-      setSession(data.session ?? null);
-      setStatus("authenticated");
-      authDiagnosticLog("info", "browser", "auth.bootstrap.succeeded", { request_id: requestId, duration_ms: Date.now() - startedAt });
-      return data.access_token;
-    } catch (cause) {
-      authDiagnosticLog("warn", "browser", "auth.bootstrap.failed", { request_id: requestId, duration_ms: Date.now() - startedAt, error_type: cause instanceof Error ? cause.name : typeof cause });
-      tokenRef.current = null;
-      setAccessToken(null);
-      setSession(null);
-      setStatus("anonymous");
-      return null;
-    }
+    const pending = (async () => {
+      try {
+        const bootstrapClient = new SparkHttpClient({ baseUrl: "" });
+        const data = await new SparkAuthApi(bootstrapClient).bootstrap(requestId);
+        if (!data.access_token) throw new Error("missing access token");
+        tokenRef.current = data.access_token;
+        setAccessToken(data.access_token);
+        setSession(data.session ?? null);
+        setStatus("authenticated");
+        authDiagnosticLog("info", "browser", "auth.bootstrap.succeeded", { request_id: requestId, duration_ms: Date.now() - startedAt });
+        return data.access_token;
+      } catch (cause) {
+        authDiagnosticLog("warn", "browser", "auth.bootstrap.failed", { request_id: requestId, duration_ms: Date.now() - startedAt, error_type: cause instanceof Error ? cause.name : typeof cause });
+        tokenRef.current = null;
+        setAccessToken(null);
+        setSession(null);
+        setStatus("anonymous");
+        return null;
+      } finally {
+        refreshInFlight.current = null;
+      }
+    })();
+    refreshInFlight.current = pending;
+    return pending;
   }, []);
 
   const login = useCallback(async (token: AuthTokenWireDTO) => {

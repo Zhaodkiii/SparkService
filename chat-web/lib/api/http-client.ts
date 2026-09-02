@@ -39,6 +39,15 @@ export function userFacingApiError(failure: SparkApiFailure): string {
     "chat.interaction_response_invalid": "提交内容不完整，请重新选择后再试。",
     "chat.interaction_idempotency_required": "提交失败，请稍后重试。",
     "auth.unauthorized": "登录状态已失效，请重新登录。",
+    "hospital.membership_required": "当前账号没有医院职工身份，无法进入医生工作台。",
+    "hospital.doctor_profile_not_active": "医生身份未激活，请联系医院管理员。",
+    "hospital.conversation_not_assigned": "会话不在当前医生的授权范围内。",
+    "hospital.conversation_not_found": "会话不存在或已失效。",
+    "hospital.conversation_ended": "本次服务已结束，不能继续回复。",
+    "hospital.conversation_version_conflict": "会话已被其他操作更新，请刷新后重试。",
+    "hospital.agent_version_conflict": "智能体资料已被更新，请刷新后重试。",
+    "hospital.idempotency_conflict": "相同请求正在处理，请确认后重试。",
+    "hospital.idempotency_key_required": "请求缺少幂等键，请稍后重试。",
   };
   return messages[failure.messageKey] ?? failure.message ?? (failure.httpStatus >= 500 ? "服务暂时不可用，请稍后重试。" : "请求未完成，请稍后重试。");
 }

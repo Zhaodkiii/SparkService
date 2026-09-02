@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 
 from chat_sync.contracts import (
     BLOCK_KINDS,
+    KIND_HOSPITAL_DOCTOR_INTRO_CARD,
     KIND_SEARCH_SUMMARY,
     KIND_TOOL,
     KIND_TOOL_QUESTION_CARDS,
@@ -27,10 +28,11 @@ from chat_sync.contracts import (
 
 
 class BlockKindTests(SimpleTestCase):
-    def test_36_kinds_are_declared(self):
-        self.assertEqual(len(BLOCK_KINDS), 36)
+    def test_37_kinds_are_declared(self):
+        self.assertEqual(len(BLOCK_KINDS), 37)
         self.assertIn(KIND_TOOL, BLOCK_KINDS)
         self.assertIn(KIND_SEARCH_SUMMARY, BLOCK_KINDS)
+        self.assertIn(KIND_HOSPITAL_DOCTOR_INTRO_CARD, BLOCK_KINDS)
         self.assertNotIn("toolCall", BLOCK_KINDS)
         self.assertNotIn("toolResult", BLOCK_KINDS)
 

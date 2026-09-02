@@ -5,7 +5,7 @@ Single strict source of truth aligned to iOS ``ChatMessage.swift``.
 * ``ChatMessageBlockNodeRole`` has exactly three cases — ``timeline``,
   ``tool`` and ``toolPresentation``.  Their wire values are the camelCase
   Swift ``String``-raw-value case names.
-* ``ChatMessageBlockKind`` has 36 camelCase cases.  ``toolCall`` and
+* ``ChatMessageBlockKind`` has 37 camelCase cases.  ``toolCall`` and
   ``toolResult`` are **not** values in that enum: a tool invocation is ``tool``
   and its result is a ``toolPresentation`` rich card.
 * ``ChatMessageBlockPayload`` is a tagged union encoded as ``{"<kind>": {"_0":
@@ -76,6 +76,7 @@ KIND_HEALTH_RESOURCE_REFERENCE = "healthResourceReference"
 KIND_MEDICAL_RISK_NOTICE = "medicalRiskNotice"
 KIND_MEDICAL_DISCLAIMER_CARD = "medicalDisclaimerCard"
 KIND_CHAT_GUIDE_CARD = "chatGuideCard"
+KIND_HOSPITAL_DOCTOR_INTRO_CARD = "hospitalDoctorIntroCard"
 
 BLOCK_KINDS = frozenset({
     KIND_TEXT,
@@ -114,6 +115,7 @@ BLOCK_KINDS = frozenset({
     KIND_MEDICAL_RISK_NOTICE,
     KIND_MEDICAL_DISCLAIMER_CARD,
     KIND_CHAT_GUIDE_CARD,
+    KIND_HOSPITAL_DOCTOR_INTRO_CARD,
 })
 
 
@@ -234,6 +236,10 @@ def search_summary_payload(
     }
 
 
+def hospital_doctor_intro_card_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {KIND_TO_PAYLOAD_KEY[KIND_HOSPITAL_DOCTOR_INTRO_CARD]: _wrap(snapshot)}
+
+
 def assistant_status_payload(status_type: str, message: str) -> dict[str, Any]:
     return {
         KIND_TO_PAYLOAD_KEY[KIND_ASSISTANT_STATUS_CARD]: _wrap({
@@ -285,7 +291,7 @@ def tool_question_cards_payload(
 # Tool results are projected to one of the 36 iOS presentation kinds (never a
 # standalone ``toolCall``/``toolResult`` and never an empty ``text``).  The P4
 # server tools are all read/reference tools that return a *list of sources*, so
-# their canonical result card is ``searchSummary`` whose ``references`` carries
+# Their canonical result card is ``searchSummary`` whose ``references`` carries
 # the projected ``source_refs``.  Tools that return a single resource identity
 # or a rich domain card would register their own kind here (e.g.
 # ``healthResourceReference`` / ``knowledgeCards``); those payloads require data
