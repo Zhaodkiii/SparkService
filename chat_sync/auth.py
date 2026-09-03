@@ -89,8 +89,8 @@ class JWTAuthMiddleware:
             scope["user"] = user
             scope["auth_claims"] = claims
             return await self.inner(scope, receive, send)
-        if websocket_path == "/ws/chat/runs/":
-            # Browser Run sockets must never fall back to a long-lived JWT query.
+        if websocket_path in {"/ws/chat/runs/", "/ws/hospital/doctor/conversations/"}:
+            # Browser sockets (AI Run / doctor workbench) must never fall back to a long-lived JWT query.
             scope["user"] = AnonymousUser()
             return await self.inner(scope, receive, send)
         token = (query.get("token") or [None])[0]

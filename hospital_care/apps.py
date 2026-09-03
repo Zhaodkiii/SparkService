@@ -5,3 +5,6 @@ class HospitalCareConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "hospital_care"
     verbose_name = "Hospital Care"
+
+    def ready(self):
+        from hospital_care.realtime import signals  # noqa: F401

@@ -1,5 +1,6 @@
 import type { SparkHttpClient } from "@/lib/api/http-client";
 import { normalizeMessageBlocks } from "@/lib/chat/message-normalizer";
+import type { WebSocketTicketData } from "@/types/run";
 import type {
   ConversationDetailDTO,
   ConversationListDTO,
@@ -109,6 +110,11 @@ export class SparkHospitalApi {
       page: params.page ?? 1,
       page_size: params.page_size ?? 50,
     })}`);
+  }
+
+  /** BACKOFFICE-CONVERSATION-000002：医生会话实时通道一次性 ticket。 */
+  createConversationWebSocketTicket(): Promise<WebSocketTicketData> {
+    return this.http.requestOrThrow("POST", "/api/hospital/v1/doctor/conversations/ws-tickets/");
   }
 }
 

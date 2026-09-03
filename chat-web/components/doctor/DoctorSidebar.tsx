@@ -88,6 +88,9 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
         <ul className="thread-list doctor-card-list">
           {conversations.cards.map((card) => {
             const selected = conversations.selectedThreadId === card.thread_id;
+            // BACKOFFICE-CONVERSATION-000002 Q3：非当前会话收到实时事件后的页面内“新消息”标记，
+            // 成功读取该会话后由 context 清除；刷新页面后允许消失。
+            const fresh = !selected && conversations.newMessageThreadIds.includes(card.thread_id);
             return (
               <li key={card.thread_id}>
                 <button
@@ -99,6 +102,7 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
                   <div className="doctor-card__title">
                     {card.doctor_attention_level === "priority" && <Star size={12} className="doctor-card__star" aria-label={ATTENTION_LABEL.priority} />}
                     <span className="sidebar__label">{card.patient_display_name || "患者"}</span>
+                    {fresh && <i className="doctor-card__fresh" role="img" aria-label="新消息" title="新消息" />}
                     {card.unread_count > 0 && <b className="doctor-card__unread" aria-label={`${card.unread_count} 条未读`}>{card.unread_count}</b>}
                   </div>
                   <div className="doctor-card__tags sidebar__label">

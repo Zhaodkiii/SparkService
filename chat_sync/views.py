@@ -22,6 +22,8 @@ from chat_sync.serializers import (
 )
 from common.exceptions import APIError
 from common.response import success_response
+from file_manager.url_utils import managed_file_download_url
+from hospital_care.models import ChatMessageAttribution
 
 logger = logging.getLogger("chat_sync.sync")
 
@@ -144,7 +146,42 @@ def _to_payload(message: ChatMessage) -> dict:
         "reasoning_visibility": metadata.get("reasoning_visibility"),
         "usage_summary": _usage_summary_for_message(message),
         "turn_summary": _turn_summary_for_message(message),
+        # CHAT-000056：可选 sender 快照（向后兼容）；无医院 attribution 的旧消息为 None，
+        # 客户端不得把 sender 缺失的消息推断为真人医生。
+        "sender": _sender_for_message(message),
     }
+
+
+def _sender_for_message(message: ChatMessage) -> dict | None:
+    """CHAT-000056 契约 16.3：扁平 sender 快照投影。
+
+    事实源为 hospital_care.ChatMessageAttribution（OneToOne，related_name=hospital_attribution）。
+    医生身份使用发送时快照（display_name_snapshot），医生后续改名不影响历史显示。
+    """
+    attribution = getattr(message, "hospital_attribution", None)
+    if attribution is None:
+        return None
+    sender = {
+        "actor_type": attribution.actor_type,
+        "actor_id": str(attribution.actor_user_id or attribution.agent_id or attribution.doctor_id or ""),
+        "display_name": attribution.display_name_snapshot or None,
+        "avatar_url": None,
+        "title": None,
+        "department_name": None,
+        "source": attribution.source,
+    }
+    doctor = attribution.doctor
+    if attribution.actor_type == ChatMessageAttribution.ActorType.DOCTOR and doctor is not None:
+        sender["title"] = doctor.title or None
+        avatar_file = getattr(doctor, "avatar_file", None)
+        if avatar_file is not None:
+            sender["avatar_url"] = managed_file_download_url(avatar_file)
+    agent = attribution.agent
+    if attribution.actor_type == ChatMessageAttribution.ActorType.AI_AGENT and agent is not None:
+        department = getattr(agent, "department", None)
+        if department is not None:
+            sender["department_name"] = department.name
+    return sender
 
 
 def _turn_summary_for_message(message: ChatMessage) -> dict | None:
@@ -829,6 +866,11 @@ class ChatSyncPullView(APIView):
         )
 
         queryset = ChatMessage.objects.filter(user=request.user, thread__is_deleted=False).prefetch_related("blocks", "ai_assistant_runs__usage")
+        # CHAT-000056：sender 投影预取 attribution 及医生/智能体关系，避免逐消息 N+1。
+        queryset = queryset.select_related(
+            "hospital_attribution__doctor__avatar_file",
+            "hospital_attribution__agent__department",
+        )
 
         if thread_id_raw:
             try:

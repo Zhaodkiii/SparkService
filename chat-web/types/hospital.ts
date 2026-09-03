@@ -207,3 +207,16 @@ export interface WorkLogListDTO {
   items: WorkLogEntryDTO[];
   pagination: HospitalPagination;
 }
+
+/** BACKOFFICE-CONVERSATION-000002：医生工作台实时事件契约（payload_version 1）。
+ *  事件只携带会话变化提示，不包含消息正文。 */
+export interface HospitalConversationUpdatedEvent {
+  type: "hospital.conversation.updated";
+  payload_version?: number;
+  event_id?: string;
+  thread_id: string;
+  message_ids?: string[];
+  cursor?: string;
+  emitted_at?: string;
+  change_kind?: string;
+}

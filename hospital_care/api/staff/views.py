@@ -1,6 +1,14 @@
+import hashlib
+import secrets
+from datetime import timedelta
+
+from django.conf import settings
+from django.utils import timezone
 from rest_framework.views import APIView
 
+from accounts.services.web_session_service import WebSessionService
 from backoffice.models import AdminAuditLog
+from chat_sync.ai_models import ChatWebSocketTicket
 from chat_sync.models import ChatMessage
 from common.response import success_response
 from hospital_care.api.pagination import paginate_queryset
@@ -14,6 +22,7 @@ from hospital_care.api.staff.serializers import (
     DoctorMessageSerializer,
 )
 from hospital_care.permissions import DoctorConversationPermission, HospitalStaffPermission
+from hospital_care.realtime import DOCTOR_CONVERSATION_WS_PATH
 from hospital_care.selectors.doctor_workspace import doctor_agent, doctor_conversations, doctor_queue_counts, get_doctor_conversation
 from hospital_care.services.agent_service import submit_agent_for_review, upsert_doctor_agent
 from hospital_care.services.conversation_service import end_conversation, join_conversation, update_attention
@@ -106,6 +115,41 @@ class DoctorConversationDetailView(APIView):
     def get(self, request, thread_id):
         binding = get_doctor_conversation(doctor=request.hospital_doctor, thread_id=thread_id)
         return success_response(conversation_public(binding, for_doctor=True))
+
+
+class DoctorConversationWebSocketTicketView(APIView):
+    """BACKOFFICE-CONVERSATION-000002：医生工作台实时通道一次性 ticket。
+
+    与医生消息 REST 共用 DoctorConversationPermission；ticket 绑定医生实时
+    WebSocket 路径、短 TTL、单次消费，不携带 thread_id 或任何会话数据。
+    """
+
+    permission_classes = [DoctorConversationPermission]
+
+    def post(self, request):
+        ttl = max(5, min(120, int(getattr(settings, "HOSPITAL_DOCTOR_WS_TICKET_TTL_SECONDS", 30))))
+        raw_ticket = secrets.token_urlsafe(32)
+        now = timezone.now()
+        claims = dict(getattr(request.auth, "payload", {}) or {})
+        web_session_id = None
+        web_session_version = None
+        if WebSessionService.claims_require_web_session(claims):
+            web_session_id = claims.get("web_session_id")
+            web_session_version = int(claims.get("web_session_version") or 0) or None
+        ChatWebSocketTicket.objects.create(
+            user=request.user,
+            web_session_id=web_session_id,
+            web_session_version=web_session_version,
+            token_hash=hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest(),
+            websocket_path=DOCTOR_CONVERSATION_WS_PATH,
+            expires_at=now + timedelta(seconds=ttl),
+        )
+        ChatWebSocketTicket.objects.filter(expires_at__lt=now - timedelta(minutes=5)).delete()
+        return success_response(
+            {"ticket": raw_ticket, "expires_in": ttl, "websocket_path": DOCTOR_CONVERSATION_WS_PATH},
+            msg="created",
+            status_code=201,
+        )
 
 
 class DoctorConversationMessagesView(APIView):
