@@ -6,6 +6,7 @@ import { SparkApiError } from "@/lib/api/http-client";
 import { SparkHospitalApi } from "@/lib/api/hospital-api";
 import { useOptionalAuth } from "@/context/AuthContext";
 import { useOptionalDoctorConversations } from "@/context/DoctorConversationsContext";
+import { useOptionalPatientWorkspace } from "@/context/PatientWorkspaceContext";
 import { doctorConversationWebSocketUrl, isHospitalConversationUpdatedEvent, realtimeRetryDelay } from "@/lib/hospital/realtime";
 
 /** BACKOFFICE-CONVERSATION-000002 §8.3.1：医生工作台实时连接管理。
@@ -20,6 +21,7 @@ import { doctorConversationWebSocketUrl, isHospitalConversationUpdatedEvent, rea
 export function DoctorRealtimeBridge() {
   const auth = useOptionalAuth();
   const conversations = useOptionalDoctorConversations();
+  const patientWorkspace = useOptionalPatientWorkspace();
   const api = useMemo(() => (auth ? new SparkHospitalApi(auth.client) : null), [auth]);
 
   // 通过 ref 调用最新的会话处理器，避免 context value 变化导致 WebSocket 反复重建。
@@ -27,6 +29,11 @@ export function DoctorRealtimeBridge() {
   const refreshRef = useRef(conversations?.refreshForRecovery);
   handleEventRef.current = conversations?.handleRealtimeEvent;
   refreshRef.current = conversations?.refreshForRecovery;
+  // DOCTOR-WORKSPACE-000001：同一实时事件同步驱动患者列表与患者模块合并刷新。
+  const patientHandleRef = useRef(patientWorkspace?.handleRealtimeEvent);
+  const patientRefreshRef = useRef(patientWorkspace?.refreshForRecovery);
+  patientHandleRef.current = patientWorkspace?.handleRealtimeEvent;
+  patientRefreshRef.current = patientWorkspace?.refreshForRecovery;
 
   // 注意：effect 依赖只允许使用稳定标量。conversations 的 context value 在每次
   // 消息/列表/计数更新后都会变更引用，若作为依赖会导致 建连→补偿刷新→状态更新→
@@ -67,12 +74,14 @@ export function DoctorRealtimeBridge() {
           attempt = 0;
           // 建连/重连成功：合并补偿刷新列表、计数与当前会话（Q5）。
           refreshRef.current?.();
+          patientRefreshRef.current?.();
         };
         socket.onmessage = (message) => {
           try {
             const data = JSON.parse(String(message.data)) as unknown;
             if (isHospitalConversationUpdatedEvent(data)) {
               handleEventRef.current?.(data);
+              patientHandleRef.current?.(data);
             }
           } catch {
             // 无法解析的帧直接忽略；REST 补偿仍是最终事实源。

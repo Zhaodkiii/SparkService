@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPARK_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BACKOFFICE_WEB="$SPARK_ROOT/backoffice-web"
 OPEN_WEB="$SPARK_ROOT/open-web"
+CHAT_WEB="$SPARK_ROOT/chat-web"
 VENV_PYTHON="$SPARK_ROOT/.venv/bin/python"
 PID_DIR="$SCRIPT_DIR/.pids"
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -15,13 +16,16 @@ BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-2026}"
 FRONTEND_PORT="${FRONTEND_PORT:-6018}"
 OPEN_WEB_PORT="${OPEN_WEB_PORT:-2028}"
+CHAT_WEB_PORT="${CHAT_WEB_PORT:-9001}"
 
 BACKEND_PID_FILE="$PID_DIR/backend.pid"
 FRONTEND_PID_FILE="$PID_DIR/frontend.pid"
 OPEN_WEB_PID_FILE="$PID_DIR/open-web.pid"
+CHAT_WEB_PID_FILE="$PID_DIR/chat-web.pid"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
 OPEN_WEB_LOG="$LOG_DIR/open-web.log"
+CHAT_WEB_LOG="$LOG_DIR/chat-web.log"
 
 ensure_dirs() {
   mkdir -p "$PID_DIR" "$LOG_DIR"
@@ -43,6 +47,10 @@ require_prereqs() {
   fi
   if [[ ! -d "$OPEN_WEB" ]]; then
     echo "错误: 未找到开放端前端目录: $OPEN_WEB"
+    exit 1
+  fi
+  if [[ ! -d "$CHAT_WEB" ]]; then
+    echo "错误: 未找到对话前端目录: $CHAT_WEB"
     exit 1
   fi
   if ! command -v pnpm >/dev/null 2>&1; then
@@ -123,7 +131,14 @@ stop_open_web() {
   pkill -f "vite.*${OPEN_WEB}" 2>/dev/null || true
 }
 
+stop_chat_web() {
+  stop_pid_file "对话前端" "$CHAT_WEB_PID_FILE"
+  stop_port "对话前端" "$CHAT_WEB_PORT"
+  pkill -f "next dev.*-p ${CHAT_WEB_PORT}" 2>/dev/null || true
+}
+
 stop_all() {
+  stop_chat_web
   stop_open_web
   stop_frontend
   stop_backend
@@ -139,6 +154,10 @@ frontend_listening() {
 
 open_web_listening() {
   [[ -n "$(port_pids "$OPEN_WEB_PORT")" ]]
+}
+
+chat_web_listening() {
+  [[ -n "$(port_pids "$CHAT_WEB_PORT")" ]]
 }
 
 start_backend() {
@@ -216,6 +235,32 @@ start_open_web() {
   fi
 }
 
+start_chat_web() {
+  if chat_web_listening; then
+    echo "对话前端已在运行: http://localhost:${CHAT_WEB_PORT}/"
+    return 0
+  fi
+  if [[ ! -d "$CHAT_WEB/node_modules" ]]; then
+    echo "首次启动：安装对话前端依赖 (pnpm install) ..."
+    (cd "$CHAT_WEB" && pnpm install)
+  fi
+  echo "启动对话前端 -> http://localhost:${CHAT_WEB_PORT}/"
+  (
+    cd "$CHAT_WEB"
+    nohup pnpm dev >>"$CHAT_WEB_LOG" 2>&1 &
+    echo $! >"$CHAT_WEB_PID_FILE"
+  )
+  for _ in $(seq 1 40); do
+    chat_web_listening && break
+    sleep 0.25
+  done
+  if ! chat_web_listening; then
+    echo "对话前端启动可能失败，请查看日志: $CHAT_WEB_LOG"
+    tail -n 30 "$CHAT_WEB_LOG" || true
+    exit 1
+  fi
+}
+
 print_status() {
   echo ""
   echo "======== SparkService 本地开发服务 ========"
@@ -234,9 +279,15 @@ print_status() {
   else
     echo "开放前端 : 未运行"
   fi
+  if chat_web_listening; then
+    echo "对话前端 : http://localhost:${CHAT_WEB_PORT}/"
+  else
+    echo "对话前端 : 未运行"
+  fi
   echo "后端日志 : $BACKEND_LOG"
   echo "管理日志 : $FRONTEND_LOG"
   echo "开放日志 : $OPEN_WEB_LOG"
+  echo "对话日志 : $CHAT_WEB_LOG"
   echo "=================================="
   echo ""
 }

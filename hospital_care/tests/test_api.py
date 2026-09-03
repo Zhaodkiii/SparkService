@@ -124,6 +124,43 @@ class DoctorApiTests(TestCase):
         self.assertIn("doctor", actors)
         self.assertIn("system", actors)
 
+    def test_leave_conversation_restores_ai(self):
+        joined = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/join/",
+            {"version": self.binding.version},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="leave-join-1",
+        )
+        self.assertEqual(joined.status_code, 200, joined.data)
+        self.assertEqual(joined.data["data"]["service_status"], ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED)
+
+        left = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/leave/",
+            {"version": joined.data["data"]["version"]},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="leave-1",
+        )
+        self.assertEqual(left.status_code, 200, left.data)
+        self.assertEqual(left.data["data"]["service_status"], ClinicalConversationBinding.ServiceStatus.AI_ACTIVE)
+
+        # 未接管状态下不能重复取消接管。
+        again = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/leave/",
+            {"version": left.data["data"]["version"]},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="leave-2",
+        )
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.data["msg"], "CONVERSATION_NOT_JOINED")
+
+        replay = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/leave/",
+            {"version": joined.data["data"]["version"]},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="leave-1",
+        )
+        self.assertEqual(replay.data["data"]["service_status"], ClinicalConversationBinding.ServiceStatus.AI_ACTIVE)
+
     def test_other_doctor_forbidden(self):
         other = make_user("docapi-other")
         make_doctor(self.hospital, user=other, department=self.department, display_name="其他医生")

@@ -95,6 +95,10 @@ export function DoctorAgentForm() {
     setError(null);
     try {
       const saved = await api.updateAgent(payload());
+      if (saved.version === undefined) {
+        applyAgent(await api.getAgent());
+        return;
+      }
       applyAgent(await api.submitAgent(saved.version));
     } catch (cause) {
       if (isHospitalError(cause, "AGENT_VERSION_CONFLICT")) {

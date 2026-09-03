@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bot, ClipboardList, LogOut, MessageSquare, Search, Star } from "lucide-react";
+import { Bot, ClipboardList, LogOut, MessageSquare, Search, Star, Users } from "lucide-react";
 import { SidebarShell } from "@/components/sidebar/SidebarShell";
 import { useAuth } from "@/context/AuthContext";
 import { useDoctorAuth } from "@/context/DoctorAuthGate";
@@ -11,7 +11,9 @@ import { useDoctorConversations } from "@/context/DoctorConversationsContext";
 import { ATTENTION_LABEL, QUEUE_LABEL, RISK_LABEL, SERVICE_STATUS_LABEL, relativeTime } from "@/lib/hospital/labels";
 import type { ConversationQueue } from "@/types/hospital";
 
+// DOCTOR-WORKSPACE-000001 D-001：患者工作台为第一层入口；会话在患者工作台内按需打开。
 const NAV = [
+  { href: "/doctor/patients", label: "患者工作台", icon: Users },
   { href: "/doctor/conversations", label: "会话工作台", icon: MessageSquare },
   { href: "/doctor/agent", label: "我的智能体", icon: Bot },
   { href: "/doctor/work-logs", label: "工作记录", icon: ClipboardList },
@@ -35,11 +37,12 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
 
   const initial = (doctor.display_name || "医").slice(0, 1);
   const conversationsActive = pathname === "/doctor/conversations" || pathname.startsWith("/doctor/conversations/");
+  const patientsActive = pathname === "/doctor/patients" || pathname.startsWith("/doctor/patients/");
 
   return (
     <SidebarShell collapsed={collapsed}>
       <div className="sidebar__top">
-        <Link href={"/doctor/conversations" as never} className="sidebar__brand" onClick={onNavigate} aria-label={`${hospital.short_name || hospital.name} 医生工作台`}>
+        <Link href={"/doctor/patients" as never} className="sidebar__brand" onClick={onNavigate} aria-label={`${hospital.short_name || hospital.name} 医生工作台`}>
           <span className="brand-mark">{(hospital.short_name || hospital.name).slice(0, 1)}</span>
           <span className="sidebar__label">
             <strong>{hospital.short_name || hospital.name}</strong>
@@ -58,6 +61,8 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
           );
         })}
       </nav>
+      {/* 患者工作台页内自带患者列表面板，深色侧栏不再重复会话列表。 */}
+      {!patientsActive && (
       <section className="sidebar__sessions doctor-sidebar-sessions" aria-label="患者会话">
         <label className="sidebar-search doctor-sidebar-search">
           <Search size={13} />
@@ -120,6 +125,7 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
           )}
         </ul>
       </section>
+      )}
       <div className="sidebar__bottom">
         <div className="sidebar-user">
           <button type="button" className="sidebar-user__trigger" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)} title={`${doctor.display_name} · ${doctor.title}`}>

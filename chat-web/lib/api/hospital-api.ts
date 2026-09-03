@@ -12,6 +12,12 @@ import type {
   DoctorMessageDTO,
   DoctorSendMessageDTO,
   DoctorWorkspaceDTO,
+  PatientConversationsDTO,
+  PatientListDTO,
+  PatientQueue,
+  PatientRiskCardDTO,
+  PatientSummaryDTO,
+  PatientWorkspaceDTO,
   StaffMeDTO,
   WorkLogListDTO,
 } from "@/types/hospital";
@@ -87,6 +93,14 @@ export class SparkHospitalApi {
     });
   }
 
+  /** DOCTOR-WORKSPACE-000001 D-015/D-016：取消接管，恢复 AI 自动回复。 */
+  leave(threadId: string, version: number, idempotencyKey: string): Promise<ConversationDetailDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/leave/`, {
+      body: { version },
+      headers: withIdempotency(idempotencyKey),
+    });
+  }
+
   updateAttention(
     threadId: string,
     payload: { doctor_attention_level: DoctorAttentionLevel; attention_note?: string; version: number },
@@ -115,6 +129,61 @@ export class SparkHospitalApi {
   /** BACKOFFICE-CONVERSATION-000002：医生会话实时通道一次性 ticket。 */
   createConversationWebSocketTicket(): Promise<WebSocketTicketData> {
     return this.http.requestOrThrow("POST", "/api/hospital/v1/doctor/conversations/ws-tickets/");
+  }
+
+  /* ---------- DOCTOR-WORKSPACE-000001 患者工作台 ---------- */
+
+  /** D-007~D-010：患者列表（授权集合内搜索/筛选/排序）。 */
+  listPatients(params: { queue?: PatientQueue; keyword?: string; page?: number; page_size?: number } = {}): Promise<PatientListDTO> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${query({
+      queue: params.queue ?? "all",
+      keyword: params.keyword,
+      page: params.page ?? 1,
+      page_size: params.page_size ?? 50,
+    })}`);
+  }
+
+  /** D-004/D-006：患者工作台只读聚合快照。 */
+  getPatientWorkspace(memberId: number): Promise<PatientWorkspaceDTO> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/workspace/`);
+  }
+
+  /** D-012/D-013：患者会话列表。 */
+  getPatientConversations(memberId: number): Promise<PatientConversationsDTO> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/conversations/`);
+  }
+
+  /** D-019：新建咨询，继承当前患者与当前医生智能体上下文。 */
+  createPatientConversation(memberId: number, idempotencyKey: string): Promise<ConversationDetailDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/patients/${memberId}/conversations/`, {
+      body: {},
+      headers: withIdempotency(idempotencyKey),
+    });
+  }
+
+  /** D-020/D-023：最新 AI 总结只读查询（不触发生成）。 */
+  getPatientSummary(memberId: number): Promise<PatientSummaryDTO | null> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/summary/`);
+  }
+
+  /** D-020：医生主动生成/刷新 AI 总结。 */
+  generatePatientSummary(memberId: number, idempotencyKey: string): Promise<PatientSummaryDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/patients/${memberId}/summary/generate/`, {
+      body: {},
+      headers: withIdempotency(idempotencyKey),
+    });
+  }
+
+  /** D-023：标记/取消“已了解”（天然幂等，update_or_create）。 */
+  ackPatientSummary(memberId: number, acknowledged: boolean): Promise<PatientSummaryDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/patients/${memberId}/summary/ack/`, {
+      body: { acknowledged },
+    });
+  }
+
+  /** D-024~D-026：风险卡片只读查看。 */
+  getPatientRisk(memberId: number): Promise<PatientRiskCardDTO | null> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/risk/`);
   }
 }
 

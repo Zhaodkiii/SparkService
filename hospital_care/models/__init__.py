@@ -16,6 +16,7 @@ from hospital_care.models.organization import (
     HospitalDepartment,
     HospitalStaffMembership,
 )
+from hospital_care.models.patient_summaries import DoctorPatientSummary, DoctorPatientSummaryAck
 
 __all__ = [
     "Hospital",
@@ -31,4 +32,6 @@ __all__ = [
     "HospitalKnowledgeBaseProfile",
     "HospitalKnowledgeBaseDepartment",
     "HospitalKnowledgeChunk",
+    "DoctorPatientSummary",
+    "DoctorPatientSummaryAck",
 ]

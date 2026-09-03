@@ -240,6 +240,35 @@ def join_conversation(*, request, doctor: DoctorProfile, thread_id, version: int
     return binding
 
 
+def leave_conversation(*, request, doctor: DoctorProfile, thread_id, version: int | None) -> ClinicalConversationBinding:
+    """DOCTOR-WORKSPACE-000001 D-015/D-016：医生取消接管，恢复 AI 自动回复。"""
+    with transaction.atomic():
+        binding = _lock_binding(thread_id)
+        assert_doctor_owns_binding(doctor=doctor, binding=binding)
+        _assert_version(binding, version)
+        if binding.service_status == ClinicalConversationBinding.ServiceStatus.ENDED:
+            raise HospitalCareError("CONVERSATION_ENDED")
+        if binding.service_status != ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED:
+            raise HospitalCareError("CONVERSATION_NOT_JOINED")
+        binding.service_status = ClinicalConversationBinding.ServiceStatus.AI_ACTIVE
+        binding.version += 1
+        binding.save(update_fields=["service_status", "version", "updated_at"])
+        _create_system_message(
+            thread=binding.thread,
+            agent=binding.agent,
+            text=f"{doctor.display_name}已取消接管，AI 恢复自动回复。",
+            actor_type=ChatMessageAttribution.ActorType.SYSTEM,
+        )
+    write_hospital_audit_log(
+        request,
+        action="hospital.conversation.leave",
+        resource_type="hospital_conversation",
+        resource_id=str(binding.thread_id),
+        extra={"hospital_id": str(binding.hospital_id), "doctor_id": str(doctor.id), "thread_id": str(binding.thread_id)},
+    )
+    return binding
+
+
 def update_attention(*, request, doctor: DoctorProfile, thread_id, payload: dict) -> ClinicalConversationBinding:
     level = payload.get("doctor_attention_level") or payload.get("attention_level")
     if level not in ClinicalConversationBinding.AttentionLevel.values:

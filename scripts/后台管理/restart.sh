@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 一键重启：先停止后端/管理前端/开放前端，再重新启动
+# 一键重启：先停止后端/管理前端/开放前端/对话前端，再重新启动
 
 set -euo pipefail
 
@@ -16,6 +16,7 @@ sleep 1
 start_backend
 start_frontend
 start_open_web
+start_chat_web
 print_status
 
 echo "重启完成。"

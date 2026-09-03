@@ -54,6 +54,7 @@ export interface DoctorPublicDTO {
   introduction: string;
   license_status: string;
   profile_status: string;
+  avatar_url?: string;
 }
 
 export interface StaffMembershipDTO {
@@ -219,4 +220,115 @@ export interface HospitalConversationUpdatedEvent {
   cursor?: string;
   emitted_at?: string;
   change_kind?: string;
+}
+
+/* ---------- DOCTOR-WORKSPACE-000001 患者工作台 ---------- */
+
+export type PatientQueue = "all" | "priority" | "pending" | "ended";
+
+/** D-008：患者列表卡片最小工作摘要。 */
+export interface PatientCardDTO {
+  member_id: number;
+  display_name: string;
+  masked_patient_identifier: string;
+  service_status: HospitalServiceStatus | null;
+  latest_conversation_at: string | null;
+  priority_patient: boolean;
+  available_conversation_count: number;
+}
+
+export interface PatientListDTO {
+  items: PatientCardDTO[];
+  pagination: HospitalPagination;
+  counts: ConversationQueueCounts;
+}
+
+export interface PatientIdentityDTO {
+  member_id: number;
+  display_name: string;
+  gender: string;
+  birth_date: string | null;
+  age: number | null;
+  patient_number: string;
+  avatar_url: string;
+  service_status: HospitalServiceStatus | null;
+  priority_patient: boolean;
+}
+
+/** D-004：基础身份分区；null 表示“未填写”。 */
+export interface PatientBasicProfileDTO {
+  phone_masked: string | null;
+  identity_number_masked: string | null;
+  region: string | null;
+  occupation: string | null;
+  marital_status: string | null;
+}
+
+/** D-004：健康档案分区；null 表示“未填写”。 */
+export interface PatientHealthProfileDTO {
+  height_cm: number | null;
+  weight_kg: number | null;
+  bmi: number | null;
+  blood_type: string | null;
+  smoking_status: string | null;
+  drinking_status: string | null;
+}
+
+/** D-004：医疗安全信息分区；空数组表示“已查询但无记录”。 */
+export interface PatientMedicalSafetyDTO {
+  allergies: string[];
+  long_term_medications: string[];
+  past_medical_history: string[];
+}
+
+/** D-006：患者工作台只读聚合快照。 */
+export interface PatientWorkspaceDTO {
+  patient: PatientIdentityDTO;
+  basic_profile: PatientBasicProfileDTO;
+  health_profile: PatientHealthProfileDTO;
+  medical_safety: PatientMedicalSafetyDTO;
+  work_flags: { priority_patient: boolean };
+  freshness: {
+    member_updated_at: string | null;
+    health_profile_updated_at: string | null;
+    snapshot_at: string | null;
+  };
+}
+
+export interface PatientConversationsDTO {
+  items: ConversationCardDTO[];
+}
+
+/** D-020~D-023：AI 总结只读快照。 */
+export interface PatientSummaryDTO {
+  id: string;
+  version: number;
+  status: string;
+  system_generated: boolean;
+  sections: {
+    current_issues: string;
+    key_health_info: string;
+    conversation_highlights: string;
+    follow_up_items: string[];
+  };
+  data_scope: {
+    thread_count: number;
+    profile_updated_at: string | null;
+    conversation_cutoff_at: string | null;
+  };
+  tool_name: string;
+  generated_at: string;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+}
+
+/** D-024~D-026：风险卡片只读视图（复用现有风险工具信号）。 */
+export interface PatientRiskCardDTO {
+  level: RiskSignalLevel;
+  status: string;
+  suggestion: string;
+  source_thread_id: string;
+  updated_at: string;
+  data_cutoff_at: string;
+  source: string;
 }

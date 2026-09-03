@@ -35,3 +35,7 @@ class ConversationEndSerializer(serializers.Serializer):
 class DoctorMessageSerializer(serializers.Serializer):
     text = serializers.CharField()
     version = serializers.IntegerField(required=False)
+
+
+class PatientSummaryAckSerializer(serializers.Serializer):
+    acknowledged = serializers.BooleanField()

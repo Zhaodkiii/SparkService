@@ -44,6 +44,8 @@ interface DoctorConversationsValue {
   selectConversation: (threadId: string | null) => void;
   reloadSelected: () => Promise<void>;
   join: () => Promise<boolean>;
+  /** DOCTOR-WORKSPACE-000001 D-015/D-016：取消接管（医生服务中 → AI 服务中）。 */
+  leave: () => Promise<boolean>;
   sendMessage: (text: string) => Promise<boolean>;
   updateAttention: (level: DoctorAttentionLevel, note?: string) => Promise<boolean>;
   endConversation: (endReason: string) => Promise<boolean>;
@@ -56,8 +58,17 @@ interface DoctorConversationsValue {
 const DoctorConversationsContext = createContext<DoctorConversationsValue | null>(null);
 
 function pathThreadId(pathname: string | null): string | null {
-  const match = (pathname ?? "").match(/\/doctor\/conversations\/([^/]+)/);
-  return match?.[1] ? decodeURIComponent(match[1]) : null;
+  const direct = (pathname ?? "").match(/\/doctor\/conversations\/([^/]+)/);
+  if (direct?.[1]) return decodeURIComponent(direct[1]);
+  // DOCTOR-WORKSPACE-000001：患者工作台右侧会话抽屉路由 /doctor/patients/<memberId>/conversations/<threadId>。
+  const drawer = (pathname ?? "").match(/\/doctor\/patients\/\d+\/conversations\/([^/]+)/);
+  return drawer?.[1] ? decodeURIComponent(drawer[1]) : null;
+}
+
+/** 患者工作台路由中的 memberId（不在患者页时返回 null）。 */
+function pathPatientMemberId(pathname: string | null): number | null {
+  const match = (pathname ?? "").match(/\/doctor\/patients\/(\d+)/);
+  return match?.[1] ? Number.parseInt(match[1], 10) : null;
 }
 
 export function DoctorConversationsProvider({ children }: { children: React.ReactNode }) {
@@ -130,9 +141,10 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     }
     if (selectedThreadId === threadId) {
       setSelectedThreadId(null);
-      router.push("/doctor/conversations" as never);
+      const memberId = pathPatientMemberId(pathname ?? null);
+      router.push((memberId !== null ? `/doctor/patients/${memberId}` : "/doctor/conversations") as never);
     }
-  }, [router, selectedThreadId, unmarkThreadFresh]);
+  }, [pathname, router, selectedThreadId, unmarkThreadFresh]);
 
   const reload = useCallback(async () => {
     if (!api || auth?.status !== "authenticated") return;
@@ -262,8 +274,14 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
   const selectConversation = useCallback((threadId: string | null) => {
     setWriteError(null);
     setSelectedThreadId(threadId);
+    // DOCTOR-WORKSPACE-000001：患者工作台内打开/关闭右侧会话抽屉，保留患者选择。
+    const memberId = pathPatientMemberId(pathname ?? null);
+    if (memberId !== null) {
+      router.push((threadId ? `/doctor/patients/${memberId}/conversations/${encodeURIComponent(threadId)}` : `/doctor/patients/${memberId}`) as never);
+      return;
+    }
     router.push((threadId ? `/doctor/conversations/${encodeURIComponent(threadId)}` : "/doctor/conversations") as never);
-  }, [router]);
+  }, [pathname, router]);
 
   const handleWriteError = useCallback(async (cause: unknown, action: string, threadId: string) => {
     const resolution = resolveHospitalWriteError(cause);
@@ -290,6 +308,25 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
       return true;
     } catch (cause) {
       return handleWriteError(cause, "join", selectedThreadId);
+    } finally {
+      setWriteBusy(false);
+    }
+  }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, requestThreadSync, selectedThreadId]);
+
+  /** DOCTOR-WORKSPACE-000001 D-015/D-016：取消接管，恢复 AI 自动回复；不本地乐观切换。 */
+  const leave = useCallback(async () => {
+    if (!api || !selectedThreadId || !detail) return false;
+    setWriteBusy(true);
+    setWriteError(null);
+    try {
+      const binding = await api.leave(selectedThreadId, detail.version, idempotencyKey("leave", selectedThreadId));
+      applyBinding(binding);
+      clearIdempotency("leave", selectedThreadId);
+      requestThreadSync(selectedThreadId);
+      await reload();
+      return true;
+    } catch (cause) {
+      return handleWriteError(cause, "leave", selectedThreadId);
     } finally {
       setWriteBusy(false);
     }
@@ -393,6 +430,7 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
       return Promise.resolve();
     },
     join,
+    leave,
     sendMessage,
     updateAttention,
     endConversation,
@@ -400,7 +438,7 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     refreshForRecovery,
   }), [
     cards, counts, detail, detailError, detailStatus, endConversation, error, handleRealtimeEvent, join, keyword,
-    messages, newMessageThreadIds, queue, refreshForRecovery, reload, requestThreadSync, selectConversation,
+    leave, messages, newMessageThreadIds, queue, refreshForRecovery, reload, requestThreadSync, selectConversation,
     selectedThreadId, sendMessage, setKeyword, setQueue, status, updateAttention, writeBusy, writeError,
   ]);
 
