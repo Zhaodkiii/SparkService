@@ -14,11 +14,12 @@ from hospital_care.models import (
     HospitalKnowledgeChunk,
     HospitalStaffMembership,
 )
-from hospital_care.tests.factories import make_embedding_binding, make_provider, make_user
+from hospital_care.tests.factories import make_embedding_binding, make_provider, make_scenario_binding, make_user
 
 
 class TianchangAgentKnowledgeE2ETests(TestCase):
     def setUp(self):
+        make_scenario_binding(model_name="tianchang-e2e-chat-model")
         call_command("seed_tianchang_hospital", code="000001", activate=True)
         self.hospital = Hospital.objects.get(code="000001")
         self.admin = make_user("tianchang-bo", is_staff=True, is_superuser=True)

@@ -11,7 +11,7 @@
     <a-table :data-source="rows" row-key="id" :pagination="false" :loading="loading">
       <a-table-column title="名称" data-index="name" />
       <a-table-column title="科室" key="depts" :width="180">
-        <template #default="{ record }">{{ (record.departments || []).map((item) => item.name).join('、') || '--' }}</template>
+        <template #default="{ record }">{{ departmentNames(record) }}</template>
       </a-table-column>
       <a-table-column title="文本" key="docs" :width="80">
         <template #default="{ record }">{{ record.document_count ?? 0 }}</template>
@@ -21,7 +21,7 @@
       </a-table-column>
       <a-table-column title="向量" key="vector" :width="140">
         <template #default="{ record }">
-          <a-tag :color="VECTOR_STATUS_COLOR[record.vector_status]">{{ VECTOR_STATUS_LABEL[record.vector_status] }}</a-tag>
+          <a-tag :color="vectorColor(record)">{{ vectorLabel(record) }}</a-tag>
         </template>
       </a-table-column>
       <a-table-column title="操作" key="actions" :width="220">
@@ -142,6 +142,18 @@ const page = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
 const rows = ref<KnowledgeBaseRow[]>([]);
+
+function departmentNames(record: KnowledgeBaseRow) {
+  return (record.departments || []).map((item) => item.name).join('、') || '--';
+}
+
+function vectorLabel(record: KnowledgeBaseRow) {
+  return VECTOR_STATUS_LABEL[record.vector_status] || record.vector_status;
+}
+
+function vectorColor(record: KnowledgeBaseRow) {
+  return VECTOR_STATUS_COLOR[record.vector_status] || 'default';
+}
 const detail = ref<KnowledgeBaseRow | null>(null);
 const embeddingBindingId = ref<number | undefined>(undefined);
 const editor = reactive({ open: false, profile: null as KnowledgeBaseRow | null });

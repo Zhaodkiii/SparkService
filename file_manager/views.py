@@ -290,6 +290,17 @@ class ManagedFileDeleteView(APIView):
         if not file_record:
             logger.warning("文件删除失败：文件不存在", extra={"user_id": request.user.id, "file_id": file_id})
             return error_response(msg="file_not_found", code=4040, status_code=status.HTTP_404_NOT_FOUND)
+
+        from file_manager.constants import RETENTION_PROTECTED_BUSINESS_TYPES
+        from hospital_care.exceptions import HospitalCareError
+
+        if any(
+            relation.business_type in RETENTION_PROTECTED_BUSINESS_TYPES
+            for relation in file_record.business_relations.all()
+        ):
+            logger.warning("文件删除失败：头像文件永久保留", extra={"user_id": request.user.id, "file_id": file_id})
+            raise HospitalCareError("FILE_RETENTION_PROTECTED")
+
         if file_record.user_id != request.user.id:
             logger.warning(
                 "文件删除失败：无权限",

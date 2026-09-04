@@ -1,6 +1,7 @@
 from django.urls import path
 
 from hospital_care.api.backoffice.views import (
+    AgentAvatarView,
     AgentDetailView,
     AgentReviewView,
     DepartmentDetailView,
@@ -37,6 +38,7 @@ urlpatterns = [
     path("hospitals/<uuid:hospital_id>/agent-form-options/", HospitalAgentFormOptionsView.as_view(), name="hospital-care-admin-agent-form-options"),
     path("hospitals/<uuid:hospital_id>/agents/", HospitalAgentListCreateView.as_view(), name="hospital-care-admin-agents"),
     path("agents/<uuid:agent_id>/", AgentDetailView.as_view(), name="hospital-care-admin-agent-detail"),
+    path("agents/<uuid:agent_id>/avatar/", AgentAvatarView.as_view(), name="hospital-care-admin-agent-avatar"),
     path("agents/<uuid:agent_id>/review/", AgentReviewView.as_view(), name="hospital-care-admin-agent-review"),
     path("hospitals/<uuid:hospital_id>/knowledge-bases/", HospitalKnowledgeBaseListCreateView.as_view(), name="hospital-care-admin-knowledge-bases"),
     path("knowledge-bases/<uuid:profile_id>/", KnowledgeBaseDetailView.as_view(), name="hospital-care-admin-knowledge-detail"),

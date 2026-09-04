@@ -16,6 +16,10 @@ class ClinicalAgentProfile(models.Model):
         PUBLISHED = "published"
         DISABLED = "disabled"
 
+    class AvatarSource(models.TextChoices):
+        DOCTOR = "doctor", "复用医生头像"
+        CUSTOM = "custom", "专属头像"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     hospital = models.ForeignKey(Hospital, related_name="clinical_agents", on_delete=models.PROTECT)
     doctor = models.ForeignKey(DoctorProfile, related_name="clinical_agents", on_delete=models.PROTECT)
@@ -36,6 +40,18 @@ class ClinicalAgentProfile(models.Model):
         db_index=True,
     )
     doctor_editable_policy = models.JSONField(default=dict, blank=True)
+    avatar_source = models.CharField(
+        max_length=16,
+        choices=AvatarSource.choices,
+        default=AvatarSource.DOCTOR,
+    )
+    avatar_file = models.ForeignKey(
+        "file_manager.ManagedFile",
+        null=True,
+        blank=True,
+        related_name="clinical_agent_avatars",
+        on_delete=models.PROTECT,
+    )
     published_at = models.DateTimeField(null=True, blank=True)
     version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -44,6 +60,15 @@ class ClinicalAgentProfile(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["hospital", "department", "publication_status"], name="idx_agent_hospital_dept_status"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(avatar_source="doctor", avatar_file__isnull=True)
+                    | models.Q(avatar_source="custom", avatar_file__isnull=False)
+                ),
+                name="chk_agent_avatar_source_file",
+            ),
         ]
 
     def clean(self):

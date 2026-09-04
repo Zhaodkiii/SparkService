@@ -85,4 +85,9 @@ def doctor_queue_counts(*, doctor: DoctorProfile) -> dict[str, int]:
 
 
 def doctor_agent(*, doctor: DoctorProfile) -> ClinicalAgentProfile | None:
-    return ClinicalAgentProfile.objects.select_related("department", "hospital").filter(doctor=doctor).order_by("-updated_at").first()
+    return (
+        ClinicalAgentProfile.objects.select_related("department", "hospital", "avatar_file", "doctor__avatar_file")
+        .filter(doctor=doctor)
+        .order_by("-updated_at")
+        .first()
+    )

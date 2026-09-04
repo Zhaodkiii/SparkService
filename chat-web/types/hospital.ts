@@ -179,6 +179,9 @@ export interface DoctorAgentDTO {
   service_boundary: string;
   publication_status: AgentPublicationStatus;
   published_at: string | null;
+  avatar_source?: "doctor" | "custom";
+  avatar_url?: string;
+  avatar_version?: string;
   scenario_binding_id?: number | null;
   doctor_editable_policy?: Record<string, unknown>;
   version?: number;

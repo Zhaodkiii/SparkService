@@ -40,6 +40,7 @@ urlpatterns = [
     path('api/v1/nutrition/', include('nutrition.urls')),
     path('api/v1/tasks/', include('task_system.urls')),
     path('api/v1/files/', include('file_manager.urls')),
+    path('api/v1/public/uploads/', include('file_manager.public_urls')),
     path('api/v1/oss/', include('file_manager.oss_urls')),
     path('api/v1/version/', include('app_version.urls')),
     path('api/v1/content/', include('content.urls')),

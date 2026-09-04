@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AgentAvatar } from "@/components/doctor/AgentAvatar";
 import { SparkHospitalApi } from "@/lib/api/hospital-api";
 import { useAuth } from "@/context/AuthContext";
 import { hospitalErrorMessage, isHospitalError } from "@/lib/hospital/errors";
@@ -142,6 +143,18 @@ export function DoctorAgentForm() {
         <span className={`doctor-tag doctor-tag--agent-${agent.publication_status}`}>{AGENT_STATUS_LABEL[agent.publication_status]}</span>
       </header>
       <form className="doctor-agent-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <section className="doctor-agent-readonly">
+          <h2>智能体头像</h2>
+          <div className="doctor-agent-avatar">
+            <AgentAvatar
+              className="doctor-agent-avatar__image"
+              src={agent.avatar_url || ""}
+              version={agent.avatar_version || ""}
+              name={agent.name}
+            />
+            <p>{agent.avatar_source === "custom" ? "当前使用智能体专属头像。" : "当前复用医生头像，医生头像更新后自动同步。"}如需更换，请联系医院管理员修改。</p>
+          </div>
+        </section>
         <label>
           公开名称（必填）
           <input value={name} required disabled={readOnly || busy} onChange={(event) => setName(event.target.value)} />

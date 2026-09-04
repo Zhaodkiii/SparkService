@@ -19,6 +19,22 @@ from hospital_care.services.audit import write_hospital_audit_log
 User = get_user_model()
 
 
+def _resolve_doctor_avatar_file(hospital_id, file_id):
+    """校验医生头像文件：存在、未删除、图片类型；受管 Object Key 必须归属本医院。"""
+    from file_manager.constants import OSS_ROOT_PREFIX
+    from file_manager.models import ManagedFile
+
+    record = ManagedFile.objects.filter(pk=file_id, is_deleted=False).first()
+    if record is None:
+        raise HospitalCareError("AVATAR_FILE_NOT_FOUND")
+    if not (record.mime_type or "").startswith("image/"):
+        raise HospitalCareError("AVATAR_FILE_FORBIDDEN", details={"reason": "mime"})
+    object_key = record.object_key or ""
+    if object_key.startswith(OSS_ROOT_PREFIX) and f"/{hospital_id}/" not in object_key:
+        raise HospitalCareError("AVATAR_FILE_FORBIDDEN", details={"reason": "hospital"})
+    return record
+
+
 def _lock_hospital(hospital_id) -> Hospital:
     hospital = Hospital.objects.select_for_update().filter(pk=hospital_id).first()
     if hospital is None:
@@ -351,7 +367,10 @@ def update_doctor(*, request, doctor_id, payload: dict) -> DoctorProfile:
     if "specialties" in payload and payload["specialties"] is not None:
         doctor.specialties = payload["specialties"]
     if "avatar_file_id" in payload:
-        doctor.avatar_file_id = payload["avatar_file_id"]
+        avatar_file_id = payload["avatar_file_id"]
+        if avatar_file_id:
+            _resolve_doctor_avatar_file(doctor.staff_membership.hospital_id, avatar_file_id)
+        doctor.avatar_file_id = avatar_file_id or None
     doctor.save()
     department_id = payload.get("primary_department_id")
     if department_id:

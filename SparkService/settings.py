@@ -154,6 +154,13 @@ ALIYUN_OSS_REGION = (os.getenv("ALIYUN_OSS_REGION") or "").strip() or "cn-hangzh
 ALIYUN_OSS_ENDPOINT = (os.getenv("ALIYUN_OSS_ENDPOINT") or "").strip()
 ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600"))
 
+# 智能体头像（BACKOFFICE-HOSPITAL-AGENT-000002）：统一 AI 默认头像与版本标识。
+CLINICAL_AGENT_DEFAULT_AVATAR_URL = (os.getenv("CLINICAL_AGENT_DEFAULT_AVATAR_URL") or "").strip()
+CLINICAL_AGENT_DEFAULT_AVATAR_VERSION = (os.getenv("CLINICAL_AGENT_DEFAULT_AVATAR_VERSION") or "v1").strip() or "v1"
+
+# 头像上传单文件最大 5 MB，请求体上限放宽到 10 MB（默认 2.5 MB 会拒绝合法头像）。
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))
+
 # 公开病例分享站点根地址：`share-web` 用于拼接公开链接与附件短链。
 MEDICAL_SHARE_WEB_BASE_URL = (os.getenv("MEDICAL_SHARE_WEB_BASE_URL") or "https://share.dreamwhale.top").strip()
 MEDICAL_SHARE_DOWNLOAD_URL = (os.getenv("MEDICAL_SHARE_DOWNLOAD_URL") or "https://apps.apple.com/cn/app/id6751417431").strip()
@@ -352,6 +359,9 @@ REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
     ),
+    "DEFAULT_THROTTLE_RATES": {
+        "public_image_upload": os.getenv("PUBLIC_IMAGE_UPLOAD_RATE", "30/hour"),
+    },
     "EXCEPTION_HANDLER": "common.exception_handlers.api_exception_handler",
 }
 

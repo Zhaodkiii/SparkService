@@ -87,6 +87,9 @@ def doctor_public(doctor: DoctorProfile) -> dict:
 
 
 def agent_public(agent: ClinicalAgentProfile, *, include_internal: bool = False) -> dict:
+    from hospital_care.services.agent_avatar_service import resolve_agent_avatar
+
+    resolved = resolve_agent_avatar(agent)
     payload = {
         "id": str(agent.id),
         "hospital_id": str(agent.hospital_id),
@@ -98,12 +101,16 @@ def agent_public(agent: ClinicalAgentProfile, *, include_internal: bool = False)
         "service_boundary": agent.service_boundary,
         "publication_status": agent.publication_status,
         "published_at": agent.published_at.isoformat() if agent.published_at else None,
+        "avatar_source": agent.avatar_source,
+        "avatar_url": resolved.url,
+        "avatar_version": resolved.version,
     }
     if include_internal:
         binding = agent.scenario_binding
         payload.update(
             {
                 "scenario_binding_id": agent.scenario_binding_id,
+                "avatar_file_id": agent.avatar_file_id,
                 "doctor_editable_policy": agent.doctor_editable_policy or {},
                 "version": agent.version,
                 "created_at": agent.created_at.isoformat() if getattr(agent, "created_at", None) else None,

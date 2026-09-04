@@ -94,6 +94,8 @@ def _create_system_message(
 
 
 def _doctor_intro_snapshot(agent: ClinicalAgentProfile) -> dict:
+    from hospital_care.services.agent_avatar_service import resolve_agent_avatar
+
     doctor = agent.doctor
     specialties = doctor.specialties if isinstance(doctor.specialties, list) else []
     avatar_file = getattr(doctor, "avatar_file", None)
@@ -109,6 +111,7 @@ def _doctor_intro_snapshot(agent: ClinicalAgentProfile) -> dict:
             "agent_id": str(agent.id),
             "agent_name": agent.name,
             "service_boundary": agent.service_boundary or "",
+            "avatar_url": resolve_agent_avatar(agent).url,
         },
         "professional_directions": [str(item) for item in specialties[:3]],
         "introduction_excerpt": (doctor.introduction or "")[:120],
@@ -141,7 +144,7 @@ def create_patient_conversation(*, request, user, agent_id, member_id: int, thre
 
     agent = (
         ClinicalAgentProfile.objects.select_related(
-            "hospital", "department", "doctor", "doctor__staff_membership", "doctor__avatar_file"
+            "hospital", "department", "doctor", "doctor__staff_membership", "doctor__avatar_file", "avatar_file"
         )
         .filter(pk=agent_id)
         .first()

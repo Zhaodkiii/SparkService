@@ -102,7 +102,9 @@ def hospital_doctors(hospital_id, *, q: str = "") -> QuerySet[DoctorProfile]:
 
 
 def hospital_agents(hospital_id, *, q: str = "", status: str = "", department_id=None) -> QuerySet[ClinicalAgentProfile]:
-    qs = ClinicalAgentProfile.objects.select_related("doctor", "department", "scenario_binding").prefetch_related(
+    qs = ClinicalAgentProfile.objects.select_related(
+        "doctor", "doctor__avatar_file", "department", "scenario_binding", "avatar_file"
+    ).prefetch_related(
         "knowledge_bindings"
     ).filter(hospital_id=hospital_id)
     if q:

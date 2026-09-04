@@ -173,7 +173,14 @@
                 <a-input-search v-model:value="doctorQuery.q" placeholder="搜索医生" style="width: 220px" @search="loadDoctors" />
               </a-space>
               <a-table :data-source="doctorRows" row-key="id" :pagination="false" :loading="doctorLoading">
-                <a-table-column title="姓名" data-index="display_name" />
+                <a-table-column title="姓名" key="display_name">
+                  <template #default="{ record }">
+                    <div class="agent-name-cell">
+                      <AgentAvatar :src="record.avatar_url || ''" :name="record.display_name" :size="32" />
+                      <span>{{ record.display_name }}</span>
+                    </div>
+                  </template>
+                </a-table-column>
                 <a-table-column title="职称" data-index="title" />
                 <a-table-column title="擅长" key="specialties">
                   <template #default="{ record }">{{ (record.specialties || []).join('、') || '--' }}</template>
@@ -217,7 +224,14 @@
             <a-button v-if="canCreateAgent" type="primary" @click="openAgentForm()">+ 新建智能体</a-button>
           </a-space>
           <a-table :data-source="agentRows" row-key="id" :pagination="false" :loading="agentLoading">
-            <a-table-column title="智能体名称" data-index="name" />
+            <a-table-column title="智能体名称" key="name">
+              <template #default="{ record }">
+                <div class="agent-name-cell">
+                  <AgentAvatar :src="record.avatar_url || ''" :version="record.avatar_version || ''" :name="record.name" :size="32" />
+                  <span>{{ record.name }}</span>
+                </div>
+              </template>
+            </a-table-column>
             <a-table-column title="医生" key="doctor" :width="120">
               <template #default="{ record }">{{ record.doctor?.display_name || '--' }}</template>
             </a-table-column>
@@ -429,6 +443,15 @@
 
     <a-modal v-model:open="doctorModal.open" title="编辑医生资料" :confirm-loading="doctorModal.saving" @ok="submitDoctor">
       <a-form layout="vertical">
+        <a-form-item label="医生头像">
+          <AvatarUploadField
+            :hospital-id="hospitalId"
+            purpose="doctor_avatar"
+            :url="doctorModal.avatarUrl"
+            :name="doctorModal.form.display_name"
+            @uploaded="onDoctorAvatarUploaded"
+          />
+        </a-form-item>
         <a-form-item label="姓名" required>
           <a-input v-model:value="doctorModal.form.display_name" />
         </a-form-item>
@@ -505,6 +528,8 @@ import { formatDateTime } from '../../utils/datetime';
 import { useDebouncedFn } from '../../utils/useDebouncedFn';
 import HospitalBaseInfoForm from '../../components/hospital-care/HospitalBaseInfoForm.vue';
 import ClinicalAgentFormModal from '../../components/hospital-care/ClinicalAgentFormModal.vue';
+import AgentAvatar from '../../components/hospital-care/AgentAvatar.vue';
+import AvatarUploadField from '../../components/hospital-care/AvatarUploadField.vue';
 import HospitalKnowledgeTab from '../../components/hospital-care/HospitalKnowledgeTab.vue';
 import TableHoverActions from '../../components/TableHoverActions.vue';
 import {
@@ -611,6 +636,8 @@ const doctorModal = reactive({
   saving: false,
   id: '',
   specialtiesText: '',
+  avatarFileId: null as number | null,
+  avatarUrl: '',
   form: {
     display_name: '',
     title: '',
@@ -1063,6 +1090,8 @@ async function submitStaff() {
 function openDoctor(row: DoctorRow) {
   doctorModal.id = row.id;
   doctorModal.specialtiesText = (row.specialties || []).join('，');
+  doctorModal.avatarFileId = null;
+  doctorModal.avatarUrl = row.avatar_url || '';
   doctorModal.form = {
     display_name: row.display_name,
     title: row.title,
@@ -1071,6 +1100,11 @@ function openDoctor(row: DoctorRow) {
     profile_status: row.profile_status,
   };
   doctorModal.open = true;
+}
+
+function onDoctorAvatarUploaded(result: { file_id: number; avatar_url: string }) {
+  doctorModal.avatarFileId = result.file_id;
+  doctorModal.avatarUrl = result.avatar_url;
 }
 
 async function submitDoctor() {
@@ -1082,6 +1116,7 @@ async function submitDoctor() {
         .split(/[,，]/)
         .map((item) => item.trim())
         .filter(Boolean),
+      ...(doctorModal.avatarFileId ? { avatar_file_id: doctorModal.avatarFileId } : {}),
     });
     message.success('已更新医生资料');
     doctorModal.open = false;
@@ -1309,6 +1344,12 @@ onMounted(async () => {
 
 .overview-audit-card :deep(.ant-card-body) {
   padding: 0 12px 12px;
+}
+
+.agent-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 @media (max-width: 900px) {

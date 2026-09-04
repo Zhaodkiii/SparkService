@@ -123,6 +123,8 @@ class AgentCreateSerializer(serializers.Serializer):
     public_summary = serializers.CharField(required=False, allow_blank=True)
     greeting = serializers.CharField(required=False, allow_blank=True)
     service_boundary = serializers.CharField(required=False, allow_blank=True)
+    avatar_source = serializers.ChoiceField(choices=["doctor", "custom"], required=False, default="doctor")
+    avatar_file_id = serializers.IntegerField(required=False, allow_null=True)
     binding = AgentBindingSerializer()
     knowledge_bases = AgentKnowledgeItemSerializer(many=True, required=False)
 
@@ -130,6 +132,24 @@ class AgentCreateSerializer(serializers.Serializer):
         if not (value.get("model") or "").strip():
             raise serializers.ValidationError("model is required")
         return value
+
+    def validate(self, attrs):
+        if attrs.get("avatar_source") == "custom" and not attrs.get("avatar_file_id"):
+            raise serializers.ValidationError({"avatar_file_id": "custom avatar_source requires avatar_file_id"})
+        return attrs
+
+
+class AgentAvatarUpdateSerializer(serializers.Serializer):
+    avatar_source = serializers.ChoiceField(choices=["doctor", "custom"])
+    avatar_file_id = serializers.IntegerField(required=False, allow_null=True)
+    version = serializers.IntegerField()
+
+    def validate(self, attrs):
+        if attrs["avatar_source"] == "custom" and not attrs.get("avatar_file_id"):
+            raise serializers.ValidationError({"avatar_file_id": "custom avatar_source requires avatar_file_id"})
+        if attrs["avatar_source"] == "doctor":
+            attrs["avatar_file_id"] = None
+        return attrs
 
 
 class AgentUpdateSerializer(serializers.Serializer):

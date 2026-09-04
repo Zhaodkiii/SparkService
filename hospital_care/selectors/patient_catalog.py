@@ -62,7 +62,7 @@ def published_agents(*, hospital_id, department_id=None, keyword: str = "") -> Q
         .values("pk")[:1]
     )
     return (
-        ClinicalAgentProfile.objects.select_related("doctor", "doctor__avatar_file", "department", "hospital")
+        ClinicalAgentProfile.objects.select_related("doctor", "doctor__avatar_file", "department", "hospital", "avatar_file")
         .filter(filters)
         .filter(pk=Subquery(latest_id))
         .order_by("department__sort_order", "name")
@@ -77,7 +77,9 @@ def get_published_agent(agent_id) -> ClinicalAgentProfile:
 
 
 def published_agents_unscoped() -> QuerySet[ClinicalAgentProfile]:
-    return ClinicalAgentProfile.objects.select_related("doctor", "doctor__avatar_file", "department", "hospital").filter(
+    return ClinicalAgentProfile.objects.select_related(
+        "doctor", "doctor__avatar_file", "department", "hospital", "avatar_file"
+    ).filter(
         _published_agent_filters()
     )
 

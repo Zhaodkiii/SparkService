@@ -181,6 +181,12 @@ def _sender_for_message(message: ChatMessage) -> dict | None:
         department = getattr(agent, "department", None)
         if department is not None:
             sender["department_name"] = department.name
+        # 医生智能体消息展示服务端解析后的智能体头像（专属或复用医生）。
+        from hospital_care.services.agent_avatar_service import resolve_agent_avatar
+
+        resolved = resolve_agent_avatar(agent)
+        if resolved.url:
+            sender["avatar_url"] = resolved.url
     return sender
 
 
@@ -870,6 +876,8 @@ class ChatSyncPullView(APIView):
         queryset = queryset.select_related(
             "hospital_attribution__doctor__avatar_file",
             "hospital_attribution__agent__department",
+            "hospital_attribution__agent__avatar_file",
+            "hospital_attribution__agent__doctor__avatar_file",
         )
 
         if thread_id_raw:

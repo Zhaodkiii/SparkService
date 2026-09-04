@@ -1,4 +1,4 @@
-import http from '../http';
+import http, { publicHttp } from '../http';
 import type { Pagination } from '../../types';
 
 export type HospitalStatus = 'draft' | 'active' | 'suspended';
@@ -10,6 +10,7 @@ export type LicenseStatus = 'unverified' | 'verified' | 'suspended';
 export type DoctorProfileStatus = 'draft' | 'active' | 'hidden';
 export type AgentPublicationStatus = 'draft' | 'review' | 'published' | 'disabled';
 export type KnowledgeVectorStatus = 'not_built' | 'current' | 'stale';
+export type AgentAvatarSource = 'doctor' | 'custom';
 
 export interface HospitalOverview {
   department_count: number;
@@ -109,6 +110,7 @@ export interface DoctorRow {
   introduction: string;
   license_status: LicenseStatus;
   profile_status: DoctorProfileStatus;
+  avatar_url?: string;
 }
 
 export interface AgentRow {
@@ -122,12 +124,36 @@ export interface AgentRow {
   service_boundary: string;
   publication_status: AgentPublicationStatus;
   published_at: string | null;
+  avatar_source?: AgentAvatarSource;
+  avatar_file_id?: number | null;
+  avatar_url?: string;
+  avatar_version?: string;
   scenario_binding_id?: number | null;
   version?: number;
   created_at?: string | null;
   updated_at?: string | null;
   binding?: AgentBinding | null;
   knowledge_bindings?: AgentKnowledgeBinding[];
+}
+
+export interface AgentAvatarUploadResult {
+  file_id: number;
+  file_uuid: string;
+  mime_type: 'image/webp';
+  width: number;
+  height: number;
+  file_size: number;
+  avatar_url: string;
+  binding_state: 'unbound';
+}
+
+export interface AgentAvatarUpdateResult {
+  id: string;
+  avatar_source: AgentAvatarSource;
+  avatar_file_id: number | null;
+  avatar_url: string;
+  avatar_version: string;
+  version: number;
 }
 
 export interface AgentBinding {
@@ -213,6 +239,8 @@ export interface AgentCreatePayload {
   public_summary?: string;
   greeting?: string;
   service_boundary?: string;
+  avatar_source?: AgentAvatarSource;
+  avatar_file_id?: number | null;
   binding: {
     model: string;
     display_name?: string;
@@ -273,6 +301,17 @@ const ERROR_LABELS: Record<string, string> = {
   HOSPITAL_KNOWLEDGE_DOCUMENT_NOT_FOUND: '文本资料不存在',
   IDEMPOTENCY_KEY_REQUIRED: '请勿重复提交',
   IDEMPOTENCY_CONFLICT: '相同请求正在处理，请稍后重试',
+  AVATAR_FILE_TOO_LARGE: '图片不能超过 5 MB',
+  AVATAR_FORMAT_INVALID: '请选择 JPG、PNG 或 WEBP 图片',
+  AVATAR_DIMENSION_EXCEEDED: '图片尺寸不能超过 2048 像素',
+  AVATAR_CROP_INVALID: '裁剪区域无效，请重新调整',
+  AVATAR_ANIMATED_NOT_ALLOWED: '不支持动图，请选择静态图片',
+  AVATAR_UPLOAD_FAILED: '头像上传失败，请稍后重试',
+  AVATAR_FILE_NOT_FOUND: '上传文件不存在，请重新上传',
+  AVATAR_FILE_FORBIDDEN: '该图片不能用于当前智能体',
+  AVATAR_SOURCE_INVALID: '头像来源配置无效',
+  FILE_RETENTION_PROTECTED: '该头像文件为永久保留文件，不能删除',
+  HOSPITAL_SERVICE_USER_REQUIRED: '医院文件服务尚未配置',
   REGISTRATION_REDIRECT_INVALID: '跳转地址必须是合法 HTTPS 地址',
   PAYLOAD_INVALID: '请检查必填项',
 };
@@ -422,6 +461,28 @@ export function fetchAgent(agentId: string) {
 
 export function createAgent(hospitalId: string, payload: AgentCreatePayload) {
   return http.post<unknown, AgentRow>(hospitalUrl(hospitalId, '/agents/'), payload, withIdempotency());
+}
+
+/** 公开图片上传（不要求后台登录态）：用于智能体头像与医生头像。 */
+export function uploadPublicImage(payload: FormData) {
+  return publicHttp.post<unknown, AgentAvatarUploadResult>('/api/v1/public/uploads/images/', payload);
+}
+
+/** @see uploadPublicImage */
+export function uploadAgentAvatar(payload: FormData) {
+  return uploadPublicImage(payload);
+}
+
+/** 已有智能体头像立即切换（需要后台登录态与 agent:update 权限）。 */
+export function setAgentAvatar(
+  agentId: string,
+  payload: { avatar_source: AgentAvatarSource; avatar_file_id: number | null; version: number },
+) {
+  return http.patch<unknown, AgentAvatarUpdateResult>(
+    `/api/admin/v1/hospital-care/agents/${agentId}/avatar/`,
+    payload,
+    withIdempotency(),
+  );
 }
 
 export function updateAgent(agentId: string, payload: AgentUpdatePayload) {

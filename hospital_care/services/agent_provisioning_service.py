@@ -218,6 +218,20 @@ def create_clinical_agent(*, request, hospital_id, payload: dict) -> ClinicalAge
             service_boundary=str(payload.get("service_boundary") or ""),
             publication_status=ClinicalAgentProfile.PublicationStatus.DRAFT,
         )
+        avatar_source = payload.get("avatar_source") or ClinicalAgentProfile.AvatarSource.DOCTOR
+        if avatar_source == ClinicalAgentProfile.AvatarSource.CUSTOM:
+            from hospital_care.services.agent_avatar_service import (
+                bind_avatar_file_to_agent,
+                resolve_valid_agent_avatar_file,
+            )
+
+            avatar_file = resolve_valid_agent_avatar_file(hospital=hospital, file_id=payload.get("avatar_file_id"))
+            agent.avatar_source = ClinicalAgentProfile.AvatarSource.CUSTOM
+            agent.avatar_file = avatar_file
+            agent.save(update_fields=["avatar_source", "avatar_file", "updated_at"])
+            bind_avatar_file_to_agent(file_record=avatar_file, agent=agent)
+        elif avatar_source != ClinicalAgentProfile.AvatarSource.DOCTOR:
+            raise HospitalCareError("AVATAR_SOURCE_INVALID", details={"field": "avatar_source"})
         _sync_knowledge_bindings(agent, profiles, actor=getattr(request, "user", None))
     write_hospital_audit_log(
         request,

@@ -171,7 +171,12 @@ class DoctorConversationMessagesView(APIView):
         binding = get_doctor_conversation(doctor=request.hospital_doctor, thread_id=thread_id)
         messages = (
             ChatMessage.objects.filter(thread=binding.thread, tombstone=False)
-            .prefetch_related("blocks", "hospital_attribution")
+            .prefetch_related("blocks")
+            .select_related(
+                "hospital_attribution__doctor__avatar_file",
+                "hospital_attribution__agent__avatar_file",
+                "hospital_attribution__agent__doctor__avatar_file",
+            )
             .order_by("created_at", "id")
         )
         return success_response({"items": [serialize_message(item, binding) for item in messages]})

@@ -562,6 +562,9 @@ button:disabled { cursor: not-allowed; }
 .doctor-agent-readonly { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; }
 .doctor-agent-readonly h2 { margin: 0 0 8px; font-size: 13px; }
 .doctor-agent-readonly ul, .doctor-agent-readonly p { margin: 0; color: var(--muted-foreground); font-size: 13px; }
+.doctor-agent-avatar { display: flex; align-items: center; gap: 12px; }
+.doctor-agent-avatar__image { width: 56px; height: 56px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #e5f1ee; color: #26705e; font-size: 20px; font-weight: 700; }
+.doctor-agent-avatar__image img { width: 100%; height: 100%; object-fit: cover; }
 .doctor-worklog-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .doctor-worklog-filters input, .doctor-worklog-filters select { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 7px 10px; }
 .doctor-worklog-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

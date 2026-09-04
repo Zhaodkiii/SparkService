@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 
 from common.response import success_response
 from hospital_care.api.backoffice.serializers import (
+    AgentAvatarUpdateSerializer,
     AgentCreateSerializer,
     AgentReviewSerializer,
     AgentUpdateSerializer,
@@ -36,6 +37,7 @@ from hospital_care.api.presenters import (
 from hospital_care.permissions import BackofficeHospitalPermission
 from hospital_care.selectors import backoffice_hospital_catalog as catalog
 from hospital_care.selectors import hospital_knowledge_catalog as knowledge_catalog
+from hospital_care.services.agent_avatar_service import resolve_agent_avatar, set_agent_avatar
 from hospital_care.services.agent_provisioning_service import create_clinical_agent, update_clinical_agent
 from hospital_care.services.agent_service import review_agent
 from hospital_care.services.hospital_admin_service import (
@@ -373,6 +375,42 @@ class AgentDetailView(APIView):
             request=request,
             payload={"agent_id": str(agent_id), **serializer.validated_data},
             resource_type="hospital_agent",
+            writer=writer,
+        )
+        return success_response(snapshot)
+
+
+class AgentAvatarView(APIView):
+    """已有智能体头像立即切换（上传专属头像 / 切回复用医生头像）。"""
+
+    permission_classes = [BackofficeHospitalPermission]
+    required_permission_code = "api:hospital_care:agent:update"
+
+    def patch(self, request, agent_id):
+        serializer = AgentAvatarUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        def writer():
+            agent = set_agent_avatar(
+                agent_id=agent_id,
+                avatar_source=serializer.validated_data["avatar_source"],
+                avatar_file_id=serializer.validated_data.get("avatar_file_id"),
+                version=serializer.validated_data["version"],
+            )
+            resolved = resolve_agent_avatar(agent)
+            return {
+                "id": str(agent.id),
+                "avatar_source": agent.avatar_source,
+                "avatar_file_id": agent.avatar_file_id,
+                "avatar_url": resolved.url,
+                "avatar_version": resolved.version,
+                "version": agent.version,
+            }, agent.id
+
+        snapshot, _ = run_idempotent_command(
+            request=request,
+            payload={"agent_id": str(agent_id), **serializer.validated_data},
+            resource_type="clinical_agent_avatar",
             writer=writer,
         )
         return success_response(snapshot)

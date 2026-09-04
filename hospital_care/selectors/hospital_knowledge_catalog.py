@@ -92,9 +92,11 @@ def get_agent(agent_id) -> ClinicalAgentProfile:
         ClinicalAgentProfile.objects.select_related(
             "hospital",
             "doctor",
+            "doctor__avatar_file",
             "department",
             "scenario_binding",
             "scenario_binding__model",
+            "avatar_file",
         )
         .prefetch_related("knowledge_bindings")
         .filter(pk=agent_id)

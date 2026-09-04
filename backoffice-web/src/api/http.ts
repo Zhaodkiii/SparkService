@@ -8,6 +8,28 @@ const http = axios.create({
   timeout: 15000,
 });
 
+/** 公开接口客户端：不附带后台登录态（如公开图片上传）。 */
+export const publicHttp = axios.create({
+  baseURL,
+  timeout: 30000,
+});
+
+publicHttp.interceptors.response.use(
+  (response) => {
+    const payload = response.data as ApiEnvelope<unknown>;
+    if (payload && typeof payload.code === 'number') {
+      if (payload.code !== 0) {
+        const m = payload.msg;
+        const text = typeof m === 'string' ? m : 'Request failed';
+        return Promise.reject(new Error(text));
+      }
+      return payload.data;
+    }
+    return response.data;
+  },
+  (error: AxiosError) => Promise.reject(error instanceof AxiosError ? toDisplayError(error) : error),
+);
+
 type RequestWithRetry = InternalAxiosRequestConfig & { _retry?: boolean };
 
 let refreshPromise: Promise<void> | null = null;

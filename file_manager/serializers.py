@@ -169,6 +169,36 @@ class ManagedFileBusinessUpdateSerializer(serializers.Serializer):
         return valid
 
 
+class PublicImageUploadSerializer(serializers.Serializer):
+    """公开图片上传参数（multipart 表单部分，不含二进制 file 字段）。
+
+    不允许调用方传入 object_key、bucket、endpoint、business_type、business_id
+    或 user_id；归一化裁剪参数的边界校验在服务端图片处理前再次执行。
+    """
+
+    purpose = serializers.CharField(max_length=64)
+    hospital_id = serializers.UUIDField()
+    crop_x = serializers.FloatField()
+    crop_y = serializers.FloatField()
+    crop_size = serializers.FloatField()
+
+    def validate_purpose(self, value):
+        from file_manager.constants import ALLOWED_UPLOAD_PURPOSES
+
+        if value not in ALLOWED_UPLOAD_PURPOSES:
+            raise serializers.ValidationError("unsupported purpose")
+        return value
+
+    def validate(self, attrs):
+        from file_manager.services.image_processing import AvatarProcessingError, validate_crop_params
+
+        try:
+            validate_crop_params(crop_x=attrs["crop_x"], crop_y=attrs["crop_y"], crop_size=attrs["crop_size"])
+        except AvatarProcessingError as exc:
+            raise serializers.ValidationError({"crop_size": str(exc)}) from exc
+        return attrs
+
+
 class HasAttachmentsMixin(serializers.Serializer):
     """
     给任意 ModelSerializer 快速加上 ``attachments`` 字段。

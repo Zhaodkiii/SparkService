@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pencil, RefreshCw, X } from "lucide-react";
+import { AgentAvatar } from "@/components/doctor/AgentAvatar";
 import { DoctorAgentForm } from "@/components/doctor/DoctorAgentForm";
 import { useAuth } from "@/context/AuthContext";
 import { SparkHospitalApi } from "@/lib/api/hospital-api";
@@ -38,7 +39,6 @@ export function CurrentAgentHeader() {
     queueMicrotask(load);
   }, [auth.status, doctor.id, load]);
 
-  const initials = (agent?.name || doctor.display_name || "AI").slice(0, 1);
   const knowledgeCount = agent?.knowledge_bindings?.filter((item) => item.status === "active").length ?? 0;
 
   return (
@@ -53,12 +53,12 @@ export function CurrentAgentHeader() {
       {status === "empty" && <div className="current-agent-header__state">当前医生尚未分配智能体。</div>}
       {status === "ready" && agent && (
         <div className="current-agent-header__content">
-          <span className="current-agent-header__avatar" aria-hidden="true">
-            {agent.doctor.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={agent.doctor.avatar_url} alt="" />
-            ) : initials}
-          </span>
+          <AgentAvatar
+            className="current-agent-header__avatar"
+            src={agent.avatar_url || ""}
+            version={agent.avatar_version || ""}
+            name={agent.name || doctor.display_name}
+          />
           <div className="current-agent-header__identity">
             <div className="current-agent-header__name-row">
               <strong>{agent.name || "未命名智能体"}</strong>
