@@ -144,7 +144,14 @@ def create_patient_conversation(*, request, user, agent_id, member_id: int, thre
 
     agent = (
         ClinicalAgentProfile.objects.select_related(
-            "hospital", "department", "doctor", "doctor__staff_membership", "doctor__avatar_file", "avatar_file"
+            "hospital",
+            "department",
+            "doctor",
+            "doctor__staff_membership",
+            "doctor__avatar_file",
+            "avatar_file",
+            "scenario_binding",
+            "scenario_binding__model",
         )
         .filter(pk=agent_id)
         .first()
@@ -155,6 +162,14 @@ def create_patient_conversation(*, request, user, agent_id, member_id: int, thre
         raise HospitalCareError("AGENT_NOT_PUBLISHED")
     if agent.hospital.status != Hospital.Status.ACTIVE:
         raise HospitalCareError("HOSPITAL_INACTIVE")
+
+    # CHAT-000058：创建 Thread 时服务端重新解析并固定当前有效的场景绑定，
+    # 客户端不得通过请求字段覆盖运行绑定。
+    scenario_binding = agent.scenario_binding
+    if scenario_binding is None or not scenario_binding.is_active:
+        raise HospitalCareError("AGENT_BINDING_INVALID")
+    if scenario_binding.model is None or not scenario_binding.model.is_active:
+        raise HospitalCareError("RUNTIME_CONFIG_INVALID")
 
     client_thread_id = thread_id or uuid.uuid4()
     existing_thread = ChatThread.objects.filter(user=user, id=client_thread_id).first()
@@ -181,6 +196,7 @@ def create_patient_conversation(*, request, user, agent_id, member_id: int, thre
             department=agent.department,
             doctor=agent.doctor,
             agent=agent,
+            scenario_binding=scenario_binding,
             service_status=ClinicalConversationBinding.ServiceStatus.AI_ACTIVE,
             assigned_at=now,
         )

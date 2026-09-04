@@ -142,6 +142,83 @@ def scenario_binding_public(binding) -> dict:
     }
 
 
+def _json_string_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if x is not None and str(x).strip() != ""]
+    return []
+
+
+def agent_runtime_config_public(agent: ClinicalAgentProfile, *, member_id: int, provider: dict) -> dict:
+    """CHAT-000058：医院医生智能体专用运行配置（患者端）。
+
+    - 运行参数（endpoint/凭证/系统提示词/采样参数）唯一来源为 agent.scenario_binding。
+    - `model` 字段与 Pro bootstrap `chat.models` 行保持相同命名，便于 iOS 复用
+      `AIScenarioRemoteModelRow` 解码；source 固定为 "hospital"，不与通用目录混用。
+    """
+    binding = agent.scenario_binding
+    model = binding.model
+    doctor = agent.doctor
+    binding_version = int(binding.updated_at.timestamp()) if binding.updated_at else 0
+
+    task_codes = _json_string_list(binding.related_task_codes) or _json_string_list(model.related_task_codes)
+    model_row = {
+        "name": binding.bootstrap_name(),
+        "display_name": binding.display_name or model.display_name or model.name,
+        "identity": binding.identity,
+        "baseModelName": model.name,
+        "company": model.company,
+        "endpoint": provider["endpoint"],
+        "api_key": provider["api_key"],
+        "supports_search": model.supports_search,
+        "supports_multimodal": model.supports_multimodal,
+        "supports_reasoning": model.supports_reasoning,
+        "supports_tool_use": model.supports_tool_use,
+        "supports_voice_gen": model.supports_voice_gen,
+        "supports_image_gen": model.supports_image_gen,
+        "supports_text": model.supports_text,
+        "supports_deep_reasoning": model.supports_reasoning,
+        "reasoning_controllable": model.reasoning_controllable,
+        "price_tier": model.price_tier,
+        "systemProvision": binding.system_provision or "",
+        "icon": model.icon or "",
+        "briefDescription": binding.brief_description or "",
+        "source": "hospital",
+        "aiScenarios": [binding.scenario],
+        "aiToolScenarios": _json_string_list(binding.ai_tool_scenarios),
+        "relatedTaskCodes": task_codes,
+        "is_default": False,
+        "temperature": binding.temperature,
+        "max_tokens": binding.max_tokens,
+    }
+    return {
+        "agent_id": str(agent.id),
+        "hospital_id": str(agent.hospital_id),
+        "member_id": member_id,
+        "doctor": {
+            "doctor_id": str(doctor.id),
+            "name": doctor.display_name,
+            "title": doctor.title or "",
+            "department_name": agent.department.name if agent.department_id else "",
+            "avatar_url": doctor_public(doctor)["avatar_url"],
+        },
+        "profile": {
+            "name": agent.name,
+            "description": agent.public_summary,
+            "status": agent.publication_status,
+            "profile_version": agent.version,
+        },
+        "runtime": {
+            "binding_id": binding.id,
+            "binding_version": binding_version,
+            "config_version": f"{binding.id}:{binding_version}",
+            "streaming": True,
+            "model": model_row,
+        },
+    }
+
+
 def knowledge_bindings_public(agent: ClinicalAgentProfile) -> list[dict]:
     profile_map = {}
     knowledge_ids = [item.knowledge_base_id for item in agent.knowledge_bindings.all()]
@@ -248,6 +325,14 @@ def conversation_public(binding: ClinicalConversationBinding, *, for_doctor: boo
         "title": thread.title,
         "unread_count": 0,
     }
+    # CHAT-000058：返回服务端固定的运行绑定信息，供客户端校验 scope 一致。
+    scenario_binding = binding.scenario_binding if binding.scenario_binding_id else None
+    payload["binding_id"] = binding.scenario_binding_id
+    payload["binding_version"] = (
+        int(scenario_binding.updated_at.timestamp())
+        if scenario_binding is not None and scenario_binding.updated_at
+        else None
+    )
     if for_doctor:
         payload["attention_note"] = binding.attention_note
     return payload

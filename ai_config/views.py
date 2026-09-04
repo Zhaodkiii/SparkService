@@ -22,8 +22,14 @@ from ai_config.models import (
     TrialModelPolicy,
     TrialModelPolicyItem,
 )
+from ai_config.provider_resolution import (
+    build_provider_index,
+    load_active_api_providers,
+    resolve_provider_for_model,
+)
 from ai_config.services import TrialService
 from common.response import success_response, error_response
+from hospital_care.models import ClinicalAgentProfile
 
 logger = logging.getLogger(__name__)
 
@@ -121,12 +127,7 @@ class AIBootstrapConfigView(APIView):
             return success_response(payload, msg=trial_message, code=0)
 
         # Pro 用户：构建完整的场景模型配置
-        api_provider_rows = list(
-            AIProviderKeyConfig.objects.filter(kind=AIProviderKeyConfig.Kind.API, is_active=True).order_by(
-                "-is_using", "position", "company", "name"
-            )
-        )
-        provider_by_company = self._build_provider_index(api_provider_rows)
+        provider_by_company = build_provider_index(load_active_api_providers())
 
         scenarios, related_task_codes = self._build_pro_scenarios(provider_by_company=provider_by_company)
         small_tasks = self._build_related_small_tasks(related_task_codes)
@@ -152,10 +153,19 @@ class AIBootstrapConfigView(APIView):
         related_task_codes = set()
         trial_overlay = _active_trial_policy_item_by_scenario_model()
 
+        # CHAT-000058：一次性形成医院医生智能体绑定排除集合。
+        # 被任一 ClinicalAgentProfile.scenario_binding 引用的绑定不得进入通用 Pro bootstrap。
+        hospital_agent_binding_ids = set(
+            ClinicalAgentProfile.objects.filter(scenario_binding_id__isnull=False).values_list(
+                "scenario_binding_id", flat=True
+            )
+        )
+
         for scenario_key in DEFAULT_SCENARIOS.keys():
             bindings = (
                 AIScenarioModelBinding.objects.select_related("model")
                 .filter(scenario=scenario_key, is_active=True)
+                .exclude(id__in=hospital_agent_binding_ids)
                 .order_by("position", "id")
             )
 
@@ -172,7 +182,7 @@ class AIBootstrapConfigView(APIView):
 
             for row in bindings:
                 model = row.model
-                provider = self._resolve_provider_for_model(model.company, provider_by_company)
+                provider = resolve_provider_for_model(model.company, provider_by_company)
                 is_agent = row.identity == IdentityKind.AGENT
                 row_name = row.bootstrap_name()
 
@@ -246,33 +256,6 @@ class AIBootstrapConfigView(APIView):
             .order_by("id")
         )
         return [_bootstrap_small_task_payload(row) for row in rows]
-
-    def _resolve_provider_for_model(self, company: str, provider_by_company: dict):
-        """根据模型所属厂商解析 provider 配置（endpoint 和 api_key）。"""
-        normalized_company = str(company or "").strip().upper()
-        if not normalized_company:
-            return None
-
-        provider = provider_by_company.get(normalized_company)
-        if provider is None:
-            return None
-
-        return {
-            "endpoint": provider.request_url or "",
-            "api_key": provider.key or "",
-        }
-
-
-    def _build_provider_index(self, provider_rows):
-        # 每个厂商只选一个“当前生效 provider”（优先 is_using，再按 position）。
-        provider_by_company = {}
-        for row in provider_rows:
-            normalized_company = str(row.company or "").strip().upper()
-            if not normalized_company:
-                continue
-            if normalized_company not in provider_by_company:
-                provider_by_company[normalized_company] = row
-        return provider_by_company
 
     def _resolve_pro_revision(self):
         """Pro 配置版本号：基于场景模型绑定和 Provider 配置的更新时间。"""

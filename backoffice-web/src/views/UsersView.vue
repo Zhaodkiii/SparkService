@@ -147,14 +147,23 @@
         :data-source="detailModal.data.auth_identities"
         :pagination="false"
         row-key="id"
-        :scroll="{ x: 1100 }"
-        :title="() => '认证信息'"
+        :scroll="{ x: 1280 }"
       >
+        <template #title>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+            <span>认证信息</span>
+            <a-button size="small" type="primary" @click="openCreateIdentity">新增认证标识</a-button>
+          </div>
+        </template>
         <template #emptyText>
           <a-empty description="暂无绑定认证信息" />
         </template>
         <a-table-column title="认证方式" data-index="provider_label" :width="100" />
-        <a-table-column title="身份标识" data-index="provider_uid_masked" :width="220" />
+        <a-table-column title="身份标识" key="provider_uid" :width="240">
+          <template #default="{ record }">
+            {{ record.provider_uid_plain || record.provider_uid_masked || '-' }}
+          </template>
+        </a-table-column>
         <a-table-column title="身份域" data-index="bundle_id" :width="180">
           <template #default="{ record }">
             {{ record.bundle_id || '-' }}
@@ -168,6 +177,15 @@
         <a-table-column title="更新时间" key="updated_at" :width="180">
           <template #default="{ record }">
             {{ formatDateTime(record.updated_at) }}
+          </template>
+        </a-table-column>
+        <a-table-column title="操作" key="identity_actions" :width="160" fixed="right">
+          <template #default="{ record }">
+            <template v-if="canEditIdentity(record)">
+              <a-button size="small" style="margin-right: 8px" @click="openEditIdentity(record)">编辑</a-button>
+              <a-button size="small" danger @click="confirmDeleteIdentity(record)">解除</a-button>
+            </template>
+            <span v-else style="color: rgba(0, 0, 0, 0.45)">系统绑定，只读</span>
           </template>
         </a-table-column>
       </a-table>
@@ -317,6 +335,48 @@
     </a-form>
   </a-modal>
 
+  <a-modal
+    v-model:open="identityModal.open"
+    :title="identityModal.mode === 'create' ? '新增认证标识' : '编辑认证标识'"
+    :confirm-loading="identityModal.loading"
+    :ok-text="identityModal.mode === 'create' ? '确认保存' : '确认修改'"
+    @ok="submitIdentity"
+    @cancel="resetIdentityModal"
+  >
+    <a-form layout="vertical">
+      <a-form-item label="目标用户">
+        {{ detailModal.data?.user.id }} · {{ detailModal.data?.user.display_name || detailModal.data?.user.username }}
+      </a-form-item>
+      <a-form-item v-if="identityModal.mode === 'create'" label="认证方式" required>
+        <a-select v-model:value="identityModal.provider">
+          <a-select-option value="email">邮箱</a-select-option>
+          <a-select-option value="phone">手机</a-select-option>
+        </a-select>
+      </a-form-item>
+      <a-form-item v-else label="认证方式">
+        {{ identityModal.provider === 'phone' ? '手机' : '邮箱' }}（不可修改）
+      </a-form-item>
+      <a-form-item v-if="identityModal.mode === 'create'" label="身份域" required>
+        <a-select v-model:value="identityModal.bundleId" placeholder="请选择身份域" :options="identityScopeOptions" />
+      </a-form-item>
+      <a-form-item v-else label="身份域">
+        {{ identityModal.bundleId || '-' }}（不可修改）
+      </a-form-item>
+      <a-form-item :label="identityModal.provider === 'phone' ? '手机号' : '邮箱'" required>
+        <a-input
+          v-model:value="identityModal.providerUid"
+          :placeholder="identityModal.provider === 'phone' ? '请输入完整手机号' : '请输入完整邮箱'"
+          autocomplete="off"
+        />
+      </a-form-item>
+      <a-alert
+        type="warning"
+        show-icon
+        message="保存后将改变该身份的登录归属，该标识将成为用户在所选身份域下的登录身份。"
+      />
+    </a-form>
+  </a-modal>
+
   <MedicalDataUserOverviewModal
     v-model:open="medicalDetailModal.open"
     :user-id="medicalDetailModal.userId"
@@ -324,15 +384,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, reactive, ref, watch } from 'vue';
 import { message, Modal } from 'ant-design-vue';
 import type { Dayjs } from 'dayjs';
 import {
+  createUserAuthIdentity,
+  deleteUserAuthIdentity,
+  fetchIdentityScopeOptions,
   fetchUserDetail,
   fetchUsers,
   grantUserPro,
   recycleUserPro,
+  updateUserAuthIdentity,
   updateUserStatus,
+  type AdminIdentityScopeOption,
+  type AdminUserAuthIdentity,
   type AdminUserDetail,
   type AdminUserProSummary,
 } from '../api/modules/users';
@@ -389,6 +455,18 @@ const recycleModal = reactive({
   open: false,
   loading: false,
   note: '',
+});
+
+const editableProviders = new Set(['phone', 'email']);
+const identityScopeOptions = ref<AdminIdentityScopeOption[]>([]);
+const identityModal = reactive({
+  open: false,
+  loading: false,
+  mode: 'create' as 'create' | 'edit',
+  identityId: null as number | null,
+  provider: 'email' as 'phone' | 'email',
+  bundleId: '',
+  providerUid: '',
 });
 
 const canUpdate = computed(() => auth.hasPermission('button:user:status:update'));
@@ -522,10 +600,12 @@ function onReset() {
 }
 
 async function openUserDetail(record: AdminUser) {
+  resetIdentityModal();
   detailModal.open = true;
   detailModal.loading = true;
   detailModal.data = null;
   try {
+    await ensureIdentityScopeOptions();
     detailModal.data = await fetchUserDetail(record.id);
   } catch (error: any) {
     message.error(error?.message || '加载失败');
@@ -629,6 +709,162 @@ function onPageChange(page: number, pageSize: number) {
   query.page_size = pageSize;
   load();
 }
+
+function canEditIdentity(identity: AdminUserAuthIdentity) {
+  return editableProviders.has(identity.provider);
+}
+
+function resetIdentityModal() {
+  identityModal.open = false;
+  identityModal.loading = false;
+  identityModal.mode = 'create';
+  identityModal.identityId = null;
+  identityModal.provider = 'email';
+  identityModal.bundleId = '';
+  identityModal.providerUid = '';
+}
+
+async function ensureIdentityScopeOptions() {
+  if (identityScopeOptions.value.length) {
+    return identityScopeOptions.value;
+  }
+  const data = await fetchIdentityScopeOptions();
+  identityScopeOptions.value = data.options || [];
+  return identityScopeOptions.value;
+}
+
+async function openCreateIdentity() {
+  try {
+    const options = await ensureIdentityScopeOptions();
+    if (!options.length) {
+      message.error('身份域配置不可用，请联系系统配置维护者');
+      return;
+    }
+    identityModal.mode = 'create';
+    identityModal.identityId = null;
+    identityModal.provider = 'email';
+    identityModal.bundleId = options[0].value;
+    identityModal.providerUid = '';
+    identityModal.open = true;
+  } catch (error: any) {
+    message.error(error?.message || '加载身份域失败');
+  }
+}
+
+function openEditIdentity(record: AdminUserAuthIdentity) {
+  if (!canEditIdentity(record)) {
+    return;
+  }
+  identityModal.mode = 'edit';
+  identityModal.identityId = record.id;
+  identityModal.provider = record.provider as 'phone' | 'email';
+  identityModal.bundleId = record.bundle_id;
+  identityModal.providerUid = record.provider_uid_plain || '';
+  identityModal.open = true;
+}
+
+async function submitIdentity() {
+  const userId = detailModal.data?.user.id;
+  const providerUid = identityModal.providerUid.trim();
+  if (!userId) return Promise.reject();
+  if (!providerUid) {
+    message.error(identityModal.provider === 'phone' ? '请输入手机号' : '请输入邮箱');
+    return Promise.reject();
+  }
+  if (identityModal.mode === 'create') {
+    if (!identityModal.bundleId) {
+      message.error('请选择身份域');
+      return Promise.reject();
+    }
+    const existing = detailModal.data?.auth_identities.find(
+      (item) => item.provider === identityModal.provider && item.bundle_id === identityModal.bundleId,
+    );
+    if (existing) {
+      message.warning('该认证方式在所选身份域下已存在，已切换为编辑');
+      identityModal.mode = 'edit';
+      identityModal.identityId = existing.id;
+      if (!identityModal.providerUid && existing.provider_uid_plain) {
+        identityModal.providerUid = existing.provider_uid_plain;
+      }
+      return Promise.reject();
+    }
+  }
+  identityModal.loading = true;
+  try {
+    if (identityModal.mode === 'create') {
+      await createUserAuthIdentity(userId, {
+        provider: identityModal.provider,
+        provider_uid: providerUid,
+        bundle_id: identityModal.bundleId,
+      });
+      message.success('已新增认证标识');
+    } else if (identityModal.identityId) {
+      await updateUserAuthIdentity(userId, identityModal.identityId, {
+        provider_uid: providerUid,
+      });
+      message.success('已修改认证标识');
+    }
+    resetIdentityModal();
+    await refreshDetailAndList();
+  } catch (error: any) {
+    const text = error?.message || '保存失败';
+    if (text === 'identity_already_bound') {
+      message.error('该认证标识已被其他用户占用，请先在原用户中解除绑定');
+    } else if (text === 'identity_scope_invalid') {
+      identityScopeOptions.value = [];
+      message.error('身份域已失效，请刷新后重试');
+    } else {
+      message.error(text);
+    }
+    return Promise.reject(error);
+  } finally {
+    identityModal.loading = false;
+  }
+}
+
+function confirmDeleteIdentity(record: AdminUserAuthIdentity) {
+  const userId = detailModal.data?.user.id;
+  if (!userId || !canEditIdentity(record)) return;
+  const remaining = Math.max((detailModal.data?.auth_identities.length || 1) - 1, 0);
+  const displayUid = record.provider_uid_plain || record.provider_uid_masked || '-';
+  Modal.confirm({
+    title: '解除认证标识？',
+    okText: '确认解除',
+    okType: 'danger',
+    cancelText: '取消',
+    content: h('div', [
+      h('p', `认证方式：${record.provider_label}`),
+      h('p', `身份标识：${displayUid}`),
+      h('p', `身份域：${record.bundle_id || '-'}`),
+      h('p', `解除后剩余认证标识：${remaining} 条`),
+      h('p', { style: 'color: #d4380d; margin-bottom: 0' }, '警告：解除后用户可能无法通过认证方式登录。'),
+    ]),
+    async onOk() {
+      try {
+        const result = await deleteUserAuthIdentity(userId, record.id);
+        if (result.remaining_count === 0) {
+          message.warning('已解除，当前用户可能无法通过认证方式登录');
+        } else {
+          message.success('已解除认证标识');
+        }
+        await refreshDetailAndList();
+      } catch (error: any) {
+        message.error(error?.message || '解除失败');
+        return Promise.reject(error);
+      }
+    },
+  });
+}
+
+watch(
+  () => detailModal.open,
+  (open) => {
+    if (!open) {
+      resetIdentityModal();
+      detailModal.data = null;
+    }
+  },
+);
 
 onMounted(load);
 </script>

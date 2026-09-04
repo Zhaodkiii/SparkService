@@ -4,7 +4,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from unittest.mock import patch
 
-from accounts.models import AccessDenyEntry, AccessDenyHit, SocialIdentity
+from accounts.models import AccessDenyEntry, AccessDenyHit, AccountDeviceSession, SocialIdentity, TrustedDevice
 from backoffice.models import AdminAuditLog, AdminRole, AdminUserRole
 from backoffice.rbac import bootstrap_admin_permissions
 
@@ -589,6 +589,9 @@ class BackofficePermissionTests(TestCase):
         self.assertNotEqual(apple["provider_uid_masked"], "apple_000082.abcdef123456")
         self.assertIn("***", email["provider_uid_masked"])
         self.assertNotIn("provider_uid", apple)
+        self.assertIsNone(apple["provider_uid_plain"])
+        self.assertEqual(email["provider_uid_plain"], "97621528@qq.com")
+        self.assertNotIn("provider_uid", email)
 
     def test_user_detail_auth_identities_empty(self):
         self.client.force_authenticate(user=self.staff_user)
@@ -1070,3 +1073,360 @@ class BackofficeBlacklistTests(TestCase):
         self.assertEqual(dimension_resp.status_code, 200)
         self.assertEqual(len(dimension_resp.data["data"]["items"]), 1)
         self.assertEqual(dimension_resp.data["data"]["items"][0]["attempted_user_id"], self.target_user.id)
+
+
+HEALTH_SCOPE = "cn.Zhaodk.Health"
+
+
+class AdminUserAuthIdentityTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff_user = User.objects.create_user(
+            username="identity_staff",
+            email="identity-staff@example.com",
+            password="pass1234",
+            is_staff=True,
+        )
+        self.normal_user = User.objects.create_user(
+            username="identity_normal",
+            email="identity-normal@example.com",
+            password="pass1234",
+            is_staff=False,
+        )
+        self.target_user = User.objects.create_user(
+            username="identity_target",
+            email="old-target@example.com",
+            password="pass1234",
+            is_staff=False,
+        )
+        self.other_user = User.objects.create_user(
+            username="identity_other",
+            email="other@example.com",
+            password="pass1234",
+            is_staff=False,
+        )
+        bootstrap_admin_permissions()
+        super_admin = AdminRole.objects.get(code="super_admin")
+        AdminUserRole.objects.create(user=self.staff_user, role=super_admin)
+        self.client.force_authenticate(user=self.staff_user)
+
+    def _create_url(self, user_id=None):
+        return f"/api/admin/v1/users/{user_id or self.target_user.id}/auth-identities/"
+
+    def _detail_url(self, identity_id, user_id=None):
+        return f"/api/admin/v1/users/{user_id or self.target_user.id}/auth-identities/{identity_id}/"
+
+    def test_scope_options_returns_configured_scopes(self):
+        response = self.client.get("/api/admin/v1/users/identity-scopes/")
+        self.assertEqual(response.status_code, 200)
+        values = {item["value"] for item in response.data["data"]["options"]}
+        self.assertIn(HEALTH_SCOPE, values)
+        self.assertNotIn("cn.Zhaodk.MedicineBox", values)
+
+    def test_scope_options_blocks_non_staff(self):
+        self.client.force_authenticate(user=self.normal_user)
+        response = self.client.get("/api/admin/v1/users/identity-scopes/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_create_email_and_sync_user_email(self):
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "email", "provider_uid": " Admin@Example.COM ", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertEqual(payload["user_id"], self.target_user.id)
+        self.assertEqual(payload["remaining_count"], 1)
+        email = payload["auth_identities"][0]
+        self.assertEqual(email["provider"], "email")
+        self.assertEqual(email["provider_uid_plain"], "admin@example.com")
+        self.assertIn("***", email["provider_uid_masked"])
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.email, "admin@example.com")
+        self.assertTrue(
+            AdminAuditLog.objects.filter(
+                action="admin.user.auth_identity.create",
+                resource_id=str(self.target_user.id),
+            ).exists()
+        )
+        audit = AdminAuditLog.objects.get(action="admin.user.auth_identity.create")
+        self.assertEqual(audit.response_payload["result"], "success")
+        self.assertIn("***", audit.response_payload["new_uid_masked"])
+        self.assertNotIn("admin@example.com", str(audit.request_payload))
+        self.assertNotIn("admin@example.com", str(audit.response_payload))
+
+    def test_create_phone_normalizes_e164(self):
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "phone", "provider_uid": "13800138000", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        phone = response.data["data"]["auth_identities"][0]
+        self.assertEqual(phone["provider_uid_plain"], "+8613800138000")
+        identity = SocialIdentity.objects.get(user=self.target_user, provider=SocialIdentity.Provider.PHONE)
+        self.assertEqual(identity.provider_uid, "+8613800138000")
+        self.assertEqual(identity.bundle_id, HEALTH_SCOPE)
+
+    def test_create_rejects_invalid_scope(self):
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "email", "provider_uid": "new@example.com", "bundle_id": "free-text-scope"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["msg"], "identity_scope_invalid")
+        self.assertEqual(response.data["code"], 41304)
+        self.assertTrue(
+            AdminAuditLog.objects.filter(
+                action="admin.user.auth_identity.create",
+                response_payload__result="failed",
+            ).exists()
+        )
+
+    def test_create_rejects_alias_bundle_that_is_not_canonical_scope(self):
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "email", "provider_uid": "new@example.com", "bundle_id": "cn.Zhaodk.MedicineBox"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["msg"], "identity_scope_invalid")
+
+    def test_create_rejects_apple_google_device(self):
+        for provider in ("apple", "google", "device"):
+            response = self.client.post(
+                self._create_url(),
+                {"provider": provider, "provider_uid": "manual-value", "bundle_id": HEALTH_SCOPE},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 400, provider)
+            self.assertEqual(response.data["msg"], "unsupported_manual_provider")
+            self.assertEqual(response.data["code"], 41302)
+
+    def test_create_rejects_duplicate_provider_for_same_user(self):
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="first@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "email", "provider_uid": "second@example.com", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["msg"], "identity_already_bound")
+        self.assertEqual(SocialIdentity.objects.filter(user=self.target_user, provider="email").count(), 1)
+
+    def test_create_rejects_identity_bound_to_other_user(self):
+        SocialIdentity.objects.create(
+            user=self.other_user,
+            provider=SocialIdentity.Provider.PHONE,
+            provider_uid="+8613900139000",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "phone", "provider_uid": "13900139000", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], 40941)
+        self.assertFalse(SocialIdentity.objects.filter(user=self.target_user).exists())
+
+    def test_create_user_not_found(self):
+        response = self.client.post(
+            self._create_url(user_id=999999),
+            {"provider": "email", "provider_uid": "missing@example.com", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["msg"], "user_not_found")
+
+    def test_create_blocks_non_staff(self):
+        self.client.force_authenticate(user=self.normal_user)
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "email", "provider_uid": "x@example.com", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_update_email_and_sync_user_email(self):
+        identity = SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="old@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        created_at = identity.created_at
+        response = self.client.patch(
+            self._detail_url(identity.id),
+            {"provider_uid": " New@Example.com ", "provider": "phone", "bundle_id": "another-scope"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        row = response.data["data"]["auth_identities"][0]
+        self.assertEqual(row["id"], identity.id)
+        self.assertEqual(row["provider"], "email")
+        self.assertEqual(row["bundle_id"], HEALTH_SCOPE)
+        self.assertEqual(row["provider_uid_plain"], "new@example.com")
+        identity.refresh_from_db()
+        self.assertEqual(identity.provider, "email")
+        self.assertEqual(identity.bundle_id, HEALTH_SCOPE)
+        self.assertEqual(identity.created_at, created_at)
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.email, "new@example.com")
+
+    def test_update_rejects_conflict_with_other_user(self):
+        SocialIdentity.objects.create(
+            user=self.other_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="taken@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        identity = SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="mine@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.patch(
+            self._detail_url(identity.id),
+            {"provider_uid": "taken@example.com"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 409)
+        identity.refresh_from_db()
+        self.assertEqual(identity.provider_uid, "mine@example.com")
+
+    def test_update_rejects_apple(self):
+        identity = SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.APPLE,
+            provider_uid="apple.subject.123",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.patch(
+            self._detail_url(identity.id),
+            {"provider_uid": "new-subject"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["msg"], "unsupported_manual_provider")
+
+    def test_update_identity_not_belonging_to_user(self):
+        identity = SocialIdentity.objects.create(
+            user=self.other_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="other@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.patch(
+            self._detail_url(identity.id, user_id=self.target_user.id),
+            {"provider_uid": "hijack@example.com"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["msg"], "auth_identity_not_found")
+        identity.refresh_from_db()
+        self.assertEqual(identity.provider_uid, "other@example.com")
+
+    def test_delete_email_clears_user_email(self):
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.PHONE,
+            provider_uid="+8613800138000",
+            bundle_id=HEALTH_SCOPE,
+        )
+        identity = SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="keep-sync@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        self.target_user.email = "keep-sync@example.com"
+        self.target_user.save(update_fields=["email"])
+        response = self.client.delete(self._detail_url(identity.id))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["remaining_count"], 1)
+        self.assertFalse(SocialIdentity.objects.filter(pk=identity.id).exists())
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.email, "")
+
+    def test_delete_last_identity_succeeds(self):
+        identity = SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.PHONE,
+            provider_uid="+8613800138000",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.delete(self._detail_url(identity.id))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["data"]["remaining_count"], 0)
+        self.assertEqual(response.data["data"]["auth_identities"], [])
+        self.assertFalse(SocialIdentity.objects.filter(user=self.target_user).exists())
+
+    def test_delete_rejects_device_identity(self):
+        identity = SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.DEVICE,
+            provider_uid="device-abc",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.delete(self._detail_url(identity.id))
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(SocialIdentity.objects.filter(pk=identity.id).exists())
+
+    def test_user_list_does_not_include_provider_uid_plain(self):
+        SocialIdentity.objects.create(
+            user=self.target_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="list-secret@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        response = self.client.get("/api/admin/v1/users/", {"q": "identity_target"})
+        self.assertEqual(response.status_code, 200)
+        body = str(response.data)
+        self.assertNotIn("provider_uid_plain", body)
+        item = next(row for row in response.data["data"]["items"] if row["id"] == self.target_user.id)
+        self.assertNotIn("provider_uid_plain", item)
+        self.assertNotIn("auth_identities", item)
+
+    def test_unique_constraint_concurrent_create_only_one_succeeds(self):
+        SocialIdentity.objects.create(
+            user=self.other_user,
+            provider=SocialIdentity.Provider.EMAIL,
+            provider_uid="race@example.com",
+            bundle_id=HEALTH_SCOPE,
+        )
+        from django.db import IntegrityError, transaction
+
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                SocialIdentity.objects.create(
+                    user=self.target_user,
+                    provider=SocialIdentity.Provider.EMAIL,
+                    provider_uid="race@example.com",
+                    bundle_id=HEALTH_SCOPE,
+                )
+        self.assertEqual(
+            SocialIdentity.objects.filter(
+                bundle_id=HEALTH_SCOPE,
+                provider=SocialIdentity.Provider.EMAIL,
+                provider_uid="race@example.com",
+            ).count(),
+            1,
+        )
+
+    def test_create_invalid_email_format(self):
+        response = self.client.post(
+            self._create_url(),
+            {"provider": "email", "provider_uid": "not-an-email", "bundle_id": HEALTH_SCOPE},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["msg"], "identity_format_invalid")

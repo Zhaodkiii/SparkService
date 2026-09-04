@@ -39,6 +39,15 @@ class ClinicalConversationBinding(models.Model):
     department = models.ForeignKey(HospitalDepartment, related_name="conversation_bindings", on_delete=models.PROTECT)
     doctor = models.ForeignKey(DoctorProfile, related_name="conversation_bindings", on_delete=models.PROTECT)
     agent = models.ForeignKey(ClinicalAgentProfile, related_name="conversation_bindings", on_delete=models.PROTECT)
+    # CHAT-000058：创建医院会话时服务端按 agent_id 重解析并固定的场景模型绑定快照。
+    # 客户端不得提交该字段；历史数据允许为空。
+    scenario_binding = models.ForeignKey(
+        "ai_config.AIScenarioModelBinding",
+        null=True,
+        blank=True,
+        related_name="conversation_bindings",
+        on_delete=models.PROTECT,
+    )
     service_status = models.CharField(max_length=32, choices=ServiceStatus.choices, default=ServiceStatus.AI_ACTIVE)
     doctor_attention_level = models.CharField(
         max_length=16,

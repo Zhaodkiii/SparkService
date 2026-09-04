@@ -295,6 +295,7 @@ def mask_provider_uid(*, provider: str, provider_uid: str) -> str:
 class AdminUserSocialIdentitySerializer(serializers.ModelSerializer):
     provider_label = serializers.SerializerMethodField()
     provider_uid_masked = serializers.SerializerMethodField()
+    provider_uid_plain = serializers.SerializerMethodField()
 
     class Meta:
         model = SocialIdentity
@@ -303,6 +304,7 @@ class AdminUserSocialIdentitySerializer(serializers.ModelSerializer):
             "provider",
             "provider_label",
             "provider_uid_masked",
+            "provider_uid_plain",
             "bundle_id",
             "created_at",
             "updated_at",
@@ -313,6 +315,21 @@ class AdminUserSocialIdentitySerializer(serializers.ModelSerializer):
 
     def get_provider_uid_masked(self, obj: SocialIdentity) -> str:
         return mask_provider_uid(provider=obj.provider, provider_uid=obj.provider_uid) or "-"
+
+    def get_provider_uid_plain(self, obj: SocialIdentity) -> str | None:
+        if obj.provider in {SocialIdentity.Provider.PHONE, SocialIdentity.Provider.EMAIL}:
+            return obj.provider_uid or ""
+        return None
+
+
+class AdminIdentityCreateSerializer(serializers.Serializer):
+    provider = serializers.CharField()
+    provider_uid = serializers.CharField(allow_blank=False)
+    bundle_id = serializers.CharField()
+
+
+class AdminIdentityUpdateSerializer(serializers.Serializer):
+    provider_uid = serializers.CharField(allow_blank=False)
 
 
 def mask_push_token(token: str) -> str:

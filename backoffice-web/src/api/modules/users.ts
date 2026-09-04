@@ -116,9 +116,21 @@ export interface AdminUserAuthIdentity {
   provider: string;
   provider_label: string;
   provider_uid_masked: string;
+  provider_uid_plain: string | null;
   bundle_id: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AdminIdentityScopeOption {
+  value: string;
+  label: string;
+}
+
+export interface AdminIdentityMutationResponse {
+  user_id: number;
+  auth_identities: AdminUserAuthIdentity[];
+  remaining_count: number;
 }
 
 export interface AdminUserDetail {
@@ -151,6 +163,37 @@ export function updateUserStatus(userId: number, isActive: boolean) {
 
 export function fetchUserDetail(userId: number) {
   return http.get<unknown, AdminUserDetail>(`/api/admin/v1/users/${userId}/detail/`);
+}
+
+export function fetchIdentityScopeOptions() {
+  return http.get<unknown, { options: AdminIdentityScopeOption[] }>('/api/admin/v1/users/identity-scopes/');
+}
+
+export function createUserAuthIdentity(
+  userId: number,
+  payload: { provider: 'phone' | 'email'; provider_uid: string; bundle_id: string },
+) {
+  return http.post<unknown, AdminIdentityMutationResponse>(
+    `/api/admin/v1/users/${userId}/auth-identities/`,
+    payload,
+  );
+}
+
+export function updateUserAuthIdentity(
+  userId: number,
+  identityId: number,
+  payload: { provider_uid: string },
+) {
+  return http.patch<unknown, AdminIdentityMutationResponse>(
+    `/api/admin/v1/users/${userId}/auth-identities/${identityId}/`,
+    payload,
+  );
+}
+
+export function deleteUserAuthIdentity(userId: number, identityId: number) {
+  return http.delete<unknown, AdminIdentityMutationResponse>(
+    `/api/admin/v1/users/${userId}/auth-identities/${identityId}/`,
+  );
 }
 
 export function grantUserPro(

@@ -223,6 +223,68 @@ class AIBootstrapMultiAgentTests(APITestCase):
         self.assertEqual(by_name[self.agent_one.bootstrap_name()]["display_name"], self.catalog_model.display_name)
 
 
+class AIBootstrapHospitalAgentIsolationTests(APITestCase):
+    """CHAT-000058：被 ClinicalAgentProfile.scenario_binding 引用的绑定不得进入通用 Pro bootstrap。"""
+
+    def setUp(self):
+        from hospital_care.tests.factories import make_agent, make_department, make_doctor, make_hospital
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(username="iso-user", email="iso@example.com", password="secret123")
+        now = timezone.now()
+        TrialApplication.objects.create(
+            user=self.user,
+            status=TrialApplication.Status.ACTIVE,
+            started_at=now,
+            expires_at=now + timedelta(days=7),
+        )
+        AIProviderKeyConfig.objects.create(
+            kind=AIProviderKeyConfig.Kind.API,
+            name="ISO Provider",
+            company="TESTCO",
+            key="iso-key",
+            request_url="https://api.example.com/v1",
+            is_using=True,
+        )
+        self.catalog_model = AIModelCatalog.objects.create(
+            name="iso-chat-model",
+            display_name="ISO Chat",
+            company="TESTCO",
+        )
+        self.general_agent = AIScenarioModelBinding.objects.create(
+            scenario=ScenarioKey.CHAT,
+            model=self.catalog_model,
+            display_name="通用助手",
+            identity=IdentityKind.AGENT,
+            position=1,
+            is_default=True,
+        )
+        hospital = make_hospital(code="ISO-H")
+        department = make_department(hospital)
+        doctor = make_doctor(hospital, department=department, display_name="隔离医生")
+        self.hospital_agent = make_agent(hospital, doctor, department)
+        self.client.force_authenticate(user=self.user)
+
+    def test_hospital_agent_binding_excluded_from_pro_bootstrap(self):
+        response = self.client.get("/api/v1/ai/config/bootstrap/")
+        self.assertEqual(response.status_code, 200)
+
+        chat = response.json()["data"]["scenarios"]["chat"]
+        names = [row["name"] for row in chat["models"]]
+        self.assertIn(self.general_agent.bootstrap_name(), names)
+        self.assertNotIn(self.hospital_agent.scenario_binding.bootstrap_name(), names)
+        self.assertEqual(chat["default_model"], self.general_agent.bootstrap_name())
+
+    def test_binding_reappears_after_profile_removed(self):
+        binding = self.hospital_agent.scenario_binding
+        self.hospital_agent.delete()
+
+        response = self.client.get("/api/v1/ai/config/bootstrap/")
+        self.assertEqual(response.status_code, 200)
+        names = [row["name"] for row in response.json()["data"]["scenarios"]["chat"]["models"]]
+        self.assertIn(binding.bootstrap_name(), names)
+
+
 class ScenarioToolPreviewTests(APITestCase):
     def setUp(self):
         user_model = get_user_model()

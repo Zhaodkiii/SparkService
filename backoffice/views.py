@@ -33,7 +33,14 @@ from accounts.models import (
     TrustedDevice,
 )
 from accounts.deactivation.tasks import process_deactivation_task
+from accounts.services.admin_identity_service import (
+    admin_create_identity,
+    admin_delete_identity,
+    admin_update_identity,
+)
+from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
+from common.exceptions import APIError
 from ai_config.models import (
     AIModelCatalog,
     AIProviderKeyConfig,
@@ -54,7 +61,7 @@ from django_celery_results.models import TaskResult
 from file_manager.models import ManagedFile
 from medical.models import MedicalCase, Member
 
-from backoffice.audit import write_audit_log
+from backoffice.audit import write_admin_identity_audit, write_audit_log
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole, AdminRolePermission, AdminUserRole
 from backoffice.query_params import InvalidAdminDatetimeParam, parse_admin_datetime_param
 from backoffice.rbac import bootstrap_admin_permissions, get_user_menu_tree, get_user_permission_codes, get_user_role_codes
@@ -85,6 +92,8 @@ from backoffice.serializers import (
     AdminRoleSerializer,
     AdminTrialActionSerializer,
     AdminTrialApplicationSerializer,
+    AdminIdentityCreateSerializer,
+    AdminIdentityUpdateSerializer,
     AdminUserDeviceSessionSerializer,
     AdminUserListSerializer,
     AdminUserProGrantSerializer,
@@ -915,6 +924,145 @@ class AdminUserDetailView(APIView):
             "device_sessions": AdminUserDeviceSessionSerializer(device_sessions, many=True).data,
         }
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+def _build_admin_identity_payload(user) -> dict:
+    identities = SocialIdentity.objects.filter(user=user).order_by("provider", "-updated_at", "-id")
+    rows = list(identities)
+    return {
+        "user_id": user.id,
+        "auth_identities": AdminUserSocialIdentitySerializer(rows, many=True).data,
+        "remaining_count": len(rows),
+    }
+
+
+class AdminIdentityScopeOptionsView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def get(self, request):
+        return success_response(
+            {"options": IdentityScopeService.get_admin_scope_options()},
+            msg="success",
+            code=0,
+            status_code=status.HTTP_200_OK,
+        )
+
+
+class AdminUserAuthIdentityCreateView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def post(self, request, user_id: int):
+        serializer = AdminIdentityCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            result = admin_create_identity(
+                user_id=user_id,
+                provider=data["provider"],
+                provider_uid=data["provider_uid"],
+                bundle_id=data["bundle_id"],
+            )
+        except APIError as exc:
+            write_admin_identity_audit(
+                request,
+                action="admin.user.auth_identity.create",
+                target_user_id=user_id,
+                provider=data.get("provider", ""),
+                identity_scope=data.get("bundle_id", ""),
+                old_uid="",
+                new_uid=data.get("provider_uid", ""),
+                result="failed",
+                error_code=exc.code,
+                status_code=exc.status_code,
+            )
+            raise
+        payload = _build_admin_identity_payload(result.user)
+        write_admin_identity_audit(
+            request,
+            action="admin.user.auth_identity.create",
+            target_user_id=result.user.id,
+            provider=result.provider,
+            identity_scope=result.identity_scope,
+            old_uid=result.old_uid,
+            new_uid=result.new_uid,
+            result="success",
+            remaining_count=result.remaining_count,
+            status_code=200,
+        )
+        return success_response(payload, msg="created", code=0, status_code=status.HTTP_200_OK)
+
+
+class AdminUserAuthIdentityDetailView(APIView):
+    permission_classes = [AdminOnlyPermission]
+
+    def patch(self, request, user_id: int, identity_id: int):
+        serializer = AdminIdentityUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            result = admin_update_identity(
+                user_id=user_id,
+                identity_id=identity_id,
+                provider_uid=data["provider_uid"],
+            )
+        except APIError as exc:
+            write_admin_identity_audit(
+                request,
+                action="admin.user.auth_identity.update",
+                target_user_id=user_id,
+                provider="",
+                identity_scope="",
+                old_uid="",
+                new_uid=data.get("provider_uid", ""),
+                result="failed",
+                error_code=exc.code,
+                status_code=exc.status_code,
+            )
+            raise
+        payload = _build_admin_identity_payload(result.user)
+        write_admin_identity_audit(
+            request,
+            action="admin.user.auth_identity.update",
+            target_user_id=result.user.id,
+            provider=result.provider,
+            identity_scope=result.identity_scope,
+            old_uid=result.old_uid,
+            new_uid=result.new_uid,
+            result="success",
+            remaining_count=result.remaining_count,
+            status_code=200,
+        )
+        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
+
+    def delete(self, request, user_id: int, identity_id: int):
+        try:
+            result = admin_delete_identity(user_id=user_id, identity_id=identity_id)
+        except APIError as exc:
+            write_admin_identity_audit(
+                request,
+                action="admin.user.auth_identity.delete",
+                target_user_id=user_id,
+                provider="",
+                identity_scope="",
+                result="failed",
+                error_code=exc.code,
+                status_code=exc.status_code,
+            )
+            raise
+        payload = _build_admin_identity_payload(result.user)
+        write_admin_identity_audit(
+            request,
+            action="admin.user.auth_identity.delete",
+            target_user_id=result.user.id,
+            provider=result.provider,
+            identity_scope=result.identity_scope,
+            old_uid=result.old_uid,
+            new_uid=result.new_uid,
+            result="success",
+            remaining_count=result.remaining_count,
+            status_code=200,
+        )
+        return success_response(payload, msg="deleted", code=0, status_code=status.HTTP_200_OK)
 
 
 def _send_membership_pro_notification(

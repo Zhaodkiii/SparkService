@@ -41,6 +41,24 @@ class IdentityScopeServiceTests(TestCase):
         self.assertEqual(IdentityScopeService.resolve(""), "")
         self.assertEqual(IdentityScopeService.resolve("   "), "")
 
+    def test_admin_scope_options_are_canonical_values(self):
+        options = IdentityScopeService.get_admin_scope_options()
+        self.assertEqual(options, [{"value": SHARED_SCOPE, "label": SHARED_SCOPE}])
+
+    def test_resolve_admin_scope_rejects_blank_and_unlisted(self):
+        from common.exceptions import APIError
+
+        with self.assertRaises(APIError) as blank:
+            IdentityScopeService.resolve_admin_scope("")
+        self.assertEqual(blank.exception.code, 41303)
+
+        with self.assertRaises(APIError) as invalid:
+            IdentityScopeService.resolve_admin_scope(MEDICINE_BOX_BUNDLE)
+        self.assertEqual(invalid.exception.code, 41304)
+
+    def test_resolve_admin_scope_accepts_canonical_value(self):
+        self.assertEqual(IdentityScopeService.resolve_admin_scope(SHARED_SCOPE), SHARED_SCOPE)
+
 
 @override_settings(
     ACCOUNT_IDENTITY_SCOPE_ALIASES=IDENTITY_SCOPE_ALIASES,
