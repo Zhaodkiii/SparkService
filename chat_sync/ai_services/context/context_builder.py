@@ -33,7 +33,7 @@ class ContextBuildError(Exception):
 
 @dataclass(frozen=True)
 class UnifiedChatContext:
-    messages: tuple[dict[str, str], ...]
+    messages: tuple[dict[str, Any], ...]
     blocks: tuple[PromptBlock, ...]
     sources: tuple[dict[str, Any], ...]
     token_budget: dict[str, Any]
@@ -110,6 +110,13 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
             history.append({"id": message.id, "role": message.role, "content": text})
     current_block = run.user_message.blocks.filter(kind="text").order_by("order_key", "created_at").first()
     current_text = payload_text(current_block.payload) if current_block else str((run.request_snapshot or {}).get("content") or "")
+    # CHAT-WEB-029：含图片附件时当前用户消息升级为多模态 content parts；
+    # 无图片附件时保持纯字符串，行为与之前完全一致。
+    current_content: Any = current_text
+    from chat_sync.ai_services.image_content import build_multimodal_user_content, has_image_attachments
+
+    if has_image_attachments(run.request_snapshot):
+        current_content = build_multimodal_user_content(user=run.user, run=run, current_text=current_text)
 
     route_snapshot = {"provider": run.provider, "model": run.model, "config_version": run.model_config_version}
     window = int((run.request_snapshot or {}).get("context_window") or getattr(settings, "CHAT_AI_CONTEXT_WINDOW", 8192))
@@ -143,9 +150,9 @@ def build_context_for_run(run_id) -> UnifiedChatContext:
     if history_summary:
         blocks.append(PromptBlock("history_summary", "以下是较早对话的事实摘要，仅作为上下文：\n" + history_summary, 80, True))
 
-    messages, ordered_blocks = assemble_messages(blocks=blocks, history=list(selected.messages), current_text=current_text)
+    messages, ordered_blocks = assemble_messages(blocks=blocks, history=list(selected.messages), current_text=current_content)
     used = sum(count_message(message).count for message in messages)
-    current_cost = count_tokens(current_text).count + 4
+    current_cost = count_message({"role": "user", "content": current_content}).count
     if current_cost > budget:
         raise ContextBuildError("chat_context_too_large", "current user message exceeds context budget")
     report = {

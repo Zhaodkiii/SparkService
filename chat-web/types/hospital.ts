@@ -4,8 +4,11 @@ export type HospitalServiceStatus = "ai_active" | "pending_doctor" | "doctor_joi
 export type DoctorAttentionLevel = "normal" | "follow_up" | "priority";
 export type RiskSignalLevel = "none" | "low" | "medium" | "high";
 export type AgentPublicationStatus = "draft" | "review" | "published" | "disabled";
-export type ConversationQueue = "all" | "pending" | "priority" | "ended" | "active";
+export type ConversationQueue = "all" | "pending" | "joined" | "priority" | "ended" | "active";
 export type HospitalActorType = "patient" | "ai_agent" | "doctor" | "system";
+
+/** DOCTOR-WORKSPACE-000004 第 28 问：固定结束原因枚举。 */
+export type ConversationEndReasonCode = "resolved" | "offline_referral" | "patient_no_followup" | "other";
 
 export interface HospitalPagination {
   page: number;
@@ -79,7 +82,9 @@ export interface DoctorWorkspaceDTO {
 export interface ConversationQueueCounts {
   all: number;
   pending: number;
+  joined?: number;
   priority: number;
+  active?: number;
   ended: number;
 }
 
@@ -104,14 +109,34 @@ export interface ConversationCardDTO {
   doctor_joined_at: string | null;
   ended_at: string | null;
   end_reason: string;
+  end_reason_code?: ConversationEndReasonCode | "";
+  end_reason_note?: string;
   attention_note?: string;
   version: number;
   updated_at: string;
   title: string;
   unread_count: number;
+  attachment_count?: number;
+  /** DOCTOR-WORKSPACE-000004：患者首句摘要（患者会话列表下发）。 */
+  first_patient_message_excerpt?: string;
+  /** DOCTOR-WORKSPACE-000004：该问诊是否已有医生回复。 */
+  doctor_replied?: boolean;
+  /** DOCTOR-WORKSPACE-000004 页面形态修订：关联问诊单信息（详情/问诊记录接口下发）。 */
+  consult_no?: string;
+  chief_complaint?: string;
+  submitted_at?: string | null;
 }
 
 export type ConversationDetailDTO = ConversationCardDTO;
+
+/** DOCTOR-WORKSPACE-000004 页面形态修订：线上问诊记录（独立问诊单视图）。 */
+export interface ConsultRecordDTO extends ConversationCardDTO {
+  /** 问诊编号（C + 提交日期 + 当日序列）。 */
+  consult_no: string;
+  /** 患者提交问诊时填写的主诉。 */
+  chief_complaint: string;
+  submitted_at: string | null;
+}
 
 export interface DoctorSenderSnapshot {
   actor_type?: HospitalActorType;
@@ -148,6 +173,65 @@ export interface ConversationListDTO {
 
 export interface ConversationMessagesDTO {
   items: DoctorMessageDTO[];
+  /** DOCTOR-WORKSPACE-000004 第 34 问：向上分页游标。 */
+  has_more?: boolean;
+  next_cursor?: string | null;
+  version?: number;
+}
+
+/** DOCTOR-WORKSPACE-000004 第 26 问：风险调整历史条目。 */
+export interface RiskRevisionDTO {
+  id: string;
+  thread_id: string;
+  previous_level: RiskSignalLevel;
+  next_level: RiskSignalLevel;
+  reason: string;
+  source: string;
+  doctor: DoctorPublicDTO;
+  version: number;
+  created_at: string;
+}
+
+export interface RiskHistoryDTO {
+  items: RiskRevisionDTO[];
+  pagination: HospitalPagination;
+  current_level: RiskSignalLevel;
+}
+
+export interface ReadCursorResultDTO {
+  thread_id: string;
+  last_read_message_id: number;
+  unread_count: number;
+}
+
+/** DOCTOR-WORKSPACE-000004 第 16 问：附件上传结果与服务端限制。 */
+export interface ConversationAttachmentLimitsDTO {
+  max_bytes: number;
+  max_count: number;
+  allowed_mime_types: string[];
+}
+
+export interface ConversationAttachmentUploadDTO {
+  file_id: number;
+  file_uuid: string;
+  original_name: string;
+  mime_type: string;
+  file_size: number;
+  display_url: string;
+  uploaded_at: string;
+  limits: ConversationAttachmentLimitsDTO;
+}
+
+/** DOCTOR-WORKSPACE-000004：问诊病历与附件清单条目（只读）。 */
+export interface ConversationAttachmentItemDTO {
+  file_id: number | null;
+  filename: string;
+  mime_type: string;
+  file_size: number | null;
+  url: string;
+  kind: "image" | "document";
+  message_id: number | null;
+  created_at: string | null;
 }
 
 export interface DoctorSendMessageDTO {
@@ -227,7 +311,7 @@ export interface HospitalConversationUpdatedEvent {
 
 /* ---------- DOCTOR-WORKSPACE-000001 患者工作台 ---------- */
 
-export type PatientQueue = "all" | "priority" | "pending" | "ended";
+export type PatientQueue = "all" | "priority" | "pending" | "active" | "ended";
 
 /** D-008：患者列表卡片最小工作摘要。 */
 export interface PatientCardDTO {
@@ -238,6 +322,8 @@ export interface PatientCardDTO {
   latest_conversation_at: string | null;
   priority_patient: boolean;
   available_conversation_count: number;
+  /** DOCTOR-WORKSPACE-000004 第 19 问：该患者所有未结束问诊的未读总数。 */
+  unread_count?: number;
 }
 
 export interface PatientListDTO {
@@ -258,8 +344,10 @@ export interface PatientIdentityDTO {
   priority_patient: boolean;
 }
 
-/** D-004：基础身份分区；null 表示“未填写”。 */
+/** D-004：基础身份分区；null 表示“未填写”。
+ *  DOCTOR-WORKSPACE-000004 第 11 问：授权医生界面不脱敏，phone 为完整号码。 */
 export interface PatientBasicProfileDTO {
+  phone?: string | null;
   phone_masked: string | null;
   identity_number_masked: string | null;
   region: string | null;
@@ -300,6 +388,11 @@ export interface PatientWorkspaceDTO {
 
 export interface PatientConversationsDTO {
   items: ConversationCardDTO[];
+}
+
+/** 线上问诊记录列表（DOCTOR-WORKSPACE-000004 页面形态修订）。 */
+export interface ConsultRecordsDTO {
+  items: ConsultRecordDTO[];
 }
 
 /** D-020~D-023：AI 总结只读快照。 */

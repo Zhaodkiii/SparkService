@@ -51,13 +51,13 @@ class PatientWorkspaceApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.data["data"]
         self.assertEqual(data["pagination"]["total"], 1)
-        self.assertEqual(data["counts"], {"all": 1, "priority": 0, "pending": 0, "ended": 0})
+        self.assertEqual(data["counts"], {"all": 1, "priority": 0, "pending": 1, "active": 0, "ended": 0})
         item = data["items"][0]
         self.assertEqual(item["member_id"], self.member.id)
         self.assertEqual(item["display_name"], "演示患者")
         self.assertTrue(item["masked_patient_identifier"].startswith("P"))
         self.assertIn("****", item["masked_patient_identifier"])
-        self.assertEqual(item["service_status"], ClinicalConversationBinding.ServiceStatus.AI_ACTIVE)
+        self.assertEqual(item["service_status"], ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR)
         self.assertFalse(item["priority_patient"])
         self.assertEqual(item["available_conversation_count"], 1)
         self.assertIsNotNone(item["latest_conversation_at"])
@@ -144,11 +144,12 @@ class PatientWorkspaceApiTests(TestCase):
         self.assertEqual(patient["gender"], "female")
         self.assertEqual(patient["age"], 36)
         self.assertTrue(patient["patient_number"].startswith("P"))
-        self.assertEqual(patient["service_status"], ClinicalConversationBinding.ServiceStatus.AI_ACTIVE)
+        self.assertEqual(patient["service_status"], ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR)
 
         basic = data["basic_profile"]
+        # DOCTOR-WORKSPACE-000004 第 11 问：授权医生界面不脱敏，完整手机号可读；mask 字段仅为旧客户端保留。
+        self.assertEqual(basic["phone"], "13812345678")
         self.assertEqual(basic["phone_masked"], "138****5678")
-        self.assertNotIn("13812345678", str(response.data))
         self.assertEqual(basic["region"], "安徽滁州")
         self.assertEqual(basic["occupation"], "教师")
 

@@ -8,18 +8,18 @@ import { useOptionalRunControl } from "@/context/RunControlContext";
 import { useOptionalThreads } from "@/context/ThreadContext";
 import { runStatusLabel } from "@/lib/event-reducer";
 import { toolBlockActivityView } from "@/lib/tools/tool-activity-selectors";
+import { UserMessageContent } from "@/components/chat/home/UserMessageBubble";
 import type { ChatBlockDTO, ChatRunDTO } from "@/types/chat";
 import { isTerminalRunStatus } from "@/types/chat";
 import type { ChatMessageWireDTO } from "@/types/sync";
-import { blockAssociatedValue } from "@/lib/chat/block-normalizer";
 
-/** 用户消息为紧凑气泡，正文直接以纯文本渲染，不套用 Markdown 卡片。 */
+/**
+ * 用户消息为紧凑气泡：内容渲染与医生工作台患者消息共用 UserMessageContent。
+ */
 function userBubble(blocks: ChatBlockDTO[]) {
-  const text = blocks.map((block) => {
-    const value = blockAssociatedValue(block);
-    return typeof value === "string" ? value : "";
-  }).filter(Boolean).join("\n\n");
-  return <article className="message message--user"><div className="message__content"><div className="message__body">{text}</div></div></article>;
+  return <article className="message message--user"><div className="message__content">
+    <UserMessageContent blocks={blocks} />
+  </div></article>;
 }
 
 function isStreaming(blocks: ChatBlockDTO[]): boolean {

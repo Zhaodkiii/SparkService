@@ -107,6 +107,17 @@ button:disabled { cursor: not-allowed; }
 .block--unknown { border: 1px solid #ead6c7; border-radius: 12px; background: #fbf3ed; padding: 12px 14px; color: #72432c; }
 .block--unknown strong { font-size: 12px; }
 .block--unknown p { margin: 5px 0 0; }
+/* CHAT-WEB-029：用户/AI 消息图片画廊与失败占位卡 */
+.block--gallery { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.gallery-item { margin: 0; }
+.gallery-item img { display: block; max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; }
+.gallery-item figcaption { margin-top: 4px; color: var(--muted-foreground); font-size: 11px; }
+.gallery-item--failed { width: 200px; min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px dashed var(--border); border-radius: 12px; background: var(--muted-surface); padding: 10px; color: var(--muted-foreground); font-size: 11px; text-align: center; }
+.gallery-item--failed strong { color: var(--foreground); font-size: 12px; }
+.gallery-item--failed .gallery-item__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gallery-item--failed button { margin-top: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 4px 10px; color: var(--foreground); font-size: 11px; }
+.message__gallery { margin-bottom: 6px; }
+.message__gallery:last-child { margin-bottom: 0; }
 .ask-user-card { margin: 10px 0 4px; border: 1px solid rgba(39,107,93,.16); border-radius: 14px; background: #f6f9f7; padding: 14px 15px 13px; }
 .ask-user-card__status { margin: 0 0 8px; color: #3c6a5c; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
 .ask-user-card__intro { margin: 0 0 12px; color: var(--muted-foreground); font-size: 13px; line-height: 1.55; }
@@ -296,6 +307,23 @@ button:disabled { cursor: not-allowed; }
 .send-button:disabled { opacity: .3; }
 .send-button--stop { background: var(--foreground); }
 .composer-status { min-height: 20px; padding: 5px 12px 0; color: rgba(117,115,109,.72); font-size: 10.5px; text-align: center; }
+/* CHAT-WEB-029：输入区图片预览条 */
+.composer-icon[aria-disabled="true"] { opacity: .4; }
+.composer-images { display: flex; gap: 8px; overflow-x: auto; padding: 0 2px 8px; scrollbar-width: none; }
+.composer-images::-webkit-scrollbar { display: none; }
+.composer-image-card { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 8px; width: 208px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 6px 8px; }
+.composer-image-card__thumb { width: 44px; height: 44px; flex: 0 0 auto; overflow: hidden; border-radius: 8px; background: var(--muted-surface); }
+.composer-image-card__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.composer-image-card__meta { min-width: 0; display: grid; gap: 2px; }
+.composer-image-card__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 11px; }
+.composer-image-card__status { color: var(--muted-foreground); font-size: 10px; }
+.composer-image-card__status--failed { color: var(--danger); }
+.composer-image-card__progress { height: 3px; overflow: hidden; border-radius: 2px; background: var(--muted-surface); }
+.composer-image-card__progress i { display: block; height: 100%; background: var(--brand); transition: width .15s ease; }
+.composer-image-card__actions { display: flex; gap: 6px; }
+.composer-image-card__actions button { border: 1px solid var(--border); border-radius: 7px; background: var(--card); padding: 2px 8px; color: var(--foreground); font-size: 10px; }
+.composer-image-card__remove { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--card); padding: 0; color: var(--muted-foreground); }
+.composer-image-card__remove:hover { color: var(--foreground); }
 .context-toolbar { position: relative; min-width: 0; display: flex; align-items: center; gap: 4px; }
 .context-chip { height: 28px; max-width: 150px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.6); padding: 0 7px; color: var(--muted-foreground); font-size: 10.5px; }
 .context-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -708,6 +736,100 @@ button:disabled { cursor: not-allowed; }
 .patient-drawer__ops-body textarea { min-height: 56px; border: 1px solid var(--border); border-radius: 9px; background: #fff; padding: 7px 9px; resize: vertical; font-size: 12.5px; }
 .patient-drawer__composer { border-top: 1px solid rgba(32,32,30,.08); }
 .patient-drawer__new { display: grid; justify-items: center; gap: 6px; border-top: 1px solid rgba(32,32,30,.08); padding: 10px 16px 16px; }
+
+/* DOCTOR-WORKSPACE-000004：线上问诊工作台新增元素 */
+.consult-workspace { grid-template-rows: minmax(0, 1fr); }
+.consult-workspace .patient-list-panel, .consult-workspace .patient-main, .consult-workspace .patient-aside { grid-row: 1; }
+.consult-list-title { margin: 2px 6px 8px; font-size: 15px; font-weight: 700; }
+.consult-patient-head { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 12px 16px; }
+.consult-patient-head__profile { margin-left: auto; }
+.consult-patient-head .patient-identity__tags { margin-left: 0; }
+.consult-patient-card__side { display: grid; justify-items: end; gap: 4px; }
+.consult-patient-card__side em { color: var(--muted-foreground); font-size: 11px; font-style: normal; }
+.consult-record { align-items: flex-start; }
+.consult-record__time { flex: 0 0 108px; color: var(--muted-foreground); font-size: 11.5px; padding-top: 2px; }
+.consult-record__body { min-width: 0; flex: 1 1 auto; display: grid; gap: 4px; }
+.consult-record__dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #2e7d64; }
+.consult-record__independent { margin-left: 2px; border: 1px solid rgba(46,125,100,.35); border-radius: 6px; padding: 0 5px; color: #2e7d64; font-size: 10.5px; font-style: normal; }
+.consult-record__excerpt { display: -webkit-box; overflow: hidden; color: var(--muted-foreground); font-size: 12px; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.consult-record__replied { color: #2e7d64; font-size: 11px; }
+.consult-record__note { color: var(--muted-foreground); font-size: 11.5px; }
+.consult-pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid rgba(32,32,30,.08); margin-top: 10px; padding-top: 10px; color: var(--muted-foreground); font-size: 11.5px; }
+.consult-pagination__pages { display: inline-flex; align-items: center; gap: 4px; }
+.consult-pagination__pages button { min-width: 24px; height: 24px; border: 1px solid rgba(32,32,30,.12); border-radius: 7px; background: #fff; cursor: pointer; font-size: 11.5px; color: var(--foreground); }
+.consult-pagination__pages button.is-active { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+.consult-pagination__pages button:disabled { opacity: .4; cursor: default; }
+.consult-detail__head { flex-wrap: wrap; row-gap: 8px; }
+.consult-detail__ended { color: var(--muted-foreground); font-size: 11.5px; }
+.consult-detail__scroll { min-height: 0; flex: 1; overflow-y: auto; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: rgba(32,32,30,.15) transparent; }
+.consult-detail__messages { min-height: 220px; flex: 1; }
+.consult-card { border-bottom: 1px solid rgba(32,32,30,.08); padding: 12px 16px 14px; display: grid; gap: 8px; }
+.consult-card__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.consult-card__head h3 { margin: 0; font-size: 13px; font-weight: 680; }
+.consult-card__head span { color: var(--muted-foreground); font-size: 11px; }
+.consult-card__text { margin: 0; font-size: 12.5px; }
+.consult-profile__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
+.consult-profile__item { display: flex; gap: 8px; margin: 0; font-size: 12px; }
+.consult-profile__item span { flex: 0 0 64px; color: var(--muted-foreground); }
+.consult-profile__item em { min-width: 0; font-style: normal; word-break: break-all; }
+.consult-attachment-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.consult-attachment-list li { display: flex; align-items: center; gap: 8px; border: 1px solid rgba(32,32,30,.08); border-radius: 9px; background: #fff; padding: 7px 9px; }
+.consult-attachment-list__name { min-width: 0; flex: 1 1 auto; display: grid; }
+.consult-attachment-list__name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.consult-attachment-list__name em { color: var(--muted-foreground); font-size: 11px; font-style: normal; }
+.consult-attachment-list a { display: inline-flex; color: var(--muted-foreground); }
+.consult-attachment-list a:hover { color: var(--foreground); }
+.consult-end-form { width: 100%; border: 1px solid rgba(178,58,46,.25); border-radius: 10px; padding: 10px; background: #fff; }
+.consult-end-form textarea { min-height: 48px; border: 1px solid var(--border); border-radius: 9px; padding: 7px 9px; resize: vertical; font-size: 12.5px; }
+/* DOCTOR-WORKSPACE-000004 页面形态修订：问诊编号与参考图布局 */
+.consult-record__no { color: var(--muted-foreground); font-size: 11px; }
+.consult-detail__top { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; border-bottom: 1px solid rgba(32,32,30,.08); padding: 12px 16px; }
+.consult-detail__top .consult-card { border: 1px solid rgba(32,32,30,.1); border-radius: 12px; background: #fff; padding: 12px; }
+.consult-detail__bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; border-top: 1px solid rgba(32,32,30,.08); padding: 10px 16px 12px; }
+.consult-detail__bottom .consult-card { border: 1px solid rgba(32,32,30,.1); border-radius: 12px; background: #fff; padding: 12px; }
+.consult-detail__bottom .patient-drawer__risk { border: 1px solid rgba(32,32,30,.1); border-top: 1px solid rgba(32,32,30,.1); border-radius: 12px; background: #fff; padding: 12px; }
+/* 参考图消息气泡：患者左侧头像白气泡 / 医生右侧头像浅绿气泡 / 系统提示居中 */
+.consult-msg { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; }
+.consult-msg--doctor { justify-content: flex-end; }
+.consult-msg__avatar { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border-radius: 50%; background: #2e7d64; color: #fff; font-size: 13px; font-weight: 600; }
+.consult-msg__avatar--doctor { background: #e3efe9; color: #2e7d64; }
+.consult-msg__avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.consult-msg__main { max-width: 86%; display: grid; gap: 4px; }
+.consult-msg--doctor .consult-msg__main { justify-items: end; }
+.consult-msg__meta { margin: 0; color: var(--muted-foreground); font-size: 11px; }
+.consult-msg__bubble { border: 1px solid rgba(32,32,30,.08); border-radius: 12px; background: #fff; padding: 10px 12px; font-size: 13px; line-height: 1.6; text-align: left; }
+.consult-msg--doctor .consult-msg__bubble { border-color: rgba(46,125,100,.22); background: #e9f5f0; }
+.consult-msg__text { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.consult-msg__attach { margin-top: 8px; }
+.consult-msg__attach-label { margin: 0 0 6px; color: var(--muted-foreground); font-size: 11.5px; }
+.consult-msg-tip { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px auto; color: #2e7d64; font-size: 11.5px; }
+.doctor-messages__older { display: flex; justify-content: center; padding: 4px 0 10px; }
+.patient-conversation-row__attachments { font-size: 11px; color: var(--muted-foreground); }
+.patient-conversation-row__title .doctor-card__unread { margin-left: 6px; }
+.patient-drawer__risk { display: grid; gap: 8px; border-top: 1px solid rgba(32,32,30,.08); padding: 10px 16px 12px; }
+.patient-drawer__risk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.patient-drawer__risk-source { font-size: 11.5px; color: var(--muted-foreground); }
+.patient-drawer__risk-note { margin: 0; font-size: 11px; color: var(--muted-foreground); }
+.patient-drawer__risk .doctor-end-form textarea { min-height: 48px; border: 1px solid var(--border); border-radius: 9px; background: #fff; padding: 7px 9px; resize: vertical; font-size: 12.5px; }
+.doctor-risk-history { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.doctor-risk-history li { display: grid; gap: 2px; border: 1px solid rgba(32,32,30,.08); border-radius: 9px; padding: 7px 9px; background: #fff; }
+.doctor-risk-history li span { font-size: 12.5px; font-weight: 600; }
+.doctor-risk-history li em { font-size: 11px; color: var(--muted-foreground); font-style: normal; }
+.doctor-risk-history li p { margin: 0; font-size: 12px; color: var(--muted-foreground); }
+.doctor-attachment-strip { display: grid; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+.doctor-attachment-strip li { display: flex; align-items: center; gap: 7px; border: 1px solid rgba(32,32,30,.1); border-radius: 9px; padding: 6px 9px; background: #fff; font-size: 12.5px; }
+.doctor-attachment-strip li[data-status="failed"] { border-color: rgba(178,58,46,.45); }
+.doctor-attachment-strip__name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doctor-attachment-strip em { color: var(--muted-foreground); font-size: 11px; font-style: normal; }
+.doctor-attachment-strip span[role="alert"] { color: #b23a2e; font-size: 11.5px; }
+.doctor-attachment-strip button { margin-left: auto; border: 0; background: none; cursor: pointer; color: var(--muted-foreground); font-size: 12px; }
+.doctor-attachment-strip button:hover { color: var(--foreground); }
+.doctor-quick-replies { position: relative; display: inline-flex; }
+.doctor-quick-replies__list { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30; display: grid; gap: 4px; width: min(340px, 80vw); max-height: 320px; overflow: auto; margin: 0; padding: 6px; list-style: none; border: 1px solid rgba(32,32,30,.12); border-radius: 12px; background: #fff; box-shadow: 0 14px 40px rgba(32,32,30,.14); }
+.doctor-quick-replies__list button { display: grid; gap: 2px; width: 100%; border: 0; border-radius: 9px; background: none; padding: 8px 9px; cursor: pointer; text-align: left; }
+.doctor-quick-replies__list button:hover { background: rgba(32,32,30,.05); }
+.doctor-quick-replies__list strong { font-size: 12.5px; }
+.doctor-quick-replies__list span { display: -webkit-box; overflow: hidden; font-size: 12px; color: var(--muted-foreground); -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 @media (min-width: 768px) and (max-width: 980px) {
   .doctor-header__list { display: inline-flex; align-items: center; }

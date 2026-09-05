@@ -10,7 +10,8 @@ async function proxy(request: Request, context: RouteContext) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
-  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+  // 使用 arrayBuffer 透传，避免 multipart 二进制（问诊附件 PDF/图片）被 text() 破坏。
+  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
   const requestId = requestIdFrom(request);
   try {
     const result = await callSparkUpstream(upstreamPath, { method: request.method, headers, body }, requestId);

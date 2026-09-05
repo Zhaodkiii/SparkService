@@ -34,12 +34,30 @@ export interface CanonicalInputMessageDTO {
   blocks: CanonicalInputBlockDTO[];
 }
 
+/**
+ * 图片附件（CHAT-WEB-029）：CreateRun `run_options.attachments` 中的图片项。
+ * `file_id` 是服务端事实来源，`display_url` 只用于展示。
+ */
+export interface ChatImageAttachmentDTO {
+  /** iOS ChatAttachment.id（必填 UUID）；取 ManagedFile.file_uuid。 */
+  id?: string;
+  file_id: string;
+  type: "image";
+  order: number;
+  mime_type?: string;
+  file_size?: number;
+  display_url?: string;
+}
+
+/** CreateRun 附件：上下文文件引用或图片附件。 */
+export type RunAttachmentDTO = { file_id: string } | ChatImageAttachmentDTO;
+
 export interface RunOptionsDTO {
   capability: "chat";
   preferences_revision?: number | null;
   context_parent_message_id?: number | null;
   context_inputs: unknown[];
-  attachments: unknown[];
+  attachments: RunAttachmentDTO[];
   client: {
     platform: "web";
     version: string;
@@ -100,4 +118,6 @@ export interface ChatRunReadinessDTO {
   model_binding_configured: boolean;
   worker_healthy: boolean;
   config_version: string | null;
+  /** 当前模型是否支持图片理解（CHAT-WEB-029）；缺失/异常一律视为不支持。 */
+  supports_image_input?: boolean;
 }

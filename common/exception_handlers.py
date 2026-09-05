@@ -25,8 +25,13 @@ def api_exception_handler(exc, context):
 
     if isinstance(exc, APIError):
         payload = exc.details if exc.details is not None else error_data
-        if isinstance(payload, dict) and request_id and "request_id" not in payload:
-            payload = {**payload, "request_id": request_id}
+        if isinstance(payload, dict):
+            # APIError 的 msg 即稳定业务错误码字符串，同步到 data.error_code，
+            # 便于客户端按错误码（而非数值 code 或文案）做分支处理。
+            if "error_code" not in payload:
+                payload = {**payload, "error_code": exc.msg}
+            if request_id and "request_id" not in payload:
+                payload = {**payload, "request_id": request_id}
         return Response(
             {"code": exc.code, "msg": exc.msg, "data": payload},
             status=exc.status_code,

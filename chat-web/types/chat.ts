@@ -25,6 +25,7 @@ export type ChatBlockKind =
   | "deepThought"
   | "tool"
   | "imageGallery"
+  | "fileGallery"
   | "fileAttachments"
   | "knowledgeCards"
   | "translatedText"
@@ -67,7 +68,7 @@ export type ChatBlockKind =
 export type WebToolActivityBlockKind = "toolCall" | "toolResult";
 
 export const CHAT_BLOCK_KINDS: readonly ChatBlockKind[] = [
-  "text", "deepThought", "tool", "imageGallery", "fileAttachments", "knowledgeCards",
+  "text", "deepThought", "tool", "imageGallery", "fileGallery", "fileAttachments", "knowledgeCards",
   "translatedText", "mapRoute", "events", "healthCards", "pendingMemberToolCards",
   "toolQuestionCards", "toolMemberSelectionCards", "healthResourceCandidateCards",
   "toolConsentCards", "locationPermissionCards", "structuredHealthCards",
@@ -140,6 +141,20 @@ export interface ChatBlockDTO {
   payload: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
+}
+
+/**
+ * 用户图片消息 `imageGallery` block 中的单张图片字段（CHAT-WEB-029）。
+ * `file_id` 是服务端事实来源，`url`/`src` 只用于展示。
+ */
+export interface ImageGalleryImageDTO {
+  file_id?: string;
+  url?: string;
+  src?: string;
+  filename?: string;
+  mime_type?: string;
+  order?: number;
+  caption?: string;
 }
 
 export interface ChatMessageDTO {

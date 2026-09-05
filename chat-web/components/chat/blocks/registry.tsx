@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { BlockErrorBoundary, UnsupportedBlock } from "@/components/chat/blocks/common";
 import type { BlockRenderProps } from "@/components/chat/blocks/common";
 import { DeepThoughtBlock, HtmlBlock, TextBlock, TranslatedTextBlock } from "@/components/chat/blocks/TextBlocks";
-import { CaptureCardBlock, FileAttachmentsBlock, ImageGalleryBlock } from "@/components/chat/blocks/MediaBlocks";
+import { CaptureCardBlock, FileAttachmentsBlock, FileGalleryBlock, ImageGalleryBlock } from "@/components/chat/blocks/MediaBlocks";
 import { ToolActivityBlock, ToolBlock } from "@/components/chat/blocks/ToolBlocks";
 import { HealthCardsBlock, NutritionCardsBlock, SearchSummaryBlock, StructuredHealthCardsBlock, WeatherConfigCardBlock } from "@/components/chat/blocks/CardsBlocks";
 import { EnergyVisualizationBlock, EventsBlock, MapRouteBlock, NutritionReadVisualizationBlock, SleepVisualizationBlock, StepVisualizationBlock, WeatherVisualizationBlock, WorkoutVisualizationBlock } from "@/components/chat/blocks/VisualizationBlocks";
@@ -24,6 +24,7 @@ export const BLOCK_RENDERERS: Record<string, BlockRenderer> = {
   deepThought: DeepThoughtBlock,
   tool: ToolBlock,
   imageGallery: ImageGalleryBlock,
+  fileGallery: FileGalleryBlock,
   fileAttachments: FileAttachmentsBlock,
   translatedText: TranslatedTextBlock,
   mapRoute: MapRouteBlock,

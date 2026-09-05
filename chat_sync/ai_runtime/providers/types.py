@@ -15,6 +15,7 @@ class ProviderRoute:
     max_tokens: int | None = None
     supports_tool_use: bool = False
     supports_parallel_tool_calls: bool = False
+    supports_multimodal: bool = False
     context_window: int | None = None
 
 

@@ -1,6 +1,8 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from chat_sync.contracts.canonical import KIND_HOSPITAL_DOCTOR_INTRO_CARD
+from chat_sync.models import ChatMessage, ChatMessageBlock
 from hospital_care.models import ClinicalConversationBinding, Hospital
 from hospital_care.services.conversation_service import create_patient_conversation, join_conversation
 from hospital_care.tests.factories import (
@@ -43,9 +45,37 @@ class PatientApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
         thread_id = response.data["data"]["thread_id"]
+        thread = response.data["data"]["thread"]
+        initial_messages = response.data["data"]["initial_messages"]
+        self.assertEqual(thread["thread_id"], thread_id)
+        self.assertEqual(thread["member_id"], self.member.id)
+        self.assertEqual(thread["title"], self.agent.name)
+        self.assertFalse(thread["is_deleted"])
+        self.assertEqual(len(initial_messages), 2)
+        kinds = [block["kind"] for item in initial_messages for block in item["blocks"]]
+        self.assertEqual(kinds[0], KIND_HOSPITAL_DOCTOR_INTRO_CARD)
+        self.assertIn("text", kinds)
+        self.assertEqual(initial_messages[0]["thread_id"], thread_id)
+        self.assertTrue(initial_messages[0]["client_message_id"])
+        self.assertTrue(initial_messages[0]["server_message_id"])
+        self.assertTrue(initial_messages[0]["blocks"][0]["id"])
+        persisted_ids = list(
+            ChatMessage.objects.filter(thread_id=thread_id).order_by("created_at", "id").values_list("server_message_id", flat=True)
+        )
+        self.assertEqual([item["server_message_id"] for item in initial_messages], persisted_ids)
+        self.assertNotIn("api_key", str(response.data).lower())
+        self.assertNotIn("secret", str(response.data).lower())
+        self.assertIsNone(response.data["data"]["conversation"].get("consultation"))
+        disclaimer_texts = [
+            block.payload.get("text", {}).get("_0", "")
+            for block in ChatMessageBlock.objects.filter(thread_id=thread_id, kind="text")
+        ]
+        self.assertTrue(any("本助手" in text for text in disclaimer_texts))
+
         context = self.client.get(f"/api/v1/hospital-care/conversations/{thread_id}/context/")
         self.assertEqual(context.status_code, 200)
-        self.assertEqual(context.data["data"]["service_status"], ClinicalConversationBinding.ServiceStatus.AI_ACTIVE)
+        self.assertEqual(context.data["data"]["service_status"], ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR)
+        self.assertIsNone(context.data["data"].get("consultation"))
 
         replay = self.client.post(
             "/api/v1/hospital-care/conversations/",
@@ -54,6 +84,16 @@ class PatientApiTests(TestCase):
             HTTP_IDEMPOTENCY_KEY="create-1",
         )
         self.assertEqual(replay.data["data"]["thread_id"], thread_id)
+        self.assertEqual(replay.data["data"]["thread"]["thread_id"], thread_id)
+        self.assertEqual(
+            [item["server_message_id"] for item in replay.data["data"]["initial_messages"]],
+            [item["server_message_id"] for item in initial_messages],
+        )
+        self.assertEqual(ChatMessage.objects.filter(thread_id=thread_id).count(), 2)
+        self.assertEqual(
+            ChatMessageBlock.objects.filter(thread_id=thread_id, kind=KIND_HOSPITAL_DOCTOR_INTRO_CARD).count(),
+            1,
+        )
 
     def test_illegal_member_rejected(self):
         stranger = make_user("api-stranger")
@@ -66,6 +106,8 @@ class PatientApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["msg"], "MEMBER_ACCESS_DENIED")
+        self.assertNotIn("thread", response.data.get("data") or {})
+        self.assertNotIn("initial_messages", response.data.get("data") or {})
 
     def test_registration_integrated_unavailable(self):
         self.hospital.service_mode = Hospital.ServiceMode.INTEGRATED
@@ -167,6 +209,94 @@ class DoctorApiTests(TestCase):
         self.client.force_authenticate(other)
         response = self.client.get(f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/")
         self.assertEqual(response.status_code, 403)
+
+    def _join(self):
+        joined = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/join/",
+            {"version": self.binding.version},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="img-join-1",
+        )
+        self.assertEqual(joined.status_code, 200, joined.data)
+        return joined.data["data"]["version"]
+
+    @staticmethod
+    def _make_image(user, name="a.webp"):
+        import uuid as _uuid
+
+        from file_manager.models import ManagedFile
+
+        return ManagedFile.objects.create(
+            user=user,
+            file_uuid=_uuid.uuid4(),
+            file_path="",
+            original_name=name,
+            file_ext="webp",
+            mime_type="image/webp",
+            file_size=1024,
+            file_md5="0" * 32,
+            is_public=True,
+            object_key=f"zhaodkdream/spark_service/chat/image/{_uuid.uuid4().hex}.webp",
+            storage_type="oss",
+        )
+
+    def test_doctor_message_with_image(self):
+        version = self._join()
+        image = self._make_image(self.doctor_user)
+
+        sent = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/",
+            {"text": "看这张片子", "version": version, "attachments": [{"file_id": image.id, "type": "image", "order": 0}]},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="img-msg-1",
+        )
+        self.assertEqual(sent.status_code, 200, sent.data)
+
+        messages = self.client.get(f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/")
+        doctor_items = [item for item in messages.data["data"]["items"] if item.get("actor_type") == "doctor"]
+        self.assertEqual(len(doctor_items), 1)
+        item = doctor_items[0]
+        kinds = [block["kind"] for block in item["blocks"]]
+        self.assertEqual(kinds, ["text", "imageGallery"])
+        gallery = item["blocks"][1]["payload"]["image_gallery"]["_0"]
+        self.assertEqual(len(gallery), 1)
+        self.assertEqual(gallery[0]["file_id"], image.id)
+        self.assertTrue(gallery[0]["url"].startswith("http"))
+        self.assertEqual(item["attachments"][0]["file_id"], image.id)
+
+    def test_doctor_message_image_only(self):
+        version = self._join()
+        image = self._make_image(self.doctor_user)
+        sent = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/",
+            {"text": "", "version": version, "attachments": [{"file_id": image.id, "type": "image", "order": 0}]},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="img-msg-2",
+        )
+        self.assertEqual(sent.status_code, 200, sent.data)
+
+    def test_doctor_message_empty_payload_rejected(self):
+        version = self._join()
+        sent = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/",
+            {"text": "", "version": version},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="img-msg-3",
+        )
+        self.assertEqual(sent.status_code, 400)
+        self.assertEqual(sent.data["msg"], "PAYLOAD_INVALID")
+
+    def test_doctor_message_image_not_owned_rejected(self):
+        version = self._join()
+        other_image = self._make_image(self.patient, "other.webp")
+        sent = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/",
+            {"text": "", "version": version, "attachments": [{"file_id": other_image.id, "type": "image", "order": 0}]},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="img-msg-4",
+        )
+        self.assertEqual(sent.status_code, 404)
+        self.assertEqual(sent.data["msg"], "ATTACHMENT_NOT_FOUND")
 
 
 class BackofficeApiTests(TestCase):

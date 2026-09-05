@@ -17,6 +17,15 @@ def _parse_business_id(business_id) -> int | None:
 
 def member_id_for_business(business_type: str, business_id) -> int | None:
     """由 business_type + business_id 解析所属 member_id。"""
+    # DOCTOR-WORKSPACE-000004：问诊附件 business_id 为 thread UUID，直接取 Thread 所属 member。
+    if (business_type or "").strip() == "hospital_conversation":
+        from chat_sync.models import ChatThread
+
+        return (
+            ChatThread.objects.filter(id=str(business_id or "").strip(), is_deleted=False)
+            .values_list("member_id", flat=True)
+            .first()
+        )
     bid = _parse_business_id(business_id)
     if bid is None:
         return None

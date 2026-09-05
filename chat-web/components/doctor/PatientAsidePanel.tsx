@@ -18,7 +18,7 @@ import {
   patientListTime,
   relativeTime,
 } from "@/lib/hospital/labels";
-import type { DoctorAttentionLevel } from "@/types/hospital";
+import type { ConversationEndReasonCode, DoctorAttentionLevel } from "@/types/hospital";
 
 const ATTENTION_OPTIONS: DoctorAttentionLevel[] = ["normal", "follow_up", "priority"];
 
@@ -71,7 +71,7 @@ function DrawerOperations() {
   const [level, setLevel] = useState<DoctorAttentionLevel>("normal");
   const [note, setNote] = useState("");
   const [ending, setEnding] = useState(false);
-  const [endReason, setEndReason] = useState<(typeof END_REASON_OPTIONS)[number]["value"]>("已完成咨询");
+  const [endReason, setEndReason] = useState<ConversationEndReasonCode>("resolved");
   const [endNote, setEndNote] = useState("");
 
   useEffect(() => {
@@ -109,8 +109,7 @@ function DrawerOperations() {
             className="doctor-end-form"
             onSubmit={(event) => {
               event.preventDefault();
-              const reason = endNote.trim() ? `${endReason}：${endNote.trim()}` : endReason;
-              void conversations.endConversation(reason).then((ok) => { if (ok) setEnding(false); });
+              void conversations.endConversation(endReason, endNote.trim() || undefined).then((ok) => { if (ok) setEnding(false); });
             }}
           >
             <fieldset>
@@ -122,10 +121,10 @@ function DrawerOperations() {
                 </label>
               ))}
             </fieldset>
-            <textarea value={endNote} onChange={(event) => setEndNote(event.target.value)} placeholder="补充说明（可选）" aria-label="结束补充说明" />
+            <textarea value={endNote} onChange={(event) => setEndNote(event.target.value)} placeholder={endReason === "other" ? "补充说明（选择“其他”时必填）" : "补充说明（可选）"} aria-label="结束补充说明" />
             <div className="doctor-end-form__footer">
               <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" onClick={() => setEnding(false)}>取消</button>
-              <button type="submit" className="doctor-button doctor-button--danger patient-button-inline" disabled={busy}>确认结束</button>
+              <button type="submit" className="doctor-button doctor-button--danger patient-button-inline" disabled={busy || (endReason === "other" && !endNote.trim())}>确认结束</button>
             </div>
           </form>
         )}

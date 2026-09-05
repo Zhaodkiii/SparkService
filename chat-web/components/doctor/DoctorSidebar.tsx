@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bot, ClipboardList, LogOut, MessageSquare, Search, Star, Users } from "lucide-react";
+import { Bot, ClipboardList, LogOut, MessageSquare, Search, Star, Stethoscope, Users } from "lucide-react";
 import { SidebarShell } from "@/components/sidebar/SidebarShell";
 import { useAuth } from "@/context/AuthContext";
 import { useDoctorAuth } from "@/context/DoctorAuthGate";
@@ -12,14 +12,16 @@ import { ATTENTION_LABEL, QUEUE_LABEL, RISK_LABEL, SERVICE_STATUS_LABEL, relativ
 import type { ConversationQueue } from "@/types/hospital";
 
 // DOCTOR-WORKSPACE-000001 D-001：患者工作台为第一层入口；会话在患者工作台内按需打开。
+// DOCTOR-WORKSPACE-000004：线上问诊为独立页面，与患者工作台并列。
 const NAV = [
   { href: "/doctor/patients", label: "患者工作台", icon: Users },
+  { href: "/doctor/consult", label: "线上问诊", icon: Stethoscope },
   { href: "/doctor/conversations", label: "会话工作台", icon: MessageSquare },
   { href: "/doctor/agent", label: "我的智能体", icon: Bot },
   { href: "/doctor/work-logs", label: "工作记录", icon: ClipboardList },
 ] as const;
 
-const QUEUES = ["all", "pending", "priority", "ended"] as const satisfies readonly ConversationQueue[];
+const QUEUES = ["all", "pending", "joined", "priority", "ended"] as const satisfies readonly ConversationQueue[];
 
 export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname() ?? "";
@@ -38,6 +40,8 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
   const initial = (doctor.display_name || "医").slice(0, 1);
   const conversationsActive = pathname === "/doctor/conversations" || pathname.startsWith("/doctor/conversations/");
   const patientsActive = pathname === "/doctor/patients" || pathname.startsWith("/doctor/patients/");
+  // 患者工作台与线上问诊页内自带患者列表面板，深色侧栏不再重复会话列表。
+  const ownListActive = patientsActive || pathname === "/doctor/consult" || pathname.startsWith("/doctor/consult/");
 
   return (
     <SidebarShell collapsed={collapsed}>
@@ -61,8 +65,8 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
           );
         })}
       </nav>
-      {/* 患者工作台页内自带患者列表面板，深色侧栏不再重复会话列表。 */}
-      {!patientsActive && (
+      {/* 患者工作台/线上问诊页内自带患者列表面板，深色侧栏不再重复会话列表。 */}
+      {!ownListActive && (
       <section className="sidebar__sessions doctor-sidebar-sessions" aria-label="患者会话">
         <label className="sidebar-search doctor-sidebar-search">
           <Search size={13} />
@@ -79,7 +83,7 @@ export function DoctorSidebar({ collapsed = false, onNavigate }: { collapsed?: b
               onClick={() => conversations.setQueue(item)}
             >
               <span className="sidebar__label">{QUEUE_LABEL[item]}</span>
-              <em>{conversations.counts[item]}</em>
+              <em>{conversations.counts[item] ?? 0}</em>
             </button>
           ))}
         </div>

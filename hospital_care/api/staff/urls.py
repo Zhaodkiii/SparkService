@@ -1,6 +1,9 @@
 from django.urls import path
 
 from hospital_care.api.staff.views import (
+    DoctorConsultPatientListView,
+    DoctorConsultRecordsView,
+    DoctorConversationAttachmentUploadView,
     DoctorConversationAttentionView,
     DoctorConversationDetailView,
     DoctorConversationEndView,
@@ -8,6 +11,9 @@ from hospital_care.api.staff.views import (
     DoctorConversationLeaveView,
     DoctorConversationListView,
     DoctorConversationMessagesView,
+    DoctorConversationReadCursorView,
+    DoctorConversationRiskHistoryView,
+    DoctorConversationRiskView,
     DoctorConversationWebSocketTicketView,
     DoctorPatientConversationsView,
     DoctorPatientListView,
@@ -29,6 +35,8 @@ urlpatterns = [
     path("me/agent/submit/", StaffAgentSubmitView.as_view(), name="hospital-care-staff-agent-submit"),
     path("me/work-logs/", StaffWorkLogView.as_view(), name="hospital-care-staff-work-logs"),
     path("me/workspace/", DoctorWorkspaceView.as_view(), name="hospital-care-staff-workspace"),
+    path("doctor/consults/patients/", DoctorConsultPatientListView.as_view(), name="hospital-care-staff-consult-patients"),
+    path("doctor/consults/patients/<int:member_id>/records/", DoctorConsultRecordsView.as_view(), name="hospital-care-staff-consult-records"),
     path("doctor/patients/", DoctorPatientListView.as_view(), name="hospital-care-staff-patients"),
     path("doctor/patients/<int:member_id>/workspace/", DoctorPatientWorkspaceView.as_view(), name="hospital-care-staff-patient-workspace"),
     path("doctor/patients/<int:member_id>/conversations/", DoctorPatientConversationsView.as_view(), name="hospital-care-staff-patient-conversations"),
@@ -44,4 +52,8 @@ urlpatterns = [
     path("doctor/conversations/<uuid:thread_id>/leave/", DoctorConversationLeaveView.as_view(), name="hospital-care-staff-leave"),
     path("doctor/conversations/<uuid:thread_id>/attention/", DoctorConversationAttentionView.as_view(), name="hospital-care-staff-attention"),
     path("doctor/conversations/<uuid:thread_id>/end/", DoctorConversationEndView.as_view(), name="hospital-care-staff-end"),
+    path("doctor/conversations/<uuid:thread_id>/risk/", DoctorConversationRiskView.as_view(), name="hospital-care-staff-risk"),
+    path("doctor/conversations/<uuid:thread_id>/risk-history/", DoctorConversationRiskHistoryView.as_view(), name="hospital-care-staff-risk-history"),
+    path("doctor/conversations/<uuid:thread_id>/read-cursor/", DoctorConversationReadCursorView.as_view(), name="hospital-care-staff-read-cursor"),
+    path("doctor/conversations/<uuid:thread_id>/attachments/", DoctorConversationAttachmentUploadView.as_view(), name="hospital-care-staff-attachments"),
 ]

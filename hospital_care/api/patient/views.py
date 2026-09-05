@@ -8,20 +8,28 @@ from ai_config.provider_resolution import (
 )
 from common.response import success_response
 from hospital_care.api.pagination import paginate_queryset
-from hospital_care.api.patient.serializers import AppointmentRedirectSerializer, CreateConversationSerializer
+from hospital_care.api.patient.serializers import (
+    AppointmentRedirectSerializer,
+    CreateConversationSerializer,
+    SubmitConsultationSerializer,
+)
 from hospital_care.api.presenters import (
     agent_public,
     agent_runtime_config_public,
+    consultation_public,
+    conversation_create_snapshot,
     conversation_public,
     department_public,
     hospital_public,
 )
 from hospital_care.exceptions import HospitalCareError
-from hospital_care.models import ClinicalAgentProfile, DoctorProfile, Hospital
+from hospital_care.models import ClinicalAgentProfile, Consultation, DoctorProfile, Hospital
 from hospital_care.models.organization import HospitalDepartment
 from hospital_care.selectors import patient_catalog, patient_knowledge
+from hospital_care.services.consultation_service import submit_consultation
 from hospital_care.services.conversation_service import create_patient_conversation
 from hospital_care.services.idempotency import run_idempotent_command
+from hospital_care.services.read_state_service import attachment_count_for_threads
 from medical.models import Member
 from medical.services.member_binding_service import ensure_can_access_member
 
@@ -205,11 +213,7 @@ class ConversationCreateView(APIView):
                 member_id=data["member_id"],
                 thread_id=data.get("thread_id"),
             )
-            snapshot = {
-                "thread_id": str(binding.thread_id),
-                "conversation": conversation_public(binding),
-            }
-            return snapshot, binding.thread_id
+            return conversation_create_snapshot(binding), binding.thread_id
 
         payload, _replayed = run_idempotent_command(
             request=request,
@@ -218,6 +222,76 @@ class ConversationCreateView(APIView):
             writer=writer,
         )
         return success_response(payload)
+
+
+class ConsultationListCreateView(APIView):
+    """线上问诊单（DOCTOR-WORKSPACE-000004 页面形态修订）。
+
+    POST：患者客户端独立提交线上问诊，创建独立问诊单并进入医生问诊工作台。
+    GET：当前登录用户名下成员的问诊单列表（可按 member_id 过滤）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        member_id = request.query_params.get("member_id")
+        qs = (
+            Consultation.objects.select_related("binding", "binding__agent", "binding__hospital", "binding__department", "binding__doctor")
+            .filter(submitted_by=request.user, binding__thread__is_deleted=False)
+            .order_by("-submitted_at", "-id")
+        )
+        if member_id:
+            try:
+                ensure_can_access_member(user=request.user, member_id=int(member_id))
+            except (PermissionError, ValueError) as exc:
+                raise HospitalCareError("MEMBER_ACCESS_DENIED") from exc
+            qs = qs.filter(member_id=int(member_id))
+        page_obj, pagination = paginate_queryset(qs, request)
+        items = list(page_obj.object_list)
+        attachment_map = attachment_count_for_threads([item.binding.thread_id for item in items])
+        return success_response(
+            {
+                "items": [
+                    consultation_public(item, attachment_count=attachment_map.get(item.binding.thread_id, 0))
+                    for item in items
+                ],
+                "pagination": pagination,
+            }
+        )
+
+    def post(self, request):
+        serializer = SubmitConsultationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        def writer():
+            consultation = submit_consultation(
+                request=request,
+                user=request.user,
+                agent_id=data["agent_id"],
+                member_id=data["member_id"],
+                chief_complaint=data.get("chief_complaint") or "",
+                attachments=data.get("attachments"),
+                order_items=data.get("order_items"),
+                past_history=data.get("past_history") or "",
+                family_history=data.get("family_history") or "",
+                allergy_history=data.get("allergy_history") or "",
+                thread_id=data.get("thread_id"),
+            )
+            return consultation_public(consultation), str(consultation.id)
+
+        payload, _replayed = run_idempotent_command(
+            request=request,
+            payload={
+                "agent_id": str(data["agent_id"]),
+                "member_id": data["member_id"],
+                "chief_complaint": data.get("chief_complaint") or "",
+                "thread_id": str(data.get("thread_id") or ""),
+            },
+            resource_type="hospital_consultation",
+            writer=writer,
+        )
+        return success_response(payload, msg="created", status_code=201)
 
 
 class PatientConversationContextView(APIView):

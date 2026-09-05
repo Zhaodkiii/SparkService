@@ -26,6 +26,7 @@ class ChatRunReadiness:
     model_binding_configured: bool = False
     worker_healthy: bool = False
     config_version: str | None = None
+    supports_image_input: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -37,6 +38,7 @@ class ChatRunReadiness:
             "model_binding_configured": self.model_binding_configured,
             "worker_healthy": self.worker_healthy,
             "config_version": self.config_version,
+            "supports_image_input": self.supports_image_input,
         }
 
 
@@ -71,13 +73,19 @@ class ChatRunReadinessService:
         if executor not in {"provider", "mock"}:
             return cls._unavailable(checked_at, "chat_run_executor_unavailable", retryable=False, executor=executor)
 
-        model_binding_configured, config_version = cls._probe_model_binding()
+        model_binding_configured, config_version, supports_image_input = cls._probe_model_binding()
         if not model_binding_configured:
             return cls._unavailable(checked_at, "chat_run_model_binding_missing", retryable=False, executor=executor)
 
         worker_healthy = cls.cached_worker_health("chat.ai")
         if not worker_healthy:
-            return cls._unavailable(checked_at, "chat_run_worker_unavailable", retryable=True, executor=executor)
+            return cls._unavailable(
+                checked_at,
+                "chat_run_worker_unavailable",
+                retryable=True,
+                executor=executor,
+                supports_image_input=supports_image_input,
+            )
 
         return ChatRunReadiness(
             available=True,
@@ -88,6 +96,7 @@ class ChatRunReadinessService:
             model_binding_configured=True,
             worker_healthy=True,
             config_version=config_version,
+            supports_image_input=supports_image_input,
         )
 
     @classmethod
@@ -117,19 +126,34 @@ class ChatRunReadinessService:
     # -- helpers -----------------------------------------------------------------
 
     @classmethod
-    def _unavailable(cls, checked_at: datetime, code: str, *, retryable: bool, executor: str) -> ChatRunReadiness:
-        return ChatRunReadiness(available=False, code=code, retryable=retryable, checked_at=checked_at, executor=executor)
+    def _unavailable(
+        cls,
+        checked_at: datetime,
+        code: str,
+        *,
+        retryable: bool,
+        executor: str,
+        supports_image_input: bool = False,
+    ) -> ChatRunReadiness:
+        return ChatRunReadiness(
+            available=False,
+            code=code,
+            retryable=retryable,
+            checked_at=checked_at,
+            executor=executor,
+            supports_image_input=supports_image_input,
+        )
 
     @classmethod
-    def _probe_model_binding(cls) -> tuple[bool, str | None]:
+    def _probe_model_binding(cls) -> tuple[bool, str | None, bool]:
         try:
             from chat_sync.ai_runtime.providers.factory import resolve_chat_route
 
             route = resolve_chat_route()
-            return True, route.config_version
+            return True, route.config_version, bool(getattr(route, "supports_multimodal", False))
         except Exception as exc:  # LLMConfigError and any config desync
             logger.warning("chat_run_readiness.model_binding_unavailable: %s", exc)
-            return False, None
+            return False, None, False
 
     @classmethod
     def _probe_worker_health(cls, queue: str) -> bool:

@@ -91,7 +91,7 @@ def latest_conversation_for_agent(*, user, member_id: int, agent_id) -> Clinical
 def patient_conversations(*, user, member_id: int | None = None) -> QuerySet[ClinicalConversationBinding]:
     allowed_members = accessible_member_ids(user)
     qs = ClinicalConversationBinding.objects.select_related(
-        "thread", "hospital", "department", "doctor", "agent"
+        "thread", "hospital", "department", "doctor", "agent", "consultation"
     ).filter(thread__user=user, thread__is_deleted=False)
     if member_id is not None:
         if int(member_id) not in allowed_members:

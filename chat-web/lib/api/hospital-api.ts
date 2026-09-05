@@ -1,8 +1,14 @@
 import type { SparkHttpClient } from "@/lib/api/http-client";
 import { normalizeMessageBlocks } from "@/lib/chat/message-normalizer";
+import type { ReadyImagePayload } from "@/lib/chat/image-drafts";
+import type { DoctorAttachmentPayload } from "@/lib/hospital/attachments";
 import type { WebSocketTicketData } from "@/types/run";
 import type {
+  ConsultRecordsDTO,
+  ConversationAttachmentItemDTO,
+  ConversationAttachmentUploadDTO,
   ConversationDetailDTO,
+  ConversationEndReasonCode,
   ConversationListDTO,
   ConversationMessagesDTO,
   ConversationQueue,
@@ -18,6 +24,9 @@ import type {
   PatientRiskCardDTO,
   PatientSummaryDTO,
   PatientWorkspaceDTO,
+  ReadCursorResultDTO,
+  RiskHistoryDTO,
+  RiskSignalLevel,
   StaffMeDTO,
   WorkLogListDTO,
 } from "@/types/hospital";
@@ -69,9 +78,14 @@ export class SparkHospitalApi {
     return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/conversations/${threadId}/`);
   }
 
-  async getMessages(threadId: string): Promise<ConversationMessagesDTO> {
-    const data = await this.http.requestOrThrow<ConversationMessagesDTO>("GET", `/api/hospital/v1/doctor/conversations/${threadId}/messages/`);
+  /** DOCTOR-WORKSPACE-000004 第 34 问：首屏最近一页；before 游标向上加载更早消息。 */
+  async getMessages(threadId: string, params: { before?: string; limit?: number } = {}): Promise<ConversationMessagesDTO> {
+    const data = await this.http.requestOrThrow<ConversationMessagesDTO>(
+      "GET",
+      `/api/hospital/v1/doctor/conversations/${threadId}/messages/${query({ before: params.before, limit: params.limit })}`,
+    );
     return {
+      ...data,
       items: data.items.map((message) => ({
         ...message,
         blocks: normalizeMessageBlocks(message.blocks ?? []),
@@ -79,7 +93,7 @@ export class SparkHospitalApi {
     };
   }
 
-  sendMessage(threadId: string, payload: { text: string; version?: number }, idempotencyKey: string): Promise<DoctorSendMessageDTO> {
+  sendMessage(threadId: string, payload: DoctorSendMessagePayload, idempotencyKey: string): Promise<DoctorSendMessageDTO> {
     return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/messages/`, {
       body: payload,
       headers: withIdempotency(idempotencyKey),
@@ -112,11 +126,57 @@ export class SparkHospitalApi {
     });
   }
 
-  endConversation(threadId: string, payload: { version: number; end_reason: string }, idempotencyKey: string): Promise<ConversationDetailDTO> {
+  /** DOCTOR-WORKSPACE-000004 第 28 问：结束原因固定枚举 + 可选补充说明。 */
+  endConversation(
+    threadId: string,
+    payload: { version: number; end_reason_code: ConversationEndReasonCode; end_reason_note?: string },
+    idempotencyKey: string,
+  ): Promise<ConversationDetailDTO> {
     return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/end/`, {
       body: payload,
       headers: withIdempotency(idempotencyKey),
     });
+  }
+
+  /** DOCTOR-WORKSPACE-000004 第 24/25 问：医生人工调整风险等级（理由可选）。 */
+  updateRisk(
+    threadId: string,
+    payload: { risk_signal_level: RiskSignalLevel; reason?: string; version: number },
+    idempotencyKey: string,
+  ): Promise<ConversationDetailDTO> {
+    return this.http.requestOrThrow("PATCH", `/api/hospital/v1/doctor/conversations/${threadId}/risk/`, {
+      body: payload,
+      headers: withIdempotency(idempotencyKey),
+    });
+  }
+
+  /** DOCTOR-WORKSPACE-000004 第 26 问：当前问诊风险调整历史。 */
+  getRiskHistory(threadId: string, params: { page?: number; page_size?: number } = {}): Promise<RiskHistoryDTO> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/conversations/${threadId}/risk-history/${query({
+      page: params.page ?? 1,
+      page_size: params.page_size ?? 20,
+    })}`);
+  }
+
+  /** DOCTOR-WORKSPACE-000004 第 20/31 问：消息加载成功后推进已读游标。 */
+  markReadCursor(threadId: string, lastReadMessageId?: number): Promise<ReadCursorResultDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/read-cursor/`, {
+      body: lastReadMessageId ? { last_read_message_id: lastReadMessageId } : {},
+    });
+  }
+
+  /** DOCTOR-WORKSPACE-000004 第 16 问：医生上传当前问诊附件（PDF/JPG/PNG）。 */
+  uploadConversationAttachment(threadId: string, file: File): Promise<ConversationAttachmentUploadDTO> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/attachments/`, {
+      rawBody: form,
+    });
+  }
+
+  /** DOCTOR-WORKSPACE-000004：当前问诊病历与附件清单（只读）。 */
+  getConversationAttachments(threadId: string): Promise<{ items: ConversationAttachmentItemDTO[] }> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/conversations/${threadId}/attachments/`);
   }
 
   getWorkLogs(params: { page?: number; page_size?: number } = {}): Promise<WorkLogListDTO> {
@@ -161,6 +221,23 @@ export class SparkHospitalApi {
     });
   }
 
+  /* ---------- DOCTOR-WORKSPACE-000004 独立线上问诊工作台 ---------- */
+
+  /** 问诊患者列表：仅包含患者客户端已提交线上问诊的患者。 */
+  listConsultPatients(params: { queue?: PatientQueue; keyword?: string; page?: number; page_size?: number } = {}): Promise<PatientListDTO> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/consults/patients/${query({
+      queue: params.queue ?? "all",
+      keyword: params.keyword,
+      page: params.page ?? 1,
+      page_size: params.page_size ?? 50,
+    })}`);
+  }
+
+  /** 某患者名下的线上问诊记录（含问诊编号与主诉）。 */
+  getConsultRecords(memberId: number): Promise<ConsultRecordsDTO> {
+    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/consults/patients/${memberId}/records/`);
+  }
+
   /** D-020/D-023：最新 AI 总结只读查询（不触发生成）。 */
   getPatientSummary(memberId: number): Promise<PatientSummaryDTO | null> {
     return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/summary/`);
@@ -187,7 +264,101 @@ export class SparkHospitalApi {
   }
 }
 
-export function toLocalDoctorMessage(sent: DoctorSendMessageDTO, text: string): DoctorMessageDTO {
+/** 医生发送消息请求体（attachments 携带图片/文档 file_id，数量上限由服务端配置）。 */
+export interface DoctorSendMessagePayload {
+  text: string;
+  version?: number;
+  attachments?: Array<{
+    file_id: string;
+    type?: "image" | "document";
+    order?: number;
+    mime_type?: string;
+    file_size?: number;
+    display_url?: string;
+  }>;
+}
+
+export function toLocalDoctorMessage(
+  sent: DoctorSendMessageDTO,
+  text: string,
+  images: ReadyImagePayload[] = [],
+  documents: DoctorAttachmentPayload[] = [],
+): DoctorMessageDTO {
+  const blocks: DoctorMessageDTO["blocks"] = [];
+  if (text) {
+    blocks.push({
+      id: sent.client_message_id,
+      kind: "text",
+      status: "ready",
+      revision: 1,
+      order_key: 1000,
+      node_role: "timeline",
+      payload: { text: { _0: text } },
+    });
+  }
+  const localImages: ReadyImagePayload[] = [
+    ...images,
+    ...documents
+      .filter((document) => document.type === "image")
+      .map((document, index) => ({
+        fileId: String(document.file_id),
+        fileUuid: document.file_uuid,
+        displayUrl: document.display_url ?? "",
+        fileName: document.filename ?? "",
+        mimeType: document.mime_type,
+        fileSize: document.file_size,
+        order: images.length + index,
+      })),
+  ];
+  if (localImages.length) {
+    // 与服务端写入一致的 iOS 形态：_0 直接是图片数组；id/type 为 iOS 必填字段
+    blocks.push({
+      id: `${sent.client_message_id}-gallery`,
+      kind: "imageGallery",
+      status: "ready",
+      revision: 1,
+      order_key: 1100,
+      node_role: "timeline",
+      payload: {
+        image_gallery: {
+          _0: localImages.map((image) => ({
+            id: image.fileUuid ?? crypto.randomUUID(),
+            type: "image",
+            file_id: image.fileId,
+            url: image.displayUrl,
+            filename: image.fileName,
+            mime_type: image.mimeType,
+            order: image.order,
+          })),
+        },
+      },
+    });
+  }
+  const localDocuments = documents.filter((document) => document.type === "document");
+  if (localDocuments.length) {
+    blocks.push({
+      id: `${sent.client_message_id}-files`,
+      kind: "fileGallery",
+      status: "ready",
+      revision: 1,
+      order_key: 1200,
+      node_role: "timeline",
+      payload: {
+        file_gallery: {
+          _0: localDocuments.map((document) => ({
+            id: document.file_uuid ?? crypto.randomUUID(),
+            type: "document",
+            file_id: document.file_id,
+            url: document.display_url,
+            filename: document.filename,
+            mime_type: document.mime_type,
+            file_size: document.file_size,
+            order: document.order,
+          })),
+        },
+      },
+    });
+  }
   return {
     thread_id: sent.thread_id,
     role: "assistant",
@@ -197,14 +368,26 @@ export function toLocalDoctorMessage(sent: DoctorSendMessageDTO, text: string): 
     created_at: sent.created_at,
     actor_type: "doctor",
     sender: sent.sender,
-    blocks: [{
-      id: sent.client_message_id,
-      kind: "text",
-      status: "ready",
-      revision: 1,
-      order_key: 1,
-      node_role: "timeline",
-      payload: { text: { _0: text } },
-    }],
+    attachments: [
+      ...images.map((image) => ({
+        id: image.fileUuid ?? crypto.randomUUID(),
+        file_id: image.fileId,
+        type: "image" as const,
+        order: image.order,
+        mime_type: image.mimeType,
+        file_size: image.fileSize,
+        display_url: image.displayUrl,
+      })),
+      ...documents.map((document) => ({
+        id: document.file_uuid ?? crypto.randomUUID(),
+        file_id: String(document.file_id),
+        type: document.type,
+        order: document.order,
+        mime_type: document.mime_type,
+        file_size: document.file_size,
+        display_url: document.display_url,
+      })),
+    ],
+    blocks,
   };
 }

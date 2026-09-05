@@ -72,8 +72,10 @@ class RunServiceTests(TestCase):
 
     def test_active_thread_rejects_second_run(self):
         self.create()
+        # 不同 content → 不同 client_message_id，才是真正的新消息；
+        # 相同 client_message_id 的重试按 CHAT-WEB-029 走 replay 幂等。
         with self.assertRaisesMessage(Exception, "chat_run_already_active"):
-            self.create(key="key-2")
+            self.create(key="key-2", content="world")
 
     def test_queued_cancel_writes_terminal_and_releases_lock(self):
         run = self.create().run

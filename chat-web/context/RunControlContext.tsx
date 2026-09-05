@@ -8,16 +8,25 @@ import { SparkRunApi } from "@/lib/api/run-api";
 import { SparkInteractionApi } from "@/lib/api/interaction-api";
 import { createInitialChatRuntimeState, reduceChatEvents, upsertInteractions } from "@/lib/event-reducer";
 import { isTerminalRunStatus } from "@/types/chat";
-import type { ChatEventEnvelope, ChatRunDTO, ChatRunStatus, ChatRuntimeState } from "@/types/chat";
+import type { ChatBlockDTO, ChatEventEnvelope, ChatRunDTO, ChatRunStatus, ChatRuntimeState } from "@/types/chat";
 import type { CreateTurnContextInput } from "@/types/context";
 import type { ChatMessageWireDTO } from "@/types/sync";
+import type { RunAttachmentDTO } from "@/types/run";
 import type { InteractionSubmitBody } from "@/types/interaction";
+import type { ReadyImagePayload } from "@/lib/chat/image-drafts";
 import { clientErrorDetails, sparkClientLog } from "@/lib/diagnostics";
 import { SparkApiError, userFacingApiError } from "@/lib/api/http-client";
 
 type ConnectionState = "idle" | "connecting" | "live" | "replaying" | "polling";
 
 type InteractionCommandOutcome = { ok: true } | { ok: false; error: string; httpStatus?: number; code?: number };
+
+/** CreateRun 扩展入参（CHAT-WEB-029）：已就绪图片与稳定 client_message_id。 */
+export interface CreateRunOptions {
+  images?: ReadyImagePayload[];
+  /** 重试时复用同一 client_message_id，服务端保证不重复建消息。 */
+  clientMessageId?: string;
+}
 
 interface RunValue {
   run: ChatRunDTO | null;
@@ -26,7 +35,9 @@ interface RunValue {
   connectionState: ConnectionState;
   busy: boolean;
   error: string | null;
-  createRun: (content: string, context?: CreateTurnContextInput | null, overrideThreadId?: string | null) => Promise<boolean>;
+  /** 当前模型是否支持图片理解；未知/异常一律为 false。 */
+  supportsImageInput: boolean;
+  createRun: (content: string, context?: CreateTurnContextInput | null, overrideThreadId?: string | null, options?: CreateRunOptions) => Promise<boolean>;
   cancelRun: () => Promise<boolean>;
   regenerate: () => Promise<void>;
   settleActiveRun: () => Promise<boolean>;
@@ -75,6 +86,59 @@ function statusFromEvent(event: ChatEventEnvelope): ChatRunDTO["status"] | null 
   return statuses[event.type] ?? null;
 }
 
+/**
+ * 构建用户消息 canonical blocks（CHAT-WEB-029）：
+ * 有文本时先 text block；有图片时追加 imageGallery block。
+ * payload 判别键遵循 iOS tagged union，且 _0 与 iOS 一致直接是图片数组：
+ * {"image_gallery": {"_0": [{file_id, url, ...}]}}（服务端兼容两种形状）。
+ * order_key 收窄为 number，使结果同时满足 ChatBlockDTO 与 CanonicalInputBlockDTO。
+ */
+type UserInputBlock = ChatBlockDTO & { order_key: number };
+
+function buildUserMessageBlocks(text: string, images: ReadyImagePayload[]): UserInputBlock[] {
+  const blocks: UserInputBlock[] = [];
+  if (text) {
+    blocks.push({
+      id: crypto.randomUUID(), kind: "text", status: "ready", revision: 1, order_key: 1000, node_role: "timeline",
+      payload: { text: { _0: text } },
+    });
+  }
+  if (images.length) {
+    blocks.push({
+      id: crypto.randomUUID(), kind: "imageGallery", status: "ready", revision: 1, order_key: 1100, node_role: "timeline",
+      payload: {
+        image_gallery: {
+          // iOS ChatAttachment 必填 id(UUID) 与 type；file_uuid 作为稳定 id 透传
+          _0: images.map((image) => ({
+            id: image.fileUuid ?? crypto.randomUUID(),
+            type: "image",
+            file_id: image.fileId,
+            url: image.displayUrl,
+            filename: image.fileName,
+            mime_type: image.mimeType,
+            order: image.order,
+          })),
+        },
+      },
+    });
+  }
+  return blocks;
+}
+
+/** 图片附件元数据：追加在上下文文件引用之后，保持选择顺序。 */
+function buildImageAttachments(images: ReadyImagePayload[]): RunAttachmentDTO[] {
+  return images.map((image) => ({
+    // iOS 消息级 attachments 同样按 ChatAttachment 解码，id/type 必填
+    id: image.fileUuid ?? crypto.randomUUID(),
+    file_id: image.fileId,
+    type: "image" as const,
+    order: image.order,
+    mime_type: image.mimeType,
+    file_size: image.fileSize,
+    display_url: image.displayUrl,
+  }));
+}
+
 export function RunControlProvider({ children }: { children: React.ReactNode }) {
   const auth = useOptionalAuth();
   const threads = useOptionalThreads();
@@ -85,6 +149,7 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [supportsImageInput, setSupportsImageInput] = useState(false);
   const lastSequenceRef = useRef<Record<string, number>>({});
   const api = useMemo(() => auth ? new SparkRunApi(auth.client) : null, [auth]);
   const interactionApi = useMemo(() => auth ? new SparkInteractionApi(auth.client) : null, [auth]);
@@ -181,6 +246,20 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     void refresh();
   }, [threadId, refresh]);
 
+  // CHAT-WEB-029：threadId 变化时刷新模型图片能力；缺失/异常一律视为不支持。
+  useEffect(() => {
+    setSupportsImageInput(false);
+    if (!api || auth?.status !== "authenticated") return;
+    let cancelled = false;
+    api.readiness()
+      .then((data) => { if (!cancelled) setSupportsImageInput(data?.supports_image_input === true); })
+      .catch((cause) => {
+        if (!cancelled) setSupportsImageInput(false);
+        sparkClientLog("warn", "run.readiness.failed", { thread_id: threadId, ...clientErrorDetails(cause) });
+      });
+    return () => { cancelled = true; };
+  }, [api, auth?.status, threadId]);
+
   useEffect(() => {
     if (!api || !activeRunId || !activeRunStatus || isTerminalRunStatus(activeRunStatus) || auth?.status !== "authenticated") {
       setConnectionState("idle");
@@ -268,15 +347,20 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     void replay(run.id);
   }, [replay, run, state.replayRequiredByRun]);
 
-  const createRun = useCallback(async (content: string, context?: CreateTurnContextInput | null, overrideThreadId?: string | null) => {
+  const createRun = useCallback(async (content: string, context?: CreateTurnContextInput | null, overrideThreadId?: string | null, options?: CreateRunOptions) => {
     const targetThreadId = overrideThreadId ?? threadId;
-    if (!api || !targetThreadId || !content.trim()) return false;
-    const clientMessageId = crypto.randomUUID();
+    const images = options?.images ?? [];
+    const text = content.trim();
+    // 守卫：文本为空且没有图片时不创建 Run（图片-only 允许）。
+    if (!api || !targetThreadId || (!text && images.length === 0)) return false;
+    const clientMessageId = options?.clientMessageId ?? crypto.randomUUID();
+    const blocks = buildUserMessageBlocks(text, images);
+    const attachments: RunAttachmentDTO[] = [...(context?.attachments ?? []), ...buildImageAttachments(images)];
     const optimisticMessage: ChatMessageWireDTO = {
       thread_id: targetThreadId, role: "user", client_message_id: clientMessageId, server_message_id: null,
       delivery_state: "sending", created_at: new Date().toISOString(), server_updated_at: null, tombstone: false,
-      attachments: context?.attachments ?? [],
-      blocks: [{ id: crypto.randomUUID(), kind: "text", status: "ready", revision: 1, order_key: 1000, node_role: "timeline", payload: { text: { _0: content.trim() } } }],
+      attachments,
+      blocks,
     };
     threads?.appendOptimisticMessage(optimisticMessage);
     setBusy(true);
@@ -287,23 +371,14 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
           thread_id: targetThreadId,
           role: "user",
           client_message_id: clientMessageId,
-          blocks: [
-            {
-              kind: "text",
-              status: "ready",
-              revision: 1,
-              order_key: 1000,
-              node_role: "timeline",
-              payload: { text: { _0: content.trim() } },
-            },
-          ],
+          blocks,
         },
         run_options: {
           capability: "chat",
           preferences_revision: context?.preferencesRevision,
           context_parent_message_id: context?.contextParentMessageId,
           context_inputs: context?.references ?? [],
-          attachments: context?.attachments ?? [],
+          attachments,
           client: { platform: "web", version: "p3", device_id: "web" },
         },
       }, crypto.randomUUID());
@@ -423,7 +498,7 @@ export function RunControlProvider({ children }: { children: React.ReactNode }) 
     }
   }, [interactionApi, recoverInteraction, replay, run]);
 
-  const value = useMemo(() => ({ run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun, refreshPending, submitInteraction, refuseInteraction }), [run, events, state, connectionState, busy, error, createRun, cancelRun, regenerate, settleActiveRun, refreshPending, submitInteraction, refuseInteraction]);
+  const value = useMemo(() => ({ run, events, state, connectionState, busy, error, supportsImageInput, createRun, cancelRun, regenerate, settleActiveRun, refreshPending, submitInteraction, refuseInteraction }), [run, events, state, connectionState, busy, error, supportsImageInput, createRun, cancelRun, regenerate, settleActiveRun, refreshPending, submitInteraction, refuseInteraction]);
   return <RunContext.Provider value={value}>{children}</RunContext.Provider>;
 }
 

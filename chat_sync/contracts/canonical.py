@@ -44,6 +44,8 @@ KIND_TEXT = "text"
 KIND_DEEP_THOUGHT = "deepThought"
 KIND_TOOL = "tool"
 KIND_IMAGE_GALLERY = "imageGallery"
+# DOCTOR-WORKSPACE-000004：医生问诊文档附件（PDF 等）画廊块。
+KIND_FILE_GALLERY = "fileGallery"
 KIND_FILE_ATTACHMENTS = "fileAttachments"
 KIND_KNOWLEDGE_CARDS = "knowledgeCards"
 KIND_TRANSLATED_TEXT = "translatedText"
@@ -83,6 +85,7 @@ BLOCK_KINDS = frozenset({
     KIND_DEEP_THOUGHT,
     KIND_TOOL,
     KIND_IMAGE_GALLERY,
+    KIND_FILE_GALLERY,
     KIND_FILE_ATTACHMENTS,
     KIND_KNOWLEDGE_CARDS,
     KIND_TRANSLATED_TEXT,
@@ -360,6 +363,38 @@ def payload_kind(payload: Any) -> str | None:
     if not isinstance(wrapper, dict) or "_0" not in wrapper:
         return None
     return PAYLOAD_KEY_TO_KIND[candidates[0]]
+
+
+def project_block_for_ios_client(kind: str, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Map hospital ``fileGallery`` onto iOS ``fileAttachments``.
+
+    Doctor console stores PDF 病历 as ``fileGallery`` / ``type=document``.  iOS
+    ``ChatMessageBlockPayload`` only has ``fileAttachments([ChatAttachment])``
+    and ``ChatAttachmentType`` has ``pdf``/``file``, not ``document``.  Leaving
+    the hospital shape on the chat-sync wire makes the whole pull fail with
+    ``Invalid number of keys found, expected one``.
+    """
+    if kind != KIND_FILE_GALLERY:
+        return kind, payload
+    wrapper: Any = {}
+    if isinstance(payload, dict):
+        wrapper = payload.get("file_gallery") or payload.get("fileGallery") or {}
+    raw_items = wrapper.get("_0") if isinstance(wrapper, dict) else None
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        items = [_project_ios_attachment(item) for item in raw_items if isinstance(item, dict)]
+    return KIND_FILE_ATTACHMENTS, {KIND_TO_PAYLOAD_KEY[KIND_FILE_ATTACHMENTS]: {"_0": items}}
+
+
+def _project_ios_attachment(item: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(item)
+    raw_type = str(projected.get("type") or "").strip().lower()
+    mime = str(projected.get("mime_type") or projected.get("mimeType") or "").strip().lower()
+    if raw_type in {"document", "application/pdf"} or mime == "application/pdf":
+        projected["type"] = "pdf"
+    elif raw_type not in {"image", "video", "pdf", "file"} and raw_type:
+        projected["type"] = "file"
+    return projected
 
 
 def decode_payload(payload: Any) -> DecodedPayload:

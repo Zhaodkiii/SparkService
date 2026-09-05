@@ -34,6 +34,8 @@ export interface SparkRequestOptions {
   signal?: AbortSignal;
   headers?: HeadersInit;
   body?: unknown;
+  /** 原始请求体（如 FormData 附件上传）；设置后不再 JSON 序列化 body。 */
+  rawBody?: BodyInit;
   retryOnUnauthorized?: boolean;
   requestId?: string;
 }

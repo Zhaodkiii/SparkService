@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from chat_sync.models import ChatMessage
-from chat_sync.views import _to_payload
+from chat_sync.views import _to_payload, _to_thread_payload
 
 from file_manager.url_utils import managed_file_download_url
 from hospital_care.models import (
@@ -298,7 +298,13 @@ def catalog_model_option(model) -> dict:
     }
 
 
-def conversation_public(binding: ClinicalConversationBinding, *, for_doctor: bool = False) -> dict:
+def conversation_public(
+    binding: ClinicalConversationBinding,
+    *,
+    for_doctor: bool = False,
+    unread_count: int = 0,
+    attachment_count: int | None = None,
+) -> dict:
     thread = binding.thread
     member = Member.all_objects.filter(pk=thread.member_id).first() if thread.member_id else None
     payload = {
@@ -323,8 +329,10 @@ def conversation_public(binding: ClinicalConversationBinding, *, for_doctor: boo
         "version": binding.version,
         "updated_at": binding.updated_at.isoformat(),
         "title": thread.title,
-        "unread_count": 0,
+        "unread_count": int(unread_count or 0),
     }
+    if attachment_count is not None:
+        payload["attachment_count"] = int(attachment_count)
     # CHAT-000058：返回服务端固定的运行绑定信息，供客户端校验 scope 一致。
     scenario_binding = binding.scenario_binding if binding.scenario_binding_id else None
     payload["binding_id"] = binding.scenario_binding_id
@@ -335,7 +343,35 @@ def conversation_public(binding: ClinicalConversationBinding, *, for_doctor: boo
     )
     if for_doctor:
         payload["attention_note"] = binding.attention_note
+        payload["end_reason_code"] = binding.end_reason_code or ""
+        payload["end_reason_note"] = binding.end_reason_note or ""
+    # 线上问诊单是 Binding 的 OneToOne 反向关系；无问诊单时为 None，
+    # 供患者端把该 Thread 分类为 telemedicine 而不是 hospital_agent。
+    consultation = getattr(binding, "consultation", None)
+    payload["consultation"] = (
+        {
+            "consultation_id": str(consultation.id),
+            "consult_no": consultation.consult_no,
+        }
+        if consultation is not None
+        else None
+    )
     return payload
+
+
+def risk_revision_public(revision) -> dict:
+    """DOCTOR-WORKSPACE-000004 第 26 问：风险调整历史只读条目。"""
+    return {
+        "id": str(revision.id),
+        "thread_id": str(revision.binding.thread_id),
+        "previous_level": revision.previous_level,
+        "next_level": revision.next_level,
+        "reason": revision.reason or "",
+        "source": revision.source,
+        "doctor": doctor_public(revision.doctor),
+        "version": revision.version,
+        "created_at": revision.created_at.isoformat(),
+    }
 
 
 def serialize_message(message: ChatMessage, binding: ClinicalConversationBinding | None) -> dict:
@@ -349,6 +385,51 @@ def serialize_message(message: ChatMessage, binding: ClinicalConversationBinding
     payload["sender"] = build_sender_snapshot(attribution=attribution, binding=binding)
     payload["actor_type"] = attribution.actor_type if attribution else None
     return payload
+
+
+def consultation_public(consultation, *, attachment_count: int | None = None) -> dict:
+    """线上问诊单患者端只读视图（DOCTOR-WORKSPACE-000004 页面形态修订）。"""
+    binding = consultation.binding
+    payload = {
+        "consultation_id": str(consultation.id),
+        "consult_no": consultation.consult_no,
+        "thread_id": str(binding.thread_id),
+        "hospital": hospital_public(binding.hospital),
+        "department": department_public(binding.department),
+        "doctor": doctor_public(binding.doctor),
+        "agent": {
+            "id": str(binding.agent_id),
+            "name": binding.agent.name,
+            "publication_status": binding.agent.publication_status,
+        },
+        "member_id": consultation.member_id,
+        "chief_complaint": consultation.chief_complaint,
+        "order_items": list(consultation.order_items or []),
+        "past_history": consultation.past_history,
+        "family_history": consultation.family_history,
+        "allergy_history": consultation.allergy_history,
+        "service_status": binding.service_status,
+        "submitted_at": consultation.submitted_at.isoformat() if consultation.submitted_at else None,
+    }
+    if attachment_count is not None:
+        payload["attachment_count"] = int(attachment_count)
+    return payload
+
+
+def conversation_create_snapshot(binding: ClinicalConversationBinding) -> dict:
+    """CHAT-000060：创建医院会话成功后返回规范化 Thread 与初始系统消息。"""
+    thread = binding.thread
+    messages = (
+        ChatMessage.objects.filter(thread=thread)
+        .prefetch_related("blocks", "hospital_attribution")
+        .order_by("created_at", "id")
+    )
+    return {
+        "thread_id": str(thread.id),
+        "thread": _to_thread_payload(thread),
+        "conversation": conversation_public(binding),
+        "initial_messages": [serialize_message(message, binding) for message in messages],
+    }
 
 
 def _optional_doctor(membership: HospitalStaffMembership):

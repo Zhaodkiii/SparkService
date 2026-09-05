@@ -53,6 +53,7 @@ def resolve_chat_route() -> ProviderRoute:
         max_tokens=binding.max_tokens,
         supports_tool_use=bool(binding.model.supports_tool_use),
         supports_parallel_tool_calls=bool(getattr(binding.model, "supports_tool_use", False)),
+        supports_multimodal=bool(getattr(binding.model, "supports_multimodal", False)),
     )
 
 

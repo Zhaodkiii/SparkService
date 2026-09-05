@@ -38,6 +38,14 @@ export function userFacingApiError(failure: SparkApiFailure): string {
     "chat.interaction_expired": "确认已过期，请等待小鲸继续。",
     "chat.interaction_response_invalid": "提交内容不完整，请重新选择后再试。",
     "chat.interaction_idempotency_required": "提交失败，请稍后重试。",
+    "chat.image_capability_unavailable": "当前模型不支持图片理解，无法发送图片。",
+    "chat.image_count_exceeded": "单条消息最多发送 3 张图片。",
+    "chat.image_format_invalid": "图片格式或大小不符合要求，请更换图片。",
+    "chat.image_not_ready": "图片尚未上传完成，请稍候再试。",
+    "chat.image_registration_failed": "图片登记失败，请重试上传。",
+    "chat.image_not_found": "图片不存在或已失效，请移除后重新选择。",
+    "chat.image_upload_unavailable": "图片上传服务暂不可用，请稍后重试。",
+    "chat.run_idempotency_pending": "相同消息仍在处理中，请稍候。",
     "auth.unauthorized": "登录状态已失效，请重新登录。",
     "hospital.membership_required": "当前账号没有医院职工身份，无法进入医生工作台。",
     "hospital.doctor_profile_not_active": "医生身份未激活，请联系医院管理员。",
@@ -48,6 +56,15 @@ export function userFacingApiError(failure: SparkApiFailure): string {
     "hospital.agent_version_conflict": "智能体资料已被更新，请刷新后重试。",
     "hospital.idempotency_conflict": "相同请求正在处理，请确认后重试。",
     "hospital.idempotency_key_required": "请求缺少幂等键，请稍后重试。",
+    "hospital.image_count_exceeded": "单条消息最多发送 3 张图片。",
+    "hospital.image_format_invalid": "图片格式或大小不符合要求，请更换图片。",
+    "hospital.image_not_found": "图片不存在或已失效，请移除后重新选择。",
+    "hospital.conversation_not_joined": "请先接管问诊，再发送回复。",
+    "hospital.attachment_type_unsupported": "附件类型不支持，仅支持 PDF、JPG、PNG。",
+    "hospital.attachment_size_limit": "附件大小超出限制，请压缩后重试。",
+    "hospital.attachment_count_limit": "附件数量超出限制，请减少后重试。",
+    "hospital.attachment_upload_failed": "附件上传失败，请稍后重试。",
+    "hospital.attachment_not_found": "附件不存在或已失效，请重新选择。",
   };
   return messages[failure.messageKey] ?? failure.message ?? (failure.httpStatus >= 500 ? "服务暂时不可用，请稍后重试。" : "请求未完成，请稍后重试。");
 }
@@ -86,7 +103,10 @@ export class SparkHttpClient {
     if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
     let body: BodyInit | undefined;
-    if (options.body !== undefined) {
+    if (options.rawBody !== undefined) {
+      // 原始请求体（FormData 等）：不设置 Content-Type，交由浏览器生成边界。
+      body = options.rawBody;
+    } else if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
       body = JSON.stringify(options.body);
     }

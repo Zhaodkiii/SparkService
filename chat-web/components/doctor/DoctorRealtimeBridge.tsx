@@ -6,6 +6,7 @@ import { SparkApiError } from "@/lib/api/http-client";
 import { SparkHospitalApi } from "@/lib/api/hospital-api";
 import { useOptionalAuth } from "@/context/AuthContext";
 import { useOptionalDoctorConversations } from "@/context/DoctorConversationsContext";
+import { useOptionalDoctorRealtimeStatus } from "@/context/DoctorRealtimeStatusContext";
 import { useOptionalPatientWorkspace } from "@/context/PatientWorkspaceContext";
 import { doctorConversationWebSocketUrl, isHospitalConversationUpdatedEvent, realtimeRetryDelay } from "@/lib/hospital/realtime";
 
@@ -22,7 +23,12 @@ export function DoctorRealtimeBridge() {
   const auth = useOptionalAuth();
   const conversations = useOptionalDoctorConversations();
   const patientWorkspace = useOptionalPatientWorkspace();
+  const realtimeStatus = useOptionalDoctorRealtimeStatus();
   const api = useMemo(() => (auth ? new SparkHospitalApi(auth.client) : null), [auth]);
+
+  // DOCTOR-WORKSPACE-000004 第 15 问：向工作台广播连接状态（断线禁发/提示）。
+  const reportStatusRef = useRef(realtimeStatus?.report);
+  reportStatusRef.current = realtimeStatus?.report;
 
   // 通过 ref 调用最新的会话处理器，避免 context value 变化导致 WebSocket 反复重建。
   const handleEventRef = useRef(conversations?.handleRealtimeEvent);
@@ -58,6 +64,7 @@ export function DoctorRealtimeBridge() {
       if (disposed) return;
       // 浏览器不可见时不持续高频重连，等待 visibilitychange/online 触发。
       if (document.visibilityState === "hidden") return;
+      reportStatusRef.current?.("disconnected");
       const delay = realtimeRetryDelay(attempt) + Math.floor(Math.random() * 300);
       attempt += 1;
       retryTimer = window.setTimeout(() => void connect(), delay);
@@ -72,6 +79,7 @@ export function DoctorRealtimeBridge() {
         socket = new WebSocket(doctorConversationWebSocketUrl(ticket.websocket_path, ticket.ticket));
         socket.onopen = () => {
           attempt = 0;
+          reportStatusRef.current?.("connected");
           // 建连/重连成功：合并补偿刷新列表、计数与当前会话（Q5）。
           refreshRef.current?.();
           patientRefreshRef.current?.();
@@ -94,6 +102,7 @@ export function DoctorRealtimeBridge() {
           // 认证失败、医生身份失效不做无限重连；等待登录状态或页面可见性变化。
           if (event.code === 4401 || event.code === 4403) {
             console.info("[doctor-realtime] closed by server", { code: event.code });
+            reportStatusRef.current?.("failed");
             return;
           }
           scheduleRetry();
@@ -102,6 +111,7 @@ export function DoctorRealtimeBridge() {
         if (disposed) return;
         if (cause instanceof SparkApiError && (cause.failure.httpStatus === 401 || cause.failure.httpStatus === 403)) {
           console.info("[doctor-realtime] ticket rejected", { status: cause.failure.httpStatus });
+          reportStatusRef.current?.("failed");
           return;
         }
         scheduleRetry();

@@ -9,6 +9,7 @@ from hospital_care.exceptions import HospitalCareError
 from hospital_care.models import (
     ChatMessageAttribution,
     ClinicalConversationBinding,
+    DoctorPatientAttention,
     DoctorPatientSummary,
     DoctorPatientSummaryAck,
     DoctorProfile,
@@ -22,11 +23,12 @@ from hospital_care.selectors.patient_workspace import (
 )
 from hospital_care.services.audit import write_hospital_audit_log
 from hospital_care.services.conversation_service import _create_doctor_intro_card, _create_system_message
+from hospital_care.services.read_state_service import unread_totals_by_member
 from medical.models import Member, MemberMedicalProfile
 
 SUMMARY_TOOL_NAME = "patient-workspace-summary-v1"
 
-_QUEUE_VALUES = {"all", "priority", "pending", "ended"}
+_QUEUE_VALUES = {"all", "priority", "pending", "active", "ended"}
 
 _RISK_ORDER = {
     ClinicalConversationBinding.RiskSignalLevel.NONE: 0,
@@ -98,7 +100,8 @@ def _parse_float(text: str) -> float | None:
         return None
 
 
-def _patient_phone_masked(member: Member) -> str:
+def _patient_phone(member: Member) -> str:
+    """DOCTOR-WORKSPACE-000004 第 11 问：授权医生可查看完整手机号（界面不脱敏）。"""
     identity = (
         SocialIdentity.objects.filter(user_id=member.user_id, provider=SocialIdentity.Provider.PHONE)
         .order_by("-updated_at")
@@ -106,7 +109,7 @@ def _patient_phone_masked(member: Member) -> str:
     )
     if identity is None:
         return ""
-    return mask_phone(identity.provider_uid)
+    return (identity.provider_uid or "").strip()
 
 
 def _profile_for(member: Member) -> MemberMedicalProfile | None:
@@ -167,7 +170,11 @@ def build_medical_safety(member: Member, profile: MemberMedicalProfile | None) -
 
 
 def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str = "all") -> tuple[list[dict], dict[str, int]]:
-    """D-007~D-010：授权集合内搜索、筛选、排序，返回最小卡片摘要与计数。"""
+    """D-007~D-010 + DOCTOR-WORKSPACE-000004：授权集合内搜索、筛选、排序。
+
+    列表只包含至少存在一条授权问诊的患者；卡片附带未结束问诊未读总数；
+    重点标记以医生-患者维度为准（兼容旧的问诊级聚合）。
+    """
     rows = doctor_patient_rows(doctor=doctor)
     member_ids = [row["member_id"] for row in rows]
     members = {
@@ -176,6 +183,19 @@ def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str =
     }
     rows = [row for row in rows if row["member_id"] in members]
 
+    # 医生-患者级重点标记（第 23 问）：优先于问诊级聚合结果。
+    attention_levels = {
+        int(row.member_id): row.level
+        for row in DoctorPatientAttention.objects.filter(doctor=doctor, member_id__in=member_ids)
+    }
+    for row in rows:
+        level = attention_levels.get(row["member_id"])
+        if level is not None:
+            row["priority_patient"] = level == ClinicalConversationBinding.AttentionLevel.PRIORITY
+
+    # 第 19 问：患者卡片未读 = 该患者所有未结束问诊的未读消息总数。
+    unread_totals = unread_totals_by_member(doctor=doctor)
+
     counts = {
         "all": len(rows),
         "priority": sum(1 for row in rows if row["priority_patient"]),
@@ -183,6 +203,11 @@ def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str =
             1
             for row in rows
             if row["service_status"] == ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR
+        ),
+        "active": sum(
+            1
+            for row in rows
+            if row["service_status"] == ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED
         ),
         "ended": sum(
             1 for row in rows if row["service_status"] == ClinicalConversationBinding.ServiceStatus.ENDED
@@ -199,6 +224,12 @@ def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str =
             for row in rows
             if row["service_status"] == ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR
         ]
+    elif queue == "active":
+        rows = [
+            row
+            for row in rows
+            if row["service_status"] == ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED
+        ]
     elif queue == "ended":
         rows = [row for row in rows if row["service_status"] == ClinicalConversationBinding.ServiceStatus.ENDED]
 
@@ -208,7 +239,8 @@ def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str =
             member = members[row["member_id"]]
             name = (member.name or "").strip().lower()
             identifier = masked_patient_identifier(member).lower()
-            return keyword in name or keyword in identifier
+            full_number = patient_number_for(member).lower()
+            return keyword in name or keyword in identifier or keyword in full_number
 
         rows = [row for row in rows if _matches(row)]
 
@@ -231,6 +263,7 @@ def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str =
             "latest_conversation_at": row["latest_conversation_at"].isoformat() if row["latest_conversation_at"] else None,
             "priority_patient": row["priority_patient"],
             "available_conversation_count": row["conversation_count"],
+            "unread_count": int(unread_totals.get(row["member_id"], 0)),
         }
         for row in rows
     ]
@@ -506,7 +539,9 @@ def build_patient_workspace(*, doctor: DoctorProfile, member_id: int) -> dict:
             "priority_patient": priority,
         },
         "basic_profile": {
-            "phone_masked": _patient_phone_masked(member) or None,
+            # 第 11 问（范围修订）：授权医生界面不脱敏；phone_masked 保留给旧客户端兼容。
+            "phone": _patient_phone(member) or None,
+            "phone_masked": mask_phone(_patient_phone(member)) or None,
             "identity_number_masked": _extra_value(extra, "identity_number_masked", "id_number_masked") or None,
             "region": _extra_value(extra, "region", "region_display") or None,
             "occupation": _extra_value(extra, "occupation") or None,

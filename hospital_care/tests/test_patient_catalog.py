@@ -4,9 +4,10 @@ from django.test import TestCase
 from django.utils import timezone
 
 from chat_sync.contracts.canonical import KIND_HOSPITAL_DOCTOR_INTRO_CARD, payload_kind
-from chat_sync.models import ChatMessageBlock
+from chat_sync.models import ChatMessage, ChatMessageBlock
+from chat_sync.views import _to_payload, _to_thread_payload
 from file_manager.models import ManagedFile
-from hospital_care.api.presenters import doctor_public
+from hospital_care.api.presenters import conversation_create_snapshot, conversation_public, doctor_public
 from hospital_care.selectors.patient_catalog import latest_conversation_for_agent, published_agents
 from hospital_care.services.conversation_service import create_patient_conversation
 from hospital_care.tests.factories import (
@@ -139,3 +140,66 @@ class DoctorIntroCardTests(TestCase):
             ChatMessageBlock.objects.filter(thread=first.thread, kind=KIND_HOSPITAL_DOCTOR_INTRO_CARD).count(),
             1,
         )
+
+    def test_create_snapshot_returns_canonical_thread_and_initial_messages(self):
+        binding = create_patient_conversation(
+            request=self.request,
+            user=self.patient,
+            agent_id=self.agent.id,
+            member_id=self.member.id,
+        )
+        snapshot = conversation_create_snapshot(binding)
+        self.assertEqual(snapshot["thread_id"], str(binding.thread_id))
+        self.assertEqual(snapshot["thread"], _to_thread_payload(binding.thread))
+        self.assertEqual(snapshot["conversation"]["thread_id"], str(binding.thread_id))
+
+        messages = list(
+            ChatMessage.objects.filter(thread=binding.thread)
+            .prefetch_related("blocks", "hospital_attribution")
+            .order_by("created_at", "id")
+        )
+        self.assertEqual(len(snapshot["initial_messages"]), 2)
+        self.assertEqual(len(messages), 2)
+        kinds = [block["kind"] for item in snapshot["initial_messages"] for block in item["blocks"]]
+        self.assertEqual(kinds[0], KIND_HOSPITAL_DOCTOR_INTRO_CARD)
+        self.assertIn("text", kinds)
+        self.assertEqual(snapshot["initial_messages"][0]["client_message_id"], str(messages[0].client_message_id))
+        self.assertEqual(snapshot["initial_messages"][0]["server_message_id"], messages[0].server_message_id)
+        self.assertEqual(snapshot["initial_messages"][0]["thread_id"], str(binding.thread_id))
+        self.assertEqual(snapshot["initial_messages"][0]["blocks"][0]["id"], str(messages[0].blocks.first().id))
+        for message, payload in zip(messages, snapshot["initial_messages"]):
+            expected = _to_payload(message)
+            self.assertEqual(payload["client_message_id"], expected["client_message_id"])
+            self.assertEqual(payload["server_message_id"], expected["server_message_id"])
+            self.assertEqual(payload["blocks"][0]["id"], expected["blocks"][0]["id"])
+            self.assertEqual(payload["blocks"][0]["kind"], expected["blocks"][0]["kind"])
+
+        replay = conversation_create_snapshot(binding)
+        self.assertEqual(
+            [item["server_message_id"] for item in replay["initial_messages"]],
+            [item["server_message_id"] for item in snapshot["initial_messages"]],
+        )
+        self.assertEqual(
+            ChatMessageBlock.objects.filter(thread=binding.thread, kind=KIND_HOSPITAL_DOCTOR_INTRO_CARD).count(),
+            1,
+        )
+        self.assertIsNone(conversation_public(binding)["consultation"])
+
+    def test_consultation_flow_disclaimer_omits_agent_wording(self):
+        binding = create_patient_conversation(
+            request=self.request,
+            user=self.patient,
+            agent_id=self.agent.id,
+            member_id=self.member.id,
+            flow="consultation",
+        )
+        texts = [
+            block.payload.get("text", {}).get("_0", "")
+            for block in ChatMessageBlock.objects.filter(thread=binding.thread, kind="text")
+        ]
+        joined = "\n".join(texts)
+        self.assertIn("线上问诊", joined)
+        self.assertNotIn("智能体", joined)
+        self.assertNotIn("本助手", joined)
+        self.assertNotIn("AI", joined)
+        self.assertIsNone(conversation_public(binding)["consultation"])

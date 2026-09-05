@@ -15,6 +15,9 @@ from hospital_care.models import (
     ChatMessageAttribution,
     ClinicalAgentProfile,
     ClinicalConversationBinding,
+    ConversationEndReason,
+    DoctorConversationRiskRevision,
+    DoctorPatientAttention,
     DoctorProfile,
     Hospital,
 )
@@ -136,7 +139,15 @@ def _create_doctor_intro_card(*, thread: ChatThread, agent: ClinicalAgentProfile
     )
 
 
-def create_patient_conversation(*, request, user, agent_id, member_id: int, thread_id=None) -> ClinicalConversationBinding:
+def create_patient_conversation(
+    *,
+    request,
+    user,
+    agent_id,
+    member_id: int,
+    thread_id=None,
+    flow: str = "agent_chat",
+) -> ClinicalConversationBinding:
     try:
         ensure_can_access_member(user=user, member_id=int(member_id))
     except PermissionError as exc:
@@ -197,14 +208,22 @@ def create_patient_conversation(*, request, user, agent_id, member_id: int, thre
             doctor=agent.doctor,
             agent=agent,
             scenario_binding=scenario_binding,
-            service_status=ClinicalConversationBinding.ServiceStatus.AI_ACTIVE,
+            # DOCTOR-WORKSPACE-000004 第 8 问：患者客户端发起后直接进入待医生接诊。
+            service_status=ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR,
             assigned_at=now,
         )
         _create_doctor_intro_card(thread=thread, agent=agent)
-        disclaimer = (
-            f"您正在咨询「{agent.name}」。本助手由{agent.doctor.display_name}团队维护，"
-            "提供健康信息与就医指导，不构成诊断或处方。"
-        )
+        if flow == "consultation":
+            disclaimer = (
+                f"您已向{agent.doctor.display_name}提交线上问诊。"
+                "本次会话由医生一对一处理，不自动回复。"
+                "问诊意见供参考，不构成诊断或处方。"
+            )
+        else:
+            disclaimer = (
+                f"您正在咨询「{agent.name}」。本助手由{agent.doctor.display_name}团队维护，"
+                "提供健康信息与就医指导，不构成诊断或处方。"
+            )
         _create_system_message(
             thread=thread,
             agent=agent,
@@ -302,6 +321,14 @@ def update_attention(*, request, doctor: DoctorProfile, thread_id, payload: dict
         binding.attention_note = payload.get("attention_note") or binding.attention_note
         binding.version += 1
         binding.save(update_fields=["doctor_attention_level", "attention_note", "version", "updated_at"])
+        # DOCTOR-WORKSPACE-000004 第 23 问：重点标记按医生-患者维度生效，
+        # 同一患者多条问诊共享同一标记，仅对当前医生可见。
+        if binding.thread.member_id:
+            DoctorPatientAttention.objects.update_or_create(
+                doctor=doctor,
+                member_id=int(binding.thread.member_id),
+                defaults={"level": level, "note": binding.attention_note},
+            )
     write_hospital_audit_log(
         request,
         action="hospital.conversation.attention_update",
@@ -316,10 +343,70 @@ def update_attention(*, request, doctor: DoctorProfile, thread_id, payload: dict
     return binding
 
 
+def update_risk_level(*, request, doctor: DoctorProfile, thread_id, payload: dict) -> ClinicalConversationBinding:
+    """DOCTOR-WORKSPACE-000004 第 24/25/32 问：医生人工调整风险等级。
+
+    四级（none/low/medium/high）可调，理由可选；当前值更新与不可变历史快照
+    在同一事务写入；不改变问诊服务状态，不触发自动接管或结束。
+    """
+    level = (payload.get("risk_signal_level") or payload.get("level") or "").strip()
+    if level not in ClinicalConversationBinding.RiskSignalLevel.values:
+        raise HospitalCareError("PAYLOAD_INVALID", details={"field": "risk_signal_level"})
+    reason = (payload.get("reason") or "").strip()
+    with transaction.atomic():
+        binding = _lock_binding(thread_id)
+        assert_doctor_owns_binding(doctor=doctor, binding=binding)
+        _assert_version(binding, payload.get("version"))
+        if binding.service_status == ClinicalConversationBinding.ServiceStatus.ENDED:
+            raise HospitalCareError("CONVERSATION_ENDED")
+        previous = binding.risk_signal_level
+        binding.risk_signal_level = level
+        binding.version += 1
+        binding.save(update_fields=["risk_signal_level", "version", "updated_at"])
+        DoctorConversationRiskRevision.objects.create(
+            binding=binding,
+            doctor=doctor,
+            previous_level=previous,
+            next_level=level,
+            reason=reason,
+            source=DoctorConversationRiskRevision.Source.DOCTOR_MANUAL,
+            version=binding.version,
+            request_id=str(getattr(request, "request_id", "") or "")[:64],
+        )
+    write_hospital_audit_log(
+        request,
+        action="hospital.conversation.risk_update",
+        resource_type="hospital_conversation",
+        resource_id=str(binding.thread_id),
+        extra={
+            "hospital_id": str(binding.hospital_id),
+            "thread_id": str(binding.thread_id),
+            "doctor_id": str(doctor.id),
+            "risk_signal_level": level,
+            "version": binding.version,
+        },
+    )
+    return binding
+
+
 def end_conversation(*, request, doctor: DoctorProfile, thread_id, payload: dict) -> ClinicalConversationBinding:
-    reason = (payload.get("end_reason") or payload.get("reason") or "").strip()
-    if not reason:
-        raise HospitalCareError("PAYLOAD_INVALID", details={"field": "end_reason"})
+    # DOCTOR-WORKSPACE-000004 第 28 问：结束原因必填，使用固定枚举并支持补充说明；
+    # “其他”必须填写说明。end_reason 保留展示文本兼容旧数据与患者端。
+    reason_code = (payload.get("end_reason_code") or "").strip()
+    reason_note = (payload.get("end_reason_note") or "").strip()
+    legacy_reason = (payload.get("end_reason") or payload.get("reason") or "").strip()
+    if reason_code:
+        if reason_code not in ConversationEndReason.values:
+            raise HospitalCareError("PAYLOAD_INVALID", details={"field": "end_reason_code"})
+        if reason_code == ConversationEndReason.OTHER and not reason_note:
+            raise HospitalCareError("PAYLOAD_INVALID", details={"field": "end_reason_note"})
+        reason = ConversationEndReason(reason_code).label
+        if reason_code == ConversationEndReason.OTHER:
+            reason = f"{ConversationEndReason.OTHER.label}：{reason_note}"[:64]
+    elif legacy_reason:
+        reason = legacy_reason
+    else:
+        raise HospitalCareError("PAYLOAD_INVALID", details={"field": "end_reason_code"})
     with transaction.atomic():
         binding = _lock_binding(thread_id)
         assert_doctor_owns_binding(doctor=doctor, binding=binding)
@@ -332,14 +419,26 @@ def end_conversation(*, request, doctor: DoctorProfile, thread_id, payload: dict
         binding.ended_at = timezone.now()
         binding.ended_by = request.user
         binding.end_reason = reason
+        binding.end_reason_code = reason_code
+        binding.end_reason_note = reason_note
         binding.version += 1
         binding.save(
-            update_fields=["service_status", "ended_at", "ended_by", "end_reason", "version", "updated_at"]
+            update_fields=[
+                "service_status",
+                "ended_at",
+                "ended_by",
+                "end_reason",
+                "end_reason_code",
+                "end_reason_note",
+                "version",
+                "updated_at",
+            ]
         )
+        # 第 29 问：系统结束提示包含结束状态与必要的结束原因摘要。
         _create_system_message(
             thread=binding.thread,
             agent=binding.agent,
-            text="本次服务已结束，历史消息仍可查看。",
+            text=f"本次问诊已结束（{reason}），历史消息仍可查看。如需继续咨询请发起新的问诊。",
             actor_type=ChatMessageAttribution.ActorType.SYSTEM,
         )
     write_hospital_audit_log(
@@ -350,7 +449,8 @@ def end_conversation(*, request, doctor: DoctorProfile, thread_id, payload: dict
         extra={
             "hospital_id": str(binding.hospital_id),
             "thread_id": str(binding.thread_id),
-            "end_reason": reason,
+            "end_reason": binding.end_reason,
+            "end_reason_code": binding.end_reason_code,
             "service_status": binding.service_status,
         },
     )

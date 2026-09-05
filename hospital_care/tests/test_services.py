@@ -98,7 +98,7 @@ class ConversationServiceTests(TestCase):
             agent_id=self.agent.id,
             member_id=self.member.id,
         )
-        self.assertEqual(binding.service_status, ClinicalConversationBinding.ServiceStatus.AI_ACTIVE)
+        self.assertEqual(binding.service_status, ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR)
         self.assertEqual(binding.thread.member_id, self.member.id)
 
         doctor_request = DummyRequest(self.doctor_user)

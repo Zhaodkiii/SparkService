@@ -1,4 +1,5 @@
 import type { ChatBlockDTO, ChatUsageSummary, TurnSummary } from "@/types/chat";
+import type { RunAttachmentDTO } from "@/types/run";
 
 export interface ChatThreadWireDTO {
   thread_id: string;
@@ -25,6 +26,8 @@ export interface ChatThreadWireDTO {
 }
 
 export interface ChatMessageWireDTO {
+  /** 服务端数值主键（DOCTOR-WORKSPACE-000004 起下发，历史游标分页/去重使用）。 */
+  id?: number;
   thread_id: string;
   role: "system" | "user" | "assistant";
   model_name?: string | null;
@@ -34,7 +37,8 @@ export interface ChatMessageWireDTO {
   created_at: string;
   server_updated_at?: string | null;
   tombstone?: boolean;
-  attachments?: unknown;
+  /** 消息附件（CHAT-WEB-029 起收敛为文件引用/图片附件）。 */
+  attachments?: RunAttachmentDTO[];
   blocks: ChatBlockDTO[];
   reasoning_content?: string | null;
   reasoning_duration_ms?: number | null;

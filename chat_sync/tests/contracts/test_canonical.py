@@ -16,6 +16,7 @@ from chat_sync.contracts import (
     error_payload,
     payload_kind,
     payload_text,
+    project_block_for_ios_client,
     search_summary_payload,
     text_payload,
     tool_payload,
@@ -28,11 +29,13 @@ from chat_sync.contracts import (
 
 
 class BlockKindTests(SimpleTestCase):
-    def test_37_kinds_are_declared(self):
-        self.assertEqual(len(BLOCK_KINDS), 37)
+    def test_38_kinds_are_declared(self):
+        self.assertEqual(len(BLOCK_KINDS), 38)
         self.assertIn(KIND_TOOL, BLOCK_KINDS)
         self.assertIn(KIND_SEARCH_SUMMARY, BLOCK_KINDS)
         self.assertIn(KIND_HOSPITAL_DOCTOR_INTRO_CARD, BLOCK_KINDS)
+        # DOCTOR-WORKSPACE-000004：医生问诊文档附件画廊块。
+        self.assertIn("fileGallery", BLOCK_KINDS)
         self.assertNotIn("toolCall", BLOCK_KINDS)
         self.assertNotIn("toolResult", BLOCK_KINDS)
 
@@ -75,6 +78,24 @@ class PayloadUnionTests(SimpleTestCase):
         self.assertIsNone(payload_kind({"text": {"_0": "x"}, "tool": {"_0": {}}}))
         self.assertIsNone(payload_kind("not a dict"))
         self.assertIsNone(payload_kind(None))
+
+    def test_hospital_file_gallery_projects_to_ios_file_attachments(self):
+        kind, payload = project_block_for_ios_client(
+            "fileGallery",
+            {
+                "file_gallery": {
+                    "_0": [{
+                        "id": "84eeb9cc-00fb-490e-9ea5-5a50ee011d5c",
+                        "type": "document",
+                        "mime_type": "application/pdf",
+                        "url": "https://cdn.example.test/consult.pdf",
+                    }]
+                }
+            },
+        )
+        self.assertEqual(kind, "fileAttachments")
+        self.assertEqual(payload["file_attachments"]["_0"][0]["type"], "pdf")
+        self.assertEqual(payload_kind(payload), "fileAttachments")
 
     def test_payload_text_only_unwraps_canonical(self):
         self.assertEqual(payload_text({"text": {"_0": "回答"}}), "回答")

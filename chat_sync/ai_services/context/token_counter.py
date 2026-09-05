@@ -35,8 +35,23 @@ def count_tokens(value: Any) -> TokenCount:
         return TokenCount(estimate, "heuristic", True)
 
 
+# 多模态消息中每个 image_url part 的固定 token 估计（规划上限，非计费依据）。
+IMAGE_PART_TOKEN_ESTIMATE = 1024
+
+
 def count_message(message: dict[str, Any]) -> TokenCount:
     content = message.get("content", "")
+    if isinstance(content, list):
+        # OpenAI content parts：text 部分照常计数，每个 image_url 按固定估计计入。
+        text = "".join(
+            str(part.get("text") or "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+        image_parts = sum(1 for part in content if isinstance(part, dict) and part.get("type") == "image_url")
+        base = count_tokens(text)
+        overhead = 4 + image_parts * IMAGE_PART_TOKEN_ESTIMATE
+        return TokenCount(base.count + overhead, base.method, base.estimated, base.version)
     value = content if isinstance(content, str) else _canonical_text(content)
     base = count_tokens(value)
     overhead = 4

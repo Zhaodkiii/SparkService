@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { ConversationRiskPanel } from "@/components/doctor/ConversationRiskPanel";
 import { useDoctorConversations } from "@/context/DoctorConversationsContext";
-import { ATTENTION_LABEL, END_REASON_OPTIONS, RISK_LABEL, SERVICE_STATUS_LABEL, relativeTime } from "@/lib/hospital/labels";
+import { ATTENTION_LABEL, END_REASON_OPTIONS, RISK_LABEL, SERVICE_STATUS_LABEL, endReasonLabel, relativeTime } from "@/lib/hospital/labels";
 import { firstRiskMessageId } from "@/lib/hospital/message-text";
-import type { DoctorAttentionLevel } from "@/types/hospital";
+import type { ConversationEndReasonCode, DoctorAttentionLevel } from "@/types/hospital";
 
 const ATTENTION_OPTIONS: DoctorAttentionLevel[] = ["normal", "follow_up", "priority"];
 
@@ -15,7 +16,7 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
   const [level, setLevel] = useState<DoctorAttentionLevel>("normal");
   const [note, setNote] = useState("");
   const [ending, setEnding] = useState(false);
-  const [endReason, setEndReason] = useState<(typeof END_REASON_OPTIONS)[number]["value"]>("已完成咨询");
+  const [endReason, setEndReason] = useState<ConversationEndReasonCode>("resolved");
   const [endNote, setEndNote] = useState("");
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
               {detail.doctor_joined_at ? `接管于 ${relativeTime(detail.doctor_joined_at)}` : `分配于 ${relativeTime(detail.assigned_at)}`}
               {detail.ended_at ? ` · 结束于 ${relativeTime(detail.ended_at)}` : ""}
             </p>
-            {detail.end_reason ? <p className="doctor-panel-muted">结束原因：{detail.end_reason}</p> : null}
+            {endReasonLabel(detail) ? <p className="doctor-panel-muted">结束原因：{endReasonLabel(detail)}</p> : null}
           </section>
           <section className="doctor-panel-section">
             <h2>医生关注</h2>
@@ -71,9 +72,9 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
             <button type="button" className="doctor-button" disabled={ended || conversations.writeBusy} onClick={() => void conversations.updateAttention(level, note)}>保存关注设置</button>
           </section>
           <section className="doctor-panel-section">
-            <h2>AI 风险摘要</h2>
+            <h2>风险等级</h2>
             <p><strong>{RISK_LABEL[detail.risk_signal_level]}</strong></p>
-            <p className="doctor-panel-muted">风险等级与医生关注是两套独立标签。</p>
+            <p className="doctor-panel-muted">风险等级与医生关注是两套独立标签；人工调整不改变问诊状态。</p>
             <button
               type="button"
               className="doctor-button doctor-button--ghost"
@@ -82,6 +83,7 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
             >
               定位到原风险消息
             </button>
+            <ConversationRiskPanel />
           </section>
           <section className="doctor-panel-section">
             <h2>患者授权摘要</h2>
@@ -93,23 +95,23 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
             </ul>
           </section>
           <section className="doctor-panel-section doctor-panel-end">
-            <h2>本次服务</h2>
+            <h2>本次问诊</h2>
             {ended ? (
-              <p className="doctor-panel-muted">本次对话已结束，历史消息仍保留。</p>
+              <p className="doctor-panel-muted">本次问诊已结束，历史消息仍保留；再次咨询需由患者发起新的问诊。</p>
             ) : !ending ? (
-              <button type="button" className="doctor-button doctor-button--danger" disabled={conversations.writeBusy} onClick={() => setEnding(true)}>结束本次对话</button>
+              <button type="button" className="doctor-button doctor-button--danger" disabled={conversations.writeBusy} onClick={() => setEnding(true)}>结束本次问诊</button>
             ) : (
               <form
                 className="doctor-end-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const reason = endReason === "其他" && endNote.trim() ? `${endReason}：${endNote.trim()}` : endNote.trim() ? `${endReason}：${endNote.trim()}` : endReason;
-                  void conversations.endConversation(reason).then((ok) => { if (ok) setEnding(false); });
+                  // 第 28 问：固定枚举必填；“其他”必须填写补充说明。
+                  void conversations.endConversation(endReason, endNote.trim() || undefined).then((ok) => { if (ok) setEnding(false); });
                 }}
               >
-                <p>结束后双方仍可查看历史消息，医生不能继续回复；不会删除会话记录。</p>
+                <p>结束后问诊永久只读，双方仍可查看历史消息；不会删除问诊记录。</p>
                 <fieldset>
-                  <legend>结束原因</legend>
+                  <legend>结束原因（必填）</legend>
                   {END_REASON_OPTIONS.map((option) => (
                     <label key={option.value}>
                       <input type="radio" name="end-reason" checked={endReason === option.value} onChange={() => setEndReason(option.value)} />
@@ -117,10 +119,15 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
                     </label>
                   ))}
                 </fieldset>
-                <textarea value={endNote} onChange={(event) => setEndNote(event.target.value)} placeholder="补充说明（可选）" aria-label="结束补充说明" />
+                <textarea
+                  value={endNote}
+                  onChange={(event) => setEndNote(event.target.value)}
+                  placeholder={endReason === "other" ? "补充说明（选择“其他”时必填）" : "补充说明（可选）"}
+                  aria-label="结束补充说明"
+                />
                 <div className="doctor-end-form__footer">
                   <button type="button" className="doctor-button doctor-button--ghost" onClick={() => setEnding(false)}>取消</button>
-                  <button type="submit" className="doctor-button doctor-button--danger" disabled={conversations.writeBusy}>确认结束</button>
+                  <button type="submit" className="doctor-button doctor-button--danger" disabled={conversations.writeBusy || (endReason === "other" && !endNote.trim())}>确认结束</button>
                 </div>
               </form>
             )}

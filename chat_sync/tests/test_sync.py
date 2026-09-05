@@ -92,6 +92,44 @@ class ChatMessageBlockProjectionTests(TestCase):
         self.assertEqual(block["node_role"], "toolPresentation")
         self.assertEqual(block["payload"]["search_summary"]["_0"]["query"], "乳腺结节")
 
+    def test_projects_hospital_file_gallery_to_ios_file_attachments(self):
+        user = get_user_model().objects.create_user(username="hospital-file-gallery")
+        thread = ChatThread.objects.create(user=user, title="Hospital")
+        message = ChatMessage.objects.create(
+            user=user, thread=thread, role=ChatMessage.Role.USER,
+            client_message_id=uuid.uuid4(), server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        ChatMessageBlock.objects.create(
+            id=uuid.uuid4(), user=user, thread=thread, message=message, kind="fileGallery",
+            status=ChatMessageBlock.Status.READY, revision=1, order_key=1200,
+            node_role="timeline",
+            payload={
+                "file_gallery": {
+                    "_0": [{
+                        "id": "84eeb9cc-00fb-490e-9ea5-5a50ee011d5c",
+                        "url": "https://cdn.example.test/consult.pdf",
+                        "type": "document",
+                        "order": 0,
+                        "file_id": 2574,
+                        "filename": "存款人密码纸.pdf",
+                        "file_size": 113227,
+                        "mime_type": "application/pdf",
+                    }]
+                }
+            },
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        block = _to_payload(message)["blocks"][0]
+        self.assertEqual(block["kind"], "fileAttachments")
+        items = block["payload"]["file_attachments"]["_0"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["type"], "pdf")
+        self.assertEqual(items[0]["file_id"], 2574)
+        self.assertNotIn("file_gallery", block["payload"])
+
     def test_payload_reads_blocks_from_block_table(self):
         user = get_user_model().objects.create_user(username="chat-blocks")
         thread = ChatThread.objects.create(user=user, title="Blocks")

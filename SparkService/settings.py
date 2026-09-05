@@ -158,8 +158,17 @@ ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600
 CLINICAL_AGENT_DEFAULT_AVATAR_URL = (os.getenv("CLINICAL_AGENT_DEFAULT_AVATAR_URL") or "").strip()
 CLINICAL_AGENT_DEFAULT_AVATAR_VERSION = (os.getenv("CLINICAL_AGENT_DEFAULT_AVATAR_VERSION") or "v1").strip() or "v1"
 
-# 头像上传单文件最大 5 MB，请求体上限放宽到 10 MB（默认 2.5 MB 会拒绝合法头像）。
-DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))
+# 头像上传单文件最大 5 MB；问诊附件最大 20 MB，请求体上限放宽到 25 MB。
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DATA_UPLOAD_MAX_MEMORY_SIZE", str(25 * 1024 * 1024)))
+
+# 医生线上问诊附件（DOCTOR-WORKSPACE-000004）：常见医疗文档与图片，阈值配置化。
+HOSPITAL_DOCTOR_ATTACHMENT_MAX_BYTES = int(os.getenv("HOSPITAL_DOCTOR_ATTACHMENT_MAX_BYTES", str(20 * 1024 * 1024)))
+HOSPITAL_DOCTOR_ATTACHMENT_MAX_COUNT = int(os.getenv("HOSPITAL_DOCTOR_ATTACHMENT_MAX_COUNT", "5"))
+HOSPITAL_DOCTOR_ATTACHMENT_ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+}
 
 # 公开病例分享站点根地址：`share-web` 用于拼接公开链接与附件短链。
 MEDICAL_SHARE_WEB_BASE_URL = (os.getenv("MEDICAL_SHARE_WEB_BASE_URL") or "https://share.dreamwhale.top").strip()
@@ -361,6 +370,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_THROTTLE_RATES": {
         "public_image_upload": os.getenv("PUBLIC_IMAGE_UPLOAD_RATE", "30/hour"),
+        "chat_image_upload": os.getenv("CHAT_IMAGE_UPLOAD_RATE", "120/hour"),
     },
     "EXCEPTION_HANDLER": "common.exception_handlers.api_exception_handler",
 }

@@ -79,6 +79,9 @@ class ClinicalConversationBinding(models.Model):
         on_delete=models.PROTECT,
     )
     end_reason = models.CharField(max_length=64, blank=True, default="")
+    # DOCTOR-WORKSPACE-000004：结构化结束原因；end_reason 保留展示文本兼容。
+    end_reason_code = models.CharField(max_length=32, blank=True, default="")
+    end_reason_note = models.TextField(blank=True, default="")
     version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -149,6 +152,115 @@ class ChatMessageAttribution(models.Model):
             raise ValidationError("ai_agent attribution requires agent")
         if self.actor_type == self.ActorType.PATIENT and self.doctor_id:
             raise ValidationError("patient attribution must not include doctor")
+
+
+class ConversationEndReason(models.TextChoices):
+    """DOCTOR-WORKSPACE-000004 第 28 问：固定结束原因枚举；“其他”必须附补充说明。"""
+
+    RESOLVED = "resolved", "已完成咨询"
+    OFFLINE_REFERRAL = "offline_referral", "建议线下就诊"
+    PATIENT_NO_FOLLOWUP = "patient_no_followup", "患者无继续咨询"
+    OTHER = "other", "其他"
+
+
+class DoctorConversationRiskRevision(models.Model):
+    """DOCTOR-WORKSPACE-000004 第 32 问：问诊级医生人工风险调整历史（不可变快照）。
+
+    每次调整新增一条记录；不允许覆盖或删除。当前有效值仍保存在
+    ``ClinicalConversationBinding.risk_signal_level``，AI/工具原始结果不被抹除。
+    """
+
+    class Source(models.TextChoices):
+        DOCTOR_MANUAL = "doctor_manual"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    binding = models.ForeignKey(
+        ClinicalConversationBinding,
+        related_name="risk_revisions",
+        on_delete=models.PROTECT,
+    )
+    doctor = models.ForeignKey(
+        DoctorProfile,
+        related_name="risk_revisions",
+        on_delete=models.PROTECT,
+    )
+    previous_level = models.CharField(max_length=16, choices=ClinicalConversationBinding.RiskSignalLevel.choices)
+    next_level = models.CharField(max_length=16, choices=ClinicalConversationBinding.RiskSignalLevel.choices)
+    reason = models.TextField(blank=True, default="")
+    source = models.CharField(max_length=32, choices=Source.choices, default=Source.DOCTOR_MANUAL)
+    version = models.BigIntegerField(default=1)
+    request_id = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["binding", "created_at", "id"], name="idx_risk_revision_binding_time"),
+        ]
+
+
+class DoctorConversationReadCursor(models.Model):
+    """DOCTOR-WORKSPACE-000004 第 31 问：医生-问诊已读游标。
+
+    以 (doctor, thread) 唯一保存最后已读消息 ID；只允许前进，不允许回退。
+    问诊级未读数 = 该问诊中游标之后、归属为患者/AI 的可见消息数；
+    患者级未读总数 = 当前医生可见未结束问诊的问诊级未读之和。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    doctor = models.ForeignKey(
+        DoctorProfile,
+        related_name="conversation_read_cursors",
+        on_delete=models.CASCADE,
+    )
+    thread = models.ForeignKey(
+        "chat_sync.ChatThread",
+        related_name="doctor_read_cursors",
+        on_delete=models.CASCADE,
+        db_constraint=False,
+    )
+    last_read_message_id = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["doctor", "thread"], name="uniq_doctor_thread_read_cursor"),
+        ]
+        indexes = [
+            models.Index(fields=["doctor", "updated_at"], name="idx_read_cursor_doctor_time"),
+        ]
+
+
+class DoctorPatientAttention(models.Model):
+    """DOCTOR-WORKSPACE-000004 第 23 问：医生-患者级“重点患者”标记。
+
+    由当前归属医生手动设置，仅对该医生生效；不影响问诊状态与风险等级。
+    同一患者存在多条问诊时以本表为准，避免问诊绑定间标记不一致。
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    doctor = models.ForeignKey(
+        DoctorProfile,
+        related_name="patient_attentions",
+        on_delete=models.CASCADE,
+    )
+    member_id = models.IntegerField()
+    level = models.CharField(
+        max_length=16,
+        choices=ClinicalConversationBinding.AttentionLevel.choices,
+        default=ClinicalConversationBinding.AttentionLevel.NORMAL,
+    )
+    note = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["doctor", "member_id"], name="uniq_doctor_patient_attention"),
+        ]
+        indexes = [
+            models.Index(fields=["doctor", "level"], name="idx_patient_attention_level"),
+        ]
 
 
 class HospitalCareCommandReceipt(models.Model):

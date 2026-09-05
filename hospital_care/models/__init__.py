@@ -1,7 +1,12 @@
 from hospital_care.models.agent_profiles import ClinicalAgentKnowledgeBinding, ClinicalAgentProfile
+from hospital_care.models.consultations import Consultation
 from hospital_care.models.conversations import (
     ChatMessageAttribution,
     ClinicalConversationBinding,
+    ConversationEndReason,
+    DoctorConversationReadCursor,
+    DoctorConversationRiskRevision,
+    DoctorPatientAttention,
     HospitalCareCommandReceipt,
 )
 from hospital_care.models.knowledge import (
@@ -27,7 +32,12 @@ __all__ = [
     "ClinicalAgentProfile",
     "ClinicalAgentKnowledgeBinding",
     "ClinicalConversationBinding",
+    "Consultation",
     "ChatMessageAttribution",
+    "ConversationEndReason",
+    "DoctorConversationRiskRevision",
+    "DoctorConversationReadCursor",
+    "DoctorPatientAttention",
     "HospitalCareCommandReceipt",
     "HospitalKnowledgeBaseProfile",
     "HospitalKnowledgeBaseDepartment",

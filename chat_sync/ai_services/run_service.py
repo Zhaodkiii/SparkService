@@ -22,6 +22,7 @@ from chat_sync.ai_models import (
 )
 from chat_sync.ai_models.run import assert_run_transition
 from chat_sync.ai_runtime.capabilities import CapabilityUnavailable, build_capability_registry
+from chat_sync.ai_services.image_support import validate_image_attachments
 from chat_sync.contracts import BlockContractError, NODE_ROLE_TIMELINE, decode_block
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from common.exceptions import APIError
@@ -363,6 +364,33 @@ class RunService:
             snapshot["preferences_revision"] = frozen_revision
             snapshot["preferences"] = frozen_preferences
             snapshot["context_parent_message_id"] = context_parent.id if context_parent else None
+
+            now = timezone.now()
+            client_message_id = payload["client_message_id"]
+            input_message = payload["input_message"]
+            if str(input_message.get("thread_id")) != str(thread.id):
+                raise cls._api_error("chat_input_thread_mismatch", 40091, 400, {"field": "input_message.thread_id"})
+
+            # client_message_id 幂等：同一用户重复提交同一消息 ID 时复用该消息
+            # 最近一次 Run 作为 replayed 结果，避免 (user, client_message_id)
+            # 唯一约束抛出裸 IntegrityError。
+            existing_message = ChatMessage.objects.filter(user=user, client_message_id=client_message_id).first()
+            if existing_message is not None:
+                if existing_message.thread_id != thread.id:
+                    raise cls._api_error("chat_idempotency_conflict", 40992, 409)
+                last_run = (
+                    ChatRun.objects.filter(user_id=user.id, user_message=existing_message)
+                    .order_by("-created_at")
+                    .first()
+                )
+                if last_run is None:
+                    # 消息已存在但尚无 Run（例如旧 sync 推送链路写入）：明确报
+                    # 处理中/冲突，而非唯一约束 500。40993/40994 已被占用，故用 40980。
+                    raise cls._api_error("chat_run_idempotency_pending", 40980, 409, {"client_message_id": str(client_message_id)})
+                if last_run.request_hash != request_hash:
+                    raise cls._api_error("chat_idempotency_conflict", 40992, 409)
+                return RunCommandResult(last_run, replayed=True)
+
             if lock.active_run_id:
                 active = ChatRun.objects.filter(id=lock.active_run_id).first()
                 if active is not None and not active.is_terminal:
@@ -370,11 +398,9 @@ class RunService:
                 lock.active_run = None
                 lock.save(update_fields=["active_run", "updated_at"])
 
-            now = timezone.now()
-            client_message_id = payload["client_message_id"]
-            input_message = payload["input_message"]
-            if str(input_message.get("thread_id")) != str(thread.id):
-                raise cls._api_error("chat_input_thread_mismatch", 40091, 400, {"field": "input_message.thread_id"})
+            # 图片附件校验（CHAT-WEB-029）：无 type=image 附件时内部直接返回。
+            validate_image_attachments(user=user, thread=thread, payload=payload)
+
             user_message = ChatMessage.objects.create(
                 user=user,
                 thread=thread,
@@ -383,6 +409,8 @@ class RunService:
                 server_message_id=str(uuid.uuid4()),
                 delivery_state=ChatMessage.DeliveryState.SENT,
                 created_at=now,
+                # attachments 写入消息 metadata，使消息 wire 能原样返回附件。
+                metadata={"attachments": snapshot["attachments"]},
             )
             cls._create_input_message_blocks(user, thread, user_message, input_message, now)
             assistant_message = ChatMessage.objects.create(

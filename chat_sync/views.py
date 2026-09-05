@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from chat_sync.events import ChatSyncNotifier
 from chat_sync.ai_models.event import ChatUsageRecord
 from chat_sync.ai_models.run import TERMINAL_RUN_STATUSES
-from chat_sync.contracts import BlockContractError, decode_block
+from chat_sync.contracts import BlockContractError, decode_block, project_block_for_ios_client
 from chat_sync.models import ChatMessage, ChatMessageBlock, ChatThread
 from chat_sync.serializers import (
     ChatPushRequestSerializer,
@@ -125,6 +125,8 @@ def _to_block_push_ack(message: ChatMessage, block_id) -> dict:
 def _to_payload(message: ChatMessage) -> dict:
     metadata = message.metadata or {}
     return {
+        # DOCTOR-WORKSPACE-000004：医生问诊历史游标分页需要稳定数值主键。
+        "id": message.id,
         "thread_id": str(message.thread_id),
         "role": message.role,
         "model_name": message.model_name or None,
@@ -240,9 +242,11 @@ def _usage_summary_for_message(message: ChatMessage) -> dict | None:
 
 
 def _block_to_payload(block: ChatMessageBlock) -> dict | None:
-    # Sync is the iOS wire contract. There is deliberately no legacy projection
-    # or database migration path: invalid rows are rejected instead of being
-    # silently converted into a second message model.
+    # Sync is the iOS wire contract. Invalid rows are omitted, not rewritten
+    # into a second message model. Hospital consult PDFs are stored as
+    # ``fileGallery`` / ``type=document`` for the doctor console; iOS only
+    # understands ``fileAttachments`` / ``pdf``, so that one kind is projected
+    # after canonical decode.
     stored = block.payload if isinstance(block.payload, dict) else {}
     # iOS Sync historically persisted the complete Codable block envelope in
     # this JSON column.  The wire model is still exactly one iOS block shape;
@@ -266,6 +270,7 @@ def _block_to_payload(block: ChatMessageBlock) -> dict | None:
         )
         return None
     kind, payload, node_role, anchor = canonical.kind, canonical.payload, canonical.node_role, canonical.anchor
+    kind, payload = project_block_for_ios_client(kind, payload)
     return {
         "id": str(block.id),
         "kind": kind,

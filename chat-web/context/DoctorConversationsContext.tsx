@@ -4,21 +4,26 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SparkHospitalApi, toLocalDoctorMessage } from "@/lib/api/hospital-api";
+import type { DoctorSendMessagePayload } from "@/lib/api/hospital-api";
 import { useOptionalAuth } from "@/context/AuthContext";
 import { hospitalErrorMessage, newIdempotencyKey } from "@/lib/hospital/errors";
 import { resolveHospitalWriteError } from "@/lib/hospital/write-result";
 import { CoalescedRefreshScheduler, DirtySyncScheduler, mergeAuthoritativeSnapshot } from "@/lib/hospital/realtime";
+import type { DoctorAttachmentPayload } from "@/lib/hospital/attachments";
+import type { ReadyImagePayload } from "@/lib/chat/image-drafts";
 import type {
   ConversationCardDTO,
   ConversationDetailDTO,
+  ConversationEndReasonCode,
   ConversationQueue,
   ConversationQueueCounts,
   DoctorAttentionLevel,
   DoctorMessageDTO,
   HospitalConversationUpdatedEvent,
+  RiskSignalLevel,
 } from "@/types/hospital";
 
-const EMPTY_COUNTS: ConversationQueueCounts = { all: 0, pending: 0, priority: 0, ended: 0 };
+const EMPTY_COUNTS: ConversationQueueCounts = { all: 0, pending: 0, joined: 0, priority: 0, active: 0, ended: 0 };
 
 type LoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -36,6 +41,9 @@ interface DoctorConversationsValue {
   selectedThreadId: string | null;
   detail: ConversationDetailDTO | null;
   messages: DoctorMessageDTO[];
+  /** DOCTOR-WORKSPACE-000004 第 34 问：是否还有更早消息可向上加载。 */
+  hasMoreMessages: boolean;
+  loadingOlder: boolean;
   /** BACKOFFICE-CONVERSATION-000002 Q3：本页面内存中的“新消息”标记（非当前会话）。 */
   newMessageThreadIds: string[];
   setQueue: (queue: ConversationQueue) => void;
@@ -43,12 +51,16 @@ interface DoctorConversationsValue {
   reload: () => Promise<void>;
   selectConversation: (threadId: string | null) => void;
   reloadSelected: () => Promise<void>;
+  /** DOCTOR-WORKSPACE-000004 第 34 问：向上加载更早一页消息。 */
+  loadOlderMessages: () => Promise<void>;
   join: () => Promise<boolean>;
   /** DOCTOR-WORKSPACE-000001 D-015/D-016：取消接管（医生服务中 → AI 服务中）。 */
   leave: () => Promise<boolean>;
-  sendMessage: (text: string) => Promise<boolean>;
+  sendMessage: (text: string, images?: ReadyImagePayload[], documents?: DoctorAttachmentPayload[]) => Promise<boolean>;
   updateAttention: (level: DoctorAttentionLevel, note?: string) => Promise<boolean>;
-  endConversation: (endReason: string) => Promise<boolean>;
+  /** DOCTOR-WORKSPACE-000004 第 24/25 问：人工调整风险等级（理由可选）。 */
+  updateRisk: (level: RiskSignalLevel, reason?: string) => Promise<boolean>;
+  endConversation: (reasonCode: ConversationEndReasonCode, reasonNote?: string) => Promise<boolean>;
   /** BACKOFFICE-CONVERSATION-000002：实时事件入口（当前会话定向刷新 / 其他会话列表刷新+标记）。 */
   handleRealtimeEvent: (event: HospitalConversationUpdatedEvent) => void;
   /** BACKOFFICE-CONVERSATION-000002 Q5：连接建立/恢复、页面回前台、网络恢复后的合并补偿。 */
@@ -62,13 +74,24 @@ function pathThreadId(pathname: string | null): string | null {
   if (direct?.[1]) return decodeURIComponent(direct[1]);
   // DOCTOR-WORKSPACE-000001：患者工作台右侧会话抽屉路由 /doctor/patients/<memberId>/conversations/<threadId>。
   const drawer = (pathname ?? "").match(/\/doctor\/patients\/\d+\/conversations\/([^/]+)/);
-  return drawer?.[1] ? decodeURIComponent(drawer[1]) : null;
+  if (drawer?.[1]) return decodeURIComponent(drawer[1]);
+  // DOCTOR-WORKSPACE-000004：独立线上问诊页路由 /doctor/consult/<memberId>/conversations/<threadId>。
+  const consult = (pathname ?? "").match(/\/doctor\/consult\/\d+\/conversations\/([^/]+)/);
+  return consult?.[1] ? decodeURIComponent(consult[1]) : null;
 }
 
-/** 患者工作台路由中的 memberId（不在患者页时返回 null）。 */
+/** 患者工作台/线上问诊路由中的 memberId（不在相关页面时返回 null）。 */
 function pathPatientMemberId(pathname: string | null): number | null {
-  const match = (pathname ?? "").match(/\/doctor\/patients\/(\d+)/);
+  const match = (pathname ?? "").match(/\/doctor\/(?:patients|consult)\/(\d+)/);
   return match?.[1] ? Number.parseInt(match[1], 10) : null;
+}
+
+/** 当前路径所属的会话打开方式：患者工作台抽屉、独立线上问诊页或会话工作台。 */
+function conversationBasePath(pathname: string | null, memberId: number | null): string {
+  const path = pathname ?? "";
+  if (path.startsWith("/doctor/consult")) return memberId !== null ? `/doctor/consult/${memberId}` : "/doctor/consult";
+  if (memberId !== null) return `/doctor/patients/${memberId}`;
+  return "/doctor/conversations";
 }
 
 export function DoctorConversationsProvider({ children }: { children: React.ReactNode }) {
@@ -89,6 +112,8 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(() => pathThreadId(pathname ?? null));
   const [detail, setDetail] = useState<ConversationDetailDTO | null>(null);
   const [messages, setMessages] = useState<DoctorMessageDTO[]>([]);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [newMessageThreadIds, setNewMessageThreadIds] = useState<string[]>([]);
   const idempotencyRef = useRef<Record<string, string>>({});
   const queueRef = useRef(queue);
@@ -97,6 +122,8 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
   keywordRef.current = keyword;
   const selectedThreadIdRef = useRef(selectedThreadId);
   selectedThreadIdRef.current = selectedThreadId;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const newMessageRef = useRef<Set<string>>(new Set());
   const optimisticRef = useRef<Map<string, { threadId: string; message: DoctorMessageDTO }>>(new Map());
 
@@ -142,7 +169,7 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     if (selectedThreadId === threadId) {
       setSelectedThreadId(null);
       const memberId = pathPatientMemberId(pathname ?? null);
-      router.push((memberId !== null ? `/doctor/patients/${memberId}` : "/doctor/conversations") as never);
+      router.push(conversationBasePath(pathname ?? null, memberId) as never);
     }
   }, [pathname, router, selectedThreadId, unmarkThreadFresh]);
 
@@ -165,6 +192,7 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     if (!api || auth?.status !== "authenticated" || !threadId) {
       setDetail(null);
       setMessages([]);
+      setHasMoreMessages(false);
       setDetailStatus("idle");
       setDetailError(null);
       return;
@@ -199,10 +227,18 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
       }
       setDetail(nextDetail);
       setMessages(merged);
-      setCards((current) => current.map((card) => (card.thread_id === nextDetail.thread_id ? { ...card, ...nextDetail } : card)));
+      setHasMoreMessages(Boolean(nextMessages.has_more));
+      setCards((current) => current.map((card) => (card.thread_id === nextDetail.thread_id ? { ...card, ...nextDetail, unread_count: 0 } : card)));
       // BACKOFFICE-CONVERSATION-000002 Q3：成功读取该会话后清除页面内新消息标记；读取失败保留。
       unmarkThreadFresh(threadId);
       setDetailStatus("ready");
+      // DOCTOR-WORKSPACE-000004 第 20 问：消息成功加载后推进当前问诊已读游标（只前进）。
+      void api
+        .markReadCursor(threadId)
+        .then(() => listRefreshRef.current?.request())
+        .catch(() => {
+          // 已读推进失败不阻断阅读；未读数由下次列表刷新校正。
+        });
     } catch (cause) {
       const resolution = resolveHospitalWriteError(cause);
       if (resolution.dropConversation) {
@@ -274,13 +310,10 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
   const selectConversation = useCallback((threadId: string | null) => {
     setWriteError(null);
     setSelectedThreadId(threadId);
-    // DOCTOR-WORKSPACE-000001：患者工作台内打开/关闭右侧会话抽屉，保留患者选择。
+    // DOCTOR-WORKSPACE-000001/000004：患者工作台抽屉 / 独立线上问诊页 / 会话工作台三种打开方式，保留患者选择。
     const memberId = pathPatientMemberId(pathname ?? null);
-    if (memberId !== null) {
-      router.push((threadId ? `/doctor/patients/${memberId}/conversations/${encodeURIComponent(threadId)}` : `/doctor/patients/${memberId}`) as never);
-      return;
-    }
-    router.push((threadId ? `/doctor/conversations/${encodeURIComponent(threadId)}` : "/doctor/conversations") as never);
+    const base = conversationBasePath(pathname ?? null, memberId);
+    router.push((threadId ? `${base}/conversations/${encodeURIComponent(threadId)}` : base) as never);
   }, [pathname, router]);
 
   const handleWriteError = useCallback(async (cause: unknown, action: string, threadId: string) => {
@@ -332,15 +365,37 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     }
   }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, requestThreadSync, selectedThreadId]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, images: ReadyImagePayload[] = [], documents: DoctorAttachmentPayload[] = []) => {
     if (!api || !selectedThreadId || !detail) return false;
     const trimmed = text.trim();
-    if (!trimmed) return false;
+    if (!trimmed && !images.length && !documents.length) return false;
     setWriteBusy(true);
     setWriteError(null);
     try {
-      const sent = await api.sendMessage(selectedThreadId, { text: trimmed, version: detail.version }, idempotencyKey("send", selectedThreadId));
-      const local = toLocalDoctorMessage(sent, trimmed);
+      const attachments: DoctorSendMessagePayload["attachments"] = [
+        ...images.map((image) => ({
+          file_id: image.fileId,
+          type: "image" as const,
+          order: image.order,
+          mime_type: image.mimeType,
+          file_size: image.fileSize,
+          display_url: image.displayUrl,
+        })),
+        ...documents.map((document) => ({
+          file_id: String(document.file_id),
+          type: document.type,
+          order: document.order + images.length,
+          mime_type: document.mime_type,
+          file_size: document.file_size,
+          display_url: document.display_url,
+        })),
+      ];
+      const sent = await api.sendMessage(
+        selectedThreadId,
+        { text: trimmed, version: detail.version, ...(attachments.length ? { attachments } : {}) },
+        idempotencyKey("send", selectedThreadId),
+      );
+      const local = toLocalDoctorMessage(sent, trimmed, images, documents);
       let appended = false;
       setMessages((current) => {
         if (current.some((item) => item.client_message_id === sent.client_message_id || item.server_message_id === sent.server_message_id)) {
@@ -383,14 +438,36 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     }
   }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, selectedThreadId]);
 
-  const endConversation = useCallback(async (endReason: string) => {
+  /** DOCTOR-WORKSPACE-000004 第 24/25 问：人工调整风险等级；成功后刷新详情与列表。 */
+  const updateRisk = useCallback(async (level: RiskSignalLevel, reason?: string) => {
+    if (!api || !selectedThreadId || !detail) return false;
+    setWriteBusy(true);
+    setWriteError(null);
+    try {
+      const binding = await api.updateRisk(
+        selectedThreadId,
+        { risk_signal_level: level, reason, version: detail.version },
+        idempotencyKey("risk", selectedThreadId),
+      );
+      applyBinding(binding);
+      clearIdempotency("risk", selectedThreadId);
+      await reload();
+      return true;
+    } catch (cause) {
+      return handleWriteError(cause, "risk", selectedThreadId);
+    } finally {
+      setWriteBusy(false);
+    }
+  }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, selectedThreadId]);
+
+  const endConversation = useCallback(async (reasonCode: ConversationEndReasonCode, reasonNote?: string) => {
     if (!api || !selectedThreadId || !detail) return false;
     setWriteBusy(true);
     setWriteError(null);
     try {
       const binding = await api.endConversation(
         selectedThreadId,
-        { version: detail.version, end_reason: endReason },
+        { version: detail.version, end_reason_code: reasonCode, end_reason_note: reasonNote },
         idempotencyKey("end", selectedThreadId),
       );
       applyBinding(binding);
@@ -404,6 +481,30 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
       setWriteBusy(false);
     }
   }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, requestThreadSync, selectedThreadId]);
+
+  /** DOCTOR-WORKSPACE-000004 第 34/35 问：向上加载更早一页，按服务端消息 ID 去重后插入顶部。 */
+  const loadOlderMessages = useCallback(async () => {
+    const threadId = selectedThreadIdRef.current;
+    if (!api || !threadId || loadingOlder) return;
+    const oldest = messagesRef.current[0];
+    const before = oldest?.id ? String(oldest.id) : undefined;
+    if (!before) return;
+    setLoadingOlder(true);
+    try {
+      const page = await api.getMessages(threadId, { before });
+      if (selectedThreadIdRef.current !== threadId) return;
+      setMessages((current) => {
+        const seen = new Set(current.map((item) => item.id).filter(Boolean));
+        const older = page.items.filter((item) => !item.id || !seen.has(item.id));
+        return [...older, ...current];
+      });
+      setHasMoreMessages(Boolean(page.has_more));
+    } catch {
+      // 加载更早失败保持现状，医生可再次点击重试。
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [api, loadingOlder]);
 
   const value = useMemo<DoctorConversationsValue>(() => ({
     status,
@@ -419,6 +520,8 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     selectedThreadId,
     detail,
     messages,
+    hasMoreMessages,
+    loadingOlder,
     newMessageThreadIds,
     setQueue,
     setKeyword,
@@ -429,17 +532,20 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
       if (current) requestThreadSync(current);
       return Promise.resolve();
     },
+    loadOlderMessages,
     join,
     leave,
     sendMessage,
     updateAttention,
+    updateRisk,
     endConversation,
     handleRealtimeEvent,
     refreshForRecovery,
   }), [
-    cards, counts, detail, detailError, detailStatus, endConversation, error, handleRealtimeEvent, join, keyword,
-    leave, messages, newMessageThreadIds, queue, refreshForRecovery, reload, requestThreadSync, selectConversation,
-    selectedThreadId, sendMessage, setKeyword, setQueue, status, updateAttention, writeBusy, writeError,
+    cards, counts, detail, detailError, detailStatus, endConversation, error, handleRealtimeEvent, hasMoreMessages,
+    join, keyword, leave, loadingOlder, loadOlderMessages, messages, newMessageThreadIds, queue, refreshForRecovery,
+    reload, requestThreadSync, selectConversation, selectedThreadId, sendMessage, setKeyword, setQueue, status,
+    updateAttention, updateRisk, writeBusy, writeError,
   ]);
 
   return <DoctorConversationsContext.Provider value={value}>{children}</DoctorConversationsContext.Provider>;
