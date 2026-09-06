@@ -16,7 +16,7 @@ const RISK_OPTIONS: RiskSignalLevel[] = ["none", "low", "medium", "high"];
  * - 人工调整不改变问诊服务状态；AI/工具原始结果不被覆盖；
  * - 历史只读，仅当前归属医生可见。
  */
-export function ConversationRiskPanel() {
+export function ConversationRiskPanel({ layout = "default" }: { layout?: "default" | "consult-bottom" }) {
   const auth = useOptionalAuth();
   const conversations = useOptionalDoctorConversations();
   const detail = conversations?.detail ?? null;
@@ -67,20 +67,26 @@ export function ConversationRiskPanel() {
     }
   };
 
+  const consultBottom = layout === "consult-bottom";
+
   return (
-    <section className="patient-drawer__risk" aria-label="风险等级">
+    <section className={`patient-drawer__risk${consultBottom ? " patient-drawer__risk--consult-bottom" : ""}`} aria-label="风险等级">
       <header className="patient-drawer__risk-head">
         <span className={`doctor-tag doctor-tag--risk-${detail.risk_signal_level}`}>{RISK_LABEL[detail.risk_signal_level]}</span>
         <span className="patient-drawer__risk-source">当前有效风险{detail.risk_signal_level === "none" ? "（无信号）" : "（含人工调整）"}</span>
-        <span className="patient-drawer__takeover-spacer" />
-        <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" onClick={() => void loadHistory()}>
-          {historyOpen ? "收起历史" : "调整历史"}
-        </button>
-        {!ended && !editing && (
-          <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" disabled={busy} onClick={() => setEditing(true)}>
-            调整风险
-          </button>
-        )}
+        {!consultBottom ? (
+          <>
+            <span className="patient-drawer__takeover-spacer" />
+            <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" onClick={() => void loadHistory()}>
+              {historyOpen ? "收起历史" : "调整历史"}
+            </button>
+            {!ended && !editing && (
+              <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" disabled={busy} onClick={() => setEditing(true)}>
+                调整风险
+              </button>
+            )}
+          </>
+        ) : null}
       </header>
       {historyError ? <p className="patient-module__error" role="alert">{historyError}</p> : null}
       {historyOpen && history !== null ? (
@@ -126,6 +132,18 @@ export function ConversationRiskPanel() {
             <button type="submit" className="doctor-button patient-button-inline" disabled={busy}>确认调整</button>
           </div>
         </form>
+      ) : null}
+      {consultBottom ? (
+        <footer className="consult-section__actions patient-drawer__risk-actions">
+          <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" onClick={() => void loadHistory()}>
+            {historyOpen ? "收起历史" : "调整历史"}
+          </button>
+          {!ended && !editing && (
+            <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" disabled={busy} onClick={() => setEditing(true)}>
+              调整风险
+            </button>
+          )}
+        </footer>
       ) : null}
       <p className="patient-drawer__risk-note">风险提示来自现有风险工具与医生人工调整，不构成诊断或处方结论。</p>
     </section>

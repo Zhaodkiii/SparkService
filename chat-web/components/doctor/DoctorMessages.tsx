@@ -13,7 +13,19 @@ import type { DoctorMessageDTO } from "@/types/hospital";
 
 type DoctorMessagesVariant = "default" | "consult";
 
+function consultationCardBlock(message: DoctorMessageDTO): ChatBlockDTO | null {
+  return message.blocks.find((block) => block.kind === "consultationCard") ?? null;
+}
+
 function messageText(message: DoctorMessageDTO): string {
+  const card = consultationCardBlock(message);
+  if (card) {
+    const value = blockAssociatedValue(card);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const complaint = (value as Record<string, unknown>).chief_complaint;
+      if (typeof complaint === "string" && complaint.trim()) return complaint.trim();
+    }
+  }
   return message.blocks
     .map((block) => {
       const value = blockAssociatedValue(block);
@@ -52,7 +64,17 @@ function ConsultAvatar({ name, avatarUrl, doctor }: { name: string; avatarUrl?: 
  * 医生：右侧头像 + “姓名 · 职称 · 科室 时间” + 浅绿气泡；AI 同理带 AI 标记；
  * 系统消息：居中带盾牌图标的“系统提示”。无文本的系统卡片（医生介绍卡）不渲染。
  */
-function ConsultMessage({ message, patientName, highlighted }: { message: DoctorMessageDTO; patientName?: string; highlighted: boolean }) {
+function ConsultMessage({
+  message,
+  patientName,
+  highlighted,
+  ended = false,
+}: {
+  message: DoctorMessageDTO;
+  patientName?: string;
+  highlighted: boolean;
+  ended?: boolean;
+}) {
   const actor = inferActorType(message);
   const key = message.client_message_id || message.server_message_id || `${message.created_at}-${message.role}`;
   const id = `doctor-msg-${message.client_message_id}`;
@@ -61,7 +83,7 @@ function ConsultMessage({ message, patientName, highlighted }: { message: Doctor
   if (actor === "system") {
     if (!text) return null;
     return (
-      <div className="consult-msg-tip" key={key} data-actor="system">
+      <div className={`consult-msg-tip${ended ? " consult-msg-tip--muted" : ""}`} key={key} data-actor="system">
         <ShieldCheck size={13} strokeWidth={2.2} aria-hidden="true" />
         <span>系统提示：{text}</span>
       </div>
@@ -69,6 +91,7 @@ function ConsultMessage({ message, patientName, highlighted }: { message: Doctor
   }
 
   if (actor === "patient") {
+    const card = consultationCardBlock(message);
     const galleries = galleryBlocks(message);
     const attachCount = galleryItemCount(galleries);
     const name = patientName || message.sender?.display_name || "患者";
@@ -77,9 +100,12 @@ function ConsultMessage({ message, patientName, highlighted }: { message: Doctor
         <ConsultAvatar name={name} avatarUrl={message.sender?.avatar_url} />
         <div className="consult-msg__main">
           <p className="consult-msg__meta">患者 {formatClock(message.created_at)}</p>
-          <div className="consult-msg__bubble">
-            {text ? <p className="consult-msg__text">{text}</p> : null}
-            {galleries.length ? (
+          <div className={`consult-msg__bubble${card ? " consult-msg__bubble--card" : ""}`}>
+            {card ? (
+              <div className="consult-msg__card">{renderBlock({ block: card })}</div>
+            ) : null}
+            {!card && text ? <p className="consult-msg__text">{text}</p> : null}
+            {!card && galleries.length ? (
               <div className="consult-msg__attach">
                 <p className="consult-msg__attach-label">附件（{attachCount}）</p>
                 {galleries.map((block, index) => (
@@ -87,7 +113,7 @@ function ConsultMessage({ message, patientName, highlighted }: { message: Doctor
                 ))}
               </div>
             ) : null}
-            {!text && !galleries.length ? <p className="consult-msg__text">{doctorMessagePlainText(message)}</p> : null}
+            {!card && !text && !galleries.length ? <p className="consult-msg__text">{doctorMessagePlainText(message)}</p> : null}
           </div>
         </div>
       </article>
@@ -125,6 +151,7 @@ export function DoctorMessageList({
   loadingOlder = false,
   onLoadOlder,
   variant = "default",
+  ended = false,
 }: {
   messages: DoctorMessageDTO[];
   patientName?: string;
@@ -135,6 +162,7 @@ export function DoctorMessageList({
   onLoadOlder?: () => void;
   /** 线上问诊页参考图气泡样式；默认保持原工作台样式。 */
   variant?: DoctorMessagesVariant;
+  ended?: boolean;
 }) {
   if (!messages.length) {
     return (
@@ -165,6 +193,7 @@ export function DoctorMessageList({
             message={message}
             patientName={patientName}
             highlighted={highlightId === message.client_message_id || highlightId === message.server_message_id}
+            ended={ended}
           />
         ))}
       </div>
@@ -227,7 +256,15 @@ export function DoctorMessageList({
   );
 }
 
-export function DoctorMessages({ highlightId, variant = "default" }: { highlightId?: string | null; variant?: DoctorMessagesVariant }) {
+export function DoctorMessages({
+  highlightId,
+  variant = "default",
+  ended = false,
+}: {
+  highlightId?: string | null;
+  variant?: DoctorMessagesVariant;
+  ended?: boolean;
+}) {
   const conversations = useDoctorConversations();
   if (conversations.detailStatus === "loading" && !conversations.messages.length) {
     return <div className="empty-state" aria-busy="true"><p>正在加载对话…</p></div>;
@@ -250,6 +287,7 @@ export function DoctorMessages({ highlightId, variant = "default" }: { highlight
       loadingOlder={conversations.loadingOlder}
       onLoadOlder={() => void conversations.loadOlderMessages()}
       variant={variant}
+      ended={ended}
     />
   );
 }

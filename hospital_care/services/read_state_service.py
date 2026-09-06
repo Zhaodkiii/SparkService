@@ -193,6 +193,14 @@ def _message_text_excerpt(message, limit: int = 80) -> str:
     pieces: list[str] = []
     for block in message.blocks.all():
         payload = block.payload or {}
+        card = payload.get("consultation_card")
+        if isinstance(card, dict):
+            inner = card.get("_0")
+            if isinstance(inner, dict):
+                complaint = inner.get("chief_complaint")
+                if isinstance(complaint, str) and complaint.strip():
+                    pieces.append(complaint.strip())
+                    continue
         text = payload.get("text")
         if isinstance(text, dict):
             for key in sorted(text.keys()):
@@ -212,12 +220,18 @@ def attachment_count_for_threads(thread_ids: list) -> dict:
 
     blocks = ChatMessageBlock.objects.filter(
         thread_id__in=thread_ids,
-        kind__in=["imageGallery", "fileGallery", "fileAttachments"],
+        kind__in=["imageGallery", "fileGallery", "fileAttachments", "consultationCard"],
         message__tombstone=False,
-    ).values("thread_id", "payload")
+    ).values("thread_id", "kind", "payload")
     counts = {thread_id: 0 for thread_id in thread_ids}
     for block in blocks:
         payload = block.get("payload") or {}
+        if block.get("kind") == "consultationCard":
+            card = payload.get("consultation_card")
+            inner = card.get("_0") if isinstance(card, dict) else {}
+            if isinstance(inner, dict):
+                counts[block["thread_id"]] = counts.get(block["thread_id"], 0) + int(inner.get("attachment_count") or 0)
+            continue
         items = 0
         for key in ("image_gallery", "file_gallery", "file_attachments"):
             gallery = payload.get(key)

@@ -97,6 +97,61 @@ def user_can_access_file(user, file_record) -> bool:
     return False
 
 
+def _doctor_can_preview_hospital_file(user, file_record) -> bool:
+    """医生工作台：可预览其负责问诊消息块中的附件（含患者 SparkClient 上传）。"""
+    from chat_sync.models import ChatMessageBlock
+    from hospital_care.models import ClinicalConversationBinding, DoctorProfile
+
+    doctor = DoctorProfile.objects.select_related("staff_membership").filter(staff_membership__user=user).first()
+    if doctor is None:
+        return False
+
+    doctor_thread_ids = {
+        str(thread_id)
+        for thread_id in ClinicalConversationBinding.objects.filter(
+            doctor=doctor,
+            hospital_id=doctor.staff_membership.hospital_id,
+            thread__is_deleted=False,
+        ).values_list("thread_id", flat=True)
+    }
+    if not doctor_thread_ids:
+        return False
+
+    relation_thread_ids = {
+        str(relation.business_id)
+        for relation in file_record.business_relations.all()
+        if relation.business_type == "hospital_conversation"
+    }
+    if relation_thread_ids.intersection(doctor_thread_ids):
+        return True
+
+    target_file_id = file_record.id
+    blocks = ChatMessageBlock.objects.filter(
+        thread_id__in=doctor_thread_ids,
+        kind__in=["imageGallery", "fileGallery", "fileAttachments"],
+        message__tombstone=False,
+    ).only("payload")
+    for block in blocks.iterator(chunk_size=100):
+        payload = block.payload or {}
+        for key in ("image_gallery", "file_gallery", "file_attachments"):
+            gallery = payload.get(key)
+            if not isinstance(gallery, dict):
+                continue
+            for value in gallery.values():
+                if not isinstance(value, list):
+                    continue
+                for entry in value:
+                    if isinstance(entry, dict) and entry.get("file_id") == target_file_id:
+                        return True
+    return False
+
+
+def user_can_preview_file(user, file_record) -> bool:
+    if user_can_access_file(user, file_record):
+        return True
+    return _doctor_can_preview_hospital_file(user, file_record)
+
+
 def filter_accessible_relation_specs(user, relation_specs):
     """仅保留当前用户可访问的业务 ID（用于 ETag fingerprint）。"""
     filtered = []

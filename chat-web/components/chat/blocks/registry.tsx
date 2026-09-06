@@ -10,6 +10,7 @@ import { HealthCardsBlock, NutritionCardsBlock, SearchSummaryBlock, StructuredHe
 import { EnergyVisualizationBlock, EventsBlock, MapRouteBlock, NutritionReadVisualizationBlock, SleepVisualizationBlock, StepVisualizationBlock, WeatherVisualizationBlock, WorkoutVisualizationBlock } from "@/components/chat/blocks/VisualizationBlocks";
 import { HealthResourceCandidateCardsBlock, LocationPermissionCardsBlock, PendingMemberToolCardsBlock, SmallTaskCardBlock, TaskCardsBlock, ToolConsentCardsBlock, ToolMemberSelectionCardsBlock, ToolQuestionCardsBlock } from "@/components/chat/blocks/TaskBlocks";
 import { AssistantStatusCardBlock, ChatGuideCardBlock, ErrorBlock, HealthResourceReferenceBlock, MedicalDisclaimerCardBlock, MedicalRiskNoticeBlock } from "@/components/chat/blocks/NoticeBlocks";
+import { ConsultationCardBlock } from "@/components/chat/blocks/ConsultationCardBlock";
 
 type BlockRenderer = (props: BlockRenderProps) => ReactNode;
 
@@ -56,6 +57,7 @@ export const BLOCK_RENDERERS: Record<string, BlockRenderer> = {
   medicalRiskNotice: MedicalRiskNoticeBlock,
   medicalDisclaimerCard: MedicalDisclaimerCardBlock,
   chatGuideCard: ChatGuideCardBlock,
+  consultationCard: ConsultationCardBlock,
   toolCall: ToolActivityBlock,
   toolResult: ToolActivityBlock,
 };

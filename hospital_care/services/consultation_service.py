@@ -51,17 +51,39 @@ def _next_consult_no(now) -> tuple[str, object, int]:
     return f"C{consult_date:%Y%m%d}{daily_seq:04d}", consult_date, daily_seq
 
 
-def _create_first_patient_message(
+def _consultation_card_attachment(managed, *, kind: str, order: int) -> dict:
+    """问诊卡片内嵌附件，字段对齐 iOS ``ChatAttachment`` / 消息画廊块。"""
+    filename = managed.original_name or ("image.jpg" if kind == "image" else "attachment")
+    file_uuid = str(managed.file_uuid).lower()
+    return {
+        "id": file_uuid,
+        "type": kind,
+        "file_id": managed.id,
+        "url": managed_file_download_url(managed),
+        "filename": filename,
+        "mime_type": managed.mime_type,
+        "file_size": managed.file_size,
+        "order": order,
+        "full_cache_key": f"{file_uuid}/{filename}",
+        "file_md5": managed.file_md5,
+    }
+
+
+def _create_consultation_card_message(
     *,
-    consultation_binding: ClinicalConversationBinding,
+    consultation: Consultation,
     user,
     member: Member | None,
-    chief_complaint: str,
     attachments,
 ) -> ChatMessage:
-    """问诊提交时的首条患者消息：主诉文本 + 可选附件画廊块。"""
-    thread = consultation_binding.thread
+    """问诊提交时的首条患者消息：线上问诊消息卡片（病情快照 + 附件计数）。"""
+    from chat_sync.contracts.canonical import KIND_CONSULTATION_CARD, consultation_card_payload
+    from hospital_care.api.presenters import consultation_public
+
+    binding = consultation.binding
+    thread = binding.thread
     images, documents = resolve_message_attachments(user=user, attachments=attachments) if attachments else ([], [])
+    attachment_count = len(images) + len(documents)
     now = timezone.now()
     metadata = {"hospital_actor": "patient"}
     if images or documents:
@@ -99,82 +121,28 @@ def _create_first_patient_message(
         created_at=now,
         metadata=metadata,
     )
-    if chief_complaint:
-        ChatMessageBlock.objects.create(
-            id=uuid.uuid4(),
-            user=thread.user,
-            thread=thread,
-            message=message,
-            kind="text",
-            status=ChatMessageBlock.Status.READY,
-            revision=1,
-            order_key=1000,
-            node_role="timeline",
-            payload={"text": {"_0": chief_complaint}},
-            created_at=now,
-            updated_at=now,
-        )
-    if images:
-        ChatMessageBlock.objects.create(
-            id=uuid.uuid4(),
-            user=thread.user,
-            thread=thread,
-            message=message,
-            kind="imageGallery",
-            status=ChatMessageBlock.Status.READY,
-            revision=1,
-            order_key=1100,
-            node_role="timeline",
-            payload={
-                "image_gallery": {
-                    "_0": [
-                        {
-                            "id": str(managed.file_uuid),
-                            "type": "image",
-                            "file_id": managed.id,
-                            "url": managed_file_download_url(managed),
-                            "filename": managed.original_name,
-                            "mime_type": managed.mime_type,
-                            "order": order,
-                        }
-                        for order, managed in images
-                    ]
-                }
-            },
-            created_at=now,
-            updated_at=now,
-        )
-    if documents:
-        ChatMessageBlock.objects.create(
-            id=uuid.uuid4(),
-            user=thread.user,
-            thread=thread,
-            message=message,
-            kind="fileGallery",
-            status=ChatMessageBlock.Status.READY,
-            revision=1,
-            order_key=1200,
-            node_role="timeline",
-            payload={
-                "file_gallery": {
-                    "_0": [
-                        {
-                            "id": str(managed.file_uuid),
-                            "type": "document",
-                            "file_id": managed.id,
-                            "url": managed_file_download_url(managed),
-                            "filename": managed.original_name,
-                            "mime_type": managed.mime_type,
-                            "file_size": managed.file_size,
-                            "order": order,
-                        }
-                        for order, managed in documents
-                    ]
-                }
-            },
-            created_at=now,
-            updated_at=now,
-        )
+    snapshot = consultation_public(consultation, attachment_count=attachment_count)
+    snapshot["attachments"] = [
+        _consultation_card_attachment(managed, kind="image", order=order)
+        for order, managed in images
+    ] + [
+        _consultation_card_attachment(managed, kind="document", order=order)
+        for order, managed in documents
+    ]
+    ChatMessageBlock.objects.create(
+        id=uuid.uuid4(),
+        user=thread.user,
+        thread=thread,
+        message=message,
+        kind=KIND_CONSULTATION_CARD,
+        status=ChatMessageBlock.Status.READY,
+        revision=1,
+        order_key=1000,
+        node_role="timeline",
+        payload=consultation_card_payload(snapshot),
+        created_at=now,
+        updated_at=now,
+    )
     ChatMessageAttribution.objects.create(
         message=message,
         actor_type=ChatMessageAttribution.ActorType.PATIENT,
@@ -235,13 +203,6 @@ def submit_consultation(
                 existing = Consultation.objects.filter(binding=binding).first()
                 if existing is not None:
                     return existing
-                _create_first_patient_message(
-                    consultation_binding=binding,
-                    user=user,
-                    member=member,
-                    chief_complaint=complaint,
-                    attachments=attachments,
-                )
                 consult_no, consult_date, daily_seq = _next_consult_no(now)
                 consultation = Consultation.objects.create(
                     binding=binding,
@@ -255,6 +216,12 @@ def submit_consultation(
                     family_history=(family_history or "").strip(),
                     allergy_history=(allergy_history or "").strip(),
                     submitted_by=user,
+                )
+                _create_consultation_card_message(
+                    consultation=consultation,
+                    user=user,
+                    member=member,
+                    attachments=attachments,
                 )
             break
         except IntegrityError:

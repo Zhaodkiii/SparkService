@@ -1,6 +1,9 @@
 import logging
 import time
 from django.db import DatabaseError
+from urllib.parse import quote
+
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
@@ -15,6 +18,7 @@ from file_manager.serializers import (
     ManagedFileRecordSerializer,
     ManagedFileUploadSerializer,
 )
+from file_manager.services.preview_service import ManagedFilePreviewError, stream_managed_file_preview
 from file_manager.url_utils import managed_file_download_url
 
 logger = logging.getLogger("file_manager")
@@ -272,6 +276,30 @@ class ManagedFileDownloadURLView(APIView):
         )
 
         return success_response({"url": url}, msg="success", code=0, status_code=status.HTTP_200_OK)
+
+
+class ManagedFilePreviewView(APIView):
+    """ManagedFile inline 预览：服务端读取 OSS 并返回 inline，避免浏览器直链 OSS 触发下载。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, file_id):
+        try:
+            content, mime_type, filename = stream_managed_file_preview(user=request.user, file_id=file_id)
+        except ManagedFilePreviewError as exc:
+            code_map = {
+                "file_not_found": (4040, status.HTTP_404_NOT_FOUND),
+                "object_key_missing": (4042, status.HTTP_404_NOT_FOUND),
+            }
+            code, status_code = code_map.get(exc.code, (4040, status.HTTP_404_NOT_FOUND))
+            return error_response(msg=exc.code, code=code, status_code=status_code)
+
+        response = HttpResponse(content, content_type=mime_type)
+        quoted = quote(filename)
+        response["Content-Disposition"] = f'inline; filename="{quoted}"; filename*=UTF-8\'\'{quoted}'
+        response["Cache-Control"] = "private, max-age=300"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class ManagedFileDeleteView(APIView):

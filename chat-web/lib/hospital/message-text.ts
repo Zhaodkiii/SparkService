@@ -3,6 +3,14 @@ import { actorPrefix } from "@/lib/hospital/labels";
 import type { DoctorMessageDTO, HospitalActorType } from "@/types/hospital";
 
 export function doctorMessagePlainText(message: Pick<DoctorMessageDTO, "blocks">): string {
+  const card = message.blocks.find((block) => block.kind === "consultationCard");
+  if (card) {
+    const value = blockAssociatedValue(card);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const complaint = (value as Record<string, unknown>).chief_complaint;
+      if (typeof complaint === "string" && complaint.trim()) return complaint.trim();
+    }
+  }
   return message.blocks.map((block) => {
     const value = blockAssociatedValue(block);
     return typeof value === "string" ? value : "";

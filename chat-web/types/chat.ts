@@ -58,7 +58,8 @@ export type ChatBlockKind =
   | "medicalRiskNotice"
   | "medicalDisclaimerCard"
   | "chatGuideCard"
-  | "hospitalDoctorIntroCard";
+  | "hospitalDoctorIntroCard"
+  | "consultationCard";
 
 /**
  * Browser-internal projection kind produced by the P4 tool activity loop from
@@ -77,7 +78,7 @@ export const CHAT_BLOCK_KINDS: readonly ChatBlockKind[] = [
   "searchSummary", "nutritionCards", "workoutVisualization", "captureCard", "html",
   "smallTaskCard", "taskCards", "error", "assistantStatusCard",
   "healthResourceReference", "medicalRiskNotice", "medicalDisclaimerCard", "chatGuideCard",
-  "hospitalDoctorIntroCard",
+  "hospitalDoctorIntroCard", "consultationCard",
 ];
 
 export const WEB_TOOL_ACTIVITY_BLOCK_KINDS: readonly WebToolActivityBlockKind[] = ["toolCall", "toolResult"];

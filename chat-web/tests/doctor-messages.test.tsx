@@ -124,6 +124,48 @@ describe("consult variant messages (DOCTOR-WORKSPACE-000004 页面形态修订)"
     expect(screen.getByText("建议先完善心电图检查").closest("[data-actor]")).toHaveAttribute("data-actor", "doctor");
   });
 
+  it("renders consultationCard with inline image and file attachments", () => {
+    const consultMessage = message({
+      client_message_id: "c-card",
+      role: "user",
+      actor_type: "patient",
+      blocks: [
+        {
+          id: "c-card-block",
+          kind: "consultationCard" as never,
+          status: "ready",
+          revision: 1,
+          order_key: 1,
+          node_role: "timeline",
+          payload: {
+            consultation_card: {
+              _0: {
+                consult_no: "C202509060001",
+                chief_complaint: "最近胸口闷",
+                service_status: "pending_doctor",
+                doctor: { display_name: "张医生", title: "主任医师" },
+                department: { name: "心内科" },
+                hospital: { name: "示例医院", short_name: "示例" },
+                attachments: [
+                  { id: "img-1", type: "image", url: "https://oss.example/chest.jpg", filename: "chest.jpg" },
+                  { id: "pdf-1", type: "document", url: "https://oss.example/report.pdf", filename: "report.pdf", file_size: 2048 },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    });
+    const { container } = render(<DoctorMessageList variant="consult" patientName="吧宝贝" messages={[consultMessage]} />);
+
+    expect(screen.getByText("张医生")).toBeInTheDocument();
+    expect(screen.getByText("主诉：最近胸口闷")).toBeInTheDocument();
+    expect(screen.getByText("问诊编号：C202509060001")).toBeInTheDocument();
+    expect(container.querySelector(".consult-card-block__gallery")).not.toBeNull();
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("img")).toBeInTheDocument();
+  });
+
   it("renders system text as centered tip and skips system cards without text", () => {
     render(<DoctorMessageList
       variant="consult"

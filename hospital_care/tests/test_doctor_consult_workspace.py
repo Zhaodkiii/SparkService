@@ -620,15 +620,19 @@ class ConsultationSubmitTests(ConsultWorkspaceBase):
         self.assertEqual(consultation.member_id, self.member.id)
         self.assertEqual(str(consultation.binding.thread_id), data["thread_id"])
 
-        # 首条患者消息为主诉文本，归属患者端。
+        # 首条患者消息为线上问诊消息卡片，归属患者端。
         first = (
             ChatMessage.objects.filter(thread=consultation.binding.thread, role=ChatMessage.Role.USER)
             .order_by("created_at", "id")
             .first()
         )
         self.assertIsNotNone(first)
-        block = first.blocks.filter(kind="text").first()
-        self.assertEqual(block.payload["text"]["_0"], "最近胸口闷，爬楼梯时心慌")
+        block = first.blocks.filter(kind="consultationCard").first()
+        self.assertIsNotNone(block)
+        card = block.payload["consultation_card"]["_0"]
+        self.assertEqual(card["chief_complaint"], "最近胸口闷，爬楼梯时心慌")
+        self.assertEqual(card["consult_no"], data["consult_no"])
+        self.assertEqual(card["attachments"], [])
         self.assertEqual(first.hospital_attribution.actor_type, ChatMessageAttribution.ActorType.PATIENT)
 
     def test_submit_consultation_is_idempotent_by_thread_id(self):
@@ -678,6 +682,19 @@ class ConsultationSubmitTests(ConsultWorkspaceBase):
         self.assertEqual(item["order_items"], ["复诊开药", "开具检查"])
         self.assertEqual(item["allergy_history"], "青霉素过敏")
         self.assertEqual(item["attachment_count"], 1)
+
+        first = (
+            ChatMessage.objects.filter(thread=consultation.binding.thread, role=ChatMessage.Role.USER)
+            .order_by("created_at", "id")
+            .first()
+        )
+        card = first.blocks.filter(kind="consultationCard").first()
+        attachments = card.payload["consultation_card"]["_0"]["attachments"]
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["type"], "document")
+        self.assertEqual(attachments[0]["file_id"], record.id)
+        self.assertTrue(attachments[0]["url"])
+        self.assertTrue(attachments[0]["filename"])
 
     def test_consult_patient_list_only_includes_submitted_patients(self):
         # setUp 中已有一条普通会话（非问诊单）；问诊列表不应包含该患者。

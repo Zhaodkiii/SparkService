@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Download, Image as ImageIcon, Paperclip } from "lucide-react";
 import { asRecord, asString, BlockShell, blockValue, blockValueObject, ReadOnlyCard } from "@/components/chat/blocks/common";
 import type { BlockRenderProps } from "@/components/chat/blocks/common";
+import { useOptionalAttachmentPreview } from "@/components/shared/AttachmentPreviewProvider";
 
 function asList(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
@@ -19,9 +20,18 @@ interface GalleryImage {
  * 单张图片（CHAT-WEB-029）：加载失败时替换为固定尺寸占位卡，
  * “重试加载”只重置该图 src（追加 retry 参数 bust 缓存），不影响其他图片。
  */
-function GalleryImageView({ image, index, total }: { image: GalleryImage; index: number; total: number }) {
+export function GalleryImageView({ image, index, total }: { image: GalleryImage; index: number; total: number }) {
+  const preview = useOptionalAttachmentPreview();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const openPreview = () => {
+    if (!image.url || !preview) return;
+    preview.open({
+      url: image.url,
+      filename: image.filename ?? image.caption ?? `图片 ${index + 1}`,
+      kind: "image",
+    });
+  };
   if (failed) {
     return <figure className="gallery-item gallery-item--failed" role="status">
       <ImageIcon size={18} aria-hidden="true" />
@@ -31,7 +41,7 @@ function GalleryImageView({ image, index, total }: { image: GalleryImage; index:
     </figure>;
   }
   const src = attempt > 0 ? `${image.url}${image.url.includes("?") ? "&" : "?"}retry=${attempt}` : image.url;
-  return <figure className="gallery-item">
+  return <figure className="gallery-item gallery-item--previewable" role="button" tabIndex={0} onClick={openPreview} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPreview(); } }}>
     <img src={src} alt={image.caption ?? image.filename ?? `图片 ${index + 1}`} loading="lazy" onError={() => setFailed(true)} />
     {image.caption ? <figcaption>{image.caption}</figcaption> : null}
   </figure>;
@@ -71,6 +81,7 @@ function formatAttachmentSize(value: unknown): string | null {
 /** DOCTOR-WORKSPACE-000004：问诊文档附件（PDF 等医疗文件）画廊块。
  *  payload 形态与 imageGallery 对齐：{"file_gallery": {"_0": [...]}}。 */
 export function FileGalleryBlock({ block }: BlockRenderProps) {
+  const preview = useOptionalAttachmentPreview();
   const value = blockValue(block);
   const list = Array.isArray(value) ? value : (asRecord(value).files ?? asRecord(value).items ?? Object.values(asRecord(value)).find(Array.isArray));
   const files = asList(list).map((item) => ({
@@ -80,7 +91,20 @@ export function FileGalleryBlock({ block }: BlockRenderProps) {
     mime: asString(item.mime_type),
   }));
   return <BlockShell block={block}><ReadOnlyCard title="问诊附件">
-    {files.length === 0 ? null : <ul className="block block--files" role="list">{files.map((file, index) => <li key={index}><Paperclip size={14} /><span>{file.name}</span>{file.size && <em>{file.size}</em>}{file.url && <a href={file.url} target="_blank" rel="noreferrer noopener" aria-label={`下载 ${file.name}`}><Download size={14} /></a>}</li>)}</ul>}
+    {files.length === 0 ? null : <ul className="block block--files" role="list">{files.map((file, index) => <li key={index}>
+      <button
+        type="button"
+        className="block--files__preview"
+        disabled={!file.url || !preview}
+        onClick={() => {
+          if (!file.url || !preview) return;
+          preview.open({ url: file.url, filename: file.name, mime_type: file.mime, kind: file.mime?.startsWith("image/") ? "image" : "document" });
+        }}
+      >
+        <Paperclip size={14} /><span>{file.name}</span>{file.size && <em>{file.size}</em>}
+      </button>
+      {file.url && <a href={file.url} target="_blank" rel="noreferrer noopener" aria-label={`下载 ${file.name}`} onClick={(event) => event.stopPropagation()}><Download size={14} /></a>}
+    </li>)}</ul>}
   </ReadOnlyCard></BlockShell>;
 }
 
