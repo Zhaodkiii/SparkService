@@ -3,11 +3,13 @@
 import { Component, type ReactNode } from "react";
 import type { ChatBlockDTO } from "@/types/chat";
 import type { ToolActivityDTO } from "@/types/tool";
+import type { HealthResourceReference } from "@/types/medical-resource";
 import { blockAssociatedValue, decodeBlockPayload } from "@/lib/chat/block-normalizer";
 
 export interface BlockRenderProps {
   block: ChatBlockDTO;
   activity?: ToolActivityDTO | null;
+  onHealthResourceOpen?: (reference: HealthResourceReference) => void;
 }
 
 export function asString(value: unknown): string | null {

@@ -1,15 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { HeartPulse, ShieldCheck } from "lucide-react";
 import { ChatBlockRenderer } from "@/components/chat/home/ChatBlockRenderer";
 import { UserMessageContent } from "@/components/chat/home/UserMessageBubble";
-import { renderBlock } from "@/components/chat/blocks/registry";
 import { useDoctorConversations } from "@/context/DoctorConversationsContext";
 import { blockAssociatedValue } from "@/lib/chat/block-normalizer";
 import { formatClock } from "@/lib/hospital/labels";
 import { doctorMessagePlainText, inferActorType } from "@/lib/hospital/message-text";
-import type { ChatBlockDTO } from "@/types/chat";
 import type { DoctorMessageDTO } from "@/types/hospital";
+import type { ChatBlockDTO } from "@/types/chat";
+import type { HealthResourceReference } from "@/types/medical-resource";
+import { HealthResourceDetailDialog } from "@/components/chat/resource/HealthResourceDetailDialog";
 
 type DoctorMessagesVariant = "default" | "consult";
 
@@ -69,11 +71,13 @@ function ConsultMessage({
   patientName,
   highlighted,
   ended = false,
+  onHealthResourceOpen,
 }: {
   message: DoctorMessageDTO;
   patientName?: string;
   highlighted: boolean;
   ended?: boolean;
+  onHealthResourceOpen?: (reference: HealthResourceReference) => void;
 }) {
   const actor = inferActorType(message);
   const key = message.client_message_id || message.server_message_id || `${message.created_at}-${message.role}`;
@@ -91,29 +95,17 @@ function ConsultMessage({
   }
 
   if (actor === "patient") {
-    const card = consultationCardBlock(message);
     const galleries = galleryBlocks(message);
-    const attachCount = galleryItemCount(galleries);
     const name = patientName || message.sender?.display_name || "患者";
     return (
       <article className={`consult-msg consult-msg--patient${highlighted ? " doctor-message--highlight" : ""}`} key={key} id={id} data-actor="patient">
         <ConsultAvatar name={name} avatarUrl={message.sender?.avatar_url} />
         <div className="consult-msg__main">
           <p className="consult-msg__meta">患者 {formatClock(message.created_at)}</p>
-          <div className={`consult-msg__bubble${card ? " consult-msg__bubble--card" : ""}`}>
-            {card ? (
-              <div className="consult-msg__card">{renderBlock({ block: card })}</div>
-            ) : null}
-            {!card && text ? <p className="consult-msg__text">{text}</p> : null}
-            {!card && galleries.length ? (
-              <div className="consult-msg__attach">
-                <p className="consult-msg__attach-label">附件（{attachCount}）</p>
-                {galleries.map((block, index) => (
-                  <div className="message__gallery" key={block.id || index}>{renderBlock({ block })}</div>
-                ))}
-              </div>
-            ) : null}
-            {!card && !text && !galleries.length ? <p className="consult-msg__text">{doctorMessagePlainText(message)}</p> : null}
+          <div className="consult-msg__bubble">
+            {/* 与普通 Chat 使用同一套消息块渲染，报告引用、图片、附件和其他通用卡片均可见。 */}
+            <UserMessageContent blocks={message.blocks} attachmentCount={galleries.length ? galleryItemCount(galleries) : undefined} onHealthResourceOpen={onHealthResourceOpen} />
+            {!message.blocks.length && text ? <p className="consult-msg__text">{text}</p> : null}
           </div>
         </div>
       </article>
@@ -134,7 +126,7 @@ function ConsultMessage({
         <p className="consult-msg__meta">{meta} {formatClock(message.created_at)}</p>
         <div className="consult-msg__bubble">
           {message.blocks.length
-            ? message.blocks.map((block) => <ChatBlockRenderer block={block} key={block.id} />)
+            ? message.blocks.map((block) => <ChatBlockRenderer block={block} key={block.id} onHealthResourceOpen={onHealthResourceOpen} />)
             : <p className="consult-msg__text">{text}</p>}
         </div>
       </div>
@@ -164,6 +156,7 @@ export function DoctorMessageList({
   variant?: DoctorMessagesVariant;
   ended?: boolean;
 }) {
+  const [activeReference, setActiveReference] = useState<HealthResourceReference | null>(null);
   if (!messages.length) {
     return (
       <div className="empty-state">
@@ -194,8 +187,10 @@ export function DoctorMessageList({
             patientName={patientName}
             highlighted={highlightId === message.client_message_id || highlightId === message.server_message_id}
             ended={ended}
+            onHealthResourceOpen={setActiveReference}
           />
         ))}
+        <HealthResourceDetailDialog reference={activeReference} onClose={() => setActiveReference(null)} />
       </div>
     );
   }
@@ -226,7 +221,7 @@ export function DoctorMessageList({
               <div className="message__content">
                 <p className="doctor-message__meta">患者 · {patientName || message.sender?.display_name || "患者"} · {formatClock(message.created_at)}</p>
                 {/* 与主 chat 用户消息共用同一套渲染：imageGallery 图片可见（CHAT-WEB-029） */}
-                <UserMessageContent blocks={message.blocks} />
+                <UserMessageContent blocks={message.blocks} onHealthResourceOpen={setActiveReference} />
               </div>
             </article>
           );
@@ -245,13 +240,14 @@ export function DoctorMessageList({
               </p>
               <div className="message__body">
                 {message.blocks.length
-                  ? message.blocks.map((block) => <ChatBlockRenderer block={block} key={block.id} />)
+                  ? message.blocks.map((block) => <ChatBlockRenderer block={block} key={block.id} onHealthResourceOpen={setActiveReference} />)
                   : <p>{doctorMessagePlainText(message)}</p>}
               </div>
             </div>
           </article>
         );
       })}
+      <HealthResourceDetailDialog reference={activeReference} onClose={() => setActiveReference(null)} />
     </div>
   );
 }

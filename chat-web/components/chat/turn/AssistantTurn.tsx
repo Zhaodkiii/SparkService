@@ -10,6 +10,7 @@ import { projectTurnActivity } from "@/lib/chat/turn-activity-projector";
 import { buildTurnTrace } from "@/lib/chat/turn-trace-reducer";
 import type { AgentRoundTraceDTO, ChatBlockDTO, ChatRunDTO, ChatUsageSummary, TurnSummary } from "@/types/chat";
 import type { ToolActivityDTO } from "@/types/tool";
+import type { HealthResourceReference } from "@/types/medical-resource";
 
 function runDurationMs(run: ChatRunDTO | null | undefined): number | null {
   if (!run?.started_at || !run?.finished_at) return null;
@@ -32,10 +33,11 @@ interface AssistantTurnProps {
   onRegenerate?: () => void;
   onDelete?: () => void;
   onFeedback?: (value: "up" | "down") => void;
+  onHealthResourceOpen?: (reference: HealthResourceReference) => void;
 }
 
 /** 统一助手回合外壳：Activity 状态头是唯一入口，不再渲染固定头像。 */
-export function AssistantTurn({ blocks, messageId, activityByCallId, run, assistantStatus, contentStreaming, turnSummary, usageSummary, rounds, onRegenerate, onDelete, onFeedback }: AssistantTurnProps) {
+export function AssistantTurn({ blocks, messageId, activityByCallId, run, assistantStatus, contentStreaming, turnSummary, usageSummary, rounds, onRegenerate, onDelete, onFeedback, onHealthResourceOpen }: AssistantTurnProps) {
   const presentation = buildTurnPresentation(blocks, messageId, "assistant");
   const toolRows = collectToolActivityRows(blocks, activityByCallId);
   const traceNodes = buildTurnTrace(rounds ?? null, toolRows);
@@ -55,8 +57,8 @@ export function AssistantTurn({ blocks, messageId, activityByCallId, run, assist
     <div className="message__content">
       <div className="message__body">
         <TurnActivity activity={activity} thinkingBlocks={presentation.thinkingBlocks} traceNodes={traceNodes} durationMs={durationMs} startedAt={startedAt} activityId={messageId} />
-        {presentation.contentBlocks.map((block) => <div key={block.id}>{renderBlock({ block })}</div>)}
-        <ToolPresentationSlot blocks={presentation.presentationBlocks} />
+        {presentation.contentBlocks.map((block) => <div key={block.id}>{renderBlock({ block, onHealthResourceOpen })}</div>)}
+        <ToolPresentationSlot blocks={presentation.presentationBlocks} onHealthResourceOpen={onHealthResourceOpen} />
       </div>
       <TurnActions text={text} onRegenerate={onRegenerate} onDelete={onDelete} onFeedback={onFeedback} />
       <TurnUsageSummary usage={usage} />

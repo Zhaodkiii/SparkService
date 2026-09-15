@@ -1254,7 +1254,7 @@ class ExaminationReportViewSet(WrappedModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
-        if member_id:
+        if member_id and not MemberPermissionGate.is_development_doctor(self.request.user):
             queryset = queryset.filter(member_id=member_id)
         return queryset
 
@@ -1266,7 +1266,7 @@ class HealthExamReportViewSet(WrappedModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         member_id = self.request.query_params.get("member_id")
-        if member_id:
+        if member_id and not MemberPermissionGate.is_development_doctor(self.request.user):
             queryset = queryset.filter(member_id=member_id)
         return queryset
 
@@ -1283,7 +1283,7 @@ class MedExamDetailViewSet(WrappedModelViewSet):
         member_id = self.request.query_params.get("member_id")
         business_type = self.request.query_params.get("business_type")
         business_id = self.request.query_params.get("business_id")
-        if member_id:
+        if member_id and not MemberPermissionGate.is_development_doctor(self.request.user):
             queryset = queryset.filter(member_id=member_id)
         if business_type:
             queryset = queryset.filter(business_type=business_type)
@@ -1306,7 +1306,10 @@ class MedicineBoxViewSet(WrappedModelViewSet):
     def get_queryset(self):
         user = self.request.user
         queryset = self.queryset.filter(is_deleted=False)
-        member_ids = binding_service.accessible_member_ids(user)
+        if MemberPermissionGate.is_development_doctor(user):
+            member_ids = set(Member.objects.filter(is_deleted=False).values_list("id", flat=True))
+        else:
+            member_ids = binding_service.accessible_member_ids(user)
         if not member_ids:
             return queryset.none()
         owner_ids = Member.objects.filter(id__in=member_ids, is_deleted=False).values_list("user_id", flat=True).distinct()
@@ -1316,7 +1319,7 @@ class MedicineBoxViewSet(WrappedModelViewSet):
         medicine_type = self.request.query_params.get("medicine_type")
         expire_before = self.request.query_params.get("expire_before")
         low_stock = self.request.query_params.get("low_stock")
-        if member_id:
+        if member_id and not MemberPermissionGate.is_development_doctor(self.request.user):
             queryset = queryset.filter(member_id=member_id)
         if medicine_type:
             queryset = queryset.filter(medicine_type=medicine_type)

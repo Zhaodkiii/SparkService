@@ -78,6 +78,16 @@ def user_can_access_business(user, business_type: str, business_id) -> bool:
     member_id = member_id_for_business(business_type, business_id)
     if member_id is None:
         return False
+    # 开发环境：有效医生可以读取所有医疗资料及其附件，不要求该资料
+    # 先绑定到医生账号或当前问诊会话。
+    try:
+        from hospital_care.exceptions import HospitalCareError
+        from hospital_care.selectors.doctor_workspace import get_active_doctor
+
+        get_active_doctor(user=user)
+        return True
+    except HospitalCareError:
+        pass
     return binding_service.get_active_binding(user=user, member_id=member_id) is not None
 
 

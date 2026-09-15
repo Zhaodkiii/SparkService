@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { HeartPulse } from "lucide-react";
 import { AssistantTurn } from "@/components/chat/turn/AssistantTurn";
 import { ChatBlockRenderer } from "@/components/chat/home/ChatBlockRenderer";
@@ -9,16 +10,21 @@ import { useOptionalThreads } from "@/context/ThreadContext";
 import { runStatusLabel } from "@/lib/event-reducer";
 import { toolBlockActivityView } from "@/lib/tools/tool-activity-selectors";
 import { UserMessageContent } from "@/components/chat/home/UserMessageBubble";
+import { HealthResourceDetailDialog } from "@/components/chat/resource/HealthResourceDetailDialog";
 import type { ChatBlockDTO, ChatRunDTO } from "@/types/chat";
+import type { HealthResourceReference } from "@/types/medical-resource";
 import { isTerminalRunStatus } from "@/types/chat";
 import type { ChatMessageWireDTO } from "@/types/sync";
 
 /**
  * 用户消息为紧凑气泡：内容渲染与医生工作台患者消息共用 UserMessageContent。
  */
-function userBubble(blocks: ChatBlockDTO[]) {
+function userBubble(
+  blocks: ChatBlockDTO[],
+  onHealthResourceOpen: (reference: HealthResourceReference) => void,
+) {
   return <article className="message message--user"><div className="message__content">
-    <UserMessageContent blocks={blocks} />
+    <UserMessageContent blocks={blocks} onHealthResourceOpen={onHealthResourceOpen} />
   </div></article>;
 }
 
@@ -34,6 +40,7 @@ function belongsToLiveRun(message: ChatMessageWireDTO, run: ChatRunDTO | null | 
 }
 
 export function ChatMessages() {
+  const [activeReference, setActiveReference] = useState<HealthResourceReference | null>(null);
   const { state, history, scenario, offline, forbidden } = useChatRuntime();
   const live = useOptionalRunControl();
   const threads = useOptionalThreads();
@@ -49,7 +56,8 @@ export function ChatMessages() {
     const liveClaimed = Boolean(live.run && threads.messages.some((message) => belongsToLiveRun(message, live.run, liveBlockIds, lastAssistantId)));
     const liveActive = Boolean(live.run && !isTerminalRunStatus(live.run.status));
     if (!threads.messages.length && !unsyncedLiveBlocks.length) return <div className="empty-state"><div className="empty-state__mark"><HeartPulse size={22} /></div><div><p className="empty-state__eyebrow">小鲸健康 AI</p><h1>今天想先聊点什么？</h1><p>可以从健康资料、饮食、运动或睡眠开始。</p><div className="prompt-suggestions"><span>解读体检指标</span><span>规划一周饮食</span><span>改善睡眠质量</span></div></div></div>;
-    return <div className="messages" aria-live="polite">
+    return <>
+    <div className="messages" aria-live="polite">
       {threads.messages.map((message) => {
         const onLiveRun = belongsToLiveRun(message, live.run, liveBlockIds, lastAssistantId);
         const extraLiveBlocks = onLiveRun ? unsyncedLiveBlocks : [];
@@ -69,9 +77,10 @@ export function ChatMessages() {
             assistantStatus={onLiveRun && liveRunId ? live.state.assistantStatusByRun[liveRunId] ?? null : null}
             contentStreaming={onLiveRun ? isStreaming(blocks) : false}
             rounds={onLiveRun && liveRunId ? live.state.roundsByRun[liveRunId] ?? null : null}
+            onHealthResourceOpen={setActiveReference}
           />;
         }
-        return <div key={message.client_message_id}>{userBubble(blocks)}</div>;
+        return <div key={message.client_message_id}>{userBubble(blocks, setActiveReference)}</div>;
       })}
       {((unsyncedLiveBlocks.length > 0 || liveActive) && !liveClaimed) && <AssistantTurn
         key={`live-${liveRunId ?? "assistant"}`}
@@ -82,9 +91,12 @@ export function ChatMessages() {
         assistantStatus={liveRunId ? live.state.assistantStatusByRun[liveRunId] ?? null : null}
         contentStreaming={isStreaming(unsyncedLiveBlocks)}
         rounds={liveRunId ? live.state.roundsByRun[liveRunId] ?? null : null}
+        onHealthResourceOpen={setActiveReference}
       />}
       {live.run && ["failed", "interrupted"].includes(live.run.status) && <div className="run-error" role="alert"><span>{live.run.error?.message || runStatusLabel(live.run.status)}</span><button type="button" onClick={() => void live.regenerate()} disabled={live.busy}>重新生成</button></div>}
-    </div>;
+    </div>
+    <HealthResourceDetailDialog reference={activeReference} onClose={() => setActiveReference(null)} />
+    </>;
   }
   if (forbidden) return <div className="empty-state" role="alert"><div><h1>需要重新确认账号</h1><p>为了保护隐私，没有显示上一账号的内容。</p></div></div>;
   if (scenario === "empty") return <div className="empty-state"><div className="empty-state__mark"><HeartPulse size={22} /></div><div><h1>今天想先聊点什么？</h1><p>可以从健康资料、饮食或睡眠开始。</p></div></div>;

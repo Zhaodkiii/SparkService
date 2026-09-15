@@ -57,6 +57,17 @@ def doctor_patient_conversations(*, doctor: DoctorProfile, member_id: int) -> Qu
     )
 
 
+def doctor_patient_agent_conversations(*, doctor: DoctorProfile, member_id: int) -> QuerySet[ClinicalConversationBinding]:
+    """患者工作台的患者—智能体会话。
+
+    医院智能体咨询与线上问诊共用 ``ClinicalConversationBinding``，但只有线上
+    问诊会额外关联一条 ``Consultation``。患者工作台的会话区只服务于智能体
+    对话，因此必须在服务端排除已生成问诊单的绑定；不能依赖前端按文案、状态
+    或消息角色猜测会话类型。
+    """
+    return doctor_patient_conversations(doctor=doctor, member_id=member_id).filter(consultation__isnull=True)
+
+
 def doctor_patient_rows(*, doctor: DoctorProfile) -> list[dict]:
     """D-007~D-010：按患者聚合当前医生的授权会话，产出列表行原始数据。
 

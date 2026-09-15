@@ -28,7 +28,7 @@ from hospital_care.api.staff.serializers import (
 from hospital_care.permissions import DoctorConversationPermission, HospitalStaffPermission
 from hospital_care.realtime import DOCTOR_CONVERSATION_WS_PATH
 from hospital_care.selectors.doctor_workspace import doctor_agent, doctor_conversations, doctor_queue_counts, get_doctor_conversation
-from hospital_care.selectors.patient_workspace import doctor_patient_conversations
+from hospital_care.selectors.patient_workspace import doctor_patient_agent_conversations
 from hospital_care.services.agent_service import submit_agent_for_review, upsert_doctor_agent
 from hospital_care.services.audit import write_hospital_audit_log
 from hospital_care.services.conversation_attachment_service import (
@@ -599,13 +599,17 @@ class DoctorPatientWorkspaceView(APIView):
 
 
 class DoctorPatientConversationsView(APIView):
-    """D-012/D-013：患者会话列表；D-019：新建咨询继承当前患者与当前医生智能体。"""
+    """D-012/D-013：患者—智能体会话列表；D-019：新建咨询继承当前患者与当前医生智能体。
+
+    线上问诊由独立的 ``/doctor/consult`` 模块展示。两者虽然复用医院会话底层
+    模型，但本接口不得返回已关联 ``Consultation`` 问诊单的 Thread。
+    """
 
     permission_classes = [DoctorConversationPermission]
 
     def get(self, request, member_id):
         doctor = request.hospital_doctor
-        bindings = list(doctor_patient_conversations(doctor=doctor, member_id=member_id))
+        bindings = list(doctor_patient_agent_conversations(doctor=doctor, member_id=member_id))
         thread_ids = [item.thread_id for item in bindings]
         unread_map = unread_counts_by_thread(doctor=doctor, thread_ids=thread_ids)
         attachment_map = attachment_count_for_threads(thread_ids)

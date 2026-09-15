@@ -49,7 +49,7 @@ function asAttachments(value: Record<string, unknown>): AttachmentItem[] {
     .map((item, index) => {
       const filename = asString(item.filename ?? item.name) ?? (item.type === "image" ? "图片" : "附件");
       const url = asString(item.url ?? item.display_url) ?? "";
-      const type = asString(item.type) === "image" || asString(item.mime_type)?.startsWith("image/") ? "image" : "document";
+      const type: AttachmentItem["type"] = asString(item.type) === "image" || asString(item.mime_type)?.startsWith("image/") ? "image" : "document";
       return {
         id: asString(item.id) ?? `${url}-${index}`,
         type,

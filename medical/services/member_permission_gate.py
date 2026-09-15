@@ -5,13 +5,26 @@ from __future__ import annotations
 from django.contrib.auth.models import User
 from django.db.models import QuerySet
 
+from hospital_care.exceptions import HospitalCareError
 from medical.permissions import assert_member_access, filter_queryset_by_member_binding
+from medical.services import member_binding_service as binding_service
 from medical.services import member_permission_service as permission_service
 from medical.services.member_binding_service import ensure_can_share_member
 from medical.services.member_permission_service import MemberPermissionDenied
 
 
 class MemberPermissionGate:
+    @staticmethod
+    def is_development_doctor(user: User) -> bool:
+        """开发环境：判断是否为有效医生账号。"""
+        try:
+            from hospital_care.selectors.doctor_workspace import get_active_doctor
+
+            get_active_doctor(user=user)
+            return True
+        except HospitalCareError:
+            return False
+
     @staticmethod
     def require_access(user: User, member_id: int):
         return permission_service.ensure_can_view_member(user=user, member_id=member_id)
@@ -51,7 +64,16 @@ class MemberPermissionGate:
 
     @staticmethod
     def filter_qs(queryset: QuerySet, user: User, *, member_field: str = "member_id") -> QuerySet:
-        return filter_queryset_by_member_binding(queryset, user, member_field=member_field)
+        # 开发环境策略：有效医生可直接查看医疗资料，不要求先建立患者绑定
+        # 或接管问诊。写入、分享、删除等操作仍由各自的 require_* 权限控制。
+        if MemberPermissionGate.is_development_doctor(user):
+            return queryset
+
+        # 患者端继续按成员绑定授权。
+        member_ids = set(binding_service.accessible_member_ids(user))
+        if not member_ids:
+            return queryset.none()
+        return queryset.filter(**{f"{member_field}__in": member_ids})
 
     @staticmethod
     def permission_denied_response(exc: MemberPermissionDenied, error_response):

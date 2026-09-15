@@ -7,6 +7,7 @@ from accounts.models import SocialIdentity
 from medical.models import MemberMedicalProfile
 
 from hospital_care.models import ClinicalConversationBinding
+from hospital_care.services.consultation_service import submit_consultation
 from hospital_care.services.conversation_service import create_patient_conversation
 from hospital_care.tests.factories import (
     DummyRequest,
@@ -214,6 +215,23 @@ class PatientWorkspaceApiTests(TestCase):
         items = response.data["data"]["items"]
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["thread_id"], str(self.binding.thread_id))
+
+    def test_patient_conversations_exclude_online_consultations(self):
+        """患者工作台只列智能体会话；线上问诊由独立线上问诊模块承载。"""
+        consultation = submit_consultation(
+            request=DummyRequest(self.patient),
+            user=self.patient,
+            agent_id=self.agent.id,
+            member_id=self.member.id,
+            chief_complaint="近两天胸闷，想提交线上问诊。",
+        )
+
+        response = self.client.get(f"/api/hospital/v1/doctor/patients/{self.member.id}/conversations/")
+
+        self.assertEqual(response.status_code, 200)
+        thread_ids = [item["thread_id"] for item in response.data["data"]["items"]]
+        self.assertEqual(thread_ids, [str(self.binding.thread_id)])
+        self.assertNotIn(str(consultation.binding.thread_id), thread_ids)
 
     def test_create_conversation_inherits_patient_and_agent(self):
         response = self.client.post(

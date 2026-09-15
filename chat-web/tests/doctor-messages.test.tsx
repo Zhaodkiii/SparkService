@@ -73,6 +73,32 @@ describe("doctor message attribution", () => {
     expect(screen.getAllByRole("img")).toHaveLength(1);
     expect(screen.getByText("看看这个")).toBeInTheDocument();
   });
+
+  it("renders patient report references in the consult variant", () => {
+    const reportMessage = message({
+      client_message_id: "c-report",
+      role: "user",
+      actor_type: "patient",
+      blocks: [{
+        id: "c-report-reference",
+        kind: "healthResourceReference" as never,
+        status: "ready",
+        revision: 1,
+        order_key: 1,
+        node_role: "timeline",
+        payload: {
+          health_resource_reference: {
+            _0: { resource_type: "examination_report", resource_id: 327, member_id: 2, ref_index: 2 },
+          },
+        },
+      }],
+    });
+
+    render(<DoctorMessageList variant="consult" patientName="吧宝贝" messages={[reportMessage]} />);
+
+    expect(screen.getByRole("button", { name: "检查报告：检查报告 #327" })).toBeInTheDocument();
+    expect(screen.getByText("资料编号：327 · 成员 2")).toBeInTheDocument();
+  });
 });
 
 describe("consult variant messages (DOCTOR-WORKSPACE-000004 页面形态修订)", () => {

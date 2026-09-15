@@ -425,9 +425,11 @@ export function ConsultDetailPanel() {
   const [profile, setProfile] = useState<PatientWorkspaceDTO | null>(null);
   const [attachments, setAttachments] = useState<ConversationAttachmentItemDTO[] | null>(null);
   const [summary, setSummary] = useState<PatientSummaryDTO | null>(null);
+  const [patientDetailsExpanded, setPatientDetailsExpanded] = useState(true);
 
   const threadId = detail?.thread_id ?? null;
   useEffect(() => {
+    setPatientDetailsExpanded(true);
     setProfile(null);
     setAttachments(null);
     setSummary(null);
@@ -453,7 +455,18 @@ export function ConsultDetailPanel() {
       aria-label="问诊详情"
     >
       <header className="patient-drawer__head consult-detail__head">
-        <h2>问诊详情</h2>
+        <div className="consult-detail__title-group">
+          <h2>问诊详情</h2>
+          <button
+            type="button"
+            className="consult-detail__details-toggle"
+            aria-expanded={patientDetailsExpanded}
+            aria-controls="consult-patient-details"
+            onClick={() => setPatientDetailsExpanded((current) => !current)}
+          >
+            {patientDetailsExpanded ? "收起" : "展开"}
+          </button>
+        </div>
         <div className="consult-detail__head-actions">
           <span className={`doctor-tag doctor-tag--outline doctor-tag--status-${status}`}>{SERVICE_STATUS_LABEL[status]}</span>
           {detail.doctor_attention_level === "priority" && (
@@ -464,11 +477,14 @@ export function ConsultDetailPanel() {
       </header>
 
       <div className="consult-detail__scroll">
-        <div className="consult-detail__top">
-          <PatientProfileCard profile={profile} consultNo={detail.consult_no} />
-          <AttachmentsCard items={attachments} />
-        </div>
+        {patientDetailsExpanded && (
+          <div id="consult-patient-details" className="consult-detail__top">
+            <PatientProfileCard key={threadId ?? "none"} profile={profile} consultNo={detail.consult_no} />
+            <AttachmentsCard items={attachments} />
+          </div>
+        )}
         <TakeoverBar />
+        <AttentionSection />
         <div className="doctor-scroll-frame patient-drawer__scroll consult-detail__messages">
           <div className="chat-scroll" data-chat-scroll-root ref={scrollRef}>
             <section className="message-column patient-drawer__messages">
@@ -482,7 +498,6 @@ export function ConsultDetailPanel() {
             </button>
           )}
         </div>
-        <AttentionSection />
       </div>
 
       <div className="composer-wrap patient-drawer__composer consult-detail__composer"><DoctorComposer /></div>
