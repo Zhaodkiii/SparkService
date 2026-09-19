@@ -184,8 +184,6 @@ class PatientWorkspaceApiTests(TestCase):
         urls = [
             f"/api/hospital/v1/doctor/patients/{stranger.id}/workspace/",
             f"/api/hospital/v1/doctor/patients/{stranger.id}/conversations/",
-            f"/api/hospital/v1/doctor/patients/{stranger.id}/summary/",
-            f"/api/hospital/v1/doctor/patients/{stranger.id}/risk/",
         ]
         for url in urls:
             response = self.client.get(url)
@@ -194,8 +192,6 @@ class PatientWorkspaceApiTests(TestCase):
 
         post_cases = [
             (f"/api/hospital/v1/doctor/patients/{stranger.id}/conversations/", {}),
-            (f"/api/hospital/v1/doctor/patients/{stranger.id}/summary/generate/", {}),
-            (f"/api/hospital/v1/doctor/patients/{stranger.id}/summary/ack/", {"acknowledged": True}),
         ]
         for url, payload in post_cases:
             response = self.client.post(url, payload, format="json", HTTP_IDEMPOTENCY_KEY=f"forbidden-{url}")
@@ -261,98 +257,3 @@ class PatientWorkspaceApiTests(TestCase):
 
         listing = self.client.get(f"/api/hospital/v1/doctor/patients/{self.member.id}/conversations/")
         self.assertEqual(len(listing.data["data"]["items"]), 2)
-
-    # ---------- D-020~D-023 AI 总结 ----------
-
-    def test_summary_generate_and_ack_flow(self):
-        # 进入页面不自动生成：首次查询为空。
-        empty = self.client.get(f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/")
-        self.assertEqual(empty.status_code, 200)
-        self.assertIsNone(empty.data["data"])
-
-        created = self.client.post(
-            f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/generate/",
-            {},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="pw-summary-1",
-        )
-        self.assertEqual(created.status_code, 201, created.data)
-        summary = created.data["data"]
-        self.assertEqual(summary["version"], 1)
-        self.assertTrue(summary["system_generated"])
-        self.assertFalse(summary["acknowledged"])
-        self.assertEqual(summary["tool_name"], "patient-workspace-summary-v1")
-        for key in ("current_issues", "key_health_info", "conversation_highlights", "follow_up_items"):
-            self.assertIn(key, summary["sections"])
-        self.assertEqual(summary["data_scope"]["thread_count"], 1)
-
-        latest = self.client.get(f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/")
-        self.assertEqual(latest.data["data"]["id"], summary["id"])
-
-        # 再次生成产生新版本。
-        regenerated = self.client.post(
-            f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/generate/",
-            {},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="pw-summary-2",
-        )
-        self.assertEqual(regenerated.data["data"]["version"], 2)
-
-        # 已了解 / 取消已了解。
-        acked = self.client.post(
-            f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/ack/",
-            {"acknowledged": True},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="pw-ack-1",
-        )
-        self.assertEqual(acked.status_code, 200, acked.data)
-        self.assertTrue(acked.data["data"]["acknowledged"])
-        self.assertEqual(acked.data["data"]["version"], 2)
-        self.assertIsNotNone(acked.data["data"]["acknowledged_at"])
-
-        unacked = self.client.post(
-            f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/ack/",
-            {"acknowledged": False},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="pw-ack-2",
-        )
-        self.assertFalse(unacked.data["data"]["acknowledged"])
-
-    def test_ack_without_summary_unavailable(self):
-        response = self.client.post(
-            f"/api/hospital/v1/doctor/patients/{self.member.id}/summary/ack/",
-            {"acknowledged": True},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="pw-ack-empty",
-        )
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.data["msg"], "SUMMARY_UNAVAILABLE")
-
-    # ---------- D-024~D-026 风险卡片 ----------
-
-    def test_risk_card_none_when_no_signal(self):
-        response = self.client.get(f"/api/hospital/v1/doctor/patients/{self.member.id}/risk/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.data["data"])
-
-    def test_risk_card_readonly_highest_signal(self):
-        self.binding.risk_signal_level = ClinicalConversationBinding.RiskSignalLevel.LOW
-        self.binding.save(update_fields=["risk_signal_level", "updated_at"])
-        second = create_patient_conversation(
-            request=DummyRequest(self.patient),
-            user=self.patient,
-            agent_id=self.agent.id,
-            member_id=self.member.id,
-        )
-        second.risk_signal_level = ClinicalConversationBinding.RiskSignalLevel.HIGH
-        second.save(update_fields=["risk_signal_level", "updated_at"])
-
-        response = self.client.get(f"/api/hospital/v1/doctor/patients/{self.member.id}/risk/")
-        self.assertEqual(response.status_code, 200)
-        data = response.data["data"]
-        self.assertEqual(data["level"], ClinicalConversationBinding.RiskSignalLevel.HIGH)
-        self.assertEqual(data["status"], "effective")
-        self.assertEqual(data["source"], "existing_risk_tool")
-        self.assertEqual(data["source_thread_id"], str(second.thread_id))
-        self.assertIn("现有风险工具", data["suggestion"])
-        self.assertIsNotNone(data["data_cutoff_at"])

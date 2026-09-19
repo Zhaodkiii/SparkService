@@ -5,7 +5,7 @@
  *  切换医院/医生身份、退出登录或账号失效时清理对应范围缓存。
  */
 
-export type PatientCacheModule = "profile" | "conversations" | "summary" | "risk";
+export type PatientCacheModule = "profile" | "conversations";
 
 export interface PatientCacheScope {
   hospitalId: string;
@@ -28,8 +28,6 @@ const IDENTITY_KEY = `${PREFIX}:identity`;
 export const PATIENT_CACHE_TTL_MS: Record<PatientCacheModule, number> = {
   profile: 5 * 60_000,
   conversations: 2 * 60_000,
-  summary: 24 * 60 * 60_000,
-  risk: 5 * 60_000,
 };
 
 function storageKey(scope: PatientCacheScope): string {

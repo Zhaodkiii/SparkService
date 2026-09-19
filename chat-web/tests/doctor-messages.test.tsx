@@ -102,6 +102,119 @@ describe("doctor message attribution", () => {
 });
 
 describe("consult variant messages (DOCTOR-WORKSPACE-000004 页面形态修订)", () => {
+  it("shows only one collapsible symptom summary and hides collection internals", () => {
+    const summaryMessage = message({
+      client_message_id: "c-symptom-summary",
+      role: "assistant",
+      actor_type: "ai_agent",
+      blocks: [
+        textBlock("c-symptom-advice", "根据症状建议立即前往急诊"),
+        {
+          id: "c-symptom-card",
+          kind: "symptomCollectionCard" as never,
+          status: "ready",
+          revision: 1,
+          order_key: 2,
+          node_role: "toolPresentation",
+          payload: {
+            symptom_collection_card: {
+              _0: {
+                collection_id: "collection-doctor-1",
+                task_status: "completed",
+                snapshot: {
+                  collection_id: "collection-doctor-1",
+                  status: "completed",
+                  analysis_summary: "主要不适为头晕，今天出现，伴恶心。",
+                  primary_complaint: "头晕",
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+    const questionMessage = message({
+      client_message_id: "c-symptom-question",
+      role: "assistant",
+      actor_type: "ai_agent",
+      blocks: [{
+        id: "c-symptom-question-card",
+        kind: "toolQuestionCards" as never,
+        status: "ready",
+        revision: 1,
+        order_key: 3,
+        node_role: "toolPresentation",
+        payload: {
+          tool_question_cards: {
+            _0: [{
+              id: "round-doctor-1",
+              status: "submitted",
+              prompt: {
+                symptom_collection_id: "collection-doctor-1",
+                questions: [{ id: "q1", question: "这次头晕持续多久？", selection_mode: "single", options: [{ id: "today", text: "今天" }] }],
+              },
+              answers: [{ question_id: "q1", selected_option_ids: ["today"] }],
+            }],
+          },
+        },
+      }],
+    });
+
+    const { container } = render(<DoctorMessageList variant="consult" messages={[summaryMessage, questionMessage]} />);
+
+    expect(container.querySelectorAll("[data-testid='symptom-collection-card']")).toHaveLength(1);
+    expect(screen.getByText("症状信息汇总")).toBeInTheDocument();
+    expect(screen.getByText(/问诊进度/)).toHaveTextContent("100%");
+    expect(screen.getByText("主要不适为头晕，今天出现，伴恶心。")).toBeInTheDocument();
+    expect(screen.queryByText(/建议立即前往急诊/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/这次头晕持续多久/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/问答记录/)).not.toBeInTheDocument();
+  });
+
+  it("renders pending symptom start card when doctor inserts collection without summary block", () => {
+    const questionMessage = message({
+      client_message_id: "c-symptom-start",
+      role: "assistant",
+      actor_type: "ai_agent",
+      blocks: [{
+        id: "c-symptom-start-card",
+        kind: "toolQuestionCards" as never,
+        status: "ready",
+        revision: 1,
+        order_key: 1,
+        node_role: "toolPresentation",
+        payload: {
+          tool_question_cards: {
+            _0: [{
+              id: "round-start-1",
+              status: "pending",
+              prompt: {
+                tool_name: "collect_symptoms",
+                symptom_collection_id: "collection-start-1",
+                questions: [{
+                  id: "primary_complaint",
+                  field_key: "primary_complaint",
+                  question: "请描述您目前最主要的不适症状",
+                  selection_mode: "single",
+                  options: [],
+                  allows_other: true,
+                }],
+              },
+              answers: [],
+            }],
+          },
+        },
+      }],
+    });
+
+    render(<DoctorMessageList variant="consult" messages={[questionMessage]} />);
+
+    expect(screen.getByText("症状采集")).toBeInTheDocument();
+    expect(screen.getByText("请描述您目前最主要的不适症状")).toBeInTheDocument();
+    expect(screen.getByText(/等待患者在 App 中填写/)).toBeInTheDocument();
+    expect(screen.queryByText(/问诊进度/)).not.toBeInTheDocument();
+  });
+
   it("renders patient left bubble with avatar, attachment label and doctor right bubble with title", () => {
     const galleryMessage = message({
       client_message_id: "c-p1",

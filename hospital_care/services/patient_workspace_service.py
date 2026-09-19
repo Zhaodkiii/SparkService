@@ -4,19 +4,16 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import SocialIdentity
-from chat_sync.models import ChatMessage, ChatThread
+from chat_sync.models import ChatThread
 from hospital_care.exceptions import HospitalCareError
 from hospital_care.models import (
     ChatMessageAttribution,
     ClinicalConversationBinding,
     DoctorPatientAttention,
-    DoctorPatientSummary,
-    DoctorPatientSummaryAck,
     DoctorProfile,
 )
 from hospital_care.selectors.doctor_workspace import doctor_agent
 from hospital_care.selectors.patient_workspace import (
-    assert_doctor_can_view_member,
     doctor_patient_conversations,
     doctor_patient_rows,
     get_visible_member,
@@ -26,22 +23,7 @@ from hospital_care.services.conversation_service import _create_doctor_intro_car
 from hospital_care.services.read_state_service import unread_totals_by_member
 from medical.models import Member, MemberMedicalProfile
 
-SUMMARY_TOOL_NAME = "patient-workspace-summary-v1"
-
 _QUEUE_VALUES = {"all", "priority", "pending", "active", "ended"}
-
-_RISK_ORDER = {
-    ClinicalConversationBinding.RiskSignalLevel.NONE: 0,
-    ClinicalConversationBinding.RiskSignalLevel.LOW: 1,
-    ClinicalConversationBinding.RiskSignalLevel.MEDIUM: 2,
-    ClinicalConversationBinding.RiskSignalLevel.HIGH: 3,
-}
-
-_RISK_SUGGESTION = {
-    ClinicalConversationBinding.RiskSignalLevel.LOW: "按现有风险工具建议继续观察。",
-    ClinicalConversationBinding.RiskSignalLevel.MEDIUM: "按现有风险工具建议尽快人工跟进；人工调整请进入现有风险工具流程。",
-    ClinicalConversationBinding.RiskSignalLevel.HIGH: "按现有风险工具建议立即人工介入处理；人工调整请进入现有风险工具流程。",
-}
 
 
 def mask_phone(value: str) -> str:
@@ -268,250 +250,6 @@ def build_patient_list(*, doctor: DoctorProfile, keyword: str = "", queue: str =
         for row in rows
     ]
     return items, counts
-
-
-def build_risk_card(*, doctor: DoctorProfile, member_id: int) -> dict | None:
-    """D-024~D-026：风险卡片只读聚合现有风险信号；不提供人工调整。
-
-    取当前医生可见会话中等级最高（平级取最新）的风险信号。
-    """
-    bindings = doctor_patient_conversations(doctor=doctor, member_id=member_id)
-    best: ClinicalConversationBinding | None = None
-    for binding in bindings:
-        level = binding.risk_signal_level or ClinicalConversationBinding.RiskSignalLevel.NONE
-        if level == ClinicalConversationBinding.RiskSignalLevel.NONE:
-            continue
-        if best is None:
-            best = binding
-            continue
-        best_level = best.risk_signal_level or ClinicalConversationBinding.RiskSignalLevel.NONE
-        if (_RISK_ORDER.get(level, 0), binding.updated_at) > (_RISK_ORDER.get(best_level, 0), best.updated_at):
-            best = binding
-    if best is None:
-        return None
-    level = best.risk_signal_level
-    return {
-        "level": level,
-        "status": "effective",
-        "suggestion": _RISK_SUGGESTION.get(level, "按现有风险工具建议处理。"),
-        "source_thread_id": str(best.thread_id),
-        "updated_at": best.updated_at.isoformat(),
-        "data_cutoff_at": best.updated_at.isoformat(),
-        "source": "existing_risk_tool",
-    }
-
-
-def _extract_message_text(message: ChatMessage) -> str:
-    pieces: list[str] = []
-    for block in message.blocks.all():
-        payload = block.payload or {}
-        text = payload.get("text")
-        if isinstance(text, dict):
-            for key in sorted(text.keys()):
-                value = text.get(key)
-                if isinstance(value, str) and value.strip():
-                    pieces.append(value.strip())
-        elif isinstance(text, str) and text.strip():
-            pieces.append(text.strip())
-    return " ".join(pieces).strip()
-
-
-def _recent_patient_messages(*, doctor: DoctorProfile, member_id: int, limit: int = 3) -> list[str]:
-    bindings = doctor_patient_conversations(doctor=doctor, member_id=member_id)
-    thread_ids = [binding.thread_id for binding in bindings]
-    if not thread_ids:
-        return []
-    messages = (
-        ChatMessage.objects.filter(
-            thread_id__in=thread_ids,
-            tombstone=False,
-            hospital_attribution__actor_type=ChatMessageAttribution.ActorType.PATIENT,
-        )
-        .prefetch_related("blocks")
-        .order_by("-created_at", "-id")[: limit * 3]
-    )
-    texts: list[str] = []
-    for message in messages:
-        text = _extract_message_text(message)
-        if text:
-            texts.append(text[:80])
-        if len(texts) >= limit:
-            break
-    return texts
-
-
-def generate_patient_summary(*, request, doctor: DoctorProfile, member_id: int) -> DoctorPatientSummary:
-    """D-020~D-023：医生主动触发生成；输入范围 = 当前医生可见资料 + 可见会话。
-
-    生成内容为系统结构化摘要（确定性生成，可追溯到输入快照），
-    不回写 Member、健康档案、会话或风险等级。
-    """
-    member = get_visible_member(doctor=doctor, member_id=member_id)
-    profile = _profile_for(member)
-    bindings = list(doctor_patient_conversations(doctor=doctor, member_id=member_id))
-
-    latest = bindings[0] if bindings else None
-    status_label = {
-        ClinicalConversationBinding.ServiceStatus.AI_ACTIVE: "AI 服务中",
-        ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR: "待医生接管",
-        ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED: "医生已接管",
-        ClinicalConversationBinding.ServiceStatus.ENDED: "已结束",
-    }
-    if latest is not None:
-        current_issues = (
-            f"最近咨询「{latest.thread.title or latest.agent.name}」，"
-            f"当前服务状态：{status_label.get(latest.service_status, '状态未知')}；"
-            f"当前医生可见会话共 {len(bindings)} 条。"
-        )
-    else:
-        current_issues = "暂无可查看的院内会话。"
-
-    safety = build_medical_safety(member, profile)
-    health = build_health_profile(member, profile)
-    health_pieces: list[str] = []
-    if health["blood_type"]:
-        health_pieces.append(f"血型 {health['blood_type']}")
-    if health["bmi"] is not None:
-        health_pieces.append(f"BMI {health['bmi']}")
-    if safety["allergies"]:
-        health_pieces.append(f"过敏：{'、'.join(safety['allergies'][:5])}")
-    if safety["long_term_medications"]:
-        health_pieces.append(f"长期用药：{'、'.join(safety['long_term_medications'][:5])}")
-    if safety["past_medical_history"]:
-        health_pieces.append(f"既往病史：{'、'.join(safety['past_medical_history'][:5])}")
-    key_health_info = "；".join(health_pieces) if health_pieces else "暂无已记录的关键健康信息。"
-
-    patient_messages = _recent_patient_messages(doctor=doctor, member_id=member_id)
-    if patient_messages:
-        conversation_highlights = "；".join(f"患者：{text}" for text in patient_messages)
-    elif latest is not None:
-        conversation_highlights = f"最近会话「{latest.thread.title or latest.agent.name}」暂无患者正文消息。"
-    else:
-        conversation_highlights = "暂无会话要点。"
-
-    follow_ups: list[str] = []
-    for binding in bindings:
-        if binding.service_status == ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR:
-            follow_ups.append("存在待接管会话，请及时处理。")
-            break
-    for binding in bindings:
-        if (
-            binding.doctor_attention_level == ClinicalConversationBinding.AttentionLevel.PRIORITY
-            and binding.service_status != ClinicalConversationBinding.ServiceStatus.ENDED
-        ):
-            follow_ups.append("重点患者标记生效中，请优先跟进。")
-            break
-    risk_card = build_risk_card(doctor=doctor, member_id=member_id)
-    if risk_card is not None:
-        follow_ups.append(f"引用风险评估结果：{risk_card['level']} 风险信号，请在现有风险工具流程中处理。")
-
-    now = timezone.now()
-    input_snapshot = {
-        "hospital_id": str(doctor.staff_membership.hospital_id),
-        "doctor_id": str(doctor.id),
-        "member_id": int(member.id),
-        "thread_ids": [str(binding.thread_id) for binding in bindings],
-        "profile_updated_at": profile.updated_at.isoformat() if profile is not None else None,
-        "conversation_cutoff_at": latest.updated_at.isoformat() if latest is not None else None,
-        "tool_name": SUMMARY_TOOL_NAME,
-        "generated_at": now.isoformat(),
-    }
-
-    with transaction.atomic():
-        latest_version = (
-            DoctorPatientSummary.objects.filter(doctor=doctor, member_id=member.id)
-            .order_by("-version")
-            .values_list("version", flat=True)
-            .first()
-        ) or 0
-        summary = DoctorPatientSummary.objects.create(
-            hospital_id=doctor.staff_membership.hospital_id,
-            doctor=doctor,
-            member_id=member.id,
-            version=latest_version + 1,
-            status=DoctorPatientSummary.Status.READY,
-            current_issues=current_issues,
-            key_health_info=key_health_info,
-            conversation_highlights=conversation_highlights,
-            follow_up_items=follow_ups,
-            input_snapshot=input_snapshot,
-            tool_name=SUMMARY_TOOL_NAME,
-        )
-    write_hospital_audit_log(
-        request,
-        action="hospital.patient_summary.generate",
-        resource_type="hospital_patient_summary",
-        resource_id=str(summary.id),
-        extra={
-            "hospital_id": str(doctor.staff_membership.hospital_id),
-            "doctor_id": str(doctor.id),
-            "member_id": int(member.id),
-            "version": summary.version,
-        },
-    )
-    return summary
-
-
-def get_latest_summary(*, doctor: DoctorProfile, member_id: int) -> DoctorPatientSummary | None:
-    assert_doctor_can_view_member(doctor=doctor, member_id=member_id)
-    return (
-        DoctorPatientSummary.objects.filter(doctor=doctor, member_id=int(member_id))
-        .order_by("-version")
-        .first()
-    )
-
-
-def present_summary(summary: DoctorPatientSummary | None, *, doctor: DoctorProfile) -> dict | None:
-    if summary is None:
-        return None
-    ack = DoctorPatientSummaryAck.objects.filter(summary=summary, doctor=doctor).first()
-    snapshot = summary.input_snapshot or {}
-    return {
-        "id": str(summary.id),
-        "version": summary.version,
-        "status": summary.status,
-        "system_generated": True,
-        "sections": {
-            "current_issues": summary.current_issues,
-            "key_health_info": summary.key_health_info,
-            "conversation_highlights": summary.conversation_highlights,
-            "follow_up_items": list(summary.follow_up_items or []),
-        },
-        "data_scope": {
-            "thread_count": len(snapshot.get("thread_ids") or []),
-            "profile_updated_at": snapshot.get("profile_updated_at"),
-            "conversation_cutoff_at": snapshot.get("conversation_cutoff_at"),
-        },
-        "tool_name": summary.tool_name,
-        "generated_at": summary.generated_at.isoformat(),
-        "acknowledged": bool(ack and ack.acknowledged),
-        "acknowledged_at": ack.acted_at.isoformat() if ack and ack.acknowledged else None,
-    }
-
-
-def ack_summary(*, request, doctor: DoctorProfile, member_id: int, acknowledged: bool) -> dict:
-    summary = get_latest_summary(doctor=doctor, member_id=member_id)
-    if summary is None:
-        raise HospitalCareError("SUMMARY_UNAVAILABLE")
-    ack, _ = DoctorPatientSummaryAck.objects.update_or_create(
-        summary=summary,
-        doctor=doctor,
-        defaults={"acknowledged": acknowledged},
-    )
-    write_hospital_audit_log(
-        request,
-        action="hospital.patient_summary.ack" if acknowledged else "hospital.patient_summary.unack",
-        resource_type="hospital_patient_summary",
-        resource_id=str(summary.id),
-        extra={
-            "hospital_id": str(doctor.staff_membership.hospital_id),
-            "doctor_id": str(doctor.id),
-            "member_id": int(member_id),
-            "version": summary.version,
-            "acknowledged": acknowledged,
-        },
-    )
-    return present_summary(summary, doctor=doctor)
 
 
 def build_patient_workspace(*, doctor: DoctorProfile, member_id: int) -> dict:

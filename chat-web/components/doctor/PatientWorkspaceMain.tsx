@@ -1,17 +1,15 @@
 "use client";
 
-import { ChevronRight, Plus, RefreshCw, Star } from "lucide-react";
+import { ChevronRight, Plus, Star } from "lucide-react";
 import { useOptionalDoctorConversations } from "@/context/DoctorConversationsContext";
 import { usePatientWorkspace } from "@/context/PatientWorkspaceContext";
 import type { PatientCacheModule } from "@/lib/hospital/patient-cache";
 import {
   GENDER_LABEL,
-  RISK_LABEL,
   SERVICE_STATUS_LABEL,
   formatClock,
   lifestyleLabel,
   patientListTime,
-  relativeTime,
 } from "@/lib/hospital/labels";
 import type { PatientMedicalSafetyDTO, PatientWorkspaceDTO } from "@/types/hospital";
 
@@ -178,128 +176,6 @@ function PatientConversationsSection() {
   );
 }
 
-/** D-020~D-023：AI 总结（系统生成）——医生主动生成/刷新，正文只读，可标记已了解。 */
-function PatientSummarySection() {
-  const workspace = usePatientWorkspace();
-  const summaryModule = workspace.summary;
-  const summary = summaryModule.data;
-
-  return (
-    <section className="patient-section" aria-label="AI 总结">
-      <header className="patient-section__head">
-        <h2>AI 总结（系统生成）</h2>
-        <div className="patient-section__actions">
-          {summary?.acknowledged && <span className="patient-tag-ack">已了解</span>}
-          {summary && (
-            <button
-              type="button"
-              className="doctor-button doctor-button--ghost patient-button-inline"
-              disabled={workspace.actionBusy}
-              onClick={() => void workspace.setSummaryAcknowledged(!summary.acknowledged)}
-            >
-              {summary.acknowledged ? "取消已了解" : "已了解"}
-            </button>
-          )}
-          <button
-            type="button"
-            className="doctor-button patient-button-primary patient-button-inline"
-            disabled={workspace.actionBusy}
-            onClick={() => void workspace.generateSummary()}
-          >
-            <RefreshCw size={13} strokeWidth={2.2} />{summary ? "生成/刷新" : "生成总结"}
-          </button>
-        </div>
-      </header>
-      {summaryModule.error && <ModuleError error={summaryModule.error} module="summary" />}
-      {summaryModule.status === "loading" && !summary && <p className="patient-module__hint">正在生成 AI 总结…</p>}
-      {!summary && summaryModule.status === "ready" && !summaryModule.error && (
-        <p className="patient-module__hint">尚未生成 AI 总结。点击“生成总结”后基于当前可见患者资料与会话生成。</p>
-      )}
-      {summary && (
-        <div className="patient-summary">
-          <div className="patient-summary__grid">
-            <div>
-              <h3>当前问题/服务概况</h3>
-              <p>{summary.sections.current_issues || "暂无内容"}</p>
-            </div>
-            <div>
-              <h3>关键健康信息</h3>
-              <p>{summary.sections.key_health_info || "暂无内容"}</p>
-            </div>
-            <div>
-              <h3>会话要点</h3>
-              <p>{summary.sections.conversation_highlights || "暂无内容"}</p>
-            </div>
-          </div>
-          <div className="patient-summary__follow">
-            <h3>待跟进事项</h3>
-            {summary.sections.follow_up_items.length
-              ? <ul>{summary.sections.follow_up_items.map((item) => <li key={item}>{item}</li>)}</ul>
-              : <p>暂无待跟进事项</p>}
-          </div>
-          <footer className="patient-summary__meta">
-            <span>
-              {summary.system_generated ? "系统生成" : "医生生成"} · v{summary.version} · 生成时间 {formatClock(summary.generated_at) || relativeTime(summary.generated_at)}
-            </span>
-            <CacheNote cachedAt={summaryModule.cachedAt} stale={summaryModule.stale} />
-          </footer>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** D-024~D-026：风险卡片只读视图；人工调整进入现有风险工具流程，不在本页改级。 */
-function PatientRiskSection() {
-  const workspace = usePatientWorkspace();
-  const conversationsCtx = useOptionalDoctorConversations();
-  const riskModule = workspace.risk;
-  const risk = riskModule.data;
-
-  return (
-    <section className="patient-section" aria-label="风险评估">
-      <header className="patient-section__head">
-        <h2>风险评估（现有风险工具）</h2>
-        <div className="patient-section__actions">
-          <CacheNote cachedAt={riskModule.cachedAt} stale={riskModule.stale} />
-          {risk?.source_thread_id && (
-            <button
-              type="button"
-              className="doctor-button doctor-button--ghost patient-button-inline"
-              onClick={() => conversationsCtx?.selectConversation(risk.source_thread_id)}
-            >
-              查看详情
-            </button>
-          )}
-          <button
-            type="button"
-            className="doctor-button doctor-button--ghost patient-button-inline"
-            disabled={riskModule.status === "loading"}
-            onClick={() => void workspace.refreshRisk()}
-          >
-            <RefreshCw size={13} strokeWidth={2.2} />刷新
-          </button>
-        </div>
-      </header>
-      {riskModule.error && <ModuleError error={riskModule.error} module="risk" />}
-      {riskModule.status === "loading" && !risk && <p className="patient-module__hint">正在加载风险结果…</p>}
-      {!risk && riskModule.status === "ready" && !riskModule.error && (
-        <p className="patient-module__hint">暂无风险评估结果。</p>
-      )}
-      {risk && (
-        <div className="patient-risk">
-          <span className={`doctor-tag patient-risk__level doctor-tag--risk-${risk.level}`}>{RISK_LABEL[risk.level]}</span>
-          <div className="patient-risk__body">
-            <p>结果状态：{risk.status || "未知"} · 更新时间 {relativeTime(risk.updated_at) || "未知"}</p>
-            {risk.suggestion ? <p>处理建议:{risk.suggestion}</p> : null}
-            <p className="patient-risk__note">风险等级与医生关注是两套独立标签；人工调整请进入现有风险工具流程。</p>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function PatientProfileModule() {
   const workspace = usePatientWorkspace();
   const profileModule = workspace.profile;
@@ -321,7 +197,7 @@ function PatientProfileModule() {
   );
 }
 
-/** D-028：患者工作台主区——身份头部 → 基础资料 → 会话列表 → AI 总结 → 风险评估。 */
+/** D-028：患者工作台主区——身份头部 → 基础资料 → 会话列表。 */
 export function PatientWorkspaceMain() {
   const workspace = usePatientWorkspace();
 
@@ -332,7 +208,7 @@ export function PatientWorkspaceMain() {
           <div>
             <p className="empty-state__eyebrow">患者工作台</p>
             <h1>选择一位患者</h1>
-            <p>从左侧患者列表选择患者后，查看基础资料、患者会话、AI 总结与风险评估。</p>
+            <p>从左侧患者列表选择患者后，查看基础资料与患者会话。</p>
           </div>
         </div>
       </main>
@@ -342,8 +218,6 @@ export function PatientWorkspaceMain() {
   return (
     <main className="patient-main" aria-label="患者工作台">
       <PatientProfileModule />
-      <PatientSummarySection />
-      <PatientRiskSection />
       <PatientConversationsSection />
     </main>
   );

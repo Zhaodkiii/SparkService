@@ -22,8 +22,6 @@ import type {
   HospitalConversationUpdatedEvent,
   PatientCardDTO,
   PatientQueue,
-  PatientRiskCardDTO,
-  PatientSummaryDTO,
   PatientWorkspaceDTO,
 } from "@/types/hospital";
 
@@ -61,19 +59,14 @@ interface PatientWorkspaceValue {
   // 患者选择
   selectedMemberId: number | null;
   selectPatient: (memberId: number | null) => void;
-  // 工作台模块（D-029：缓存先行 + 并行刷新；AI 总结按需）
+  // 工作台模块（D-029：缓存先行 + 并行刷新）
   profile: PatientModuleState<PatientWorkspaceDTO>;
   conversations: PatientModuleState<ConversationCardDTO[]>;
-  summary: PatientModuleState<PatientSummaryDTO | null>;
-  risk: PatientModuleState<PatientRiskCardDTO | null>;
   retryModule: (module: PatientCacheModule) => void;
-  refreshRisk: () => Promise<void>;
   // 医生操作
   actionBusy: boolean;
   actionError: string | null;
   createConversation: () => Promise<string | null>;
-  generateSummary: () => Promise<boolean>;
-  setSummaryAcknowledged: (acknowledged: boolean) => Promise<boolean>;
   // 实时（BACKOFFICE-CONVERSATION-000002 事件 → 患者列表/模块合并刷新）
   handleRealtimeEvent: (event: HospitalConversationUpdatedEvent) => void;
   refreshForRecovery: () => void;
@@ -106,8 +99,6 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
 
   const [profile, setProfile] = useState<PatientModuleState<PatientWorkspaceDTO>>(idleModule);
   const [patientConversations, setPatientConversations] = useState<PatientModuleState<ConversationCardDTO[]>>(idleModule);
-  const [summary, setSummary] = useState<PatientModuleState<PatientSummaryDTO | null>>(idleModule);
-  const [risk, setRisk] = useState<PatientModuleState<PatientRiskCardDTO | null>>(idleModule);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -242,50 +233,19 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
     }
   }, [api, guardPatientError, scopeFor]);
 
-  const loadRisk = useCallback(async (memberId: number, generation: number) => {
-    if (!api) return;
-    const cached = readPatientCache<PatientRiskCardDTO | null>(scopeFor(memberId, "risk"));
-    setRisk(cached
-      ? { status: "ready", error: null, data: cached.data, cachedAt: cached.savedAt, stale: cached.stale }
-      : { status: "loading", error: null, data: null, cachedAt: null, stale: false });
-    try {
-      const data = await api.getPatientRisk(memberId);
-      if (moduleGenerationRef.current !== generation) return;
-      writePatientCache(scopeFor(memberId, "risk"), data);
-      setRisk({ status: "ready", error: null, data, cachedAt: null, stale: false });
-    } catch (cause) {
-      if (moduleGenerationRef.current !== generation) return;
-      if (guardPatientError(cause, memberId)) return;
-      setRisk((current) => ({ ...current, status: "error", error: hospitalErrorMessage(cause) }));
-    }
-  }, [api, guardPatientError, scopeFor]);
-
-  // D-029：AI 总结不随页面进入自动请求，只展示已有缓存结果或“生成总结”入口。
-  const loadSummaryFromCache = useCallback((memberId: number) => {
-    const cached = readPatientCache<PatientSummaryDTO | null>(scopeFor(memberId, "summary"));
-    setSummary(cached
-      ? { status: "ready", error: null, data: cached.data, cachedAt: cached.savedAt, stale: cached.stale }
-      : { status: "ready", error: null, data: null, cachedAt: null, stale: false });
-  }, [scopeFor]);
-
   useEffect(() => {
     if (!active || auth?.status !== "authenticated" || selectedMemberId === null) {
       moduleGenerationRef.current += 1;
       setProfile(idleModule());
       setPatientConversations(idleModule());
-      setSummary(idleModule());
-      setRisk(idleModule());
       return;
     }
     const memberId = selectedMemberId;
     moduleGenerationRef.current += 1;
     const generation = moduleGenerationRef.current;
-    loadSummaryFromCache(memberId);
-    // 后台并行刷新：患者资料、患者会话列表、风险结果互不阻塞（D-029 第 3 步）。
     void loadProfile(memberId, generation);
     void loadConversations(memberId, generation);
-    void loadRisk(memberId, generation);
-  }, [active, auth?.status, selectedMemberId, loadProfile, loadConversations, loadRisk, loadSummaryFromCache]);
+  }, [active, auth?.status, selectedMemberId, loadProfile, loadConversations]);
 
   const retryModule = useCallback((module: PatientCacheModule) => {
     const memberId = selectedMemberIdRef.current;
@@ -293,17 +253,8 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
     moduleGenerationRef.current += 1;
     const generation = moduleGenerationRef.current;
     if (module === "profile") void loadProfile(memberId, generation);
-    else if (module === "conversations") void loadConversations(memberId, generation);
-    else if (module === "risk") void loadRisk(memberId, generation);
-    else loadSummaryFromCache(memberId);
-  }, [loadConversations, loadProfile, loadRisk, loadSummaryFromCache]);
-
-  const refreshRisk = useCallback(async () => {
-    const memberId = selectedMemberIdRef.current;
-    if (memberId === null) return;
-    moduleGenerationRef.current += 1;
-    await loadRisk(memberId, moduleGenerationRef.current);
-  }, [loadRisk]);
+    else void loadConversations(memberId, generation);
+  }, [loadConversations, loadProfile]);
 
   /* ---------- 抽屉内会话写操作 → 患者模块合并刷新 ---------- */
 
@@ -312,8 +263,6 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
   loadProfileRef.current = loadProfile;
   const loadConversationsRef = useRef(loadConversations);
   loadConversationsRef.current = loadConversations;
-  const loadRiskRef = useRef(loadRisk);
-  loadRiskRef.current = loadRisk;
 
   const modulesRefreshRef = useRef<CoalescedRefreshScheduler | null>(null);
   if (modulesRefreshRef.current === null) {
@@ -324,7 +273,6 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
       const generation = moduleGenerationRef.current;
       void loadProfileRef.current(memberId, generation);
       void loadConversationsRef.current(memberId, generation);
-      void loadRiskRef.current(memberId, generation);
       await reloadListRef.current();
     }, 250);
   }
@@ -381,51 +329,6 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
     }
   }, [actionBusy, api, conversationsCtx, guardPatientError, scheduleModulesRefresh]);
 
-  /** D-020：医生主动生成/刷新 AI 总结；成功后才更新模块与缓存。 */
-  const generateSummary = useCallback(async (): Promise<boolean> => {
-    const memberId = selectedMemberIdRef.current;
-    if (!api || memberId === null || actionBusy) return false;
-    setActionBusy(true);
-    setActionError(null);
-    setSummary((current) => ({ ...current, status: current.data ? current.status : "loading", error: null }));
-    try {
-      const data = await api.generatePatientSummary(memberId, newIdempotencyKey());
-      if (selectedMemberIdRef.current !== memberId) return false;
-      writePatientCache(scopeFor(memberId, "summary"), data);
-      setSummary({ status: "ready", error: null, data, cachedAt: null, stale: false });
-      return true;
-    } catch (cause) {
-      if (selectedMemberIdRef.current !== memberId) return false;
-      if (!guardPatientError(cause, memberId)) {
-        setSummary((current) => ({ ...current, status: "error", error: hospitalErrorMessage(cause) }));
-      }
-      return false;
-    } finally {
-      setActionBusy(false);
-    }
-  }, [actionBusy, api, guardPatientError, scopeFor]);
-
-  /** D-023：标记/取消“已了解”；不改变总结正文。 */
-  const setSummaryAcknowledged = useCallback(async (acknowledged: boolean): Promise<boolean> => {
-    const memberId = selectedMemberIdRef.current;
-    if (!api || memberId === null || actionBusy) return false;
-    setActionBusy(true);
-    setActionError(null);
-    try {
-      const data = await api.ackPatientSummary(memberId, acknowledged);
-      if (selectedMemberIdRef.current !== memberId) return false;
-      writePatientCache(scopeFor(memberId, "summary"), data);
-      setSummary({ status: "ready", error: null, data, cachedAt: null, stale: false });
-      return true;
-    } catch (cause) {
-      if (selectedMemberIdRef.current !== memberId) return false;
-      if (!guardPatientError(cause, memberId)) setActionError(hospitalErrorMessage(cause));
-      return false;
-    } finally {
-      setActionBusy(false);
-    }
-  }, [actionBusy, api, guardPatientError, scopeFor]);
-
   const value = useMemo<PatientWorkspaceValue>(() => ({
     active,
     listStatus,
@@ -441,22 +344,16 @@ export function PatientWorkspaceProvider({ children }: { children: React.ReactNo
     selectPatient,
     profile,
     conversations: patientConversations,
-    summary,
-    risk,
     retryModule,
-    refreshRisk,
     actionBusy,
     actionError,
     createConversation,
-    generateSummary,
-    setSummaryAcknowledged,
     handleRealtimeEvent,
     refreshForRecovery,
   }), [
-    actionBusy, actionError, active, counts, createConversation, generateSummary, handleRealtimeEvent, keyword,
-    listError, listStatus, patientConversations, patients, profile, queue, refreshForRecovery, refreshRisk,
-    reloadList, retryModule, risk, selectPatient, selectedMemberId, setKeyword, setQueue, setSummaryAcknowledged,
-    summary,
+    actionBusy, actionError, active, counts, createConversation, handleRealtimeEvent, keyword,
+    listError, listStatus, patientConversations, patients, profile, queue, refreshForRecovery,
+    reloadList, retryModule, selectPatient, selectedMemberId, setKeyword, setQueue,
   ]);
 
   return <PatientWorkspaceContext.Provider value={value}>{children}</PatientWorkspaceContext.Provider>;

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from hospital_care.models import ClinicalConversationBinding, ConversationEndReason
+from hospital_care.models import ConversationEndReason
 
 
 class DoctorAgentUpdateSerializer(serializers.Serializer):
@@ -17,12 +17,6 @@ class DoctorAgentSubmitSerializer(serializers.Serializer):
     version = serializers.IntegerField()
 
 
-class AttentionUpdateSerializer(serializers.Serializer):
-    doctor_attention_level = serializers.ChoiceField(choices=ClinicalConversationBinding.AttentionLevel.choices)
-    attention_note = serializers.CharField(required=False, allow_blank=True)
-    version = serializers.IntegerField()
-
-
 class ConversationVersionSerializer(serializers.Serializer):
     version = serializers.IntegerField()
 
@@ -33,12 +27,6 @@ class ConversationEndSerializer(serializers.Serializer):
     end_reason_code = serializers.ChoiceField(choices=ConversationEndReason.choices, required=False)
     end_reason_note = serializers.CharField(required=False, allow_blank=True, default="")
     end_reason = serializers.CharField(required=False, allow_blank=True, default="")
-
-
-class ConversationRiskUpdateSerializer(serializers.Serializer):
-    risk_signal_level = serializers.ChoiceField(choices=ClinicalConversationBinding.RiskSignalLevel.choices)
-    reason = serializers.CharField(required=False, allow_blank=True, default="")
-    version = serializers.IntegerField()
 
 
 class ReadCursorUpdateSerializer(serializers.Serializer):
@@ -52,5 +40,5 @@ class DoctorMessageSerializer(serializers.Serializer):
     attachments = serializers.ListField(child=serializers.DictField(), required=False, max_length=5)
 
 
-class PatientSummaryAckSerializer(serializers.Serializer):
-    acknowledged = serializers.BooleanField()
+class SymptomCollectionCreateSerializer(serializers.Serializer):
+    version = serializers.IntegerField(required=False)

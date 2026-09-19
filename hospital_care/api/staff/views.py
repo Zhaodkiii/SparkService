@@ -13,17 +13,15 @@ from chat_sync.models import ChatMessage
 from common.response import success_response
 from hospital_care.api.pagination import paginate_queryset
 from hospital_care.exceptions import HospitalCareError
-from hospital_care.api.presenters import agent_public, conversation_public, risk_revision_public, serialize_message, staff_me
+from hospital_care.api.presenters import agent_public, conversation_public, serialize_message, staff_me
 from hospital_care.api.staff.serializers import (
-    AttentionUpdateSerializer,
     ConversationEndSerializer,
-    ConversationRiskUpdateSerializer,
     ConversationVersionSerializer,
     DoctorAgentSubmitSerializer,
     DoctorAgentUpdateSerializer,
     DoctorMessageSerializer,
-    PatientSummaryAckSerializer,
     ReadCursorUpdateSerializer,
+    SymptomCollectionCreateSerializer,
 )
 from hospital_care.permissions import DoctorConversationPermission, HospitalStaffPermission
 from hospital_care.realtime import DOCTOR_CONVERSATION_WS_PATH
@@ -41,20 +39,13 @@ from hospital_care.services.conversation_service import (
     end_conversation,
     join_conversation,
     leave_conversation,
-    update_attention,
-    update_risk_level,
 )
-from hospital_care.services.doctor_message_service import send_doctor_message
+from hospital_care.services.doctor_message_service import send_doctor_message, send_symptom_collection_prompt
 from hospital_care.services.idempotency import run_idempotent_command
 from hospital_care.services.patient_workspace_service import (
-    ack_summary,
     build_patient_list,
     build_patient_workspace,
-    build_risk_card,
     create_doctor_patient_conversation,
-    generate_patient_summary,
-    get_latest_summary,
-    present_summary,
 )
 from hospital_care.services.read_state_service import (
     attachment_count_for_threads,
@@ -212,6 +203,21 @@ class DoctorConversationWebSocketTicketView(APIView):
         )
 
 
+class DoctorSymptomCollectionView(APIView):
+    permission_classes = [DoctorConversationPermission]
+
+    def post(self, request, thread_id):
+        serializer = SymptomCollectionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = send_symptom_collection_prompt(
+            request=request,
+            doctor=request.hospital_doctor,
+            thread_id=thread_id,
+            version=serializer.validated_data.get("version"),
+        )
+        return success_response(payload, msg="created", status_code=201)
+
+
 class DoctorConversationMessagesView(APIView):
     permission_classes = [DoctorConversationPermission]
 
@@ -341,32 +347,6 @@ class DoctorConversationLeaveView(APIView):
         return success_response(snapshot)
 
 
-class DoctorConversationAttentionView(APIView):
-    permission_classes = [DoctorConversationPermission]
-
-    def patch(self, request, thread_id):
-        serializer = AttentionUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        doctor = request.hospital_doctor
-
-        def writer():
-            binding = update_attention(
-                request=request,
-                doctor=doctor,
-                thread_id=thread_id,
-                payload=serializer.validated_data,
-            )
-            return conversation_public(binding, for_doctor=True), binding.thread_id
-
-        snapshot, _ = run_idempotent_command(
-            request=request,
-            payload={"thread_id": str(thread_id), **serializer.validated_data},
-            resource_type="hospital_conversation",
-            writer=writer,
-        )
-        return success_response(snapshot)
-
-
 class DoctorConversationEndView(APIView):
     permission_classes = [DoctorConversationPermission]
 
@@ -391,52 +371,6 @@ class DoctorConversationEndView(APIView):
             writer=writer,
         )
         return success_response(snapshot)
-
-
-class DoctorConversationRiskView(APIView):
-    """DOCTOR-WORKSPACE-000004 第 24/25 问：医生人工调整风险等级（理由可选）。"""
-
-    permission_classes = [DoctorConversationPermission]
-
-    def patch(self, request, thread_id):
-        serializer = ConversationRiskUpdateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        doctor = request.hospital_doctor
-
-        def writer():
-            binding = update_risk_level(
-                request=request,
-                doctor=doctor,
-                thread_id=thread_id,
-                payload=serializer.validated_data,
-            )
-            return conversation_public(binding, for_doctor=True), binding.thread_id
-
-        snapshot, _ = run_idempotent_command(
-            request=request,
-            payload={"thread_id": str(thread_id), **serializer.validated_data},
-            resource_type="hospital_conversation",
-            writer=writer,
-        )
-        return success_response(snapshot)
-
-
-class DoctorConversationRiskHistoryView(APIView):
-    """DOCTOR-WORKSPACE-000004 第 26 问：当前问诊风险调整历史（只读分页）。"""
-
-    permission_classes = [DoctorConversationPermission]
-
-    def get(self, request, thread_id):
-        binding = get_doctor_conversation(doctor=request.hospital_doctor, thread_id=thread_id)
-        qs = binding.risk_revisions.select_related("doctor", "binding").order_by("-created_at", "-id")
-        page_obj, pagination = paginate_queryset(qs, request, default_page_size=20)
-        return success_response(
-            {
-                "items": [risk_revision_public(item) for item in page_obj.object_list],
-                "pagination": pagination,
-                "current_level": binding.risk_signal_level,
-            }
-        )
 
 
 class DoctorConversationReadCursorView(APIView):
@@ -643,60 +577,3 @@ class DoctorPatientConversationsView(APIView):
         )
         return success_response(snapshot, msg="created", status_code=201)
 
-
-class DoctorPatientSummaryView(APIView):
-    """D-020/D-023：最新 AI 总结只读查询；进入页面不自动生成。"""
-
-    permission_classes = [DoctorConversationPermission]
-
-    def get(self, request, member_id):
-        doctor = request.hospital_doctor
-        summary = get_latest_summary(doctor=doctor, member_id=member_id)
-        return success_response(present_summary(summary, doctor=doctor))
-
-
-class DoctorPatientSummaryGenerateView(APIView):
-    """D-020：医生主动生成/刷新 AI 总结；生成新版本并保留输入快照。"""
-
-    permission_classes = [DoctorConversationPermission]
-
-    def post(self, request, member_id):
-        doctor = request.hospital_doctor
-
-        def writer():
-            summary = generate_patient_summary(request=request, doctor=doctor, member_id=member_id)
-            return present_summary(summary, doctor=doctor), summary.id
-
-        snapshot, _ = run_idempotent_command(
-            request=request,
-            payload={"member_id": int(member_id), "action": "generate_patient_summary"},
-            resource_type="hospital_patient_summary",
-            writer=writer,
-        )
-        return success_response(snapshot, msg="created", status_code=201)
-
-
-class DoctorPatientSummaryAckView(APIView):
-    """D-023：医生标记/取消“已了解”；不改变总结正文。"""
-
-    permission_classes = [DoctorConversationPermission]
-
-    def post(self, request, member_id):
-        serializer = PatientSummaryAckSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        payload = ack_summary(
-            request=request,
-            doctor=request.hospital_doctor,
-            member_id=member_id,
-            acknowledged=serializer.validated_data["acknowledged"],
-        )
-        return success_response(payload)
-
-
-class DoctorPatientRiskView(APIView):
-    """D-024~D-026：风险卡片只读查看，复用现有风险信号；不提供人工调整入口。"""
-
-    permission_classes = [DoctorConversationPermission]
-
-    def get(self, request, member_id):
-        return success_response(build_risk_card(doctor=request.hospital_doctor, member_id=member_id))

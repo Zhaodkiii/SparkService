@@ -1,6 +1,6 @@
 """DOCTOR-WORKSPACE-000004：线上问诊模块服务端测试。
 
-覆盖：患者发起初始状态、风险调整与历史、已读游标与未读、消息游标分页、
+覆盖：患者发起初始状态、已读游标与未读、消息游标分页、
 结构化结束原因、医生附件上传与文档消息、重点患者标记、列表搜索/排序/计数。
 """
 
@@ -24,15 +24,11 @@ from hospital_care.models import (
     Consultation,
     ConversationEndReason,
     DoctorConversationReadCursor,
-    DoctorConversationRiskRevision,
-    DoctorPatientAttention,
 )
 from hospital_care.services.conversation_service import (
     create_patient_conversation,
     end_conversation,
     join_conversation,
-    update_attention,
-    update_risk_level,
 )
 from hospital_care.services.read_state_service import (
     attachment_count_for_threads,
@@ -149,92 +145,6 @@ class InitialStatusTests(ConsultWorkspaceBase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.data["msg"], "CONVERSATION_NOT_ASSIGNED")
-
-
-class RiskUpdateTests(ConsultWorkspaceBase):
-    def test_update_risk_writes_revision_and_history(self):
-        updated = update_risk_level(
-            request=self.doctor_request,
-            doctor=self.doctor,
-            thread_id=self.binding.thread_id,
-            payload={"risk_signal_level": "high", "reason": "患者描述胸痛", "version": self.binding.version},
-        )
-        self.assertEqual(updated.risk_signal_level, "high")
-        self.assertEqual(updated.service_status, ClinicalConversationBinding.ServiceStatus.PENDING_DOCTOR)
-
-        revision = DoctorConversationRiskRevision.objects.get(binding=self.binding)
-        self.assertEqual(revision.previous_level, "none")
-        self.assertEqual(revision.next_level, "high")
-        self.assertEqual(revision.reason, "患者描述胸痛")
-        self.assertEqual(revision.source, "doctor_manual")
-
-        history = self.client.get(f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/risk-history/")
-        self.assertEqual(history.status_code, 200)
-        self.assertEqual(history.data["data"]["current_level"], "high")
-        self.assertEqual(len(history.data["data"]["items"]), 1)
-        self.assertEqual(history.data["data"]["items"][0]["next_level"], "high")
-
-    def test_update_risk_reason_optional_and_downgrade(self):
-        first = update_risk_level(
-            request=self.doctor_request,
-            doctor=self.doctor,
-            thread_id=self.binding.thread_id,
-            payload={"risk_signal_level": "medium", "version": self.binding.version},
-        )
-        second = update_risk_level(
-            request=self.doctor_request,
-            doctor=self.doctor,
-            thread_id=self.binding.thread_id,
-            payload={"risk_signal_level": "none", "version": first.version},
-        )
-        self.assertEqual(second.risk_signal_level, "none")
-        self.assertEqual(DoctorConversationRiskRevision.objects.filter(binding=self.binding).count(), 2)
-
-    def test_update_risk_version_conflict_and_invalid_level(self):
-        with self.assertRaises(HospitalCareError) as ctx:
-            update_risk_level(
-                request=self.doctor_request,
-                doctor=self.doctor,
-                thread_id=self.binding.thread_id,
-                payload={"risk_signal_level": "high", "version": self.binding.version + 5},
-            )
-        self.assertEqual(ctx.exception.error_code, "CONVERSATION_VERSION_CONFLICT")
-        with self.assertRaises(HospitalCareError) as ctx:
-            update_risk_level(
-                request=self.doctor_request,
-                doctor=self.doctor,
-                thread_id=self.binding.thread_id,
-                payload={"risk_signal_level": "critical", "version": self.binding.version},
-            )
-        self.assertEqual(ctx.exception.error_code, "PAYLOAD_INVALID")
-
-    def test_update_risk_rejected_after_end(self):
-        ended = end_conversation(
-            request=self.doctor_request,
-            doctor=self.doctor,
-            thread_id=self.binding.thread_id,
-            payload={"version": self.binding.version, "end_reason_code": "resolved"},
-        )
-        with self.assertRaises(HospitalCareError) as ctx:
-            update_risk_level(
-                request=self.doctor_request,
-                doctor=self.doctor,
-                thread_id=self.binding.thread_id,
-                payload={"risk_signal_level": "low", "version": ended.version},
-            )
-        self.assertEqual(ctx.exception.error_code, "CONVERSATION_ENDED")
-
-    def test_other_doctor_cannot_update_risk(self):
-        other_user = make_user("dc-doc-other")
-        make_doctor(self.hospital, user=other_user, department=self.department, display_name="其他医生")
-        self.client.force_authenticate(other_user)
-        response = self.client.patch(
-            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/risk/",
-            {"risk_signal_level": "high", "version": self.binding.version},
-            format="json",
-            HTTP_IDEMPOTENCY_KEY="dc-risk-other",
-        )
-        self.assertEqual(response.status_code, 403)
 
 
 class ReadCursorTests(ConsultWorkspaceBase):
@@ -495,21 +405,7 @@ class AttachmentUploadTests(ConsultWorkspaceBase):
         self.assertEqual(counts[self.binding.thread_id], 1)
 
 
-class AttentionAndListTests(ConsultWorkspaceBase):
-    def test_attention_updates_patient_level_mark(self):
-        update_attention(
-            request=self.doctor_request,
-            doctor=self.doctor,
-            thread_id=self.binding.thread_id,
-            payload={"doctor_attention_level": "priority", "version": self.binding.version},
-        )
-        mark = DoctorPatientAttention.objects.get(doctor=self.doctor, member_id=self.member.id)
-        self.assertEqual(mark.level, "priority")
-
-        response = self.client.get("/api/hospital/v1/doctor/patients/?queue=priority")
-        self.assertEqual(response.data["data"]["pagination"]["total"], 1)
-        self.assertTrue(response.data["data"]["items"][0]["priority_patient"])
-
+class ListQueueTests(ConsultWorkspaceBase):
     def test_patient_list_active_queue(self):
         join_conversation(
             request=self.doctor_request,

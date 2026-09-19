@@ -17,10 +17,8 @@ import type {
   ConversationEndReasonCode,
   ConversationQueue,
   ConversationQueueCounts,
-  DoctorAttentionLevel,
   DoctorMessageDTO,
   HospitalConversationUpdatedEvent,
-  RiskSignalLevel,
 } from "@/types/hospital";
 
 const EMPTY_COUNTS: ConversationQueueCounts = { all: 0, pending: 0, joined: 0, priority: 0, active: 0, ended: 0 };
@@ -57,9 +55,6 @@ interface DoctorConversationsValue {
   /** DOCTOR-WORKSPACE-000001 D-015/D-016：取消接管（医生服务中 → AI 服务中）。 */
   leave: () => Promise<boolean>;
   sendMessage: (text: string, images?: ReadyImagePayload[], documents?: DoctorAttachmentPayload[]) => Promise<boolean>;
-  updateAttention: (level: DoctorAttentionLevel, note?: string) => Promise<boolean>;
-  /** DOCTOR-WORKSPACE-000004 第 24/25 问：人工调整风险等级（理由可选）。 */
-  updateRisk: (level: RiskSignalLevel, reason?: string) => Promise<boolean>;
   endConversation: (reasonCode: ConversationEndReasonCode, reasonNote?: string) => Promise<boolean>;
   /** BACKOFFICE-CONVERSATION-000002：实时事件入口（当前会话定向刷新 / 其他会话列表刷新+标记）。 */
   handleRealtimeEvent: (event: HospitalConversationUpdatedEvent) => void;
@@ -417,49 +412,6 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     }
   }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, requestThreadSync, selectedThreadId]);
 
-  const updateAttention = useCallback(async (level: DoctorAttentionLevel, note?: string) => {
-    if (!api || !selectedThreadId || !detail) return false;
-    setWriteBusy(true);
-    setWriteError(null);
-    try {
-      const binding = await api.updateAttention(
-        selectedThreadId,
-        { doctor_attention_level: level, attention_note: note, version: detail.version },
-        idempotencyKey("attention", selectedThreadId),
-      );
-      applyBinding(binding);
-      clearIdempotency("attention", selectedThreadId);
-      await reload();
-      return true;
-    } catch (cause) {
-      return handleWriteError(cause, "attention", selectedThreadId);
-    } finally {
-      setWriteBusy(false);
-    }
-  }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, selectedThreadId]);
-
-  /** DOCTOR-WORKSPACE-000004 第 24/25 问：人工调整风险等级；成功后刷新详情与列表。 */
-  const updateRisk = useCallback(async (level: RiskSignalLevel, reason?: string) => {
-    if (!api || !selectedThreadId || !detail) return false;
-    setWriteBusy(true);
-    setWriteError(null);
-    try {
-      const binding = await api.updateRisk(
-        selectedThreadId,
-        { risk_signal_level: level, reason, version: detail.version },
-        idempotencyKey("risk", selectedThreadId),
-      );
-      applyBinding(binding);
-      clearIdempotency("risk", selectedThreadId);
-      await reload();
-      return true;
-    } catch (cause) {
-      return handleWriteError(cause, "risk", selectedThreadId);
-    } finally {
-      setWriteBusy(false);
-    }
-  }, [api, applyBinding, clearIdempotency, detail, handleWriteError, idempotencyKey, reload, selectedThreadId]);
-
   const endConversation = useCallback(async (reasonCode: ConversationEndReasonCode, reasonNote?: string) => {
     if (!api || !selectedThreadId || !detail) return false;
     setWriteBusy(true);
@@ -536,8 +488,6 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     join,
     leave,
     sendMessage,
-    updateAttention,
-    updateRisk,
     endConversation,
     handleRealtimeEvent,
     refreshForRecovery,
@@ -545,7 +495,7 @@ export function DoctorConversationsProvider({ children }: { children: React.Reac
     cards, counts, detail, detailError, detailStatus, endConversation, error, handleRealtimeEvent, hasMoreMessages,
     join, keyword, leave, loadingOlder, loadOlderMessages, messages, newMessageThreadIds, queue, refreshForRecovery,
     reload, requestThreadSync, selectConversation, selectedThreadId, sendMessage, setKeyword, setQueue, status,
-    updateAttention, updateRisk, writeBusy, writeError,
+    writeBusy, writeError,
   ]);
 
   return <DoctorConversationsContext.Provider value={value}>{children}</DoctorConversationsContext.Provider>;

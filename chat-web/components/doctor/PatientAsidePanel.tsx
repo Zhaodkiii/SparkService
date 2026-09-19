@@ -2,25 +2,20 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, MessageSquarePlus, Star, X } from "lucide-react";
+import { ArrowDown, MessageSquarePlus, X } from "lucide-react";
 import { DoctorComposer } from "@/components/doctor/DoctorComposer";
 import { DoctorMessages } from "@/components/doctor/DoctorMessages";
 import { useOptionalDoctorConversations } from "@/context/DoctorConversationsContext";
 import { usePatientWorkspace } from "@/context/PatientWorkspaceContext";
 import { useDoctorMessageFollow } from "@/hooks/useDoctorMessageFollow";
 import {
-  ATTENTION_LABEL,
   END_REASON_OPTIONS,
   GENDER_LABEL,
-  RISK_LABEL,
   SERVICE_STATUS_LABEL,
-  formatClock,
   patientListTime,
   relativeTime,
 } from "@/lib/hospital/labels";
-import type { ConversationEndReasonCode, DoctorAttentionLevel } from "@/types/hospital";
-
-const ATTENTION_OPTIONS: DoctorAttentionLevel[] = ["normal", "follow_up", "priority"];
+import type { ConversationEndReasonCode } from "@/types/hospital";
 
 /** D-016：接管/取消接管二次确认条。 */
 function TakeoverConfirmBar() {
@@ -41,9 +36,6 @@ function TakeoverConfirmBar() {
   return (
     <div className="patient-drawer__takeover">
       <span className={`doctor-tag doctor-tag--status-${status}`}>{status ? SERVICE_STATUS_LABEL[status] : "状态未知"}</span>
-      {detail.doctor_attention_level === "priority" && (
-        <span className="patient-tag-priority"><Star size={11} strokeWidth={2.4} />重点患者</span>
-      )}
       <span className="patient-drawer__takeover-spacer" />
       {(status === "ai_active" || status === "pending_doctor") && pending !== "join" && (
         <button type="button" className="doctor-button patient-button-inline" disabled={busy} onClick={() => setPending("join")}>接管会话</button>
@@ -64,20 +56,16 @@ function TakeoverConfirmBar() {
   );
 }
 
-/** D-015：医生操作区——关注标记与结束会话（服务端成功响应为准）。 */
+/** D-015：医生操作区——结束会话（服务端成功响应为准）。 */
 function DrawerOperations() {
   const conversations = useOptionalDoctorConversations();
   const detail = conversations?.detail ?? null;
-  const [level, setLevel] = useState<DoctorAttentionLevel>("normal");
-  const [note, setNote] = useState("");
   const [ending, setEnding] = useState(false);
   const [endReason, setEndReason] = useState<ConversationEndReasonCode>("resolved");
   const [endNote, setEndNote] = useState("");
 
   useEffect(() => {
     if (!detail) return;
-    setLevel(detail.doctor_attention_level);
-    setNote(detail.attention_note ?? "");
     setEnding(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.thread_id]);
@@ -88,18 +76,8 @@ function DrawerOperations() {
 
   return (
     <details className="patient-drawer__ops">
-      <summary>会话操作（关注 / 结束）</summary>
+      <summary>结束会话</summary>
       <div className="patient-drawer__ops-body">
-        <div className="doctor-radio-list">
-          {ATTENTION_OPTIONS.map((item) => (
-            <label key={item}>
-              <input type="radio" name="drawer-attention" checked={level === item} disabled={ended || busy} onChange={() => setLevel(item)} />
-              {ATTENTION_LABEL[item]}
-            </label>
-          ))}
-        </div>
-        <textarea value={note} disabled={ended || busy} onChange={(event) => setNote(event.target.value)} placeholder="内部备注（仅医生可见）" aria-label="关注备注" />
-        <button type="button" className="doctor-button doctor-button--ghost patient-button-inline" disabled={ended || busy} onClick={() => void conversations.updateAttention(level, note)}>保存关注设置</button>
         {ended ? (
           <p className="patient-module__hint">本次对话已结束{detail.end_reason ? `：${detail.end_reason}` : ""}，历史消息仍可查看。</p>
         ) : !ending ? (
@@ -188,12 +166,10 @@ function PatientConversationDrawer() {
   );
 }
 
-/** 原型（未打开会话详情）：右侧展示患者辅助信息——AI 总结、风险评估、患者画像、会话时间线。 */
+/** 原型（未打开会话详情）：右侧展示患者辅助信息——患者画像、会话时间线。 */
 function PatientAuxPanel() {
   const workspace = usePatientWorkspace();
   const conversationsCtx = useOptionalDoctorConversations();
-  const summary = workspace.summary.data;
-  const risk = workspace.risk.data;
   const profile = workspace.profile.data;
   const conversations = workspace.conversations.data ?? [];
 
@@ -204,37 +180,6 @@ function PatientAuxPanel() {
         <span>未打开会话</span>
       </header>
       <div className="patient-aside__scroll">
-        <section className="patient-aux-card patient-aux-card--summary">
-          <h3>AI 总结</h3>
-          <p className="patient-aux-card__sub">AI 生成 · 医生可标记已了解</p>
-          {summary ? (
-            <>
-              <p>当前问题：{summary.sections.current_issues || "暂无内容"}</p>
-              <p>会话要点：{summary.sections.conversation_highlights || "暂无内容"}</p>
-              <p>待跟进:{summary.sections.follow_up_items[0] ?? "暂无待跟进事项"}</p>
-              <p className="patient-aux-card__meta">生成时间：{formatClock(summary.generated_at) || relativeTime(summary.generated_at)}</p>
-            </>
-          ) : (
-            <p className="patient-aux-card__meta">尚未生成 AI 总结，可在患者工作台生成。</p>
-          )}
-        </section>
-        <section className="patient-aux-card">
-          <h3>风险评估</h3>
-          {risk ? (
-            <>
-              <p><span className={`doctor-tag doctor-tag--risk-${risk.level}`}>{RISK_LABEL[risk.level]}</span></p>
-              <p>结果状态:{risk.status || "未知"}</p>
-              {risk.suggestion ? <p>建议:{risk.suggestion}</p> : null}
-              {risk.source_thread_id && (
-                <button type="button" className="patient-aux-link" onClick={() => conversationsCtx?.selectConversation(risk.source_thread_id)}>
-                  查看风险详情 ›
-                </button>
-              )}
-            </>
-          ) : (
-            <p className="patient-aux-card__meta">暂无风险评估结果。</p>
-          )}
-        </section>
         <section className="patient-aux-card">
           <h3>患者画像</h3>
           <p>性别　{profile ? (GENDER_LABEL[profile.patient.gender] ?? "未填写") : "—"}</p>

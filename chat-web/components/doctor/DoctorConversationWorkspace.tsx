@@ -12,7 +12,6 @@ import { useDoctorMessageFollow } from "@/hooks/useDoctorMessageFollow";
 export function DoctorConversationWorkspace() {
   const conversations = useDoctorConversations();
   const [panelOpen, setPanelOpen] = useState(false);
-  const [highlightId, setHighlightId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // BACKOFFICE-CONVERSATION-000002 Q4：底部跟随 / 历史阅读保护 / 有新消息按钮。
   const follow = useDoctorMessageFollow(scrollRef, conversations.messages, conversations.selectedThreadId);
@@ -42,7 +41,7 @@ export function DoctorConversationWorkspace() {
       <div className="doctor-scroll-frame">
         <div className="chat-scroll" data-chat-scroll-root ref={scrollRef}>
           <section className="message-column">
-            <DoctorMessages highlightId={highlightId} />
+            <DoctorMessages />
           </section>
         </div>
         {follow.showNewMessages && (
@@ -53,17 +52,7 @@ export function DoctorConversationWorkspace() {
         )}
       </div>
       <div className="composer-wrap"><DoctorComposer /></div>
-      <DoctorConversationPanel
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        onJumpToRisk={(messageId) => {
-          setHighlightId(messageId);
-          setPanelOpen(false);
-          window.requestAnimationFrame(() => {
-            document.getElementById(`doctor-msg-${messageId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-          });
-        }}
-      />
+      <DoctorConversationPanel open={panelOpen} onClose={() => setPanelOpen(false)} />
     </div>
   );
 }

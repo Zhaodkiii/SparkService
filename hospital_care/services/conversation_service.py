@@ -16,8 +16,6 @@ from hospital_care.models import (
     ClinicalAgentProfile,
     ClinicalConversationBinding,
     ConversationEndReason,
-    DoctorConversationRiskRevision,
-    DoctorPatientAttention,
     DoctorProfile,
     Hospital,
 )
@@ -303,88 +301,6 @@ def leave_conversation(*, request, doctor: DoctorProfile, thread_id, version: in
         resource_type="hospital_conversation",
         resource_id=str(binding.thread_id),
         extra={"hospital_id": str(binding.hospital_id), "doctor_id": str(doctor.id), "thread_id": str(binding.thread_id)},
-    )
-    return binding
-
-
-def update_attention(*, request, doctor: DoctorProfile, thread_id, payload: dict) -> ClinicalConversationBinding:
-    level = payload.get("doctor_attention_level") or payload.get("attention_level")
-    if level not in ClinicalConversationBinding.AttentionLevel.values:
-        raise HospitalCareError("PAYLOAD_INVALID", details={"field": "doctor_attention_level"})
-    with transaction.atomic():
-        binding = _lock_binding(thread_id)
-        assert_doctor_owns_binding(doctor=doctor, binding=binding)
-        _assert_version(binding, payload.get("version"))
-        if binding.service_status == ClinicalConversationBinding.ServiceStatus.ENDED:
-            raise HospitalCareError("CONVERSATION_ENDED")
-        binding.doctor_attention_level = level
-        binding.attention_note = payload.get("attention_note") or binding.attention_note
-        binding.version += 1
-        binding.save(update_fields=["doctor_attention_level", "attention_note", "version", "updated_at"])
-        # DOCTOR-WORKSPACE-000004 第 23 问：重点标记按医生-患者维度生效，
-        # 同一患者多条问诊共享同一标记，仅对当前医生可见。
-        if binding.thread.member_id:
-            DoctorPatientAttention.objects.update_or_create(
-                doctor=doctor,
-                member_id=int(binding.thread.member_id),
-                defaults={"level": level, "note": binding.attention_note},
-            )
-    write_hospital_audit_log(
-        request,
-        action="hospital.conversation.attention_update",
-        resource_type="hospital_conversation",
-        resource_id=str(binding.thread_id),
-        extra={
-            "hospital_id": str(binding.hospital_id),
-            "thread_id": str(binding.thread_id),
-            "doctor_attention_level": binding.doctor_attention_level,
-        },
-    )
-    return binding
-
-
-def update_risk_level(*, request, doctor: DoctorProfile, thread_id, payload: dict) -> ClinicalConversationBinding:
-    """DOCTOR-WORKSPACE-000004 第 24/25/32 问：医生人工调整风险等级。
-
-    四级（none/low/medium/high）可调，理由可选；当前值更新与不可变历史快照
-    在同一事务写入；不改变问诊服务状态，不触发自动接管或结束。
-    """
-    level = (payload.get("risk_signal_level") or payload.get("level") or "").strip()
-    if level not in ClinicalConversationBinding.RiskSignalLevel.values:
-        raise HospitalCareError("PAYLOAD_INVALID", details={"field": "risk_signal_level"})
-    reason = (payload.get("reason") or "").strip()
-    with transaction.atomic():
-        binding = _lock_binding(thread_id)
-        assert_doctor_owns_binding(doctor=doctor, binding=binding)
-        _assert_version(binding, payload.get("version"))
-        if binding.service_status == ClinicalConversationBinding.ServiceStatus.ENDED:
-            raise HospitalCareError("CONVERSATION_ENDED")
-        previous = binding.risk_signal_level
-        binding.risk_signal_level = level
-        binding.version += 1
-        binding.save(update_fields=["risk_signal_level", "version", "updated_at"])
-        DoctorConversationRiskRevision.objects.create(
-            binding=binding,
-            doctor=doctor,
-            previous_level=previous,
-            next_level=level,
-            reason=reason,
-            source=DoctorConversationRiskRevision.Source.DOCTOR_MANUAL,
-            version=binding.version,
-            request_id=str(getattr(request, "request_id", "") or "")[:64],
-        )
-    write_hospital_audit_log(
-        request,
-        action="hospital.conversation.risk_update",
-        resource_type="hospital_conversation",
-        resource_id=str(binding.thread_id),
-        extra={
-            "hospital_id": str(binding.hospital_id),
-            "thread_id": str(binding.thread_id),
-            "doctor_id": str(doctor.id),
-            "risk_signal_level": level,
-            "version": binding.version,
-        },
     )
     return binding
 

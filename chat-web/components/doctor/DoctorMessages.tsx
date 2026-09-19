@@ -12,8 +12,60 @@ import type { DoctorMessageDTO } from "@/types/hospital";
 import type { ChatBlockDTO } from "@/types/chat";
 import type { HealthResourceReference } from "@/types/medical-resource";
 import { HealthResourceDetailDialog } from "@/components/chat/resource/HealthResourceDetailDialog";
+import { isSymptomQuestionBlock, symptomCollectionId } from "@/lib/chat/symptom-collection";
+import { groupSymptomCollectionBlocks } from "@/lib/chat/symptom-collection";
+import { SymptomCollectionSummary } from "@/components/chat/blocks/SymptomCollectionBlock";
 
 type DoctorMessagesVariant = "default" | "consult";
+
+function mergeSymptomCollectionMessages(messages: DoctorMessageDTO[]): DoctorMessageDTO[] {
+  const questionsByCollection = new Map<string, ChatBlockDTO[]>();
+  const summaryCollectionIds = new Set<string>();
+  for (const block of messages.flatMap((message) => message.blocks)) {
+    if (block.kind === "symptomCollectionCard") {
+      const collectionId = symptomCollectionId(block);
+      if (collectionId) summaryCollectionIds.add(collectionId);
+      continue;
+    }
+    if (!isSymptomQuestionBlock(block)) continue;
+    const collectionId = symptomCollectionId(block);
+    if (!collectionId) continue;
+    questionsByCollection.set(collectionId, [...(questionsByCollection.get(collectionId) ?? []), block]);
+  }
+  return messages.flatMap((message) => {
+    const summary = message.blocks.find((block) => block.kind === "symptomCollectionCard");
+    if (summary) {
+      const collectionId = symptomCollectionId(summary);
+      const grouped = collectionId ? questionsByCollection.get(collectionId) ?? [] : [];
+      // 医生线上问诊只展示同一张汇总卡。模型正文、工具活动和其他展示块
+      // 都不属于采集结果，不能混入医生视图。
+      return [{ ...message, blocks: [summary, ...grouped] }];
+    }
+    const questionBlocks = message.blocks.filter(isSymptomQuestionBlock);
+    if (questionBlocks.length) {
+      const collectionIds = questionBlocks.map(symptomCollectionId).filter((id): id is string => Boolean(id));
+      // 已有汇总卡的消息会吞并各轮问答；此处只保留「仅起始卡、尚无汇总」的采集消息。
+      if (collectionIds.length && collectionIds.every((id) => summaryCollectionIds.has(id))) return [];
+      return [{ ...message, blocks: questionBlocks }];
+    }
+    return message.blocks.length || doctorMessagePlainText(message) ? [message] : [];
+  });
+}
+
+function StructuredMessageBlocks({
+  blocks,
+  onHealthResourceOpen,
+  symptomDoctorPreview = false,
+}: {
+  blocks: ChatBlockDTO[];
+  onHealthResourceOpen?: (reference: HealthResourceReference) => void;
+  /** 线上问诊：展示患者待填写的采集题面（与 iOS 起始卡一致）。 */
+  symptomDoctorPreview?: boolean;
+}) {
+  return <>{groupSymptomCollectionBlocks(blocks).map((unit) => unit.type === "block"
+    ? <ChatBlockRenderer block={unit.block} key={unit.block.id} onHealthResourceOpen={onHealthResourceOpen} />
+    : <SymptomCollectionSummary block={unit.summaryBlock} questionBlocks={unit.questionBlocks} showActiveQuestions={symptomDoctorPreview} key={`symptom-${unit.collectionId}`} />)}</>;
+}
 
 function consultationCardBlock(message: DoctorMessageDTO): ChatBlockDTO | null {
   return message.blocks.find((block) => block.kind === "consultationCard") ?? null;
@@ -126,7 +178,7 @@ function ConsultMessage({
         <p className="consult-msg__meta">{meta} {formatClock(message.created_at)}</p>
         <div className="consult-msg__bubble">
           {message.blocks.length
-            ? message.blocks.map((block) => <ChatBlockRenderer block={block} key={block.id} onHealthResourceOpen={onHealthResourceOpen} />)
+            ? <StructuredMessageBlocks blocks={message.blocks} onHealthResourceOpen={onHealthResourceOpen} symptomDoctorPreview />
             : <p className="consult-msg__text">{text}</p>}
         </div>
       </div>
@@ -157,6 +209,7 @@ export function DoctorMessageList({
   ended?: boolean;
 }) {
   const [activeReference, setActiveReference] = useState<HealthResourceReference | null>(null);
+  const renderedMessages = mergeSymptomCollectionMessages(messages);
   if (!messages.length) {
     return (
       <div className="empty-state">
@@ -180,7 +233,7 @@ export function DoctorMessageList({
             </button>
           </div>
         ) : null}
-        {messages.map((message) => (
+        {renderedMessages.map((message) => (
           <ConsultMessage
             key={message.client_message_id || message.server_message_id || `${message.created_at}-${message.role}`}
             message={message}
@@ -204,7 +257,7 @@ export function DoctorMessageList({
           </button>
         </div>
       ) : null}
-      {messages.map((message) => {
+      {renderedMessages.map((message) => {
         const actor = inferActorType(message);
         const highlighted = highlightId === message.client_message_id || highlightId === message.server_message_id;
         const key = message.client_message_id || message.server_message_id || `${message.created_at}-${message.role}`;
@@ -240,7 +293,7 @@ export function DoctorMessageList({
               </p>
               <div className="message__body">
                 {message.blocks.length
-                  ? message.blocks.map((block) => <ChatBlockRenderer block={block} key={block.id} onHealthResourceOpen={setActiveReference} />)
+                  ? <StructuredMessageBlocks blocks={message.blocks} onHealthResourceOpen={setActiveReference} />
                   : <p>{doctorMessagePlainText(message)}</p>}
               </div>
             </div>

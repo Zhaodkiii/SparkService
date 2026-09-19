@@ -179,25 +179,6 @@ export interface ConversationMessagesDTO {
   version?: number;
 }
 
-/** DOCTOR-WORKSPACE-000004 第 26 问：风险调整历史条目。 */
-export interface RiskRevisionDTO {
-  id: string;
-  thread_id: string;
-  previous_level: RiskSignalLevel;
-  next_level: RiskSignalLevel;
-  reason: string;
-  source: string;
-  doctor: DoctorPublicDTO;
-  version: number;
-  created_at: string;
-}
-
-export interface RiskHistoryDTO {
-  items: RiskRevisionDTO[];
-  pagination: HospitalPagination;
-  current_level: RiskSignalLevel;
-}
-
 export interface ReadCursorResultDTO {
   thread_id: string;
   last_read_message_id: number;
@@ -395,36 +376,3 @@ export interface ConsultRecordsDTO {
   items: ConsultRecordDTO[];
 }
 
-/** D-020~D-023：AI 总结只读快照。 */
-export interface PatientSummaryDTO {
-  id: string;
-  version: number;
-  status: string;
-  system_generated: boolean;
-  sections: {
-    current_issues: string;
-    key_health_info: string;
-    conversation_highlights: string;
-    follow_up_items: string[];
-  };
-  data_scope: {
-    thread_count: number;
-    profile_updated_at: string | null;
-    conversation_cutoff_at: string | null;
-  };
-  tool_name: string;
-  generated_at: string;
-  acknowledged: boolean;
-  acknowledged_at: string | null;
-}
-
-/** D-024~D-026：风险卡片只读视图（复用现有风险工具信号）。 */
-export interface PatientRiskCardDTO {
-  level: RiskSignalLevel;
-  status: string;
-  suggestion: string;
-  source_thread_id: string;
-  updated_at: string;
-  data_cutoff_at: string;
-  source: string;
-}

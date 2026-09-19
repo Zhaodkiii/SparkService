@@ -11,6 +11,7 @@ import { buildTurnTrace } from "@/lib/chat/turn-trace-reducer";
 import type { AgentRoundTraceDTO, ChatBlockDTO, ChatRunDTO, ChatUsageSummary, TurnSummary } from "@/types/chat";
 import type { ToolActivityDTO } from "@/types/tool";
 import type { HealthResourceReference } from "@/types/medical-resource";
+import { isSymptomQuestionBlock } from "@/lib/chat/symptom-collection";
 
 function runDurationMs(run: ChatRunDTO | null | undefined): number | null {
   if (!run?.started_at || !run?.finished_at) return null;
@@ -52,6 +53,21 @@ export function AssistantTurn({ blocks, messageId, activityByCallId, run, assist
   const usage = normalizeUsage(usageSummary, turnSummary?.usage);
   const durationMs = turnSummary?.duration_ms ?? runDurationMs(run);
   const startedAt = run?.started_at ?? turnSummary?.started_at ?? null;
+  const symptomPresentationBlocks = presentation.presentationBlocks.filter(
+    (block) => block.kind === "symptomCollectionCard" || isSymptomQuestionBlock(block),
+  );
+
+  // 症状采集是独立的结构化流程：Web 只展示统一汇总卡，不暴露模型正文、
+  // 思考过程、工具参数、用量或通用回合操作。
+  if (symptomPresentationBlocks.length) {
+    return <article className="message message--assistant message--symptom-collection">
+      <div className="message__content">
+        <div className="message__body">
+          <ToolPresentationSlot blocks={symptomPresentationBlocks} onHealthResourceOpen={onHealthResourceOpen} />
+        </div>
+      </div>
+    </article>;
+  }
 
   return <article className="message message--assistant">
     <div className="message__content">

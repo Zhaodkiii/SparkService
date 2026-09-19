@@ -5,7 +5,7 @@ Single strict source of truth aligned to iOS ``ChatMessage.swift``.
 * ``ChatMessageBlockNodeRole`` has exactly three cases — ``timeline``,
   ``tool`` and ``toolPresentation``.  Their wire values are the camelCase
   Swift ``String``-raw-value case names.
-* ``ChatMessageBlockKind`` has 39 camelCase cases.  ``toolCall`` and
+* ``ChatMessageBlockKind`` uses the same camelCase cases as the iOS client. ``toolCall`` and
   ``toolResult`` are **not** values in that enum: a tool invocation is ``tool``
   and its result is a ``toolPresentation`` rich card.
 * ``ChatMessageBlockPayload`` is a tagged union encoded as ``{"<kind>": {"_0":
@@ -54,6 +54,7 @@ KIND_EVENTS = "events"
 KIND_HEALTH_CARDS = "healthCards"
 KIND_PENDING_MEMBER_TOOL_CARDS = "pendingMemberToolCards"
 KIND_TOOL_QUESTION_CARDS = "toolQuestionCards"
+KIND_SYMPTOM_COLLECTION_CARD = "symptomCollectionCard"
 KIND_TOOL_MEMBER_SELECTION_CARDS = "toolMemberSelectionCards"
 KIND_HEALTH_RESOURCE_CANDIDATE_CARDS = "healthResourceCandidateCards"
 KIND_TOOL_CONSENT_CARDS = "toolConsentCards"
@@ -96,6 +97,7 @@ BLOCK_KINDS = frozenset({
     KIND_HEALTH_CARDS,
     KIND_PENDING_MEMBER_TOOL_CARDS,
     KIND_TOOL_QUESTION_CARDS,
+    KIND_SYMPTOM_COLLECTION_CARD,
     KIND_TOOL_MEMBER_SELECTION_CARDS,
     KIND_HEALTH_RESOURCE_CANDIDATE_CARDS,
     KIND_TOOL_CONSENT_CARDS,

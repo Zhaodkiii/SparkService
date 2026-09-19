@@ -14,19 +14,14 @@ import type {
   ConversationQueue,
   DoctorAgentDTO,
   DoctorAgentUpdatePayload,
-  DoctorAttentionLevel,
   DoctorMessageDTO,
   DoctorSendMessageDTO,
   DoctorWorkspaceDTO,
   PatientConversationsDTO,
   PatientListDTO,
   PatientQueue,
-  PatientRiskCardDTO,
-  PatientSummaryDTO,
   PatientWorkspaceDTO,
   ReadCursorResultDTO,
-  RiskHistoryDTO,
-  RiskSignalLevel,
   StaffMeDTO,
   WorkLogListDTO,
 } from "@/types/hospital";
@@ -78,6 +73,10 @@ export class SparkHospitalApi {
     return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/conversations/${threadId}/`);
   }
 
+  createSymptomCollection(threadId: string, version?: number): Promise<DoctorSendMessageDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/symptom-collection/`, { body: version === undefined ? {} : { version } });
+  }
+
   /** DOCTOR-WORKSPACE-000004 第 34 问：首屏最近一页；before 游标向上加载更早消息。 */
   async getMessages(threadId: string, params: { before?: string; limit?: number } = {}): Promise<ConversationMessagesDTO> {
     const data = await this.http.requestOrThrow<ConversationMessagesDTO>(
@@ -115,17 +114,6 @@ export class SparkHospitalApi {
     });
   }
 
-  updateAttention(
-    threadId: string,
-    payload: { doctor_attention_level: DoctorAttentionLevel; attention_note?: string; version: number },
-    idempotencyKey: string,
-  ): Promise<ConversationDetailDTO> {
-    return this.http.requestOrThrow("PATCH", `/api/hospital/v1/doctor/conversations/${threadId}/attention/`, {
-      body: payload,
-      headers: withIdempotency(idempotencyKey),
-    });
-  }
-
   /** DOCTOR-WORKSPACE-000004 第 28 问：结束原因固定枚举 + 可选补充说明。 */
   endConversation(
     threadId: string,
@@ -136,26 +124,6 @@ export class SparkHospitalApi {
       body: payload,
       headers: withIdempotency(idempotencyKey),
     });
-  }
-
-  /** DOCTOR-WORKSPACE-000004 第 24/25 问：医生人工调整风险等级（理由可选）。 */
-  updateRisk(
-    threadId: string,
-    payload: { risk_signal_level: RiskSignalLevel; reason?: string; version: number },
-    idempotencyKey: string,
-  ): Promise<ConversationDetailDTO> {
-    return this.http.requestOrThrow("PATCH", `/api/hospital/v1/doctor/conversations/${threadId}/risk/`, {
-      body: payload,
-      headers: withIdempotency(idempotencyKey),
-    });
-  }
-
-  /** DOCTOR-WORKSPACE-000004 第 26 问：当前问诊风险调整历史。 */
-  getRiskHistory(threadId: string, params: { page?: number; page_size?: number } = {}): Promise<RiskHistoryDTO> {
-    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/conversations/${threadId}/risk-history/${query({
-      page: params.page ?? 1,
-      page_size: params.page_size ?? 20,
-    })}`);
   }
 
   /** DOCTOR-WORKSPACE-000004 第 20/31 问：消息加载成功后推进已读游标。 */
@@ -238,30 +206,6 @@ export class SparkHospitalApi {
     return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/consults/patients/${memberId}/records/`);
   }
 
-  /** D-020/D-023：最新 AI 总结只读查询（不触发生成）。 */
-  getPatientSummary(memberId: number): Promise<PatientSummaryDTO | null> {
-    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/summary/`);
-  }
-
-  /** D-020：医生主动生成/刷新 AI 总结。 */
-  generatePatientSummary(memberId: number, idempotencyKey: string): Promise<PatientSummaryDTO> {
-    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/patients/${memberId}/summary/generate/`, {
-      body: {},
-      headers: withIdempotency(idempotencyKey),
-    });
-  }
-
-  /** D-023：标记/取消“已了解”（天然幂等，update_or_create）。 */
-  ackPatientSummary(memberId: number, acknowledged: boolean): Promise<PatientSummaryDTO> {
-    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/patients/${memberId}/summary/ack/`, {
-      body: { acknowledged },
-    });
-  }
-
-  /** D-024~D-026：风险卡片只读查看。 */
-  getPatientRisk(memberId: number): Promise<PatientRiskCardDTO | null> {
-    return this.http.requestOrThrow("GET", `/api/hospital/v1/doctor/patients/${memberId}/risk/`);
-  }
 }
 
 /** 医生发送消息请求体（attachments 携带图片/文档 file_id，数量上限由服务端配置）。 */

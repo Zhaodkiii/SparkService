@@ -29,12 +29,13 @@ from chat_sync.contracts import (
 
 
 class BlockKindTests(SimpleTestCase):
-    def test_39_kinds_are_declared(self):
-        self.assertEqual(len(BLOCK_KINDS), 39)
+    def test_40_kinds_are_declared(self):
+        self.assertEqual(len(BLOCK_KINDS), 40)
         self.assertIn(KIND_TOOL, BLOCK_KINDS)
         self.assertIn(KIND_SEARCH_SUMMARY, BLOCK_KINDS)
         self.assertIn(KIND_HOSPITAL_DOCTOR_INTRO_CARD, BLOCK_KINDS)
         self.assertIn("consultationCard", BLOCK_KINDS)
+        self.assertIn("symptomCollectionCard", BLOCK_KINDS)
         # DOCTOR-WORKSPACE-000004：医生问诊文档附件画廊块。
         self.assertIn("fileGallery", BLOCK_KINDS)
         self.assertNotIn("toolCall", BLOCK_KINDS)

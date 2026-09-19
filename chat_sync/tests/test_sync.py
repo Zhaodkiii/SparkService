@@ -64,6 +64,34 @@ class ChatRemoteMessageSerializerBlocksOnlyTests(SimpleTestCase):
         self.assertEqual(serializer.validated_data["messages"], [])
         self.assertEqual(len(serializer.validated_data["block_updates"]), 1)
 
+    def test_push_request_accepts_symptom_collection_card_update(self):
+        payload = {
+            "block_updates": [
+                {
+                    "thread_id": "00000000-0000-0000-0000-000000000001",
+                    "client_message_id": "00000000-0000-0000-0000-000000000002",
+                    "block": {
+                        "id": "00000000-0000-0000-0000-000000000003",
+                        "node_role": "toolPresentation",
+                        "payload": {
+                            "symptom_collection_card": {
+                                "_0": {
+                                    "status": "pending",
+                                    "snapshot": {
+                                        "collection_id": "00000000-0000-0000-0000-000000000004",
+                                        "primary_complaint": "头晕",
+                                    },
+                                }
+                            }
+                        },
+                    },
+                }
+            ]
+        }
+        serializer = ChatPushRequestSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(len(serializer.validated_data["block_updates"]), 1)
+
 
 class ChatMessageBlockProjectionTests(TestCase):
     def test_projects_ios_codable_envelope_with_snake_case_discriminator(self):

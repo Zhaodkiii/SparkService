@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { ArrowUp, Image as ImageIcon, ListChecks, Paperclip } from "lucide-react";
+import { createPortal } from "react-dom";
+import { usePathname } from "next/navigation";
+import { ArrowUp, ClipboardPlus, Image as ImageIcon, ListChecks, LoaderCircle, Paperclip, X } from "lucide-react";
 import { ComposerImageStrip } from "@/components/chat/home/ComposerImageStrip";
 import { useOptionalAuth } from "@/context/AuthContext";
 import { useDoctorAuth } from "@/context/DoctorAuthGate";
@@ -34,6 +36,68 @@ import type { DoctorRealtimeStatus } from "@/context/DoctorRealtimeStatusContext
 
 type ImageDrafts = ReturnType<typeof useImageDrafts>;
 
+export type DoctorConsultAssistControl = {
+  open: boolean;
+  busy: boolean;
+  error: string | null;
+  onOpen: () => void;
+  onClose: () => void;
+  onSymptomCollection: () => void;
+};
+
+function DoctorConsultAssistDialog({ assist }: { assist: DoctorConsultAssistControl }) {
+  useEffect(() => {
+    if (!assist.open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !assist.busy) assist.onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [assist]);
+
+  if (!assist.open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="doctor-consult-assist-dialog" role="presentation">
+      <button type="button" className="doctor-consult-assist-dialog__scrim" aria-label="关闭问诊辅助" disabled={assist.busy} onClick={assist.onClose} />
+      <section className="doctor-consult-assist-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="doctor-consult-assist-dialog-title">
+        <header className="doctor-consult-assist-dialog__head">
+          <div>
+            <h2 id="doctor-consult-assist-dialog-title">问诊辅助</h2>
+            <p>选择要插入当前会话的辅助工具</p>
+          </div>
+          <button type="button" className="doctor-icon-button" aria-label="关闭问诊辅助" disabled={assist.busy} onClick={assist.onClose}>
+            <X size={17} />
+          </button>
+        </header>
+        <div className="doctor-consult-assist-dialog__body">
+          <ul className="doctor-consult-assist-dialog__list">
+            <li>
+              <article className="doctor-consult-assist-dialog__item">
+                <div className="doctor-consult-assist-dialog__item-copy">
+                  <h3>症状采集</h3>
+                  <p>插入症状采集卡后，患者直接描述不适，AI 会继续完成补充采集和确认。</p>
+                </div>
+                <button
+                  type="button"
+                  className="doctor-button doctor-consult-assist-dialog__action"
+                  disabled={assist.busy}
+                  onClick={() => void assist.onSymptomCollection()}
+                >
+                  {assist.busy ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <ClipboardPlus size={14} aria-hidden="true" />}
+                  {assist.busy ? "插入中…" : "插入症状采集卡"}
+                </button>
+              </article>
+            </li>
+          </ul>
+          {assist.error ? <p className="doctor-consult-assist-dialog__error" role="alert">{assist.error}</p> : null}
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 export interface DoctorAttachmentOrchestration {
   drafts: DoctorAttachmentDraft[];
   limits: ConversationAttachmentLimitsDTO;
@@ -54,6 +118,8 @@ export function DoctorComposerView({
   attachments = null,
   quickReplies = DEFAULT_QUICK_REPLIES,
   connection = "connected",
+  consultAssist = null,
+  showIdentityHint = true,
 }: {
   serviceStatus: HospitalServiceStatus | null;
   doctorLabel: string;
@@ -69,6 +135,10 @@ export function DoctorComposerView({
   quickReplies?: QuickReply[];
   /** DOCTOR-WORKSPACE-000004 第 15 问：断线禁止发送。 */
   connection?: DoctorRealtimeStatus;
+  /** 线上问诊：输入框工具栏内的问诊辅助（如症状采集）。 */
+  consultAssist?: DoctorConsultAssistControl | null;
+  /** 线上问诊页不展示「以 xx · 真人医生身份回复」提示。 */
+  showIdentityHint?: boolean;
 }) {
   const [value, setValue] = useState("");
   const [imageHint, setImageHint] = useState<string | null>(null);
@@ -161,12 +231,13 @@ export function DoctorComposerView({
     : imageHint
       ?? (hasPending ? "图片尚未上传完成" : null)
       ?? (attachmentsPending ? "附件尚未上传完成" : null)
+      ?? consultAssist?.error
       ?? error
-      ?? "医生回复会直接发给患者，不会触发 AI 生成。";
+      ?? null;
 
   return (
     <div className="composer-shell">
-      <p className="doctor-composer-identity">以“{doctorLabel} · 真人医生”身份回复</p>
+      {showIdentityHint ? <p className="doctor-composer-identity">以“{doctorLabel} · 真人医生”身份回复</p> : null}
       <div className="composer" aria-label="医生回复编辑器">
         {imageDrafts ? <ComposerImageStrip drafts={drafts} onRetry={imageDrafts.retry} onRemove={imageDrafts.remove} /> : null}
         {attachments && attachmentDrafts.length ? (
@@ -220,6 +291,23 @@ export function DoctorComposerView({
                 <input ref={attachmentInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png" multiple hidden aria-hidden="true" tabIndex={-1} onChange={onAttachmentsSelected} />
               </>
             ) : null}
+            {consultAssist ? (
+              <button
+                className="composer-icon"
+                type="button"
+                aria-label="问诊辅助"
+                title="问诊辅助"
+                aria-haspopup="dialog"
+                aria-expanded={consultAssist.open}
+                disabled={consultAssist.busy}
+                onClick={() => {
+                  setShowQuickReplies(false);
+                  consultAssist.onOpen();
+                }}
+              >
+                {consultAssist.busy ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <ClipboardPlus size={17} aria-hidden="true" />}
+              </button>
+            ) : null}
             {quickReplies.length ? (
               <span className="doctor-quick-replies">
                 <button
@@ -228,7 +316,10 @@ export function DoctorComposerView({
                   aria-label="常用语"
                   title="常用语"
                   aria-expanded={showQuickReplies}
-                  onClick={() => setShowQuickReplies((current) => !current)}
+                  onClick={() => {
+                    if (consultAssist?.open) consultAssist.onClose();
+                    setShowQuickReplies((current) => !current);
+                  }}
                 >
                   <ListChecks size={17} />
                 </button>
@@ -253,17 +344,24 @@ export function DoctorComposerView({
           </button>
         </div>
       </div>
-      <div className="composer-status" aria-live="polite">{statusText}</div>
+      {statusText ? <div className="composer-status" aria-live="polite">{statusText}</div> : null}
+      {consultAssist ? <DoctorConsultAssistDialog assist={consultAssist} /> : null}
     </div>
   );
 }
 
-export function DoctorComposer() {
+export function DoctorComposer({ consultAssistEnabled = false }: { consultAssistEnabled?: boolean } = {}) {
+  const pathname = usePathname();
+  const isConsultWorkspace = consultAssistEnabled || (pathname ?? "").startsWith("/doctor/consult");
   const { doctor } = useDoctorAuth();
   const conversations = useDoctorConversations();
   const auth = useOptionalAuth();
   const realtime = useOptionalDoctorRealtimeStatus();
   const status = conversations.detail?.service_status ?? null;
+  const threadId = conversations.selectedThreadId;
+  const [assistOpen, setAssistOpen] = useState(false);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
   // 医生发图是人对人消息，不经过 AI 模型，不依赖 supports_image_input 能力
   const imageApi = useMemo(() => (auth ? new SparkChatImageApi(auth.client) : null), [auth]);
   const hospitalApi = useMemo(() => (auth ? new SparkHospitalApi(auth.client) : null), [auth]);
@@ -329,6 +427,36 @@ export function DoctorComposer() {
     },
   };
 
+  const onSymptomCollection = async () => {
+    if (!hospitalApi || !threadId || assistBusy || status === "ended") return;
+    setAssistBusy(true);
+    setAssistError(null);
+    try {
+      await hospitalApi.createSymptomCollection(threadId);
+      await conversations.reloadSelected();
+      setAssistOpen(false);
+    } catch {
+      setAssistError("发起症状采集失败，请刷新后重试");
+    } finally {
+      setAssistBusy(false);
+    }
+  };
+
+  const consultAssist =
+    isConsultWorkspace && threadId
+      ? {
+          open: assistOpen,
+          busy: assistBusy,
+          error: assistError,
+          onOpen: () => setAssistOpen(true),
+          onClose: () => {
+            if (assistBusy) return;
+            setAssistOpen(false);
+          },
+          onSymptomCollection,
+        }
+      : null;
+
   return (
     <DoctorComposerView
       serviceStatus={status}
@@ -340,6 +468,8 @@ export function DoctorComposer() {
       imageDrafts={imageDrafts}
       attachments={attachments}
       connection={realtime?.status ?? "connecting"}
+      consultAssist={consultAssist}
+      showIdentityHint={!isConsultWorkspace}
     />
   );
 }

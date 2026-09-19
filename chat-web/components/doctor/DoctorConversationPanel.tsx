@@ -2,29 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { ConversationRiskPanel } from "@/components/doctor/ConversationRiskPanel";
 import { useDoctorConversations } from "@/context/DoctorConversationsContext";
-import { ATTENTION_LABEL, END_REASON_OPTIONS, RISK_LABEL, SERVICE_STATUS_LABEL, endReasonLabel, relativeTime } from "@/lib/hospital/labels";
-import { firstRiskMessageId } from "@/lib/hospital/message-text";
-import type { ConversationEndReasonCode, DoctorAttentionLevel } from "@/types/hospital";
+import { END_REASON_OPTIONS, SERVICE_STATUS_LABEL, endReasonLabel, relativeTime } from "@/lib/hospital/labels";
+import type { ConversationEndReasonCode } from "@/types/hospital";
 
-const ATTENTION_OPTIONS: DoctorAttentionLevel[] = ["normal", "follow_up", "priority"];
-
-export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open: boolean; onClose: () => void; onJumpToRisk?: (messageId: string) => void }) {
+export function DoctorConversationPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const conversations = useDoctorConversations();
   const detail = conversations.detail;
-  const [level, setLevel] = useState<DoctorAttentionLevel>("normal");
-  const [note, setNote] = useState("");
   const [ending, setEnding] = useState(false);
   const [endReason, setEndReason] = useState<ConversationEndReasonCode>("resolved");
   const [endNote, setEndNote] = useState("");
 
   useEffect(() => {
     if (!detail) return;
-    setLevel(detail.doctor_attention_level);
-    setNote(detail.attention_note ?? "");
     setEnding(false);
-    // Reset local form only when switching conversations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.thread_id]);
 
@@ -35,7 +26,6 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const riskMessageId = firstRiskMessageId(conversations.messages);
   const ended = detail?.service_status === "ended";
 
   return (
@@ -57,33 +47,6 @@ export function DoctorConversationPanel({ open, onClose, onJumpToRisk }: { open:
               {detail.ended_at ? ` · 结束于 ${relativeTime(detail.ended_at)}` : ""}
             </p>
             {endReasonLabel(detail) ? <p className="doctor-panel-muted">结束原因：{endReasonLabel(detail)}</p> : null}
-          </section>
-          <section className="doctor-panel-section">
-            <h2>医生关注</h2>
-            <div className="doctor-radio-list">
-              {ATTENTION_OPTIONS.map((item) => (
-                <label key={item}>
-                  <input type="radio" name="doctor-attention" checked={level === item} disabled={ended || conversations.writeBusy} onChange={() => setLevel(item)} />
-                  {ATTENTION_LABEL[item]}
-                </label>
-              ))}
-            </div>
-            <textarea value={note} disabled={ended || conversations.writeBusy} onChange={(event) => setNote(event.target.value)} placeholder="内部备注（仅医生可见）" aria-label="关注备注" />
-            <button type="button" className="doctor-button" disabled={ended || conversations.writeBusy} onClick={() => void conversations.updateAttention(level, note)}>保存关注设置</button>
-          </section>
-          <section className="doctor-panel-section">
-            <h2>风险等级</h2>
-            <p><strong>{RISK_LABEL[detail.risk_signal_level]}</strong></p>
-            <p className="doctor-panel-muted">风险等级与医生关注是两套独立标签；人工调整不改变问诊状态。</p>
-            <button
-              type="button"
-              className="doctor-button doctor-button--ghost"
-              disabled={!riskMessageId}
-              onClick={() => riskMessageId && onJumpToRisk?.(riskMessageId)}
-            >
-              定位到原风险消息
-            </button>
-            <ConversationRiskPanel />
           </section>
           <section className="doctor-panel-section">
             <h2>患者授权摘要</h2>

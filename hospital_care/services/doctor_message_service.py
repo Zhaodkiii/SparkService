@@ -5,6 +5,7 @@ import uuid
 from django.db import transaction
 from django.utils import timezone
 
+from chat_sync.contracts.canonical import KIND_TOOL_QUESTION_CARDS
 from chat_sync.models import ChatMessage, ChatMessageBlock
 from file_manager.business_access import user_can_access_file
 from file_manager.models import ManagedFile
@@ -222,6 +223,113 @@ def send_doctor_message(*, request, doctor: DoctorProfile, thread_id, text: str,
             "thread_id": str(thread.id),
             "message_id": str(message.id),
         },
+    )
+    return {
+        "message_id": message.id,
+        "server_message_id": message.server_message_id,
+        "client_message_id": str(message.client_message_id),
+        "thread_id": str(thread.id),
+        "role": message.role,
+        "created_at": message.created_at.isoformat(),
+        "sender": build_sender_snapshot(attribution=attribution, binding=binding),
+        "version": binding.version,
+    }
+
+
+def send_symptom_collection_prompt(*, request, doctor: DoctorProfile, thread_id, version: int | None = None) -> dict:
+    """Insert one symptom starter card; the chat AI owns every later step."""
+    now = timezone.now()
+    completion_id = uuid.uuid4()
+    card_id = uuid.uuid4()
+    with transaction.atomic():
+        binding = (
+            ClinicalConversationBinding.objects.select_for_update()
+            .select_related("thread", "hospital", "doctor", "doctor__staff_membership")
+            .filter(thread_id=thread_id)
+            .first()
+        )
+        if binding is None:
+            raise HospitalCareError("CONVERSATION_NOT_FOUND")
+        assert_doctor_owns_binding(doctor=doctor, binding=binding)
+        if version is not None and int(version) != binding.version:
+            raise HospitalCareError("CONVERSATION_VERSION_CONFLICT", details={"version": binding.version})
+        if binding.service_status == ClinicalConversationBinding.ServiceStatus.ENDED:
+            raise HospitalCareError("CONVERSATION_ENDED")
+        if binding.service_status != ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED:
+            raise HospitalCareError("CONVERSATION_NOT_ASSIGNED", details={"service_status": binding.service_status})
+
+        thread = binding.thread
+        thread.updated_at = now
+        thread.server_updated_at = now
+        thread.save(update_fields=["updated_at", "server_updated_at"])
+        message = ChatMessage.objects.create(
+            user=thread.user,
+            thread=thread,
+            role=ChatMessage.Role.ASSISTANT,
+            client_message_id=uuid.uuid4(),
+            server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=now,
+            metadata={"hospital_actor": "doctor", "interaction": "symptom_collection_start"},
+        )
+        ChatMessageBlock.objects.create(
+            id=uuid.uuid4(),
+            user=thread.user,
+            thread=thread,
+            message=message,
+            kind=KIND_TOOL_QUESTION_CARDS,
+            status=ChatMessageBlock.Status.READY,
+            revision=1,
+            order_key=1000,
+            parent_tool_call_id=f"symptom-start-{completion_id}",
+            node_role="toolPresentation",
+            payload={
+                "tool_question_cards": {
+                    "_0": [{
+                        "id": str(card_id),
+                        "completion_id": str(completion_id),
+                        "prompt": {
+                            "id": str(completion_id),
+                            "tool_name": "collect_symptoms",
+                            "symptom_collection_id": str(completion_id),
+                            "questions": [{
+                                "id": "primary_complaint",
+                                "question": "请描述您目前最主要的不适症状",
+                                "options": [],
+                                "allows_other": True,
+                                "selection_mode": "single",
+                                "field_key": "primary_complaint",
+                            }],
+                            "is_symptom_review": False,
+                        },
+                        "answers": [],
+                        "status": "pending",
+                        "result_text": None,
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    }]
+                }
+            },
+            created_at=now,
+            updated_at=now,
+        )
+        attribution = ChatMessageAttribution.objects.create(
+            message=message,
+            actor_type=ChatMessageAttribution.ActorType.DOCTOR,
+            actor_user=request.user,
+            doctor=doctor,
+            display_name_snapshot=f"{doctor.display_name} · 真人医生",
+            source=ChatMessageAttribution.Source.DOCTOR_CONSOLE,
+        )
+        binding.version += 1
+        binding.save(update_fields=["version", "updated_at"])
+
+    write_hospital_audit_log(
+        request,
+        action="hospital.symptom_collection.prompt",
+        resource_type="hospital_message",
+        resource_id=str(message.id),
+        extra={"thread_id": str(thread.id), "message_id": str(message.id)},
     )
     return {
         "message_id": message.id,

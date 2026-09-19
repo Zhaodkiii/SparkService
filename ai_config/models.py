@@ -52,6 +52,7 @@ class SparkToolName(models.TextChoices):
     FETCH_NUTRITION_DETAILS = "fetch_nutrition_details", "营养详情"
     MAKE_NUTRITION_DATA = "make_nutrition_data", "生成营养数据"
     SHOW_MEDICAL_RISK_NOTICE = "show_medical_risk_notice", "医疗风险提示卡片"
+    COLLECT_SYMPTOMS = "collect_symptoms", "症状采集"
     FETCH_SLEEP_DETAILS = "fetch_sleep_details", "睡眠详情"
     FETCH_WORKOUT_DETAILS = "fetch_workout_details", "运动详情"
     GENERATE_STRUCTURED_HEALTH_CARD = "generate_structured_health_card", "生成结构化健康卡片"

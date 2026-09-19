@@ -15,6 +15,7 @@ import type { ChatBlockDTO, ChatRunDTO } from "@/types/chat";
 import type { HealthResourceReference } from "@/types/medical-resource";
 import { isTerminalRunStatus } from "@/types/chat";
 import type { ChatMessageWireDTO } from "@/types/sync";
+import { isSymptomQuestionBlock, symptomCollectionId } from "@/lib/chat/symptom-collection";
 
 /**
  * 用户消息为紧凑气泡：内容渲染与医生工作台患者消息共用 UserMessageContent。
@@ -55,16 +56,44 @@ export function ChatMessages() {
     const lastAssistantId = [...threads.messages].reverse().find((message) => message.role === "assistant")?.client_message_id ?? null;
     const liveClaimed = Boolean(live.run && threads.messages.some((message) => belongsToLiveRun(message, live.run, liveBlockIds, lastAssistantId)));
     const liveActive = Boolean(live.run && !isTerminalRunStatus(live.run.status));
+    const persistedBlocks = threads.messages.flatMap((message) => message.blocks.map((block) => live.state.blocksById[block.id] ?? block));
+    const symptomQuestionsByCollection = new Map<string, ChatBlockDTO[]>();
+    const symptomSummaryCollectionIDs = new Set<string>();
+    for (const block of persistedBlocks) {
+      if (block.kind === "symptomCollectionCard") {
+        const collectionId = symptomCollectionId(block);
+        if (collectionId) symptomSummaryCollectionIDs.add(collectionId);
+      }
+      if (!isSymptomQuestionBlock(block)) continue;
+      const collectionId = symptomCollectionId(block);
+      if (!collectionId) continue;
+      symptomQuestionsByCollection.set(collectionId, [...(symptomQuestionsByCollection.get(collectionId) ?? []), block]);
+    }
     if (!threads.messages.length && !unsyncedLiveBlocks.length) return <div className="empty-state"><div className="empty-state__mark"><HeartPulse size={22} /></div><div><p className="empty-state__eyebrow">小鲸健康 AI</p><h1>今天想先聊点什么？</h1><p>可以从健康资料、饮食、运动或睡眠开始。</p><div className="prompt-suggestions"><span>解读体检指标</span><span>规划一周饮食</span><span>改善睡眠质量</span></div></div></div>;
     return <>
     <div className="messages" aria-live="polite">
       {threads.messages.map((message) => {
         const onLiveRun = belongsToLiveRun(message, live.run, liveBlockIds, lastAssistantId);
         const extraLiveBlocks = onLiveRun ? unsyncedLiveBlocks : [];
-        const blocks = [
+        let blocks = [
           ...message.blocks.map((block) => live.state.blocksById[block.id] ?? block),
           ...extraLiveBlocks,
         ];
+        const summary = blocks.find((block) => block.kind === "symptomCollectionCard");
+        if (summary) {
+          const collectionId = symptomCollectionId(summary);
+          const grouped = collectionId ? symptomQuestionsByCollection.get(collectionId) ?? [] : [];
+          const present = new Set(blocks.map((block) => block.id));
+          blocks = [...blocks, ...grouped.filter((block) => !present.has(block.id))];
+        } else {
+          const questionCollectionIDs = blocks
+            .filter(isSymptomQuestionBlock)
+            .map(symptomCollectionId)
+            .filter((value): value is string => Boolean(value));
+          // 已有稳定汇总卡时，不再重复渲染每轮问题消息。
+          if (questionCollectionIDs.some((collectionId) => symptomSummaryCollectionIDs.has(collectionId))) return null;
+        }
+        if (!blocks.length && message.role === "assistant") return null;
         if (message.role === "assistant") {
           return <AssistantTurn
             key={message.client_message_id}
