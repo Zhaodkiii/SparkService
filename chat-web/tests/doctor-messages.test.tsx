@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DoctorMessageList } from "@/components/doctor/DoctorMessages";
+import { AttachmentPreviewProvider } from "@/components/shared/AttachmentPreviewProvider";
 import type { DoctorMessageDTO } from "@/types/hospital";
 
 function textBlock(id: string, text: string) {
@@ -102,6 +103,70 @@ describe("doctor message attribution", () => {
 });
 
 describe("consult variant messages (DOCTOR-WORKSPACE-000004 页面形态修订)", () => {
+  it("renders the supplementary report request as a waiting card", () => {
+    const reportRequest = message({
+      client_message_id: "c-report-request",
+      role: "assistant",
+      actor_type: "doctor",
+      blocks: [{
+        id: "c-report-request-card",
+        kind: "captureCard",
+        status: "ready",
+        revision: 1,
+        order_key: 1,
+        node_role: "toolPresentation",
+        payload: {
+          capture_card: {
+            _0: { card_type: "supplementary_report", upload_mode: "composer", status: "pending" },
+          },
+        },
+      }],
+    });
+
+    render(<DoctorMessageList variant="consult" messages={[reportRequest]} />);
+
+    expect(screen.getByText("补充报告")).toBeInTheDocument();
+    expect(screen.getByText("已向患者发送报告上传卡，等待患者补充。")).toBeInTheDocument();
+  });
+
+  it("shows uploaded reports inside the original supplementary report card", () => {
+    const completedRequest = message({
+      client_message_id: "c-report-completed",
+      role: "assistant",
+      actor_type: "doctor",
+      blocks: [{
+        id: "c-report-completed-card",
+        kind: "captureCard",
+        status: "ready",
+        revision: 2,
+        order_key: 1,
+        node_role: "toolPresentation",
+        payload: {
+          capture_card: {
+            _0: {
+              card_type: "supplementary_report",
+              status: "completed",
+              selected_attachments: [
+                { kind: "image", display_name: "检验单.jpg", public_url: "https://oss.example/report.jpg", mime_type: "image/jpeg", byte_count: 2048 },
+                { kind: "pdf", display_name: "出院记录.pdf", public_url: "https://oss.example/report.pdf", mime_type: "application/pdf", byte_count: 4096 },
+              ],
+            },
+          },
+        },
+      }],
+    });
+
+    render(<AttachmentPreviewProvider><DoctorMessageList variant="consult" messages={[completedRequest]} /></AttachmentPreviewProvider>);
+
+    expect(screen.getByText("患者已补充报告，点击缩略图即可预览原文件。")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "检验单.jpg" })).toBeInTheDocument();
+    expect(screen.getByText("出院记录.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /出院记录\.pdf/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("img", { name: "检验单.jpg" }).closest("button")!);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "检验单.jpg" })).toBeInTheDocument();
+  });
+
   it("shows only one collapsible symptom summary and hides collection internals", () => {
     const summaryMessage = message({
       client_message_id: "c-symptom-summary",

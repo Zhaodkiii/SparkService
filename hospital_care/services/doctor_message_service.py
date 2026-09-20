@@ -5,7 +5,7 @@ import uuid
 from django.db import transaction
 from django.utils import timezone
 
-from chat_sync.contracts.canonical import KIND_TOOL_QUESTION_CARDS
+from chat_sync.contracts.canonical import KIND_CAPTURE_CARD, KIND_TOOL_QUESTION_CARDS
 from chat_sync.models import ChatMessage, ChatMessageBlock
 from file_manager.business_access import user_can_access_file
 from file_manager.models import ManagedFile
@@ -327,6 +327,105 @@ def send_symptom_collection_prompt(*, request, doctor: DoctorProfile, thread_id,
     write_hospital_audit_log(
         request,
         action="hospital.symptom_collection.prompt",
+        resource_type="hospital_message",
+        resource_id=str(message.id),
+        extra={"thread_id": str(thread.id), "message_id": str(message.id)},
+    )
+    return {
+        "message_id": message.id,
+        "server_message_id": message.server_message_id,
+        "client_message_id": str(message.client_message_id),
+        "thread_id": str(thread.id),
+        "role": message.role,
+        "created_at": message.created_at.isoformat(),
+        "sender": build_sender_snapshot(attribution=attribution, binding=binding),
+        "version": binding.version,
+    }
+
+
+def send_supplementary_report_prompt(*, request, doctor: DoctorProfile, thread_id, version: int | None = None) -> dict:
+    """Insert a report-upload card into an active doctor consultation.
+
+    The card deliberately uses the canonical ``captureCard`` contract already
+    supported by iOS. The dedicated card type uploads in place and syncs the
+    completed attachment snapshot back onto this same message block.
+    """
+    now = timezone.now()
+    card_id = uuid.uuid4()
+    source_tool_call_id = f"doctor-report-{card_id}"
+    with transaction.atomic():
+        binding = (
+            ClinicalConversationBinding.objects.select_for_update()
+            .select_related("thread", "hospital", "doctor", "doctor__staff_membership")
+            .filter(thread_id=thread_id)
+            .first()
+        )
+        if binding is None:
+            raise HospitalCareError("CONVERSATION_NOT_FOUND")
+        assert_doctor_owns_binding(doctor=doctor, binding=binding)
+        if version is not None and int(version) != binding.version:
+            raise HospitalCareError("CONVERSATION_VERSION_CONFLICT", details={"version": binding.version})
+        if binding.service_status == ClinicalConversationBinding.ServiceStatus.ENDED:
+            raise HospitalCareError("CONVERSATION_ENDED")
+        if binding.service_status != ClinicalConversationBinding.ServiceStatus.DOCTOR_JOINED:
+            raise HospitalCareError("CONVERSATION_NOT_ASSIGNED", details={"service_status": binding.service_status})
+
+        thread = binding.thread
+        thread.updated_at = now
+        thread.server_updated_at = now
+        thread.save(update_fields=["updated_at", "server_updated_at"])
+        message = ChatMessage.objects.create(
+            user=thread.user,
+            thread=thread,
+            role=ChatMessage.Role.ASSISTANT,
+            client_message_id=uuid.uuid4(),
+            server_message_id=str(uuid.uuid4()),
+            delivery_state=ChatMessage.DeliveryState.SENT,
+            created_at=now,
+            metadata={"hospital_actor": "doctor", "interaction": "supplementary_report_request"},
+        )
+        ChatMessageBlock.objects.create(
+            id=uuid.uuid4(),
+            user=thread.user,
+            thread=thread,
+            message=message,
+            kind=KIND_CAPTURE_CARD,
+            status=ChatMessageBlock.Status.READY,
+            revision=1,
+            order_key=1000,
+            parent_tool_call_id=source_tool_call_id,
+            node_role="toolPresentation",
+            payload={
+                "capture_card": {
+                    "_0": {
+                        "id": str(card_id),
+                        "card_type": "supplementary_report",
+                        "upload_mode": "inline",
+                        "source_tool_call_id": source_tool_call_id,
+                        "status": "pending",
+                        "selected_attachments": [],
+                        "created_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    }
+                }
+            },
+            created_at=now,
+            updated_at=now,
+        )
+        attribution = ChatMessageAttribution.objects.create(
+            message=message,
+            actor_type=ChatMessageAttribution.ActorType.DOCTOR,
+            actor_user=request.user,
+            doctor=doctor,
+            display_name_snapshot=f"{doctor.display_name} · 真人医生",
+            source=ChatMessageAttribution.Source.DOCTOR_CONSOLE,
+        )
+        binding.version += 1
+        binding.save(update_fields=["version", "updated_at"])
+
+    write_hospital_audit_log(
+        request,
+        action="hospital.supplementary_report.prompt",
         resource_type="hospital_message",
         resource_id=str(message.id),
         extra={"thread_id": str(thread.id), "message_id": str(message.id)},

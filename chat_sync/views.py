@@ -22,6 +22,7 @@ from chat_sync.serializers import (
 )
 from common.exceptions import APIError
 from common.response import success_response
+from file_manager.models import ManagedFile
 from file_manager.url_utils import managed_file_download_url
 from hospital_care.models import ChatMessageAttribution
 
@@ -271,6 +272,7 @@ def _block_to_payload(block: ChatMessageBlock) -> dict | None:
         return None
     kind, payload, node_role, anchor = canonical.kind, canonical.payload, canonical.node_role, canonical.anchor
     kind, payload = project_block_for_ios_client(kind, payload)
+    payload = _enrich_capture_card_preview_urls(payload, block)
     return {
         "id": str(block.id),
         "kind": kind,
@@ -286,6 +288,44 @@ def _block_to_payload(block: ChatMessageBlock) -> dict | None:
         "created_at": block.created_at.isoformat(),
         "updated_at": block.updated_at.isoformat(),
     }
+
+
+def _enrich_capture_card_preview_urls(payload: dict, block: ChatMessageBlock) -> dict:
+    """为医生 Web 补充报告卡片生成当前协议要求的附件预览地址。
+
+    文件 ID 是附件的权威引用；医生端不依赖患者设备上的临时缓存，
+    每次投影消息时都从 ManagedFile 生成可预览的 HTTPS 地址。
+    """
+    envelope = payload.get("capture_card") if isinstance(payload, dict) else None
+    value = envelope.get("_0") if isinstance(envelope, dict) else None
+    if not isinstance(value, dict) or value.get("card_type") != "supplementary_report":
+        return payload
+    raw_attachments = value.get("selected_attachments")
+    if not isinstance(raw_attachments, list):
+        return payload
+
+    attachments = []
+    for raw in raw_attachments:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        file_id = item.get("file_id")
+        if file_id not in (None, ""):
+            file_record = ManagedFile.objects.filter(id=file_id, is_deleted=False).first()
+            if file_record is not None:
+                preview_url = managed_file_download_url(file_record)
+                if preview_url:
+                    item["public_url"] = preview_url
+                    item["preview_url"] = preview_url
+        attachments.append(item)
+
+    next_value = dict(value)
+    next_value["selected_attachments"] = attachments
+    next_envelope = dict(envelope)
+    next_envelope["_0"] = next_value
+    next_payload = dict(payload)
+    next_payload["capture_card"] = next_envelope
+    return next_payload
 
 
 def _block_value(raw: dict, snake: str, camel: str | None = None, default=None):

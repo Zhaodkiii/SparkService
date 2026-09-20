@@ -77,6 +77,10 @@ export class SparkHospitalApi {
     return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/symptom-collection/`, { body: version === undefined ? {} : { version } });
   }
 
+  createSupplementaryReportRequest(threadId: string, version?: number): Promise<DoctorSendMessageDTO> {
+    return this.http.requestOrThrow("POST", `/api/hospital/v1/doctor/conversations/${threadId}/supplementary-report/`, { body: version === undefined ? {} : { version } });
+  }
+
   /** DOCTOR-WORKSPACE-000004 第 34 问：首屏最近一页；before 游标向上加载更早消息。 */
   async getMessages(threadId: string, params: { before?: string; limit?: number } = {}): Promise<ConversationMessagesDTO> {
     const data = await this.http.requestOrThrow<ConversationMessagesDTO>(

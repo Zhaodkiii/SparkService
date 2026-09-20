@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { ArrowUp, ClipboardPlus, Image as ImageIcon, ListChecks, LoaderCircle, Paperclip, X } from "lucide-react";
+import { ArrowUp, ClipboardPlus, FilePlus2, Image as ImageIcon, ListChecks, LoaderCircle, Paperclip, X } from "lucide-react";
 import { ComposerImageStrip } from "@/components/chat/home/ComposerImageStrip";
 import { useOptionalAuth } from "@/context/AuthContext";
 import { useDoctorAuth } from "@/context/DoctorAuthGate";
@@ -43,6 +43,7 @@ export type DoctorConsultAssistControl = {
   onOpen: () => void;
   onClose: () => void;
   onSymptomCollection: () => void;
+  onSupplementaryReport: () => void;
 };
 
 function DoctorConsultAssistDialog({ assist }: { assist: DoctorConsultAssistControl }) {
@@ -86,6 +87,23 @@ function DoctorConsultAssistDialog({ assist }: { assist: DoctorConsultAssistCont
                 >
                   {assist.busy ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <ClipboardPlus size={14} aria-hidden="true" />}
                   {assist.busy ? "插入中…" : "插入症状采集卡"}
+                </button>
+              </article>
+            </li>
+            <li>
+              <article className="doctor-consult-assist-dialog__item">
+                <div className="doctor-consult-assist-dialog__item-copy">
+                  <h3>补充报告</h3>
+                  <p>向患者发送报告上传卡，支持拍摄、从相册选择或上传 PDF 等文件。</p>
+                </div>
+                <button
+                  type="button"
+                  className="doctor-button doctor-consult-assist-dialog__action"
+                  disabled={assist.busy}
+                  onClick={() => void assist.onSupplementaryReport()}
+                >
+                  {assist.busy ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <FilePlus2 size={14} aria-hidden="true" />}
+                  {assist.busy ? "插入中…" : "发送补充报告卡"}
                 </button>
               </article>
             </li>
@@ -442,6 +460,21 @@ export function DoctorComposer({ consultAssistEnabled = false }: { consultAssist
     }
   };
 
+  const onSupplementaryReport = async () => {
+    if (!hospitalApi || !threadId || assistBusy || status === "ended") return;
+    setAssistBusy(true);
+    setAssistError(null);
+    try {
+      await hospitalApi.createSupplementaryReportRequest(threadId);
+      await conversations.reloadSelected();
+      setAssistOpen(false);
+    } catch {
+      setAssistError("发送补充报告卡失败，请刷新后重试");
+    } finally {
+      setAssistBusy(false);
+    }
+  };
+
   const consultAssist =
     isConsultWorkspace && threadId
       ? {
@@ -454,6 +487,7 @@ export function DoctorComposer({ consultAssistEnabled = false }: { consultAssist
             setAssistOpen(false);
           },
           onSymptomCollection,
+          onSupplementaryReport,
         }
       : null;
 

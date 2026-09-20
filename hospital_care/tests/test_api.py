@@ -1,8 +1,12 @@
+import uuid
+
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from chat_sync.contracts.canonical import KIND_HOSPITAL_DOCTOR_INTRO_CARD
 from chat_sync.models import ChatMessage, ChatMessageBlock
+from file_manager.business_access import user_can_preview_file
+from file_manager.business_relations import bind_file_to_business
 from hospital_care.models import ClinicalConversationBinding, Hospital
 from hospital_care.services.conversation_service import create_patient_conversation, join_conversation
 from hospital_care.tests.factories import (
@@ -285,6 +289,100 @@ class DoctorApiTests(TestCase):
         )
         self.assertEqual(sent.status_code, 400)
         self.assertEqual(sent.data["msg"], "PAYLOAD_INVALID")
+
+    def test_doctor_sends_supplementary_report_card(self):
+        version = self._join()
+        sent = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/supplementary-report/",
+            {"version": version},
+            format="json",
+        )
+        self.assertEqual(sent.status_code, 201, sent.data)
+
+        messages = self.client.get(f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/")
+        report_messages = [
+            item
+            for item in messages.data["data"]["items"]
+            if any(block.get("kind") == "captureCard" for block in item.get("blocks", []))
+        ]
+        self.assertEqual(len(report_messages), 1)
+        block = report_messages[0]["blocks"][0]
+        self.assertEqual(block["kind"], "captureCard")
+        card = block["payload"]["capture_card"]["_0"]
+        self.assertEqual(card["card_type"], "supplementary_report")
+        self.assertEqual(card["upload_mode"], "inline")
+
+    def test_patient_upload_updates_original_report_card_for_doctor(self):
+        version = self._join()
+        sent = self.client.post(
+            f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/supplementary-report/",
+            {"version": version},
+            format="json",
+        )
+        self.assertEqual(sent.status_code, 201, sent.data)
+
+        message = ChatMessage.objects.get(id=sent.data["data"]["message_id"])
+        block = message.blocks.get(kind="captureCard")
+        report = self._make_image(self.patient, "检验单.webp")
+        bind_file_to_business(self.patient, report, "hospital_conversation", self.binding.thread_id)
+
+        completed_payload = dict(block.payload["capture_card"]["_0"])
+        completed_payload.update(
+            {
+                "status": "completed",
+                "result_summary": "已补充 1 份报告，医生可直接查看。",
+                "selected_attachments": [
+                    {
+                        "id": str(uuid.uuid4()),
+                        "source": "photoLibrary",
+                        "kind": "image",
+                        "display_name": report.original_name,
+                        "mime_type": report.mime_type,
+                        "byte_count": report.file_size,
+                        "upload_progress": 1,
+                        "file_id": report.id,
+                        "public_url": "https://oss.example/report.webp",
+                        "file_md5": report.file_md5,
+                    }
+                ],
+            }
+        )
+        self.client.force_authenticate(self.patient)
+        updated = self.client.post(
+            "/api/v1/ai/chat/sync/push/",
+            {
+                "block_updates": [
+                    {
+                        "thread_id": str(self.binding.thread_id),
+                        "client_message_id": str(message.client_message_id),
+                        "block": {
+                            "id": str(block.id),
+                            "kind": "captureCard",
+                            "status": "ready",
+                            "revision": block.revision + 1,
+                            "order_key": block.order_key,
+                            "node_role": "toolPresentation",
+                            "payload": {"capture_card": {"_0": completed_payload}},
+                        },
+                    }
+                ]
+            },
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+
+        self.client.force_authenticate(self.doctor_user)
+        messages = self.client.get(f"/api/hospital/v1/doctor/conversations/{self.binding.thread_id}/messages/")
+        doctor_card = next(
+            item["blocks"][0]["payload"]["capture_card"]["_0"]
+            for item in messages.data["data"]["items"]
+            if any(candidate.get("kind") == "captureCard" for candidate in item.get("blocks", []))
+        )
+        self.assertEqual(doctor_card["status"], "completed")
+        self.assertEqual(doctor_card["selected_attachments"][0]["file_id"], report.id)
+        self.assertTrue(doctor_card["selected_attachments"][0].get("preview_url"))
+        self.assertTrue(doctor_card["selected_attachments"][0].get("public_url"))
+        self.assertTrue(user_can_preview_file(self.doctor_user, report))
 
     def test_doctor_message_image_not_owned_rejected(self):
         version = self._join()

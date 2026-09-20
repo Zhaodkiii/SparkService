@@ -68,4 +68,28 @@ describe("doctor composer service states", () => {
     expect(screen.getByRole("textbox", { name: "医生回复" })).toHaveValue("您好，请描述症状。");
     expect(onSend).not.toHaveBeenCalled();
   });
+
+  it("offers supplementary report upload from consultation assist", async () => {
+    const user = userEvent.setup();
+    const onSupplementaryReport = vi.fn();
+    render(
+      <DoctorComposerView
+        serviceStatus="doctor_joined"
+        doctorLabel="张医生"
+        onSend={vi.fn()}
+        consultAssist={{
+          open: true,
+          busy: false,
+          error: null,
+          onOpen: vi.fn(),
+          onClose: vi.fn(),
+          onSymptomCollection: vi.fn(),
+          onSupplementaryReport,
+        }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "补充报告" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "发送补充报告卡" }));
+    expect(onSupplementaryReport).toHaveBeenCalledOnce();
+  });
 });

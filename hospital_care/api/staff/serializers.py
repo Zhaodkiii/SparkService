@@ -42,3 +42,7 @@ class DoctorMessageSerializer(serializers.Serializer):
 
 class SymptomCollectionCreateSerializer(serializers.Serializer):
     version = serializers.IntegerField(required=False)
+
+
+class SupplementaryReportCreateSerializer(serializers.Serializer):
+    version = serializers.IntegerField(required=False)

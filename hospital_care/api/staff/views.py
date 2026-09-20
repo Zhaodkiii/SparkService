@@ -21,6 +21,7 @@ from hospital_care.api.staff.serializers import (
     DoctorAgentUpdateSerializer,
     DoctorMessageSerializer,
     ReadCursorUpdateSerializer,
+    SupplementaryReportCreateSerializer,
     SymptomCollectionCreateSerializer,
 )
 from hospital_care.permissions import DoctorConversationPermission, HospitalStaffPermission
@@ -40,7 +41,11 @@ from hospital_care.services.conversation_service import (
     join_conversation,
     leave_conversation,
 )
-from hospital_care.services.doctor_message_service import send_doctor_message, send_symptom_collection_prompt
+from hospital_care.services.doctor_message_service import (
+    send_doctor_message,
+    send_supplementary_report_prompt,
+    send_symptom_collection_prompt,
+)
 from hospital_care.services.idempotency import run_idempotent_command
 from hospital_care.services.patient_workspace_service import (
     build_patient_list,
@@ -210,6 +215,21 @@ class DoctorSymptomCollectionView(APIView):
         serializer = SymptomCollectionCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payload = send_symptom_collection_prompt(
+            request=request,
+            doctor=request.hospital_doctor,
+            thread_id=thread_id,
+            version=serializer.validated_data.get("version"),
+        )
+        return success_response(payload, msg="created", status_code=201)
+
+
+class DoctorSupplementaryReportView(APIView):
+    permission_classes = [DoctorConversationPermission]
+
+    def post(self, request, thread_id):
+        serializer = SupplementaryReportCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = send_supplementary_report_prompt(
             request=request,
             doctor=request.hospital_doctor,
             thread_id=thread_id,
@@ -576,4 +596,3 @@ class DoctorPatientConversationsView(APIView):
             writer=writer,
         )
         return success_response(snapshot, msg="created", status_code=201)
-

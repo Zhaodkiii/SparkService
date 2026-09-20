@@ -1,10 +1,10 @@
 from django.test import TestCase
 
-from chat_sync.contracts.canonical import KIND_TOOL_QUESTION_CARDS
+from chat_sync.contracts.canonical import KIND_CAPTURE_CARD, KIND_TOOL_QUESTION_CARDS
 from chat_sync.models import ChatMessageBlock
 from hospital_care.models import ClinicalConversationBinding
 from hospital_care.services.conversation_service import create_patient_conversation
-from hospital_care.services.doctor_message_service import send_symptom_collection_prompt
+from hospital_care.services.doctor_message_service import send_supplementary_report_prompt, send_symptom_collection_prompt
 from hospital_care.tests.factories import (
     DummyRequest,
     make_agent,
@@ -61,3 +61,21 @@ class SymptomCollectionPromptTests(TestCase):
         self.assertEqual(card["prompt"]["questions"][0]["options"], [])
         self.assertTrue(card["prompt"]["questions"][0]["allows_other"])
 
+    def test_doctor_inserts_supplementary_report_capture_card(self):
+        result = send_supplementary_report_prompt(
+            request=DummyRequest(self.doctor_user),
+            doctor=self.doctor,
+            thread_id=self.binding.thread_id,
+            version=self.binding.version,
+        )
+
+        block = ChatMessageBlock.objects.get(
+            message_id=result["message_id"],
+            kind=KIND_CAPTURE_CARD,
+        )
+        card = block.payload["capture_card"]["_0"]
+        self.assertEqual(card["card_type"], "supplementary_report")
+        self.assertEqual(card["upload_mode"], "inline")
+        self.assertEqual(card["status"], "pending")
+        self.assertEqual(card["selected_attachments"], [])
+        self.assertEqual(block.node_role, "toolPresentation")
