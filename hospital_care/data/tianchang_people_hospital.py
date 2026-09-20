@@ -51,6 +51,10 @@ _DEPARTMENT_NAMES = [
     ("DERMATOLOGY", "皮肤科"), ("EMERGENCY", "急诊医学科"), ("REHABILITATION", "康复医学科"),
     ("PSYCHIATRY", "精神科"), ("TCM", "中医科"), ("PREVENTION", "防保科"),
     ("LITHOTRIPSY", "碎石科"), ("ENDOSCOPY", "消化内镜"),
+    ("MRI", "核磁共振室"), ("CT", "CT室"), ("CSSD", "消毒供应中心（CSSD）"),
+    ("EEG", "脑电图室"), ("ECG", "心电图室"), ("RADIOTHERAPY", "放疗中心"),
+    ("HEMODIALYSIS", "血透室"), ("HEALTH_MANAGEMENT", "健康管理中心"),
+    ("BLOOD_BANK", "中心血库"), ("PHARMACY", "药学部"),
 ]
 
 DEPARTMENTS = [
