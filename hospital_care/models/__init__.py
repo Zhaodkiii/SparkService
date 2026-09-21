@@ -22,6 +22,7 @@ from hospital_care.models.organization import (
     HospitalStaffMembership,
 )
 from hospital_care.models.patient_summaries import DoctorPatientSummary, DoctorPatientSummaryAck
+from hospital_care.models.triage import HospitalAITriageBinding
 
 __all__ = [
     "Hospital",
@@ -44,4 +45,5 @@ __all__ = [
     "HospitalKnowledgeChunk",
     "DoctorPatientSummary",
     "DoctorPatientSummaryAck",
+    "HospitalAITriageBinding",
 ]

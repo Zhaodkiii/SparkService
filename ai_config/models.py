@@ -26,6 +26,7 @@ class ScenarioKey(models.TextChoices):
     NUTRITION_INTAKE_EXTRACTION = "nutrition_intake_extraction"
     MEDICAL_EXAM_PLAN_GENERATION = "medical_exam_plan_generation"
     MEMORY_CONSOLIDATION = "memory_consolidation"
+    AI_TRIAGE = "ai_triage"
 
 
 class IdentityKind(models.TextChoices):
@@ -52,6 +53,8 @@ class SparkToolName(models.TextChoices):
     FETCH_NUTRITION_DETAILS = "fetch_nutrition_details", "营养详情"
     MAKE_NUTRITION_DATA = "make_nutrition_data", "生成营养数据"
     SHOW_MEDICAL_RISK_NOTICE = "show_medical_risk_notice", "医疗风险提示卡片"
+    QUERY_REGISTRATION_CATALOG = "query_registration_catalog", "查询挂号目录"
+    SHOW_REGISTRATION_RECOMMENDATION = "show_registration_recommendation", "展示挂号推荐"
     COLLECT_SYMPTOMS = "collect_symptoms", "症状采集"
     FETCH_SLEEP_DETAILS = "fetch_sleep_details", "睡眠详情"
     FETCH_WORKOUT_DETAILS = "fetch_workout_details", "运动详情"

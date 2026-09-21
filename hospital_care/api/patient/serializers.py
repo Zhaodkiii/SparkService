@@ -9,6 +9,11 @@ class CreateConversationSerializer(serializers.Serializer):
     thread_id = serializers.UUIDField(required=False)
 
 
+class CreateAITriageConversationSerializer(serializers.Serializer):
+    member_id = serializers.IntegerField()
+    thread_id = serializers.UUIDField(required=False)
+
+
 class SubmitConsultationSerializer(serializers.Serializer):
     """患者客户端独立提交线上问诊（DOCTOR-WORKSPACE-000004 页面形态修订）。"""
 

@@ -77,9 +77,12 @@ KIND_ERROR = "error"
 KIND_ASSISTANT_STATUS_CARD = "assistantStatusCard"
 KIND_HEALTH_RESOURCE_REFERENCE = "healthResourceReference"
 KIND_MEDICAL_RISK_NOTICE = "medicalRiskNotice"
+KIND_REGISTRATION_RECOMMENDATION_CARDS = "registrationRecommendationCards"
 KIND_MEDICAL_DISCLAIMER_CARD = "medicalDisclaimerCard"
 KIND_CHAT_GUIDE_CARD = "chatGuideCard"
 KIND_HOSPITAL_DOCTOR_INTRO_CARD = "hospitalDoctorIntroCard"
+KIND_HOSPITAL_TRIAGE_INTRO_CARD = "hospitalTriageIntroCard"
+KIND_AI_TRIAGE_GUIDE_CARD = "aiTriageGuideCard"
 # DOCTOR-WORKSPACE-000004：患者提交线上问诊时的问诊单消息卡片。
 KIND_CONSULTATION_CARD = "consultationCard"
 
@@ -120,9 +123,12 @@ BLOCK_KINDS = frozenset({
     KIND_ASSISTANT_STATUS_CARD,
     KIND_HEALTH_RESOURCE_REFERENCE,
     KIND_MEDICAL_RISK_NOTICE,
+    KIND_REGISTRATION_RECOMMENDATION_CARDS,
     KIND_MEDICAL_DISCLAIMER_CARD,
     KIND_CHAT_GUIDE_CARD,
     KIND_HOSPITAL_DOCTOR_INTRO_CARD,
+    KIND_HOSPITAL_TRIAGE_INTRO_CARD,
+    KIND_AI_TRIAGE_GUIDE_CARD,
     KIND_CONSULTATION_CARD,
 })
 
@@ -246,6 +252,72 @@ def search_summary_payload(
 
 def hospital_doctor_intro_card_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {KIND_TO_PAYLOAD_KEY[KIND_HOSPITAL_DOCTOR_INTRO_CARD]: _wrap(snapshot)}
+
+
+def hospital_triage_intro_card_payload(
+    *,
+    hospital_name: str,
+    hospital_short_name: str,
+    member_id: int,
+    member_display_name: str,
+    service_title: str,
+    introduction_excerpt: str,
+) -> dict[str, Any]:
+    return {
+        KIND_TO_PAYLOAD_KEY[KIND_HOSPITAL_TRIAGE_INTRO_CARD]: _wrap(
+            {
+                "hospital_name": hospital_name,
+                "hospital_short_name": hospital_short_name,
+                "member_id": member_id,
+                "member_display_name": member_display_name,
+                "service_title": service_title,
+                "introduction_excerpt": introduction_excerpt,
+            }
+        )
+    }
+
+
+def chat_guide_card_payload(
+    *,
+    member_id: int | None,
+    generated_at: str,
+    questions: list[dict[str, Any]],
+    question_state: str = "preset",
+    question_source: str | None = None,
+    metric_sections: list | None = None,
+) -> dict[str, Any]:
+    inner: dict[str, Any] = {
+        "schema_version": 2,
+        "generated_at": generated_at,
+        "member_id": member_id,
+        "metric_sections": metric_sections or [],
+        "questions": questions,
+        "question_generation": {
+            "state": question_state,
+            "member_id": member_id,
+            "source": question_source,
+        },
+    }
+    return {KIND_TO_PAYLOAD_KEY[KIND_CHAT_GUIDE_CARD]: _wrap(inner)}
+
+
+def ai_triage_guide_card_payload(
+    *,
+    title: str,
+    subtitle: str,
+    disclaimer: str,
+    prompts: list[dict[str, str]],
+) -> dict[str, Any]:
+    return {
+        KIND_TO_PAYLOAD_KEY[KIND_AI_TRIAGE_GUIDE_CARD]: _wrap(
+            {
+                "title": title,
+                "subtitle": subtitle,
+                "disclaimer": disclaimer,
+                "prompts": prompts,
+            }
+        )
+    }
 
 
 def consultation_card_payload(snapshot: dict[str, Any]) -> dict[str, Any]:

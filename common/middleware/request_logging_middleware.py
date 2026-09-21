@@ -52,10 +52,12 @@ def _headers_for_log(headers: dict | None, *, redact_sensitive: bool = False) ->
     if not headers:
         return {}
     result = {str(k): str(v) for k, v in headers.items()}
-    if redact_sensitive:
-        for key in list(result):
-            if key.lower() in {"authorization", "cookie", "set-cookie", "idempotency-key", "x-api-key", "x-interaction-claim"}:
-                result[key] = "<redacted>"
+    # Credentials must never depend on the request path to be safe to log.
+    # Keep the keyword argument for callers that already pass it.
+    _ = redact_sensitive
+    for key in list(result):
+        if key.lower() in {"authorization", "cookie", "set-cookie", "idempotency-key", "x-api-key", "api-key", "x-interaction-claim"}:
+            result[key] = "<redacted>"
     return result
 
 
@@ -125,6 +127,34 @@ def _redact_chat_ai_body(value):
     return value
 
 
+def _redact_credentials(value):
+    """Recursively remove reusable credentials from every JSON log body."""
+    sensitive_keys = {
+        "api_key",
+        "apikey",
+        "authorization",
+        "access_token",
+        "accesstoken",
+        "refresh_token",
+        "refreshtoken",
+        "password",
+        "secret",
+        "token",
+    }
+    if isinstance(value, dict):
+        redacted = {}
+        for key, child in value.items():
+            normalized_key = str(key).lower().replace("-", "_")
+            if normalized_key in sensitive_keys:
+                redacted[key] = "<redacted>"
+            else:
+                redacted[key] = _redact_credentials(child)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_credentials(child) for child in value]
+    return value
+
+
 def _is_sensitive_auth_path(path: str) -> bool:
     return path.startswith("/api/auth/") or path.startswith("/api/v1/auth/")
 
@@ -175,6 +205,7 @@ class RequestLoggingMiddleware:
             redact_sensitive=is_chat_ai_path or is_sensitive_auth_path,
         )
         request_body = _body_for_log(request.body, request.content_type)
+        request_body = _redact_credentials(request_body)
         if is_chat_ai_path:
             request_body = _redact_chat_ai_body(request_body)
         if is_sensitive_auth_path:
@@ -259,6 +290,7 @@ class RequestLoggingMiddleware:
         if hasattr(response, "streaming") and not getattr(response, "streaming", False):
             response_content = getattr(response, "content", b"")
             response_body = _body_for_log(response_content, response_content_type)
+            response_body = _redact_credentials(response_body)
             if is_chat_ai_path:
                 response_body = _redact_chat_ai_body(response_body)
             if is_sensitive_auth_path:

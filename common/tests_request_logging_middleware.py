@@ -1,6 +1,10 @@
 import unittest
 
-from common.middleware.request_logging_middleware import _headers_for_log, _redact_sensitive_auth_body
+from common.middleware.request_logging_middleware import (
+    _headers_for_log,
+    _redact_credentials,
+    _redact_sensitive_auth_body,
+)
 
 
 class RequestLoggingSensitiveAuthTests(unittest.TestCase):
@@ -30,6 +34,36 @@ class RequestLoggingSensitiveAuthTests(unittest.TestCase):
         self.assertEqual(redacted["Cookie"], "<redacted>")
         self.assertEqual(redacted["Authorization"], "<redacted>")
         self.assertEqual(redacted["Content-Type"], "application/json")
+
+    def test_headers_are_redacted_even_for_non_auth_routes(self):
+        redacted = _headers_for_log(
+            {
+                "Authorization": "Bearer secret",
+                "Idempotency-Key": "intent-secret",
+                "Content-Type": "application/json",
+            }
+        )
+
+        self.assertEqual(redacted["Authorization"], "<redacted>")
+        self.assertEqual(redacted["Idempotency-Key"], "<redacted>")
+        self.assertEqual(redacted["Content-Type"], "application/json")
+
+    def test_credentials_are_redacted_recursively_for_all_json_bodies(self):
+        body = {
+            "api_key": "provider-secret",
+            "nested": {
+                "accessToken": "access-secret",
+                "safe": "visible",
+            },
+            "items": [{"refresh_token": "refresh-secret"}],
+        }
+
+        redacted = _redact_credentials(body)
+
+        self.assertEqual(redacted["api_key"], "<redacted>")
+        self.assertEqual(redacted["nested"]["accessToken"], "<redacted>")
+        self.assertEqual(redacted["items"][0]["refresh_token"], "<redacted>")
+        self.assertEqual(redacted["nested"]["safe"], "visible")
 
 
 if __name__ == "__main__":

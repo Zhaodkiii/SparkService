@@ -3,7 +3,11 @@ import uuid
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from chat_sync.contracts.canonical import KIND_HOSPITAL_DOCTOR_INTRO_CARD
+from chat_sync.contracts.canonical import (
+    KIND_AI_TRIAGE_GUIDE_CARD,
+    KIND_HOSPITAL_DOCTOR_INTRO_CARD,
+    KIND_HOSPITAL_TRIAGE_INTRO_CARD,
+)
 from chat_sync.models import ChatMessage, ChatMessageBlock
 from file_manager.business_access import user_can_preview_file
 from file_manager.business_relations import bind_file_to_business
@@ -12,10 +16,12 @@ from hospital_care.services.conversation_service import create_patient_conversat
 from hospital_care.tests.factories import (
     DummyRequest,
     make_agent,
+    make_ai_triage_binding,
     make_department,
     make_doctor,
     make_hospital,
     make_member,
+    make_provider,
     make_staff,
     make_user,
 )
@@ -98,6 +104,69 @@ class PatientApiTests(TestCase):
             ChatMessageBlock.objects.filter(thread_id=thread_id, kind=KIND_HOSPITAL_DOCTOR_INTRO_CARD).count(),
             1,
         )
+
+    def test_ai_triage_create_context_and_always_new_thread(self):
+        make_provider(company="test")
+        make_ai_triage_binding(company="test")
+
+        created = self.client.post(
+            f"/api/v1/hospital-care/hospitals/{self.hospital.id}/ai-triage/conversations/",
+            {"member_id": self.member.id},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="triage-create-1",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        thread_id = created.data["data"]["thread_id"]
+        kinds = [block["kind"] for item in created.data["data"]["initial_messages"] for block in item["blocks"]]
+        self.assertEqual(kinds, [KIND_HOSPITAL_TRIAGE_INTRO_CARD, KIND_AI_TRIAGE_GUIDE_CARD])
+        self.assertEqual(len(created.data["data"]["initial_messages"]), 2)
+        self.assertEqual(ChatMessage.objects.filter(thread_id=thread_id).count(), 2)
+        self.assertEqual(ChatMessageBlock.objects.filter(thread_id=thread_id).count(), 2)
+        intro = created.data["data"]["initial_messages"][0]["blocks"][0]["payload"]["hospital_triage_intro_card"]["_0"]
+        self.assertEqual(intro["hospital_name"], self.hospital.name)
+        self.assertEqual(intro["introduction_excerpt"], self.hospital.introduction)
+        self.assertTrue(all(item["sender"] is None for item in created.data["data"]["initial_messages"]))
+
+        context = self.client.get(
+            f"/api/v1/hospital-care/conversations/{thread_id}/context/?member_id={self.member.id}"
+        )
+        self.assertEqual(context.status_code, 200, context.data)
+        payload = context.data["data"]
+        self.assertEqual(payload["kind"], "ai_triage")
+        self.assertIsNone(payload.get("agent"))
+        self.assertEqual(payload["service_status"], "active")
+        self.assertEqual(payload["member_id"], self.member.id)
+        capabilities = payload["capabilities"]
+        self.assertTrue(capabilities["can_send_message"])
+        self.assertFalse(capabilities["can_sync_knowledge"])
+
+        runtime = self.client.get(
+            f"/api/v1/hospital-care/hospitals/{self.hospital.id}/ai-triage/runtime-config/?member_id={self.member.id}"
+        )
+        self.assertEqual(runtime.status_code, 200, runtime.data)
+        model_row = runtime.data["data"]["runtime"]["model"]
+        self.assertEqual(model_row["aiScenarios"], ["ai_triage"])
+        self.assertEqual(
+            model_row["aiToolScenarios"],
+            [
+                "query_registration_catalog",
+                "show_registration_recommendation",
+                "collect_symptoms",
+            ],
+        )
+        self.assertTrue(model_row["endpoint"])
+        self.assertTrue(model_row["api_key"])
+        self.assertEqual(runtime.data["data"]["profile"]["name"], "AI 导诊")
+
+        reused = self.client.post(
+            f"/api/v1/hospital-care/hospitals/{self.hospital.id}/ai-triage/conversations/",
+            {"member_id": self.member.id},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="triage-create-2",
+        )
+        self.assertEqual(reused.status_code, 201, reused.data)
+        # 医院 Tab 再次进入：必须新建 Thread，不复用历史导诊会话。
+        self.assertNotEqual(reused.data["data"]["thread_id"], thread_id)
 
     def test_illegal_member_rejected(self):
         stranger = make_user("api-stranger")

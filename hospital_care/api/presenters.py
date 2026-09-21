@@ -382,7 +382,13 @@ def serialize_message(message: ChatMessage, binding: ClinicalConversationBinding
             attribution = message.hospital_attribution
         except ChatMessageAttribution.DoesNotExist:
             attribution = None
-    payload["sender"] = build_sender_snapshot(attribution=attribution, binding=binding)
+    # Keep the optional sender contract consistent with chat_sync projections:
+    # messages without an attribution must serialize as JSON null, not {}.
+    payload["sender"] = (
+        build_sender_snapshot(attribution=attribution, binding=binding)
+        if attribution is not None
+        else None
+    )
     payload["actor_type"] = attribution.actor_type if attribution else None
     return payload
 
@@ -414,6 +420,108 @@ def consultation_public(consultation, *, attachment_count: int | None = None) ->
     if attachment_count is not None:
         payload["attachment_count"] = int(attachment_count)
     return payload
+
+
+def ai_triage_public(binding) -> dict:
+    from hospital_care.models.triage import HospitalAITriageBinding
+
+    assert isinstance(binding, HospitalAITriageBinding)
+    thread = binding.thread
+    scenario_binding = binding.scenario_binding
+    return {
+        "thread_id": str(thread.id),
+        "kind": "ai_triage",
+        "hospital": hospital_public(binding.hospital),
+        # 与医生智能体 context 同形：导诊无 agent，显式 null，避免客户端误判。
+        "agent": None,
+        "member_id": thread.member_id,
+        "service_status": "active",
+        "consultation": None,
+        "binding_id": binding.scenario_binding_id,
+        "binding_version": (
+            int(scenario_binding.updated_at.timestamp())
+            if scenario_binding is not None and scenario_binding.updated_at
+            else None
+        ),
+        "title": thread.title,
+        "updated_at": binding.updated_at.isoformat(),
+    }
+
+
+def ai_triage_conversation_capabilities() -> dict:
+    """与 patient_knowledge.conversation_capabilities 字段对齐，供 context 解码。"""
+    return {
+        "can_read_cached_history": True,
+        "can_pull_remote_messages": True,
+        "can_send_message": True,
+        "can_sync_knowledge": False,
+        "read_only_reason": None,
+    }
+
+
+def ai_triage_runtime_config_public(*, hospital, binding, member_id: int, provider: dict) -> dict:
+    model = binding.model
+    binding_version = int(binding.updated_at.timestamp()) if binding.updated_at else 0
+    model_row = {
+        "name": binding.bootstrap_name(),
+        "display_name": binding.display_name or model.display_name or model.name,
+        "identity": binding.identity,
+        "baseModelName": model.name,
+        "company": model.company,
+        "endpoint": provider["endpoint"],
+        "api_key": provider["api_key"],
+        "supports_search": model.supports_search,
+        "supports_multimodal": model.supports_multimodal,
+        "supports_reasoning": model.supports_reasoning,
+        "supports_tool_use": model.supports_tool_use,
+        "supports_voice_gen": model.supports_voice_gen,
+        "supports_image_gen": model.supports_image_gen,
+        "supports_text": model.supports_text,
+        "supports_deep_reasoning": model.supports_reasoning,
+        "reasoning_controllable": model.reasoning_controllable,
+        "price_tier": model.price_tier,
+        "systemProvision": binding.system_provision or "",
+        "icon": model.icon or "",
+        "briefDescription": binding.brief_description or "",
+        "source": "hospital",
+        "aiScenarios": [binding.scenario],
+        "aiToolScenarios": _json_string_list(binding.ai_tool_scenarios),
+        "relatedTaskCodes": _json_string_list(binding.related_task_codes),
+        "is_default": False,
+        "temperature": binding.temperature,
+        "max_tokens": binding.max_tokens,
+    }
+    return {
+        "hospital_id": str(hospital.id),
+        "member_id": member_id,
+        "profile": {
+            "name": "AI 导诊",
+            "description": binding.brief_description or "根据症状辅助推荐科室与就医建议",
+            "status": "active",
+        },
+        "runtime": {
+            "binding_id": binding.id,
+            "binding_version": binding_version,
+            "config_version": f"{binding.id}:{binding_version}",
+            "streaming": True,
+            "model": model_row,
+        },
+    }
+
+
+def ai_triage_create_snapshot(binding) -> dict:
+    thread = binding.thread
+    messages = (
+        ChatMessage.objects.filter(thread=thread)
+        .prefetch_related("blocks")
+        .order_by("created_at", "id")
+    )
+    return {
+        "thread_id": str(thread.id),
+        "thread": _to_thread_payload(thread),
+        "conversation": ai_triage_public(binding),
+        "initial_messages": [serialize_message(message, None) for message in messages],
+    }
 
 
 def conversation_create_snapshot(binding: ClinicalConversationBinding) -> dict:

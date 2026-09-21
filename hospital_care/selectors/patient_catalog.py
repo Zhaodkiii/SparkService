@@ -108,3 +108,19 @@ def get_patient_conversation(*, user, thread_id, member_id: int | None = None) -
     if binding is None:
         raise HospitalCareError("CONVERSATION_NOT_FOUND")
     return binding
+
+
+def get_patient_ai_triage_conversation(*, user, thread_id, member_id: int | None = None):
+    from hospital_care.models.triage import HospitalAITriageBinding
+
+    qs = HospitalAITriageBinding.objects.select_related("hospital", "scenario_binding", "thread").filter(
+        thread__user=user,
+        thread__is_deleted=False,
+        thread_id=thread_id,
+    )
+    if member_id is not None:
+        if int(member_id) not in accessible_member_ids(user):
+            raise HospitalCareError("MEMBER_ACCESS_DENIED")
+        qs = qs.filter(thread__member_id=int(member_id))
+    binding = qs.first()
+    return binding

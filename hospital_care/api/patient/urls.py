@@ -3,6 +3,8 @@ from django.urls import path
 from hospital_care.api.patient.views import (
     AgentDetailView,
     AgentRuntimeConfigView,
+    AITriageConversationCreateView,
+    AITriageRuntimeConfigView,
     AppointmentRedirectView,
     ConsultationListCreateView,
     ConversationCreateView,
@@ -21,6 +23,16 @@ urlpatterns = [
     path("hospitals/<uuid:hospital_id>/departments/", HospitalDepartmentListView.as_view(), name="hospital-care-patient-departments"),
     path("hospitals/<uuid:hospital_id>/agents/", HospitalAgentListView.as_view(), name="hospital-care-patient-agents"),
     path("hospitals/<uuid:hospital_id>/registration/entry/", RegistrationEntryView.as_view(), name="hospital-care-patient-registration"),
+    path(
+        "hospitals/<uuid:hospital_id>/ai-triage/conversations/",
+        AITriageConversationCreateView.as_view(),
+        name="hospital-care-patient-ai-triage-conversations",
+    ),
+    path(
+        "hospitals/<uuid:hospital_id>/ai-triage/runtime-config/",
+        AITriageRuntimeConfigView.as_view(),
+        name="hospital-care-patient-ai-triage-runtime-config",
+    ),
     path("agents/<uuid:agent_id>/", AgentDetailView.as_view(), name="hospital-care-patient-agent-detail"),
     path("agents/<uuid:agent_id>/runtime-config/", AgentRuntimeConfigView.as_view(), name="hospital-care-patient-agent-runtime-config"),
     path("conversations/", ConversationCreateView.as_view(), name="hospital-care-patient-conversations"),

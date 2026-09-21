@@ -132,6 +132,31 @@ def make_embedding_binding(*, model_name="hospital-embed-test", company="test") 
     )
 
 
+def make_ai_triage_binding(*, model_name="hospital-ai-triage-test-model", company="test") -> AIScenarioModelBinding:
+    model, _ = AIModelCatalog.objects.get_or_create(
+        name=model_name,
+        defaults={"display_name": "AI Triage Model", "company": company, "is_active": True},
+    )
+    if not model.is_active:
+        model.is_active = True
+        model.save(update_fields=["is_active"])
+    return AIScenarioModelBinding.objects.create(
+        scenario=ScenarioKey.AI_TRIAGE,
+        identity=IdentityKind.MODEL,
+        model=model,
+        display_name="AI 导诊",
+        brief_description="根据症状辅助推荐科室与就医建议，不能替代医生诊断。",
+        system_provision="你是医院 AI 导诊助手，根据用户描述的症状辅助推荐合适科室与就医建议，不能替代医生诊断。",
+        ai_tool_scenarios=[
+            "query_registration_catalog",
+            "show_registration_recommendation",
+            "collect_symptoms",
+        ],
+        is_active=True,
+        is_default=True,
+    )
+
+
 def make_agent(hospital, doctor, department, *, status=ClinicalAgentProfile.PublicationStatus.PUBLISHED, scenario=None) -> ClinicalAgentProfile:
     return ClinicalAgentProfile.objects.create(
         hospital=hospital,

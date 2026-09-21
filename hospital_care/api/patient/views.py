@@ -10,12 +10,15 @@ from common.response import success_response
 from hospital_care.api.pagination import paginate_queryset
 from hospital_care.api.patient.serializers import (
     AppointmentRedirectSerializer,
+    CreateAITriageConversationSerializer,
     CreateConversationSerializer,
     SubmitConsultationSerializer,
 )
 from hospital_care.api.presenters import (
     agent_public,
     agent_runtime_config_public,
+    ai_triage_create_snapshot,
+    ai_triage_runtime_config_public,
     consultation_public,
     conversation_create_snapshot,
     conversation_public,
@@ -26,6 +29,8 @@ from hospital_care.exceptions import HospitalCareError
 from hospital_care.models import ClinicalAgentProfile, Consultation, DoctorProfile, Hospital
 from hospital_care.models.organization import HospitalDepartment
 from hospital_care.selectors import patient_catalog, patient_knowledge
+from ai_config.models import AIScenarioModelBinding, ScenarioKey
+from hospital_care.services.ai_triage_conversation_service import create_patient_ai_triage_conversation
 from hospital_care.services.consultation_service import submit_consultation
 from hospital_care.services.conversation_service import create_patient_conversation
 from hospital_care.services.idempotency import run_idempotent_command
@@ -294,11 +299,100 @@ class ConsultationListCreateView(APIView):
         return success_response(payload, msg="created", status_code=201)
 
 
+class AITriageConversationCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, hospital_id):
+        serializer = CreateAITriageConversationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        def writer():
+            binding = create_patient_ai_triage_conversation(
+                request=request,
+                user=request.user,
+                hospital_id=hospital_id,
+                member_id=data["member_id"],
+                thread_id=data.get("thread_id"),
+            )
+            return ai_triage_create_snapshot(binding), binding.thread_id
+
+        payload, _replayed = run_idempotent_command(
+            request=request,
+            payload={
+                "hospital_id": str(hospital_id),
+                "member_id": data["member_id"],
+                "thread_id": str(data.get("thread_id") or ""),
+            },
+            resource_type="hospital_ai_triage_conversation",
+            writer=writer,
+        )
+        return success_response(payload, msg="created", status_code=201)
+
+
+class AITriageRuntimeConfigView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, hospital_id):
+        raw_member_id = request.query_params.get("member_id")
+        if not raw_member_id:
+            raise HospitalCareError("PAYLOAD_INVALID", details={"field": "member_id"})
+        try:
+            member_id = int(raw_member_id)
+            ensure_can_access_member(user=request.user, member_id=member_id)
+        except (PermissionError, ValueError) as exc:
+            raise HospitalCareError("MEMBER_ACCESS_DENIED") from exc
+
+        hospital = Hospital.objects.filter(pk=hospital_id, status=Hospital.Status.ACTIVE).first()
+        if hospital is None:
+            raise HospitalCareError("HOSPITAL_INACTIVE")
+
+        binding = (
+            AIScenarioModelBinding.objects.select_related("model")
+            .filter(scenario=ScenarioKey.AI_TRIAGE, is_active=True, model__is_active=True)
+            .order_by("-is_default", "position", "id")
+            .first()
+        )
+        if binding is None:
+            raise HospitalCareError("AI_TRIAGE_BINDING_MISSING")
+        provider = resolve_provider_for_model(
+            binding.model.company,
+            build_provider_index(load_active_api_providers()),
+        )
+        if provider is None or not provider["endpoint"] or not provider["api_key"]:
+            raise HospitalCareError("RUNTIME_CONFIG_INVALID")
+
+        return success_response(
+            ai_triage_runtime_config_public(
+                hospital=hospital,
+                binding=binding,
+                member_id=member_id,
+                provider=provider,
+            )
+        )
+
+
 class PatientConversationContextView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, thread_id):
         member_id = request.query_params.get("member_id")
+        triage = patient_catalog.get_patient_ai_triage_conversation(
+            user=request.user,
+            thread_id=thread_id,
+            member_id=int(member_id) if member_id else None,
+        )
+        if triage is not None:
+            from hospital_care.api.presenters import (
+                ai_triage_conversation_capabilities,
+                ai_triage_public,
+            )
+
+            payload = ai_triage_public(triage)
+            payload["capabilities"] = ai_triage_conversation_capabilities()
+            payload["knowledge_manifest"] = None
+            return success_response(payload)
+
         binding = patient_catalog.get_patient_conversation(
             user=request.user,
             thread_id=thread_id,

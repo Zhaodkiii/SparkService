@@ -1,0 +1,131 @@
+version: '3.9'
+
+services:
+  # Django ASGI 应用 (仅应用，数据库使用本机)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sparkservice_app
+    environment:
+      # Django / Security
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}
+      
+      # Database (连接本机 MySQL)
+      DB_ENGINE: ${DB_ENGINE:-django.db.backends.mysql}
+      DB_HOST: host.docker.internal
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-sparkservice}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-Zhao1029*}
+      DB_CONN_MAX_AGE: ${DB_CONN_MAX_AGE:-60}
+      
+      # Redis (连接本机 Redis)
+      CELERY_BROKER_URL: redis://host.docker.internal:6379/0
+      CELERY_RESULT_BACKEND: redis://host.docker.internal:6379/0
+      CHANNEL_REDIS_URL: redis://host.docker.internal:6379/1
+      
+      # Other env vars
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      JWT_ACCESS_MINUTES: ${JWT_ACCESS_MINUTES:-30}
+      JWT_REFRESH_DAYS: ${JWT_REFRESH_DAYS:-30}
+      
+      # Aliyun (optional)
+      ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
+      ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
+      ALIYUN_STS_ROLE_ARN: ${ALIYUN_STS_ROLE_ARN:-}
+      ALIYUN_OSS_BUCKET: ${ALIYUN_OSS_BUCKET:-}
+      ALIYUN_OSS_REGION: ${ALIYUN_OSS_REGION:-}
+      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-}
+      
+      # SMS (optional)
+      ALIYUN_SMS_ACCESS_KEY_ID: ${ALIYUN_SMS_ACCESS_KEY_ID:-}
+      ALIYUN_SMS_ACCESS_KEY_SECRET: ${ALIYUN_SMS_ACCESS_KEY_SECRET:-}
+      ALIYUN_SMS_SIGN_NAME: ${ALIYUN_SMS_SIGN_NAME:-}
+      ALIYUN_SMS_OTP_TEMPLATE_CODE: ${ALIYUN_SMS_OTP_TEMPLATE_CODE:-}
+    
+    ports:
+      - "8000:8000"
+    
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles
+      - logs_volume:/app/logs
+    
+    command: >
+      sh -c "
+      python manage.py collectstatic --noinput &&
+      daphne -b 0.0.0.0 -p 8000 SparkService.asgi:application
+      "
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Celery Worker (可选)
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sparkservice_celery_worker
+    environment:
+      DB_ENGINE: ${DB_ENGINE:-django.db.backends.mysql}
+      DB_HOST: host.docker.internal
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-sparkservice}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-Zhao1029*}
+      
+      CELERY_BROKER_URL: redis://host.docker.internal:6379/0
+      CELERY_RESULT_BACKEND: redis://host.docker.internal:6379/0
+    
+    command: >
+      celery -A SparkService worker 
+      --loglevel=info 
+      --concurrency=4
+    
+    volumes:
+      - .:/app
+      - logs_volume:/app/logs
+    
+    depends_on:
+      - app
+
+  # Celery Beat (可选)
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sparkservice_celery_beat
+    environment:
+      DB_ENGINE: ${DB_ENGINE:-django.db.backends.mysql}
+      DB_HOST: host.docker.internal
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-sparkservice}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-Zhao1029*}
+      
+      CELERY_BROKER_URL: redis://host.docker.internal:6379/0
+      CELERY_RESULT_BACKEND: redis://host.docker.internal:6379/0
+    
+    command: >
+      celery -A SparkService beat 
+      --loglevel=info
+    
+    volumes:
+      - .:/app
+      - logs_volume:/app/logs
+    
+    depends_on:
+      - app
+
+volumes:
+  media_volume:
+  static_volume:
+  logs_volume:
