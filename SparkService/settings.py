@@ -234,6 +234,7 @@ INSTALLED_APPS = [
     'content',
     'notification_center',
     'backoffice',
+    'subscriptions',
     'zdk_migration',
 ]
 
@@ -412,6 +413,8 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"))
+# 未显式配置路由的任务统一进入 celery；不要创建一个未被使用的 default 队列。
+CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
     "chat_sync.ai_tasks.run_tasks.run_chat": {"queue": "chat.ai"},
     "chat_sync.ai_tasks.run_tasks.resume_chat_run": {"queue": "chat.ai"},
@@ -428,7 +431,45 @@ CELERY_TASK_ROUTES = {
     "notification_center.tasks.relay_notification_outbox_task": {"queue": "notification.transactional"},
     "notification_center.tasks.reconcile_notification_outbox_task": {"queue": "notification.receipt"},
     "notification_center.tasks.poll_sms_delivery_receipts_task": {"queue": "notification.receipt"},
+    "subscriptions.tasks.process_revenuecat_webhook_event": {"queue": "subscriptions"},
+    "subscriptions.tasks.reconcile_revenuecat_subscriptions_task": {"queue": "subscriptions"},
+    "subscriptions.tasks.retry_pending_revenuecat_webhooks_task": {"queue": "subscriptions"},
+    "subscriptions.tasks.sync_revenuecat_user_task": {"queue": "subscriptions"},
 }
+
+# RevenueCat: Public SDK keys belong to iOS only. These values are server-only.
+REVENUECAT_API_BASE_URL = (os.getenv("REVENUECAT_API_BASE_URL") or "https://api.revenuecat.com/v2").rstrip("/")
+REVENUECAT_PROJECT_ID = (os.getenv("REVENUECAT_PROJECT_ID") or "").strip()
+REVENUECAT_SECRET_API_KEY = (os.getenv("REVENUECAT_SECRET_API_KEY") or "").strip()
+REVENUECAT_OWNERSHIP_FINGERPRINT_SECRET = (os.getenv("REVENUECAT_OWNERSHIP_FINGERPRINT_SECRET") or SECRET_KEY).strip()
+REVENUECAT_WEBHOOK_AUTHORIZATION = (os.getenv("REVENUECAT_WEBHOOK_AUTHORIZATION") or "").strip()
+# RevenueCat API v2 的 active_entitlements 只返回内部 entitlement_id（如 entl...），
+# 不是控制台展示的 lookup key / 名称。未配置时必须拒绝授予订阅 Pro，避免误把其他权益当作健康 Pro。
+REVENUECAT_ENTITLEMENT_ID = (os.getenv("REVENUECAT_ENTITLEMENT_ID") or "").strip()
+REVENUECAT_ENTITLEMENT_IDENTIFIER = (os.getenv("REVENUECAT_ENTITLEMENT_IDENTIFIER") or "健康Pro").strip()
+REVENUECAT_SYNC_TIMEOUT_SECONDS = int(os.getenv("REVENUECAT_SYNC_TIMEOUT_SECONDS", "8"))
+REVENUECAT_DEPLOYMENT_ENVIRONMENT = (os.getenv("REVENUECAT_DEPLOYMENT_ENVIRONMENT") or ("sandbox" if DEBUG else "production")).strip().lower()
+REVENUECAT_SYNC_ENVIRONMENTS = tuple(
+    item.strip().lower()
+    for item in (os.getenv("REVENUECAT_SYNC_ENVIRONMENTS") or REVENUECAT_DEPLOYMENT_ENVIRONMENT).split(",")
+    if item.strip()
+)
+REVENUECAT_AUTHORIZATION_ENVIRONMENTS = tuple(
+    item.strip().lower()
+    for item in (os.getenv("REVENUECAT_AUTHORIZATION_ENVIRONMENTS") or REVENUECAT_DEPLOYMENT_ENVIRONMENT).split(",")
+    if item.strip()
+)
+REVENUECAT_WEBHOOK_MAX_ATTEMPTS = int(os.getenv("REVENUECAT_WEBHOOK_MAX_ATTEMPTS", "8"))
+REVENUECAT_WEBHOOK_ALLOWED_ENVIRONMENTS = tuple(
+    item.strip().lower()
+    for item in (os.getenv("REVENUECAT_WEBHOOK_ALLOWED_ENVIRONMENTS") or "production,sandbox").split(",")
+    if item.strip()
+)
+REVENUECAT_WEBHOOK_ALLOWED_APP_IDS = tuple(
+    item.strip()
+    for item in (os.getenv("REVENUECAT_WEBHOOK_ALLOWED_APP_IDS") or "").split(",")
+    if item.strip()
+)
 
 # Server-side AI Run control plane. P1 keeps creation disabled and has no
 # network executor; CI/development may explicitly opt into the deterministic
@@ -513,6 +554,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "notification_center.tasks.poll_sms_delivery_receipts_task",
         "schedule": crontab(minute="*/2"),
         "options": {"queue": "notification.receipt"},
+    },
+    "reconcile-revenuecat-subscriptions": {
+        "task": "subscriptions.tasks.reconcile_revenuecat_subscriptions_task",
+        "schedule": crontab(minute=0, hour="*/6"),
+        "options": {"queue": "subscriptions"},
+    },
+    "retry-pending-revenuecat-webhooks": {
+        "task": "subscriptions.tasks.retry_pending_revenuecat_webhooks_task",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "subscriptions"},
     },
 }
 

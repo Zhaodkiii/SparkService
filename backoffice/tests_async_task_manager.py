@@ -4,7 +4,12 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from SparkService.celery import CHAT_AI_TASK_MODULES, app
-from backoffice.views import CELERY_MANAGED_TASKS, CHAT_AI_REQUIRED_TASKS, _celery_registered_tasks_status
+from backoffice.views import (
+    CELERY_MANAGED_TASKS,
+    CHAT_AI_REQUIRED_TASKS,
+    _celery_registered_tasks_status,
+    _celery_worker_queue_names,
+)
 
 
 class CeleryAITaskRegistrationTests(SimpleTestCase):
@@ -61,3 +66,27 @@ class CeleryAITaskRegistrationTests(SimpleTestCase):
         names = {name for name, _domain, _queue in CELERY_MANAGED_TASKS}
         self.assertFalse(any("knowledge_tasks" in name for name in names))
         self.assertFalse(any(domain == "AI 知识库" for _name, domain, _queue in CELERY_MANAGED_TASKS))
+
+    def test_managed_inventory_includes_revenuecat_subscription_tasks(self):
+        tasks = {
+            name: (domain, queue)
+            for name, domain, queue in CELERY_MANAGED_TASKS
+            if domain == "RevenueCat 订阅"
+        }
+        self.assertEqual(
+            tasks,
+            {
+                "subscriptions.tasks.process_revenuecat_webhook_event": ("RevenueCat 订阅", "subscriptions"),
+                "subscriptions.tasks.reconcile_revenuecat_subscriptions_task": ("RevenueCat 订阅", "subscriptions"),
+                "subscriptions.tasks.retry_pending_revenuecat_webhooks_task": ("RevenueCat 订阅", "subscriptions"),
+                "subscriptions.tasks.sync_revenuecat_user_task": ("RevenueCat 订阅", "subscriptions"),
+            },
+        )
+
+    @patch.dict("os.environ", {"CELERY_QUEUES": "celery,subscriptions"}, clear=False)
+    def test_worker_queues_include_revenuecat_and_exclude_unused_default(self):
+        queues = _celery_worker_queue_names()
+
+        self.assertIn("subscriptions", queues)
+        self.assertIn("celery", queues)
+        self.assertNotIn("default", queues)

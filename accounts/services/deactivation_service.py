@@ -25,6 +25,7 @@ from accounts.models import (
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.otp_service import OTPService
+from subscriptions.services.ownership_service import RevenueCatSubscriptionOwnershipService
 
 logger = logging.getLogger(__name__)
 flow_logger = logging.getLogger("accounts.flow")
@@ -224,6 +225,7 @@ class DeactivationService:
         obj.save(update_fields=["freeze_email", "freeze_phone_number", "processed_at"])
 
         if obj.state in (AccountDeactivation.DeactivationState.REQUESTED, AccountDeactivation.DeactivationState.SCHEDULED):
+            RevenueCatSubscriptionOwnershipService.tombstone_user(user=user)
             DeactivationService.backup_user_data(deactivation=obj, user=user, request_id=request_id)
 
         if obj.state == AccountDeactivation.DeactivationState.DATA_BACKED_UP:

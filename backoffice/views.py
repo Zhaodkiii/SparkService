@@ -45,6 +45,7 @@ from ai_config.models import (
     TrialApplicationRequest,
 )
 from ai_config.services import TrialService
+from subscriptions.services.pro_entitlement_resolver import ProEntitlementResolver
 from app_version.models import AppVersionConfig, VersionCheckLog
 from chat_sync.models import ChatMessage, ChatThread
 from common.permissions import AdminCodePermission, AdminOnlyPermission
@@ -363,6 +364,10 @@ CELERY_MANAGED_TASKS = (
     ("notification_center.tasks.poll_sms_delivery_receipts_task", "通知中心", "notification.receipt"),
     ("notification_center.tasks.reconcile_notification_outbox_task", "通知中心", "notification.receipt"),
     ("notification_center.tasks.relay_notification_outbox_task", "通知中心", "notification.transactional"),
+    ("subscriptions.tasks.process_revenuecat_webhook_event", "RevenueCat 订阅", "subscriptions"),
+    ("subscriptions.tasks.reconcile_revenuecat_subscriptions_task", "RevenueCat 订阅", "subscriptions"),
+    ("subscriptions.tasks.retry_pending_revenuecat_webhooks_task", "RevenueCat 订阅", "subscriptions"),
+    ("subscriptions.tasks.sync_revenuecat_user_task", "RevenueCat 订阅", "subscriptions"),
     ("task_system.notification_tasks.dispatch_task_notification_task", "任务通知", "celery"),
 )
 
@@ -903,6 +908,7 @@ class AdminUserDetailView(APIView):
         )
         auth_identities = SocialIdentity.objects.filter(user=user).order_by("provider", "-updated_at", "-id")
         pro = TrialService.build_pro_summary(user=user)
+        pro["is_pro"] = ProEntitlementResolver.is_pro_user(user=user)
         user_data = AdminUserSerializer(user).data
         user_data["is_pro"] = pro["is_pro"]
         user_data["pro_status"] = pro["status"]
@@ -995,6 +1001,7 @@ class AdminUserProGrantView(APIView):
         )
 
         pro = TrialService.build_pro_summary(user=target)
+        pro["is_pro"] = ProEntitlementResolver.is_pro_user(user=target)
         payload = {"user_id": target.id, "pro": pro}
         write_audit_log(
             request,
@@ -1046,6 +1053,7 @@ class AdminUserProRecycleView(APIView):
         )
 
         pro = TrialService.build_pro_summary(user=target)
+        pro["is_pro"] = ProEntitlementResolver.is_pro_user(user=target)
         payload = {"user_id": target.id, "pro": pro}
         write_audit_log(
             request,

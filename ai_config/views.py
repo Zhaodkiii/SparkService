@@ -23,6 +23,7 @@ from ai_config.models import (
     TrialModelPolicyItem,
 )
 from ai_config.services import TrialService
+from subscriptions.services.pro_entitlement_resolver import ProEntitlementResolver
 from common.response import success_response, error_response
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ class AIBootstrapConfigView(APIView):
 
     def get(self, request):
         # 判断是否为 Pro 用户
-        is_pro = TrialService.is_pro_user(user=request.user)
+        is_pro = ProEntitlementResolver.is_pro_user(user=request.user)
 
         if not is_pro:
             trial_row = TrialApplication.objects.filter(user=request.user).first()

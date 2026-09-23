@@ -18,6 +18,8 @@ from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
 from ai_config.services import TrialService
+from subscriptions.services.identity_service import RevenueCatIdentityConflict, RevenueCatIdentityService
+from subscriptions.services.pro_entitlement_resolver import ProEntitlementResolver
 
 flow_logger = logging.getLogger("accounts.flow")
 
@@ -51,11 +53,15 @@ class LoginService:
             device_id=device_id,
             request_id=request_id,
         )
+        try:
+            RevenueCatIdentityService.ensure_identity(user=user)
+        except RevenueCatIdentityConflict:
+            flow_logger.warning("auth.revenuecat.identity_conflict", extra={"user_id": user.id, "request_id": request_id})
 
     @staticmethod
     def _apply_is_pro(*, user, payload: dict[str, Any]) -> dict[str, Any]:
         """在设备关联与自动发放完成后写入最终 is_pro。"""
-        payload["is_pro"] = TrialService.is_pro_user(user=user)
+        payload["is_pro"] = ProEntitlementResolver.is_pro_user(user=user)
         return payload
 
     @staticmethod
@@ -516,7 +522,7 @@ class LoginService:
             "user_id": user.id,
             "email": user.email or "",
             "display_name": LoginService._resolve_user_display_name(user=user),
-            "is_pro": TrialService.is_pro_user(user=user),
+            "is_pro": ProEntitlementResolver.is_pro_user(user=user),
             "is_new_user": False,
             "sign_in_method": sign_in_method,
             "is_device_account": is_device_account,

@@ -170,6 +170,7 @@ const fallbackMenus = [
       { code: 'menu:ai:trial', name: '试用期', path: '/ai-config/trials', children: [] },
     ],
   },
+  { code: 'menu:subscriptions', name: '订阅与权益', path: '/subscriptions', children: [] },
   { code: 'menu:rbac', name: '权限管理', path: '/rbac', children: [] },
   {
     code: 'menu:audit',

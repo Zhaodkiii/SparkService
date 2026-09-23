@@ -77,6 +77,12 @@ from backoffice.system_log_views import (
     AdminSystemLogListView,
     AdminSystemLogModuleListView,
 )
+from subscriptions.admin_views import (
+    AdminSubscriptionEventListView,
+    AdminSubscriptionEventReplayView,
+    AdminSubscriptionUserSyncView,
+    AdminSubscriptionUserView,
+)
 from backoffice.medical_data_views import (
     AdminMedicalDataAttachmentDownloadView,
     AdminMedicalDataGlobalStatsView,
@@ -230,4 +236,8 @@ urlpatterns = [
         AdminMedicalDataAttachmentDownloadView.as_view(),
         name="admin-medical-data-attachment-download",
     ),
+    path("subscriptions/users/<int:user_id>/", AdminSubscriptionUserView.as_view(), name="admin-subscription-user"),
+    path("subscriptions/users/<int:user_id>/sync/", AdminSubscriptionUserSyncView.as_view(), name="admin-subscription-user-sync"),
+    path("subscriptions/events/", AdminSubscriptionEventListView.as_view(), name="admin-subscription-events"),
+    path("subscriptions/events/<str:event_id>/replay/", AdminSubscriptionEventReplayView.as_view(), name="admin-subscription-event-replay"),
 ]

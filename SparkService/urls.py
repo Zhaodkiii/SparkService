@@ -43,6 +43,8 @@ urlpatterns = [
     path('api/v1/oss/', include('file_manager.oss_urls')),
     path('api/v1/version/', include('app_version.urls')),
     path('api/v1/content/', include('content.urls')),
+    path('api/v1/subscriptions/', include('subscriptions.urls')),
+    path('api/v1/integrations/revenuecat/', include('subscriptions.webhook_urls')),
     path('api/admin/v1/', include('backoffice.urls')),
 ]
 
