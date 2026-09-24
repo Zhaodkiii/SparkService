@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920">
+  <rect width="1440" height="920" fill="#f7f8fb"/>
+  <rect x="0" y="0" width="250" height="920" fill="#ffffff"/>
+  <rect x="250" y="0" width="1190" height="920" fill="#f7f8fb"/>
+  <line x1="250" y1="0" x2="250" y2="920" stroke="#e6e8ee"/>
+  <text x="32" y="48" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#182033">天长市中医院</text>
+  <text x="32" y="74" font-family="Arial, sans-serif" font-size="13" fill="#8b93a5">医生工作台</text>
+  <rect x="16" y="108" width="218" height="46" rx="10" fill="#eaf0ff"/>
+  <text x="38" y="137" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#315efb">▣  患者工作台</text>
+  <text x="38" y="184" font-family="Arial, sans-serif" font-size="16" fill="#586174">◉  我的智能体</text>
+  <text x="38" y="228" font-family="Arial, sans-serif" font-size="16" fill="#586174">▤  工作记录</text>
+  <rect x="20" y="272" width="210" height="38" rx="8" fill="#f4f5f8"/>
+  <text x="34" y="297" font-family="Arial, sans-serif" font-size="13" fill="#9aa1b0">⌕  搜索患者姓名或标识</text>
+  <text x="28" y="344" font-family="Arial, sans-serif" font-size="13" fill="#697286">全部 12</text>
+  <text x="92" y="344" font-family="Arial, sans-serif" font-size="13" fill="#697286">重点 3</text>
+  <text x="154" y="344" font-family="Arial, sans-serif" font-size="13" fill="#697286">待处理 4</text>
+  <rect x="18" y="366" width="214" height="88" rx="12" fill="#ffffff" stroke="#d9e2ff"/>
+  <text x="32" y="392" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#20283a">吧宝贝</text>
+  <rect x="148" y="378" width="66" height="22" rx="11" fill="#fff0d9"/>
+  <text x="158" y="394" font-family="Arial, sans-serif" font-size="11" fill="#b36a00">重点患者</text>
+  <text x="32" y="418" font-family="Arial, sans-serif" font-size="12" fill="#4f9b91">AI 服务中</text>
+  <text x="32" y="440" font-family="Arial, sans-serif" font-size="12" fill="#8b93a5">最近会话 11:32</text>
+  <rect x="18" y="466" width="214" height="88" rx="12" fill="#ffffff"/>
+  <text x="32" y="493" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#20283a">吧宝贝</text>
+  <text x="32" y="519" font-family="Arial, sans-serif" font-size="12" fill="#b36a00">医生已接管</text>
+  <text x="32" y="541" font-family="Arial, sans-serif" font-size="12" fill="#8b93a5">最近会话 09-02 16:20</text>
+  <text x="282" y="47" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#182033">患者工作台</text>
+  <rect x="1340" y="22" width="72" height="34" rx="8" fill="#ffffff" stroke="#d9dce5"/>
+  <text x="1356" y="44" font-family="Arial, sans-serif" font-size="13" fill="#4c5568">刷新</text>
+  <rect x="282" y="72" width="820" height="92" rx="14" fill="#ffffff"/>
+  <circle cx="332" cy="118" r="29" fill="#dce6ff"/>
+  <text x="315" y="125" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#315efb">吧</text>
+  <text x="380" y="104" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#182033">吧宝贝</text>
+  <text x="474" y="104" font-family="Arial, sans-serif" font-size="14" fill="#606a7d">女 · 27岁 · 患者编号 P20260903001</text>
+  <text x="380" y="133" font-family="Arial, sans-serif" font-size="13" fill="#4f9b91">● AI 服务中</text>
+  <rect x="500" y="116" width="72" height="24" rx="12" fill="#fff0d9"/>
+  <text x="513" y="133" font-family="Arial, sans-serif" font-size="12" fill="#b36a00">重点患者</text>
+  <text x="282" y="198" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#20283a">基础资料（只读）</text>
+  <rect x="282" y="216" width="820" height="142" rx="14" fill="#ffffff"/>
+  <line x1="555" y1="216" x2="555" y2="358" stroke="#eceef3"/>
+  <line x1="828" y1="216" x2="828" y2="358" stroke="#eceef3"/>
+  <text x="306" y="244" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#263047">基本信息</text>
+  <text x="306" y="273" font-family="Arial, sans-serif" font-size="13" fill="#657087">手机 138****5678</text>
+  <text x="306" y="298" font-family="Arial, sans-serif" font-size="13" fill="#657087">地区 天长市　职业 教师</text>
+  <text x="306" y="323" font-family="Arial, sans-serif" font-size="13" fill="#657087">证件 3411********0024</text>
+  <text x="580" y="244" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#263047">健康档案</text>
+  <text x="580" y="273" font-family="Arial, sans-serif" font-size="13" fill="#657087">身高 160 cm　体重 56 kg</text>
+  <text x="580" y="298" font-family="Arial, sans-serif" font-size="13" fill="#657087">BMI 21.9　血型 A</text>
+  <text x="580" y="323" font-family="Arial, sans-serif" font-size="13" fill="#657087">吸烟/饮酒：未填写</text>
+  <text x="853" y="244" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#263047">医疗安全信息</text>
+  <text x="853" y="273" font-family="Arial, sans-serif" font-size="13" fill="#657087">过敏史：暂无已记录</text>
+  <text x="853" y="298" font-family="Arial, sans-serif" font-size="13" fill="#657087">长期用药：暂无已记录</text>
+  <text x="853" y="323" font-family="Arial, sans-serif" font-size="13" fill="#657087">既往病史：暂无已记录</text>
+  <text x="282" y="398" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#20283a">患者会话</text>
+  <text x="384" y="398" font-family="Arial, sans-serif" font-size="12" fill="#8b93a5">当前医生有权查看</text>
+  <rect x="1000" y="376" width="102" height="32" rx="8" fill="#315efb"/>
+  <text x="1018" y="397" font-family="Arial, sans-serif" font-size="13" fill="#ffffff">＋ 新建对话</text>
+  <rect x="282" y="416" width="820" height="104" rx="14" fill="#ffffff"/>
+  <text x="308" y="448" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#20283a">开开医生智能体</text>
+  <text x="610" y="448" font-family="Arial, sans-serif" font-size="13" fill="#4f9b91">AI 服务中</text>
+  <text x="772" y="448" font-family="Arial, sans-serif" font-size="13" fill="#8b93a5">最近更新 09-03 11:32</text>
+  <text x="1068" y="448" font-family="Arial, sans-serif" font-size="18" fill="#8b93a5">›</text>
+  <line x1="308" y1="468" x2="1076" y2="468" stroke="#f0f1f5"/>
+  <text x="308" y="496" font-family="Arial, sans-serif" font-size="14" fill="#20283a">开开医生智能体</text>
+  <text x="610" y="496" font-family="Arial, sans-serif" font-size="13" fill="#c47c14">医生已接管</text>
+  <text x="772" y="496" font-family="Arial, sans-serif" font-size="13" fill="#8b93a5">最近更新 09-02 16:20</text>
+  <text x="1068" y="496" font-family="Arial, sans-serif" font-size="18" fill="#8b93a5">›</text>
+  <text x="282" y="558" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#20283a">AI 总结（系统生成）</text>
+  <rect x="972" y="538" width="58" height="30" rx="8" fill="#ffffff" stroke="#ccd3e2"/>
+  <text x="982" y="558" font-family="Arial, sans-serif" font-size="12" fill="#4f596c">已了解</text>
+  <rect x="1038" y="538" width="64" height="30" rx="8" fill="#315efb"/>
+  <text x="1049" y="558" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">刷新</text>
+  <rect x="282" y="576" width="820" height="98" rx="14" fill="#ffffff"/>
+  <text x="306" y="604" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#263047">当前问题/服务概况</text>
+  <text x="306" y="630" font-family="Arial, sans-serif" font-size="12" fill="#657087">近期情绪与睡眠咨询</text>
+  <text x="565" y="604" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#263047">关键健康信息</text>
+  <text x="565" y="630" font-family="Arial, sans-serif" font-size="12" fill="#657087">体重、既往记录等</text>
+  <text x="806" y="604" font-family="Arial, sans-serif" font-size="13" font-weight="700" fill="#263047">会话要点</text>
+  <text x="806" y="630" font-family="Arial, sans-serif" font-size="12" fill="#657087">已沟通内容结构化摘要</text>
+  <text x="282" y="710" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#20283a">风险评估（现有风险工具）</text>
+  <rect x="282" y="728" width="820" height="72" rx="14" fill="#ffffff"/>
+  <text x="308" y="758" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#4f9b91">当前风险：低风险</text>
+  <text x="520" y="758" font-family="Arial, sans-serif" font-size="13" fill="#657087">结果状态：有效</text>
+  <text x="700" y="758" font-family="Arial, sans-serif" font-size="13" fill="#657087">更新时间：09-03 11:35</text>
+  <rect x="1130" y="0" width="310" height="920" fill="#ffffff" stroke="#dfe3ec"/>
+  <text x="1152" y="42" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#20283a">吧宝贝 · 开开医生智能体</text>
+  <text x="1152" y="70" font-family="Arial, sans-serif" font-size="13" fill="#4f9b91">● AI 服务中</text>
+  <rect x="1294" y="51" width="112" height="30" rx="8" fill="#315efb"/>
+  <text x="1312" y="71" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">接管会话</text>
+  <line x1="1130" y1="96" x2="1440" y2="96" stroke="#eceef3"/>
+  <text x="1152" y="132" font-family="Arial, sans-serif" font-size="12" fill="#9aa1b0">系统事件 · 09:30</text>
+  <rect x="1152" y="154" width="190" height="38" rx="12" fill="#f0f2f6"/>
+  <text x="1168" y="178" font-family="Arial, sans-serif" font-size="13" fill="#4d5668">您好，我是医生智能体</text>
+  <rect x="1270" y="214" width="134" height="38" rx="12" fill="#315efb"/>
+  <text x="1290" y="238" font-family="Arial, sans-serif" font-size="13" fill="#ffffff">今天不太舒服</text>
+  <text x="1152" y="286" font-family="Arial, sans-serif" font-size="12" fill="#b37a22">提示：AI 将自动回复</text>
+  <line x1="1130" y1="824" x2="1440" y2="824" stroke="#eceef3"/>
+  <rect x="1152" y="842" width="210" height="44" rx="10" fill="#f4f5f8"/>
+  <text x="1168" y="869" font-family="Arial, sans-serif" font-size="13" fill="#9aa1b0">输入医生回复……</text>
+  <rect x="1370" y="842" width="54" height="44" rx="10" fill="#315efb"/>
+  <text x="1382" y="869" font-family="Arial, sans-serif" font-size="13" fill="#ffffff">发送</text>
+</svg>
