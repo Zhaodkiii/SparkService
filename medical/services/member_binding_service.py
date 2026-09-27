@@ -70,6 +70,30 @@ def accessible_members_queryset(user: User):
     )
 
 
+@transaction.atomic
+def ensure_device_guest_demo_binding(*, user: User, member_id: int = 10) -> UserMemberBinding | None:
+    """为设备游客账号直接关联预置演示成员，不创建成员或发送邀请。"""
+    member = Member.objects.filter(id=member_id, is_deleted=False).first()
+    if member is None:
+        return None
+
+    binding, created = UserMemberBinding.objects.select_for_update().get_or_create(
+        user=user,
+        member=member,
+        defaults={
+            "relationship": "demo",
+            "role": UserMemberBinding.Role.VIEWER,
+            "status": UserMemberBinding.Status.ACTIVE,
+        },
+    )
+    if not created and binding.role != UserMemberBinding.Role.OWNER:
+        binding.relationship = "demo"
+        binding.role = UserMemberBinding.Role.VIEWER
+        binding.status = UserMemberBinding.Status.ACTIVE
+        binding.save(update_fields=["relationship", "role", "status", "updated_at"])
+    return binding
+
+
 def count_active_bindings(member_id: int) -> int:
     return active_bindings_qs().filter(member_id=member_id).count()
 

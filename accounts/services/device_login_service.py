@@ -263,6 +263,23 @@ class DeviceLoginService:
             device_id=normalized_device_id,
             request_id=request_id,
         )
+        if created_user:
+            try:
+                # 仅设备 ID 首次创建/重建游客账号时，直接关联预置演示成员。
+                from medical.services.member_binding_service import ensure_device_guest_demo_binding
+
+                ensure_device_guest_demo_binding(user=user, member_id=10)
+            except Exception as exc:  # noqa: BLE001
+                flow_logger.warning(
+                    "device.login.demo_member_binding_failed",
+                    extra={
+                        "action": "auth.device.login.demo_member_binding",
+                        "request_id": request_id,
+                        "user_id": user.id,
+                        "member_id": 10,
+                        "reason": str(exc),
+                    },
+                )
         result = LoginService._apply_is_pro(
             user=user,
             payload=LoginService._issue_tokens(

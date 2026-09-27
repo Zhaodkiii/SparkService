@@ -104,6 +104,25 @@ class DeviceAccountLoginTests(TestCase):
         self.assertEqual(second["account_resolution"], "device_account_login")
         self.assertEqual(User.objects.count(), 1)
 
+    @patch("medical.services.member_binding_service.ensure_device_guest_demo_binding")
+    def test_demo_member_binding_only_runs_when_device_guest_is_created(self, bind_mock):
+        first = DeviceLoginService.authenticate_and_issue_tokens(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            device_secret=self.device_secret,
+            request_id="req-demo-binding-1",
+        )
+        DeviceLoginService.authenticate_and_issue_tokens(
+            bundle_id=self.bundle_id,
+            device_id=self.device_id,
+            device_secret=self.device_secret,
+            request_id="req-demo-binding-2",
+        )
+
+        bind_mock.assert_called_once()
+        self.assertEqual(bind_mock.call_args.kwargs["user"].id, first["user_id"])
+        self.assertEqual(bind_mock.call_args.kwargs["member_id"], 10)
+
     def test_medicinebox_shares_identity_scope(self):
         first = DeviceLoginService.authenticate_and_issue_tokens(
             bundle_id="cn.Zhaodk.Health",
