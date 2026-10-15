@@ -153,17 +153,6 @@ ALIYUN_OSS_REGION = (os.getenv("ALIYUN_OSS_REGION") or "").strip() or "cn-hangzh
 ALIYUN_OSS_ENDPOINT = (os.getenv("ALIYUN_OSS_ENDPOINT") or "").strip()
 ALIYUN_STS_DURATION_SECONDS = int(os.getenv("ALIYUN_STS_DURATION_SECONDS", "3600"))
 
-# 公开病例分享站点根地址：`share-web` 用于拼接公开链接与附件短链。
-MEDICAL_SHARE_WEB_BASE_URL = (os.getenv("MEDICAL_SHARE_WEB_BASE_URL") or "https://share.dreamwhale.top").strip()
-MEDICAL_SHARE_DOWNLOAD_URL = (os.getenv("MEDICAL_SHARE_DOWNLOAD_URL") or "https://apps.apple.com/cn/app/id6751417431").strip()
-CONTENT_SHARE_WEB_BASE_URL = (os.getenv("CONTENT_SHARE_WEB_BASE_URL") or MEDICAL_SHARE_WEB_BASE_URL).strip()
-CONTENT_TRUSTED_ASSET_HOSTS = [
-    item.strip()
-    for item in os.getenv("CONTENT_TRUSTED_ASSET_HOSTS", "").split(",")
-    if item.strip()
-]
-CONTENT_PUBLIC_CACHE_MAX_AGE = int(os.getenv("CONTENT_PUBLIC_CACHE_MAX_AGE", "86400"))
-
 # Aliyun SMS（通知）
 ALIYUN_SMS_ACCESS_KEY_ID = (os.getenv("ALIYUN_SMS_ACCESS_KEY_ID") or "").strip()
 ALIYUN_SMS_ACCESS_KEY_SECRET = (os.getenv("ALIYUN_SMS_ACCESS_KEY_SECRET") or "").strip()
@@ -213,29 +202,18 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
-    # Must come before staticfiles so `runserver` uses ASGI (HTTP + WebSocket).
-    'daphne',
     'django.contrib.staticfiles',
     'corsheaders',
     'django_filters',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
-    'channels',
     'django_celery_beat',
     'django_celery_results',
     'accounts',
     'ai_config',
-    'chat_sync',
-    'medical',
-    'nutrition',
-    'task_system',
     'file_manager',
-    'app_version',
-    'content',
     'notification_center',
     'backoffice',
-    'subscriptions',
-    'zdk_migration',
 ]
 
 MIDDLEWARE = [
@@ -416,11 +394,6 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"
 # 未显式配置路由的任务统一进入 celery；不要创建一个未被使用的 default 队列。
 CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
-    "chat_sync.ai_tasks.run_tasks.run_chat": {"queue": "chat.ai"},
-    "chat_sync.ai_tasks.run_tasks.resume_chat_run": {"queue": "chat.ai"},
-    "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox": {"queue": "chat.events"},
-    "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs": {"queue": "chat.recovery"},
-    "chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions": {"queue": "chat.recovery"},
     "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
@@ -431,100 +404,9 @@ CELERY_TASK_ROUTES = {
     "notification_center.tasks.relay_notification_outbox_task": {"queue": "notification.transactional"},
     "notification_center.tasks.reconcile_notification_outbox_task": {"queue": "notification.receipt"},
     "notification_center.tasks.poll_sms_delivery_receipts_task": {"queue": "notification.receipt"},
-    "subscriptions.tasks.process_revenuecat_webhook_event": {"queue": "subscriptions"},
-    "subscriptions.tasks.reconcile_revenuecat_subscriptions_task": {"queue": "subscriptions"},
-    "subscriptions.tasks.retry_pending_revenuecat_webhooks_task": {"queue": "subscriptions"},
-    "subscriptions.tasks.sync_revenuecat_user_task": {"queue": "subscriptions"},
 }
 
-# RevenueCat: Public SDK keys belong to iOS only. These values are server-only.
-REVENUECAT_API_BASE_URL = (os.getenv("REVENUECAT_API_BASE_URL") or "https://api.revenuecat.com/v2").rstrip("/")
-REVENUECAT_PROJECT_ID = (os.getenv("REVENUECAT_PROJECT_ID") or "").strip()
-REVENUECAT_SECRET_API_KEY = (os.getenv("REVENUECAT_SECRET_API_KEY") or "").strip()
-REVENUECAT_OWNERSHIP_FINGERPRINT_SECRET = (os.getenv("REVENUECAT_OWNERSHIP_FINGERPRINT_SECRET") or SECRET_KEY).strip()
-REVENUECAT_WEBHOOK_AUTHORIZATION = (os.getenv("REVENUECAT_WEBHOOK_AUTHORIZATION") or "").strip()
-# RevenueCat API v2 的 active_entitlements 只返回内部 entitlement_id（如 entl...），
-# 不是控制台展示的 lookup key / 名称。未配置时必须拒绝授予订阅 Pro，避免误把其他权益当作健康 Pro。
-REVENUECAT_ENTITLEMENT_ID = (os.getenv("REVENUECAT_ENTITLEMENT_ID") or "").strip()
-REVENUECAT_ENTITLEMENT_IDENTIFIER = (os.getenv("REVENUECAT_ENTITLEMENT_IDENTIFIER") or "健康Pro").strip()
-REVENUECAT_SYNC_TIMEOUT_SECONDS = int(os.getenv("REVENUECAT_SYNC_TIMEOUT_SECONDS", "8"))
-REVENUECAT_DEPLOYMENT_ENVIRONMENT = (os.getenv("REVENUECAT_DEPLOYMENT_ENVIRONMENT") or ("sandbox" if DEBUG else "production")).strip().lower()
-REVENUECAT_SYNC_ENVIRONMENTS = tuple(
-    item.strip().lower()
-    for item in (os.getenv("REVENUECAT_SYNC_ENVIRONMENTS") or REVENUECAT_DEPLOYMENT_ENVIRONMENT).split(",")
-    if item.strip()
-)
-REVENUECAT_AUTHORIZATION_ENVIRONMENTS = tuple(
-    item.strip().lower()
-    for item in (os.getenv("REVENUECAT_AUTHORIZATION_ENVIRONMENTS") or REVENUECAT_DEPLOYMENT_ENVIRONMENT).split(",")
-    if item.strip()
-)
-REVENUECAT_WEBHOOK_MAX_ATTEMPTS = int(os.getenv("REVENUECAT_WEBHOOK_MAX_ATTEMPTS", "8"))
-REVENUECAT_WEBHOOK_ALLOWED_ENVIRONMENTS = tuple(
-    item.strip().lower()
-    for item in (os.getenv("REVENUECAT_WEBHOOK_ALLOWED_ENVIRONMENTS") or "production,sandbox").split(",")
-    if item.strip()
-)
-REVENUECAT_WEBHOOK_ALLOWED_APP_IDS = tuple(
-    item.strip()
-    for item in (os.getenv("REVENUECAT_WEBHOOK_ALLOWED_APP_IDS") or "").split(",")
-    if item.strip()
-)
-
-# Server-side AI Run control plane. P1 keeps creation disabled and has no
-# network executor; CI/development may explicitly opt into the deterministic
-# Mock executor after migrations are applied.
-CHAT_AI_SERVER_RUNS_ENABLED = os.getenv("CHAT_AI_SERVER_RUNS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-CHAT_AI_RUN_EXECUTOR = os.getenv("CHAT_AI_RUN_EXECUTOR", "disabled").strip().lower()
-CHAT_AI_MOCK_OUTCOME = os.getenv("CHAT_AI_MOCK_OUTCOME", "success").strip().lower()
-CHAT_AI_PROVIDER_CONNECT_TIMEOUT_SECONDS = float(os.getenv("CHAT_AI_PROVIDER_CONNECT_TIMEOUT_SECONDS", "10"))
-CHAT_AI_PROVIDER_FIRST_EVENT_TIMEOUT_SECONDS = float(os.getenv("CHAT_AI_PROVIDER_FIRST_EVENT_TIMEOUT_SECONDS", "30"))
-CHAT_AI_PROVIDER_STREAM_IDLE_TIMEOUT_SECONDS = float(os.getenv("CHAT_AI_PROVIDER_STREAM_IDLE_TIMEOUT_SECONDS", "30"))
-CHAT_AI_RUN_DEADLINE_SECONDS = float(os.getenv("CHAT_AI_RUN_DEADLINE_SECONDS", "180"))
-CHAT_AI_LEASE_TTL_SECONDS = int(os.getenv("CHAT_AI_LEASE_TTL_SECONDS", "45"))
-CHAT_AI_OUTBOX_IMMEDIATE_RELAY = os.getenv("CHAT_AI_OUTBOX_IMMEDIATE_RELAY", "true").lower() in ("1", "true", "yes", "y")
-CHAT_AI_WS_TICKET_TTL_SECONDS = int(os.getenv("CHAT_AI_WS_TICKET_TTL_SECONDS", "30"))
-CHAT_AI_WS_MAX_SUBSCRIPTIONS = int(os.getenv("CHAT_AI_WS_MAX_SUBSCRIPTIONS", "4"))
-CHAT_AI_PROVIDER_MAX_ATTEMPTS = int(os.getenv("CHAT_AI_PROVIDER_MAX_ATTEMPTS", "2"))
-CHAT_AI_MAX_OUTPUT_CHARS = int(os.getenv("CHAT_AI_MAX_OUTPUT_CHARS", "100000"))
-CHAT_AI_HISTORY_MESSAGE_LIMIT = int(os.getenv("CHAT_AI_HISTORY_MESSAGE_LIMIT", "6"))
-CHAT_AI_CONTEXT_MODE = os.getenv("CHAT_AI_CONTEXT_MODE", "unified").strip().lower()
-CHAT_AI_CONTEXT_WINDOW = int(os.getenv("CHAT_AI_CONTEXT_WINDOW", "8192"))
-CHAT_AI_CONTEXT_RESERVED_OUTPUT = int(os.getenv("CHAT_AI_CONTEXT_RESERVED_OUTPUT", "2048"))
-CHAT_AI_CONTEXT_PROMPT_VERSION = os.getenv("CHAT_AI_CONTEXT_PROMPT_VERSION", "chat.prompt.v1")
-CHAT_AI_MAX_REFERENCES_PER_RUN = int(os.getenv("CHAT_AI_MAX_REFERENCES_PER_RUN", "16"))
-CHAT_AI_MAX_PERSONA_CHARS = int(os.getenv("CHAT_AI_MAX_PERSONA_CHARS", "4000"))
-CHAT_AI_AGENTIC_TOOLS_ENABLED = os.getenv("CHAT_AI_AGENTIC_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-KNOWLEDGE_NAMED_BASE_QUOTA = int(os.getenv("KNOWLEDGE_NAMED_BASE_QUOTA", "20"))
-CHAT_AI_WAITING_ENABLED = os.getenv("CHAT_AI_WAITING_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-CHAT_AI_ASK_USER_ENABLED = os.getenv("CHAT_AI_ASK_USER_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-CHAT_AI_CLIENT_TOOLS_ENABLED = os.getenv("CHAT_AI_CLIENT_TOOLS_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-CHAT_AI_AGENT_MAX_ROUNDS = int(os.getenv("CHAT_AI_AGENT_MAX_ROUNDS", "8"))
-CHAT_AI_TOOL_MAX_CALLS_PER_ROUND = int(os.getenv("CHAT_AI_TOOL_MAX_CALLS_PER_ROUND", "8"))
-CHAT_AI_TOOL_MAX_CONCURRENCY = int(os.getenv("CHAT_AI_TOOL_MAX_CONCURRENCY", "4"))
-# CHAT-WEB-027 W1: real Agentic final-answer streaming. Flag off keeps the
-# legacy behavior of writing the final answer in fixed-size slices only after
-# the full Provider response is available (CHAT_AI_FINAL_TEXT_CHUNK_CHARS).
-CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED = os.getenv("CHAT_AI_AGENTIC_TRUE_STREAM_ENABLED", "false").lower() in ("1", "true", "yes", "y")
-CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS = int(os.getenv("CHAT_AI_AGENTIC_STREAM_CLASSIFY_CHARS", "40"))
-CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS = int(os.getenv("CHAT_AI_AGENTIC_STREAM_CLASSIFY_WINDOW_MS", "150"))
-CHAT_AI_FINAL_TEXT_CHUNK_CHARS = int(os.getenv("CHAT_AI_FINAL_TEXT_CHUNK_CHARS", "160"))
 CELERY_BEAT_SCHEDULE = {
-    "chat-ai-relay-events": {
-        "task": "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox",
-        "schedule": crontab(minute="*/1"),
-        "options": {"queue": "chat.events"},
-    },
-    "chat-ai-recover-runs": {
-        "task": "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs",
-        "schedule": crontab(minute="*/1"),
-        "options": {"queue": "chat.recovery"},
-    },
-    "chat-ai-expire-interactions": {
-        "task": "chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions",
-        "schedule": crontab(minute="*/1"),
-        "options": {"queue": "chat.recovery"},
-    },
     "process-due-account-deactivations": {
         "task": "accounts.deactivation.tasks.schedule_deactivation_processing_task",
         "schedule": crontab(minute="*/15"),
@@ -555,40 +437,10 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/2"),
         "options": {"queue": "notification.receipt"},
     },
-    "reconcile-revenuecat-subscriptions": {
-        "task": "subscriptions.tasks.reconcile_revenuecat_subscriptions_task",
-        "schedule": crontab(minute=0, hour="*/6"),
-        "options": {"queue": "subscriptions"},
-    },
-    "retry-pending-revenuecat-webhooks": {
-        "task": "subscriptions.tasks.retry_pending_revenuecat_webhooks_task",
-        "schedule": crontab(minute="*/15"),
-        "options": {"queue": "subscriptions"},
-    },
 }
 
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 DJANGO_CELERY_BEAT_TZ_AWARE = True
-
-# -------------------------
-# Channels / WebSocket
-# -------------------------
-_channel_backend = os.getenv("CHANNEL_LAYER_BACKEND", "channels_redis.core.RedisChannelLayer")
-if _channel_backend == "channels.layers.InMemoryChannelLayer":
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": _channel_backend,
-        }
-    }
-else:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": _channel_backend,
-            "CONFIG": {
-                "hosts": [os.getenv("CHANNEL_REDIS_URL", CELERY_BROKER_URL)],
-            },
-        }
-    }
 
 # -------------------------
 # Security headers (only enforce in prod)
@@ -687,61 +539,6 @@ LOGGING = {
             "level": LOG_LEVEL,
             "filters": ["request_id"],
         },
-        "chat_sync_file": {
-            "class": "common.logging.DateFolderTimedRotatingFileHandler",
-            "filename": "chat_sync.log",
-            "log_root": str(LOG_ROOT),
-            "when": "midnight",
-            "backupCount": LOG_BACKUP_COUNT,
-            "encoding": "utf-8",
-            "formatter": LOG_FORMAT,
-            "level": LOG_LEVEL,
-            "filters": ["request_id"],
-        },
-        "chat_sync_api_io_file": {
-            "class": "common.logging.DateFolderTimedRotatingFileHandler",
-            "filename": "chat_sync_api_io.log",
-            "log_root": str(LOG_ROOT),
-            "when": "midnight",
-            "backupCount": LOG_BACKUP_COUNT,
-            "encoding": "utf-8",
-            "formatter": LOG_FORMAT,
-            "level": LOG_LEVEL,
-            "filters": ["request_id"],
-        },
-        "medical_flow_file": {
-            "class": "common.logging.DateFolderTimedRotatingFileHandler",
-            "filename": "medical_flow.log",
-            "log_root": str(LOG_ROOT),
-            "when": "midnight",
-            "backupCount": LOG_BACKUP_COUNT,
-            "encoding": "utf-8",
-            "formatter": LOG_FORMAT,
-            "level": LOG_LEVEL,
-            "filters": ["request_id"],
-        },
-        "medical_api_io_file": {
-            "class": "common.logging.DateFolderTimedRotatingFileHandler",
-            "filename": "medical_api_io.log",
-            "log_root": str(LOG_ROOT),
-            "when": "midnight",
-            "backupCount": LOG_BACKUP_COUNT,
-            "encoding": "utf-8",
-            "formatter": LOG_FORMAT,
-            "level": LOG_LEVEL,
-            "filters": ["request_id"],
-        },
-        "nutrition_api_io_file": {
-            "class": "common.logging.DateFolderTimedRotatingFileHandler",
-            "filename": "nutrition_api_io.log",
-            "log_root": str(LOG_ROOT),
-            "when": "midnight",
-            "backupCount": LOG_BACKUP_COUNT,
-            "encoding": "utf-8",
-            "formatter": LOG_FORMAT,
-            "level": LOG_LEVEL,
-            "filters": ["request_id"],
-        },
         "file_manager_file": {
             "class": "common.logging.DateFolderTimedRotatingFileHandler",
             "filename": "file_manager.log",
@@ -781,24 +578,6 @@ LOGGING = {
         },
         "accounts.flow": {"handlers": ["console", "access_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
         "celery": {"handlers": ["console", "celery_file"], "level": LOG_LEVEL, "propagate": True},
-        "chat_sync": {"handlers": ["console", "chat_sync_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
-        "chat_sync.api_io": {
-            "handlers": ["console", "chat_sync_api_io_file"],
-            "level": LOG_LEVEL,
-            "propagate": False,
-        },
-        "medical.flow": {"handlers": ["console", "medical_flow_file", "app_file"], "level": LOG_LEVEL, "propagate": False},
-        "nutrition.api": {"handlers": ["console", "app_file"], "level": LOG_LEVEL, "propagate": False},
-        "nutrition.api_io": {
-            "handlers": ["console", "nutrition_api_io_file"],
-            "level": LOG_LEVEL,
-            "propagate": False,
-        },
-        "medical.api_io": {
-            "handlers": ["console", "medical_api_io_file"],
-            "level": LOG_LEVEL,
-            "propagate": False,
-        },
         "notification_center": {
             "handlers": ["console", "notification_center_file", "app_file"],
             "level": LOG_LEVEL,

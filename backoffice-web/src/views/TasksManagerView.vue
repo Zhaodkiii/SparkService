@@ -85,14 +85,14 @@
       <a-descriptions-item label="Redis (Broker)">{{ status?.redis?.display ?? '-' }}</a-descriptions-item>
       <a-descriptions-item label="Redis 错误">{{ status?.redis?.error || '-' }}</a-descriptions-item>
       <a-descriptions-item label="Worker 队列">{{ workerQueuesText }}</a-descriptions-item>
-      <a-descriptions-item label="AI 核心任务注册">
+      <a-descriptions-item label="账号核心任务注册">
         <a-space direction="vertical" size="small">
           <a-tag :color="status?.registered_tasks?.healthy ? 'green' : 'red'">
             {{ status?.registered_tasks?.healthy ? '已全部注册' : '存在缺失' }}
           </a-tag>
-          <span>Run：{{ taskRegistrationLabel('chat_sync.ai_tasks.run_tasks.run_chat') }}</span>
-          <span>Outbox：{{ taskRegistrationLabel('chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox') }}</span>
-          <span>Recovery：{{ taskRegistrationLabel('chat_sync.ai_tasks.recovery_tasks.recover_chat_runs') }}</span>
+          <span>注销：{{ taskRegistrationLabel('accounts.deactivation.tasks.process_deactivation_task') }}</span>
+          <span>短信验证码：{{ taskRegistrationLabel('notification_center.tasks.execute_sms_otp_intent_task') }}</span>
+          <span>邮箱验证码：{{ taskRegistrationLabel('notification_center.tasks.execute_email_otp_intent_task') }}</span>
           <span v-if="status?.registered_tasks?.error" style="color: #cf1322">{{ status.registered_tasks.error }}</span>
         </a-space>
       </a-descriptions-item>
@@ -117,14 +117,6 @@
               </template>
             </a-table-column>
           </a-table>
-        </a-space>
-      </a-descriptions-item>
-      <a-descriptions-item label="AI Run 执行器">
-        <a-space>
-          <a-tag :color="status?.chat_ai?.server_runs_enabled ? 'green' : 'red'">
-            {{ status?.chat_ai?.server_runs_enabled ? '已开启' : '未开启' }}
-          </a-tag>
-          <span>{{ status?.chat_ai?.run_executor ?? '-' }}</span>
         </a-space>
       </a-descriptions-item>
     </a-descriptions>

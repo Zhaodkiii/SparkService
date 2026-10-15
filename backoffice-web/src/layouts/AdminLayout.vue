@@ -150,15 +150,6 @@ const fallbackMenus = [
     ],
   },
   {
-    code: 'menu:version',
-    name: '版本控制',
-    path: '/version',
-    children: [
-      { code: 'menu:version:configs', name: '版本配置', path: '/version/configs', children: [] },
-      { code: 'menu:version:logs', name: '检查日志', path: '/version/logs', children: [] },
-    ],
-  },
-  {
     code: 'menu:ai',
     name: 'AI 场景配置',
     path: '/ai-config',
@@ -170,7 +161,6 @@ const fallbackMenus = [
       { code: 'menu:ai:trial', name: '试用期', path: '/ai-config/trials', children: [] },
     ],
   },
-  { code: 'menu:subscriptions', name: '订阅与权益', path: '/subscriptions', children: [] },
   { code: 'menu:rbac', name: '权限管理', path: '/rbac', children: [] },
   {
     code: 'menu:audit',
@@ -179,41 +169,6 @@ const fallbackMenus = [
     children: [
       { code: 'menu:audit:operator', name: '操作员日志', path: '/audit/admin', children: [] },
       { code: 'menu:audit:system', name: '系统日志', path: '/audit/system', children: [] },
-    ],
-  },
-  {
-    code: 'menu:conversations',
-    name: '对话',
-    path: '/conversations',
-    children: [
-      { code: 'menu:conversations:users', name: '用户对话', path: '/conversations/users', children: [] },
-      { code: 'menu:conversations:quick_questions', name: '快捷问题配置', path: '/conversations/quick-questions', children: [] },
-    ],
-  },
-  {
-    code: 'menu:medical_data',
-    name: '医疗数据',
-    path: '/medical-data',
-    children: [
-      { code: 'menu:medical_data:users', name: '用户医疗数据', path: '/medical-data/users', children: [] },
-      { code: 'menu:medical_data:quality', name: '数据质检', path: '/medical-data/quality', children: [] },
-      { code: 'menu:medical_data:attachments', name: '附件与识别', path: '/medical-data/attachments', children: [] },
-      { code: 'menu:medical_data:analytics', name: '医疗数据统计', path: '/medical-data/analytics', children: [] },
-    ],
-  },
-  {
-    code: 'menu:articles',
-    name: '文章模块',
-    path: '/articles',
-    children: [
-      { code: 'menu:articles:overview', name: '文章总览', path: '/articles/overview', children: [] },
-      { code: 'menu:articles:list', name: '文章管理', path: '/articles/list', children: [] },
-      { code: 'menu:articles:categories', name: '分类管理', path: '/articles/categories', children: [] },
-      { code: 'menu:articles:tags', name: '标签管理', path: '/articles/tags', children: [] },
-      { code: 'menu:articles:locales', name: '多语言管理', path: '/articles/locales', children: [] },
-      { code: 'menu:articles:analytics', name: '阅读数据', path: '/articles/analytics', children: [] },
-      { code: 'menu:articles:compliance', name: '来源合规', path: '/articles/compliance', children: [] },
-      { code: 'menu:articles:recycle_bin', name: '回收站', path: '/articles/recycle-bin', children: [] },
     ],
   },
 ];
@@ -245,23 +200,11 @@ function resolveOpenKeys(path: string) {
   if (path.startsWith('/notifications/')) {
     return notificationRecordPaths.has(path) ? ['/notifications', '/notifications/records'] : ['/notifications'];
   }
-  if (path.startsWith('/version/')) {
-    return ['/version'];
-  }
   if (path === '/tasks' || path.startsWith('/tasks/')) {
     return ['/tasks'];
   }
   if (path.startsWith('/users/')) {
     return ['/users'];
-  }
-  if (path.startsWith('/conversations/')) {
-    return ['/conversations'];
-  }
-  if (path.startsWith('/medical-data/')) {
-    return ['/medical-data'];
-  }
-  if (path.startsWith('/articles/')) {
-    return ['/articles'];
   }
   if (path.startsWith('/audit/')) {
     return ['/audit'];
@@ -291,22 +234,6 @@ watch(
 function onMenuClick(info: { key: string }) {
   if (info.key === '/ai-config') {
     router.push('/ai-config/scenarios');
-    return;
-  }
-  if (info.key === '/version') {
-    router.push('/version/configs');
-    return;
-  }
-  if (info.key === '/conversations') {
-    router.push('/conversations/users');
-    return;
-  }
-  if (info.key === '/medical-data') {
-    router.push('/medical-data/users');
-    return;
-  }
-  if (info.key === '/articles') {
-    router.push('/articles/overview');
     return;
   }
   router.push(info.key);

@@ -25,7 +25,6 @@ from accounts.models import (
 from accounts.services.apple_identity_service import AppleIdentityService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.otp_service import OTPService
-from subscriptions.services.ownership_service import RevenueCatSubscriptionOwnershipService
 
 logger = logging.getLogger(__name__)
 flow_logger = logging.getLogger("accounts.flow")
@@ -225,7 +224,6 @@ class DeactivationService:
         obj.save(update_fields=["freeze_email", "freeze_phone_number", "processed_at"])
 
         if obj.state in (AccountDeactivation.DeactivationState.REQUESTED, AccountDeactivation.DeactivationState.SCHEDULED):
-            RevenueCatSubscriptionOwnershipService.tombstone_user(user=user)
             DeactivationService.backup_user_data(deactivation=obj, user=user, request_id=request_id)
 
         if obj.state == AccountDeactivation.DeactivationState.DATA_BACKED_UP:
@@ -501,7 +499,7 @@ class DeactivationService:
             "accounts.phone_otps": len(payload["accounts"]["phone_otps"]),
         }
         for model in apps.get_models():
-            if model._meta.app_label in {"medical", "chat_sync", "file_manager", "task_system", "ai_config"}:
+            if model._meta.app_label in {"file_manager", "ai_config"}:
                 data = DeactivationService._model_user_index(model=model, user_id=user.id)
                 if data["count"] > 0:
                     key = f"{model._meta.app_label}.{model.__name__}"
@@ -550,11 +548,7 @@ class DeactivationService:
     def _delete_domain_related_data(*, user):
         stats: dict[str, int] = {}
         now = timezone.now()
-        DeactivationService._soft_delete_queryset("chat_sync", "ChatMessage", {"user_id": user.id}, {"tombstone": True}, stats)
-        DeactivationService._soft_delete_queryset("chat_sync", "ChatThread", {"user_id": user.id}, {"is_deleted": True, "deleted_at": now}, stats)
         DeactivationService._soft_delete_queryset("file_manager", "ManagedFile", {"user_id": user.id}, {"is_deleted": True, "deleted_at": now}, stats)
-        DeactivationService._soft_delete_medical(user=user, now=now, stats=stats)
-        DeactivationService._cleanup_tasks(user=user, stats=stats)
         DeactivationService._delete_optional_model("ai_config", "TrialApplication", {"user_id": user.id}, stats)
         return stats
 
@@ -567,29 +561,7 @@ class DeactivationService:
         count = model.objects.filter(**filters).update(**updates)
         stats[f"{app_label}.{model_name}"] = count
 
-    @staticmethod
-    def _soft_delete_medical(*, user, now, stats: dict):
-        for model in apps.get_models():
-            if model._meta.app_label != "medical":
-                continue
-            field_names = {field.name for field in model._meta.fields}
-            if "user" not in field_names or "is_deleted" not in field_names:
-                continue
-            manager = getattr(model, "all_objects", model.objects)
-            count = manager.filter(user_id=user.id, is_deleted=False).update(is_deleted=True, deleted_at=now)
-            stats[f"medical.{model.__name__}"] = count
 
-    @staticmethod
-    def _cleanup_tasks(*, user, stats: dict):
-        for model_name, field_name in (
-            ("Task", "creator"),
-            ("TaskExecution", "user"),
-            ("TaskMedical", "created_by"),
-            ("TaskExercise", "created_by"),
-            ("TaskDiet", "created_by"),
-            ("TaskPlan", "creator"),
-        ):
-            DeactivationService._delete_optional_model("task_system", model_name, {f"{field_name}_id": user.id}, stats)
 
     @staticmethod
     def _delete_optional_model(app_label: str, model_name: str, filters: dict, stats: dict):

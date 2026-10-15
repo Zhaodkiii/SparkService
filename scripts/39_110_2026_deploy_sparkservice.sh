@@ -9,14 +9,10 @@ SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$(cd "$SRC_DIR/.." && pwd)/2026}"
 # 前端后台目录
 FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
-# 开放端前端目录（承载分享、内容等公开页面）
-OPEN_WEB_DIR="${OPEN_WEB_DIR:-$SRC_DIR/open-web}"
 # 远程服务器地址（用户名@IP）
 REMOTE_HOST="${REMOTE_HOST:-root@39.106.39.110}"
 # 远程服务器部署根目录
 REMOTE_BASE="${REMOTE_BASE:-/root/2026}"
-# 开放端前端静态目录（由 Docker open_web 容器托管）
-OPEN_WEB_REMOTE_DIR="${OPEN_WEB_REMOTE_DIR:-$REMOTE_BASE/shared/open-web-dist}"
 # 远程上传文件存放目录
 UPLOAD_DIR="$REMOTE_BASE/uploads"
 # 远程脚本存放目录
@@ -27,12 +23,8 @@ REMOTE_DEPLOY="$REMOTE_BIN/deploy_remote.sh"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 # 前端生产 API 地址
 VITE_API_BASE_URL="${VITE_API_BASE_URL:-https://api.dreamwhale.top}"
-# 开放端前端 API 地址；默认留空，使用同域 /api/ 反代到后端
-OPEN_WEB_API_BASE_URL="${OPEN_WEB_API_BASE_URL:-}"
 # 是否在本地构建前端并上传 dist，避免 2C2G 服务器构建时卡死
 BUILD_FRONTEND_LOCAL="${BUILD_FRONTEND_LOCAL:-1}"
-# 是否在本地构建开放端前端并上传 dist
-BUILD_OPEN_WEB_LOCAL="${BUILD_OPEN_WEB_LOCAL:-1}"
 # 是否使用 rsync 同步（1=启用，0=关闭）
 USE_RSYNC="${USE_RSYNC:-1}"
 # 是否在新部署前取消服务器上未完成的旧部署（1=启用）
@@ -63,8 +55,6 @@ EXCLUDES=(
   --exclude "backoffice-web/node_modules"
   --exclude "backoffice-web/dist"
   --exclude "share-web"
-  --exclude "open-web/node_modules"
-  --exclude "open-web/dist"
   --exclude "logs"
   --exclude "run"
   --exclude "media"
@@ -86,10 +76,6 @@ command -v scp >/dev/null || { echo "scp not found" >&2; exit 2; }
 [[ -d "$SERVER_TEMPLATE_DIR/bin" ]] || { echo "server template bin not found: $SERVER_TEMPLATE_DIR/bin" >&2; exit 2; }
 if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
   [[ -d "$FRONTEND_DIR" ]] || { echo "FRONTEND_DIR not found: $FRONTEND_DIR" >&2; exit 2; }
-  command -v pnpm >/dev/null || { echo "pnpm not found" >&2; exit 2; }
-fi
-if [[ "$BUILD_OPEN_WEB_LOCAL" == "1" ]]; then
-  [[ -d "$OPEN_WEB_DIR" ]] || { echo "OPEN_WEB_DIR not found: $OPEN_WEB_DIR" >&2; exit 2; }
   command -v pnpm >/dev/null || { echo "pnpm not found" >&2; exit 2; }
 fi
 
@@ -204,14 +190,6 @@ if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
   rsync -az --delete "$FRONTEND_DIR/dist"/ "$REMOTE_HOST:$REMOTE_BASE/shared/frontend-dist/"
 fi
 
-# ========== 6.1 本地构建开放端前端并上传 ==========
-# open-web 由服务器 Docker open_web 容器托管，对外由 share.dreamwhale.top 反代到 2028。
-if [[ "$BUILD_OPEN_WEB_LOCAL" == "1" ]]; then
-  echo "==> 本地构建开放端前端：OPEN_WEB_API_BASE_URL=${OPEN_WEB_API_BASE_URL:-同域 /api/}"
-  (cd "$OPEN_WEB_DIR" && pnpm install --frozen-lockfile && VITE_API_BASE_URL="$OPEN_WEB_API_BASE_URL" pnpm build)
-  ssh "$REMOTE_HOST" "mkdir -p '$OPEN_WEB_REMOTE_DIR'"
-  rsync -az --delete "$OPEN_WEB_DIR/dist"/ "$REMOTE_HOST:$OPEN_WEB_REMOTE_DIR/"
-fi
 
 # ========== 7. 代码打包并上传到远程 ==========
 # 如果启用 rsync 且本地安装了 rsync，使用 rsync 同步

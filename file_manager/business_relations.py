@@ -44,12 +44,13 @@ def files_for_business(user, business_type, business_id):
     """
     返回绑定到某业务实体的附件。
 
-    文件元数据仍归属上传者（``ManagedFile.user``），但任意对该成员有绑定权限的用户均可读取。
+    仅文件所有者可读取其业务绑定附件。
     """
     if not user_can_access_business(user, business_type, business_id):
         return ManagedFile.objects.none()
     return (
         ManagedFile.objects.filter(
+            user=user,
             is_deleted=False,
             business_relations__business_type=business_type,
             business_relations__business_id=str(business_id or ""),
@@ -64,7 +65,7 @@ def files_for_businesses(user, relation_specs):
     combined = _relation_q(accessible_specs, prefix="business_relations__")
     if combined is None:
         return ManagedFile.objects.none()
-    return ManagedFile.objects.filter(is_deleted=False).filter(combined).distinct()
+    return ManagedFile.objects.filter(user=user, is_deleted=False).filter(combined).distinct()
 
 
 def relation_fingerprint(user, relation_specs):
@@ -73,7 +74,7 @@ def relation_fingerprint(user, relation_specs):
     if combined is None:
         return []
     return list(
-        ManagedFileBusinessRelation.objects.filter(file__is_deleted=False)
+        ManagedFileBusinessRelation.objects.filter(user=user, file__user=user, file__is_deleted=False)
         .filter(combined)
         .values_list("file_id", "updated_at")
     )

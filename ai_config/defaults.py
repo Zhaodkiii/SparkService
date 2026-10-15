@@ -15,14 +15,6 @@ DEFAULT_SCENARIOS = {
     "chat": dict(_DEFAULT_CHAT),
     "embedding": dict(_DEFAULT_EMBED),
     "voice": dict(_DEFAULT_CHAT),
-    "medical_structured_extraction": {},
-    "medical_document_type_recognition": {},
-    "medical_case_extraction": {},
-    "health_exam_extraction": {},
-    "medical_report_extraction": {},
-    "prescription_extraction": {},
-    "medication_extraction": {},
-    "medicine_box_extraction": {},
     "optimization_text": {
         "endpoint": "",
         "model": "",
@@ -33,9 +25,6 @@ DEFAULT_SCENARIOS = {
     "context_folding": dict(_DEFAULT_CHAT),
     "router": dict(_DEFAULT_CHAT),
     "model_config": dict(_DEFAULT_EMBED),
-    "report_interpretation": dict(_DEFAULT_CHAT),
-    "nutrition_intake_extraction": dict(_DEFAULT_CHAT),
-    "medical_exam_plan_generation": dict(_DEFAULT_CHAT),
 }
 
 DEFAULT_API_KEYS = []

@@ -1,29 +1,9 @@
-# SparkService · 本地一键启停
+# TravelDiary 本地启停
 
-| 服务 | 地址 |
-|------|------|
-| Django API | http://127.0.0.1:2026/ |
-| 管理前端 | http://localhost:6018/ |
-| 开放前端 | http://localhost:2028/ |
+在项目根目录执行 `./scripts/start.sh`、`./scripts/restart.sh`、`./scripts/stop.sh`。
 
-## 命令
+- Django API：http://127.0.0.1:2026/
+- 管理后台：http://localhost:6018/
+- 日志：`scripts/后台管理/logs/backend.log` 和 `frontend.log`
 
-```bash
-cd /Users/hua/Documents/project/Reference/SparkService
-
-./scripts/后台管理/start.sh    # 一键启动
-./scripts/后台管理/restart.sh   # 一键重启
-./scripts/后台管理/stop.sh      # 停止
-```
-
-## 日志
-
-- `scripts/后台管理/logs/backend.log`
-- `scripts/后台管理/logs/frontend.log`
-- `scripts/后台管理/logs/open-web.log`
-
-开放端内容文章示例：
-
-```text
-http://localhost:2028/content/jx9hdj8ickbk0xvb?locale=zh-CN
-```
+启动前需准备 Python 虚拟环境、数据库、Redis 和 pnpm。异步 Worker 与 Beat 按部署配置启动。

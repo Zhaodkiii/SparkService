@@ -96,7 +96,6 @@
       <template #default="{ record }">
         <TableHoverActions>
           <a-button size="small" @click="openUserDetail(record)">详细</a-button>
-          <a-button size="small" @click="openMedicalDetail(record)">医疗详情</a-button>
           <a-button v-if="canUpdate" size="small" @click="onStatusAction(record)">
             {{ record.is_active ? '禁用' : '启用' }}
           </a-button>
@@ -317,10 +316,6 @@
     </a-form>
   </a-modal>
 
-  <MedicalDataUserOverviewModal
-    v-model:open="medicalDetailModal.open"
-    :user-id="medicalDetailModal.userId"
-  />
 </template>
 
 <script setup lang="ts">
@@ -340,7 +335,6 @@ import { useAuthStore } from '../stores/auth';
 import { useTableSort } from '../composables/useTableSort';
 import type { AdminUser, Pagination } from '../types';
 import AdminDetailModal from '../components/detail/AdminDetailModal.vue';
-import MedicalDataUserOverviewModal from '../components/medical/MedicalDataUserOverviewModal.vue';
 import TableHoverActions from '../components/TableHoverActions.vue';
 import { calcActionsColWidth } from '../utils/tableActionsWidth';
 import { formatDateTime } from '../utils/datetime';
@@ -372,10 +366,6 @@ const detailModal = reactive({
   data: null as AdminUserDetail | null,
 });
 
-const medicalDetailModal = reactive({
-  open: false,
-  userId: 0,
-});
 
 const grantModal = reactive({
   open: false,
@@ -534,10 +524,6 @@ async function openUserDetail(record: AdminUser) {
   }
 }
 
-function openMedicalDetail(record: AdminUser) {
-  medicalDetailModal.userId = record.id;
-  medicalDetailModal.open = true;
-}
 
 async function refreshDetailAndList() {
   if (detailModal.data?.user.id) {

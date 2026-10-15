@@ -6,7 +6,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPARK_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 BACKOFFICE_WEB="$SPARK_ROOT/backoffice-web"
-OPEN_WEB="$SPARK_ROOT/open-web"
 VENV_PYTHON="$SPARK_ROOT/.venv/bin/python"
 PID_DIR="$SCRIPT_DIR/.pids"
 LOG_DIR="$SCRIPT_DIR/logs"
@@ -14,14 +13,11 @@ LOG_DIR="$SCRIPT_DIR/logs"
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-2026}"
 FRONTEND_PORT="${FRONTEND_PORT:-6018}"
-OPEN_WEB_PORT="${OPEN_WEB_PORT:-2028}"
 
 BACKEND_PID_FILE="$PID_DIR/backend.pid"
 FRONTEND_PID_FILE="$PID_DIR/frontend.pid"
-OPEN_WEB_PID_FILE="$PID_DIR/open-web.pid"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
-OPEN_WEB_LOG="$LOG_DIR/open-web.log"
 
 ensure_dirs() {
   mkdir -p "$PID_DIR" "$LOG_DIR"
@@ -39,10 +35,6 @@ require_prereqs() {
   fi
   if [[ ! -d "$BACKOFFICE_WEB" ]]; then
     echo "错误: 未找到前端目录: $BACKOFFICE_WEB"
-    exit 1
-  fi
-  if [[ ! -d "$OPEN_WEB" ]]; then
-    echo "错误: 未找到开放端前端目录: $OPEN_WEB"
     exit 1
   fi
   if ! command -v pnpm >/dev/null 2>&1; then
@@ -117,14 +109,8 @@ stop_frontend() {
   pkill -f "vite.*${BACKOFFICE_WEB}" 2>/dev/null || true
 }
 
-stop_open_web() {
-  stop_pid_file "开放端前端" "$OPEN_WEB_PID_FILE"
-  stop_port "开放端前端" "$OPEN_WEB_PORT"
-  pkill -f "vite.*${OPEN_WEB}" 2>/dev/null || true
-}
 
 stop_all() {
-  stop_open_web
   stop_frontend
   stop_backend
 }
@@ -137,9 +123,6 @@ frontend_listening() {
   [[ -n "$(port_pids "$FRONTEND_PORT")" ]]
 }
 
-open_web_listening() {
-  [[ -n "$(port_pids "$OPEN_WEB_PORT")" ]]
-}
 
 start_backend() {
   if backend_listening; then
@@ -190,31 +173,6 @@ start_frontend() {
   fi
 }
 
-start_open_web() {
-  if open_web_listening; then
-    echo "开放端前端已在运行: http://localhost:${OPEN_WEB_PORT}/"
-    return 0
-  fi
-  if [[ ! -d "$OPEN_WEB/node_modules" ]]; then
-    echo "首次启动：安装开放端前端依赖 (pnpm install) ..."
-    (cd "$OPEN_WEB" && pnpm install)
-  fi
-  echo "启动开放端前端 -> http://localhost:${OPEN_WEB_PORT}/"
-  (
-    cd "$OPEN_WEB"
-    nohup pnpm dev >>"$OPEN_WEB_LOG" 2>&1 &
-    echo $! >"$OPEN_WEB_PID_FILE"
-  )
-  for _ in $(seq 1 40); do
-    open_web_listening && break
-    sleep 0.25
-  done
-  if ! open_web_listening; then
-    echo "开放端前端启动可能失败，请查看日志: $OPEN_WEB_LOG"
-    tail -n 30 "$OPEN_WEB_LOG" || true
-    exit 1
-  fi
-}
 
 print_status() {
   echo ""
@@ -229,14 +187,8 @@ print_status() {
   else
     echo "管理前端 : 未运行"
   fi
-  if open_web_listening; then
-    echo "开放前端 : http://localhost:${OPEN_WEB_PORT}/"
-  else
-    echo "开放前端 : 未运行"
-  fi
   echo "后端日志 : $BACKEND_LOG"
   echo "管理日志 : $FRONTEND_LOG"
-  echo "开放日志 : $OPEN_WEB_LOG"
   echo "=================================="
   echo ""
 }

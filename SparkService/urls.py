@@ -33,18 +33,8 @@ urlpatterns = [
     path('api/v1/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/v1/', include('accounts.urls')),
     path('api/v1/ai/', include('ai_config.urls')),
-    path('api/v1/ai/chat/', include('chat_sync.urls')),
-    path('api/v1/ai/knowledge/', include('chat_sync.ai_knowledge.urls')),
-    path('api/v1/ai/memory/', include('chat_sync.ai_memory.urls')),
-    path('api/v1/medical/', include('medical.urls')),
-    path('api/v1/nutrition/', include('nutrition.urls')),
-    path('api/v1/tasks/', include('task_system.urls')),
     path('api/v1/files/', include('file_manager.urls')),
     path('api/v1/oss/', include('file_manager.oss_urls')),
-    path('api/v1/version/', include('app_version.urls')),
-    path('api/v1/content/', include('content.urls')),
-    path('api/v1/subscriptions/', include('subscriptions.urls')),
-    path('api/v1/integrations/revenuecat/', include('subscriptions.webhook_urls')),
     path('api/admin/v1/', include('backoffice.urls')),
 ]
 

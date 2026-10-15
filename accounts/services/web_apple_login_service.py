@@ -26,7 +26,7 @@ from accounts.services.login_service import LoginService
 from accounts.services.web_apple_identity_service import WebAppleIdentityService
 from accounts.services.web_session_service import WebSessionService
 from common.exceptions import APIError
-from subscriptions.services.pro_entitlement_resolver import ProEntitlementResolver
+from ai_config.entitlements import ProEntitlementResolver
 
 flow_logger = logging.getLogger("accounts.flow")
 

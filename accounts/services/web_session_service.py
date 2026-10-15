@@ -39,19 +39,6 @@ class WebSessionService:
     WEB_SESSION_CLASS_CONFLICT = "token_session_class_conflict"
     WEB_SESSION_STORE_UNAVAILABLE = "web_session_store_unavailable"
 
-    @staticmethod
-    def _notify_session_invalidated_on_commit(session_id, reason: str) -> None:
-        from chat_sync.events import ChatSyncNotifier
-
-        def notify() -> None:
-            try:
-                ChatSyncNotifier.notify_web_session_invalidated(str(session_id), reason=reason)
-            except Exception:  # pragma: no cover - channel infrastructure failure
-                flow_logger.exception("web.session.invalidation_notify_failed session_id=%s", session_id)
-
-        transaction.on_commit(
-            notify
-        )
 
     @staticmethod
     def _hash_value(value: str) -> str:
@@ -254,7 +241,6 @@ class WebSessionService:
             request_id=request_id,
         )
         if updated:
-            WebSessionService._notify_session_invalidated_on_commit(session.pk, "user_logout")
             WebSessionService._log_session_event(
                 "web.session.logged_out", session=session, request_id=request_id
             )
@@ -283,9 +269,6 @@ class WebSessionService:
     def revoke_all_sessions_for_user(*, user, reason: str, request_id: str = "") -> int:
         """Cross-domain revocation entry (ban / deactivate / logout-all): revoke every ACTIVE web session."""
         now = timezone.now()
-        session_ids = list(AccountWebSession.objects.filter(
-            user=user, status=AccountWebSession.Status.ACTIVE
-        ).values_list("id", flat=True))
         updated = AccountWebSession.objects.filter(
             user=user, status=AccountWebSession.Status.ACTIVE
         ).update(
@@ -294,8 +277,6 @@ class WebSessionService:
             revoked_reason=reason,
             request_id=request_id,
         )
-        for session_id in session_ids:
-            WebSessionService._notify_session_invalidated_on_commit(session_id, reason)
         if updated:
             flow_logger.info(
                 "web.session.revoked_all",

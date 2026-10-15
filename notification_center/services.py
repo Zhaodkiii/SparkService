@@ -256,8 +256,6 @@ class NotificationCenterService:
             return str(default["category"])
         if normalized.startswith("account."):
             return NotificationBusinessScene.Category.SECURITY
-        if normalized.startswith("medical.") or normalized.startswith("task."):
-            return NotificationBusinessScene.Category.TRANSACTIONAL
         if normalized.startswith("operation.") or normalized.startswith("content."):
             return NotificationBusinessScene.Category.OPERATIONAL
         if normalized.startswith("system."):

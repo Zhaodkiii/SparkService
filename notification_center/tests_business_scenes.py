@@ -79,11 +79,11 @@ class NotificationBusinessSceneRegistryTests(TestCase):
         self.assertFalse(NotificationBusinessScene.objects.filter(key="account.auth.typo_requested").exists())
 
     def test_retired_scene_cannot_be_used(self):
-        scene = NotificationCenterService.ensure_business_scene("medical.resource.updated")
+        scene = NotificationCenterService.ensure_business_scene("system.announcement.published")
         scene.status = NotificationBusinessScene.Status.RETIRED
         scene.save(update_fields=["status", "updated_at"])
         with self.assertRaisesMessage(ValueError, "business_scene_not_active"):
-            NotificationCenterService.ensure_business_scene("medical.resource.updated")
+            NotificationCenterService.ensure_business_scene("system.announcement.published")
 
     def test_direct_user_send_requires_business_scene(self):
         user = User.objects.create_user(username="scene-required", password="x")
@@ -107,25 +107,25 @@ class NotificationBusinessSceneRegistryTests(TestCase):
             campaign_id=None,
             user_id=user.id,
             channels=[NotificationMessage.Channel.APNS],
-            title="医疗信息已更新",
-            body="你的医疗信息有更新",
-            payload={"resource_type": "medication_plan", "resource_id": "1"},
+            title="系统公告",
+            body="公告已发布",
+            payload={"resource_type": "announcement", "resource_id": "1"},
             created_by_id=None,
             request_id="scene-attached",
-            business_scene="medical.resource.updated",
-            business_reference_type="medication_plan",
+            business_scene="system.announcement.published",
+            business_reference_type="announcement",
             business_id="1",
-            idempotency_key="medical.resource.updated:medication_plan:1:user",
+            idempotency_key="system.announcement.published:announcement:1:user",
             source="unit-test",
         )
 
-        self.assertEqual(len(messages), 1)
+        self.assertEqual(len(messages), 2)
         message = messages[0]
         self.assertIsNotNone(message.intent_id)
-        self.assertEqual(message.intent.business_scene, "medical.resource.updated")
-        self.assertEqual(message.intent.business_domain, "medical")
-        self.assertEqual(message.intent.business_type, "medical.resource")
-        self.assertEqual(message.intent.business_reference_type, "medication_plan")
+        self.assertEqual(message.intent.business_scene, "system.announcement.published")
+        self.assertEqual(message.intent.business_domain, "system")
+        self.assertEqual(message.intent.business_type, "system.announcement")
+        self.assertEqual(message.intent.business_reference_type, "announcement")
         self.assertEqual(message.intent.business_id, "1")
         self.assertIsNotNone(message.recipient_message_id)
 

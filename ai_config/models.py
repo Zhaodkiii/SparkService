@@ -9,23 +9,11 @@ class ScenarioKey(models.TextChoices):
     CHAT = "chat"
     EMBEDDING = "embedding"
     VOICE = "voice"
-    MEDICAL_STRUCTURED_EXTRACTION = "medical_structured_extraction"
-    MEDICAL_DOCUMENT_TYPE_RECOGNITION = "medical_document_type_recognition"
-    MEDICAL_CASE_EXTRACTION = "medical_case_extraction"
-    HEALTH_EXAM_EXTRACTION = "health_exam_extraction"
-    MEDICAL_REPORT_EXTRACTION = "medical_report_extraction"
-    PRESCRIPTION_EXTRACTION = "prescription_extraction"
-    MEDICATION_EXTRACTION = "medication_extraction"
-    MEDICINE_BOX_EXTRACTION = "medicine_box_extraction"
     OPTIMIZATION_TEXT = "optimization_text"
     OPTIMIZATION_VISUAL = "optimization_visual"
     CONTEXT_FOLDING = "context_folding"
     ROUTER = "router"
     MODEL_CONFIG = "model_config"
-    REPORT_INTERPRETATION = "report_interpretation"
-    NUTRITION_INTAKE_EXTRACTION = "nutrition_intake_extraction"
-    MEDICAL_EXAM_PLAN_GENERATION = "medical_exam_plan_generation"
-    MEMORY_CONSOLIDATION = "memory_consolidation"
 
 
 class IdentityKind(models.TextChoices):
@@ -126,11 +114,6 @@ class AIScenarioModelBinding(models.Model):
     system_provision = models.TextField(blank=True, default="", db_comment="场景绑定systemProvision_bootstrap优先试用策略行覆盖")
     brief_description = models.TextField(blank=True, default="", db_comment="场景绑定briefDescription_bootstrap优先试用策略行覆盖")
     ai_tool_scenarios = models.JSONField(default=list, blank=True, db_comment="场景绑定aiToolScenarios_JSON_bootstrap优先试用策略行覆盖")
-    server_tool_scenarios = models.JSONField(
-        default=list,
-        blank=True,
-        db_comment="场景模型绑定的 SparkService 服务端工具场景编码列表",
-    )
     related_task_codes = models.JSONField(default=list, blank=True, db_comment="场景绑定关联小任务唯一编码列表")
     updated_at = models.DateTimeField(auto_now=True, db_comment="更新时间")
     created_at = models.DateTimeField(auto_now_add=True, db_comment="创建时间")

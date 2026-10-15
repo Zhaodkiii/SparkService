@@ -76,10 +76,6 @@ export interface TaskManagerStatusResponse {
     local_start_available?: boolean;
   };
   worker_queues?: string[];
-  chat_ai?: {
-    server_runs_enabled: boolean;
-    run_executor: string;
-  };
   run_dir: string;
   log_dir: string;
 }

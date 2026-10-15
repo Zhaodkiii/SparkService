@@ -18,8 +18,7 @@ from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
 from ai_config.services import TrialService
-from subscriptions.services.identity_service import RevenueCatIdentityConflict, RevenueCatIdentityService
-from subscriptions.services.pro_entitlement_resolver import ProEntitlementResolver
+from ai_config.entitlements import ProEntitlementResolver
 
 flow_logger = logging.getLogger("accounts.flow")
 
@@ -53,10 +52,6 @@ class LoginService:
             device_id=device_id,
             request_id=request_id,
         )
-        try:
-            RevenueCatIdentityService.ensure_identity(user=user)
-        except RevenueCatIdentityConflict:
-            flow_logger.warning("auth.revenuecat.identity_conflict", extra={"user_id": user.id, "request_id": request_id})
 
     @staticmethod
     def _apply_is_pro(*, user, payload: dict[str, Any]) -> dict[str, Any]:

@@ -20,8 +20,6 @@ from accounts.auth.web_tokens import SparkWebRefreshToken
 from accounts.models import AccountDeviceSession, AccountWebSession, LoginAudit, SocialIdentity, TrustedDevice
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.web_session_service import WebSessionService
-from chat_sync.ai_models import ChatWebSocketTicket
-from chat_sync.models import ChatThread
 
 User = get_user_model()
 
@@ -349,62 +347,3 @@ class WebSessionApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json().get("data") or response.json()
         self.assertEqual(data.get("user_id"), self.user.id)
-
-
-@override_settings(WEB_SESSION_DOMAIN_ENABLED=True)
-class WebChatSharingTests(TestCase):
-    """019F：Web 会话命中同一 User → 共享 Thread/Run；Web logout 不删除对话。"""
-
-    def setUp(self):
-        self.client = APIClient()
-        self.user = User.objects.create_user(username="chat_user", email="chat@example.com")
-        self.user.set_unusable_password()
-        self.user.save(update_fields=["password"])
-        self.thread = ChatThread.objects.create(user=self.user, title="shared thread")
-        self.session = WebSessionService.create_session(user=self.user, request_id="req-chat")
-        self.tokens = WebSessionService.issue_tokens_for_session(user=self.user, session=self.session)
-
-    def test_web_token_creates_ws_ticket_and_reads_thread_data(self):
-        response = self.client.post(
-            "/api/v1/ai/chat/ws-tickets/",
-            HTTP_AUTHORIZATION=f"Bearer {self.tokens['access_token']}",
-        )
-        self.assertEqual(response.status_code, 201)
-        data = response.json().get("data") or response.json()
-        self.assertIn("ticket", data)
-        self.assertEqual(data["websocket_path"], "/ws/chat/runs/")
-        ticket = ChatWebSocketTicket.objects.get(token_hash=hashlib.sha256(data["ticket"].encode()).hexdigest())
-        self.assertEqual(ticket.web_session_id, self.session.id)
-        self.assertEqual(ticket.web_session_version, self.session.session_version)
-
-        # Thread 权限沿用 User：Web 与移动端读取同一份对话。
-        response = self.client.get(
-            f"/api/v1/ai/chat/threads/{self.thread.id}/preferences/",
-            HTTP_AUTHORIZATION=f"Bearer {self.tokens['access_token']}",
-        )
-        self.assertEqual(response.status_code, 200)
-
-    def test_web_logout_keeps_chat_data(self):
-        self.client.post(
-            "/api/v1/auth/logout/",
-            HTTP_AUTHORIZATION=f"Bearer {self.tokens['access_token']}",
-        )
-        self.assertTrue(ChatThread.objects.filter(id=self.thread.id).exists())
-        self.session.refresh_from_db()
-        self.assertEqual(self.session.status, AccountWebSession.Status.LOGGED_OUT)
-
-    def test_mobile_session_change_does_not_invalidate_web_token(self):
-        TrustedDevice.objects.create(user=self.user, bundle_id="cn.Zhaodk.Health", device_id="dev-x")
-        DeviceSessionService.activate_session_on_login(
-            user=self.user, bundle_id="cn.Zhaodk.Health", device_id="dev-x", request_id="req-mobile-x"
-        )
-        # 移动端再次登录（新设备）会替换移动会话，但 Web access token 仍然有效。
-        TrustedDevice.objects.create(user=self.user, bundle_id="cn.Zhaodk.Health", device_id="dev-y")
-        DeviceSessionService.activate_session_on_login(
-            user=self.user, bundle_id="cn.Zhaodk.Health", device_id="dev-y", request_id="req-mobile-y"
-        )
-        response = self.client.post(
-            "/api/v1/ai/chat/ws-tickets/",
-            HTTP_AUTHORIZATION=f"Bearer {self.tokens['access_token']}",
-        )
-        self.assertEqual(response.status_code, 201)

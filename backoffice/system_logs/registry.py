@@ -20,11 +20,6 @@ LOG_MODULES: dict[str, LogModule] = {
     "accounts_api_io": LogModule("accounts_api_io", "账号 API IO", "access_api_io.log"),
     "app": LogModule("app", "应用日志", "app.log"),
     "celery": LogModule("celery", "Celery", "celery.log"),
-    "chat_sync": LogModule("chat_sync", "对话同步", "chat_sync.log"),
-    "chat_sync_api_io": LogModule("chat_sync_api_io", "对话 API IO", "chat_sync_api_io.log"),
-    "medical_flow": LogModule("medical_flow", "医疗数据流程", "medical_flow.log"),
-    "medical_api_io": LogModule("medical_api_io", "医疗 API IO", "medical_api_io.log"),
-    "nutrition_api_io": LogModule("nutrition_api_io", "营养 API IO", "nutrition_api_io.log"),
     "file_manager": LogModule("file_manager", "文件管理", "file_manager.log"),
     "notification_center": LogModule("notification_center", "通知中心", "notification_center.log"),
 }

@@ -24,20 +24,6 @@ class DeviceSessionService:
     DEVICE_SESSION_NOT_FOUND = "device_session_not_found"
     DEVICE_MISMATCH = "device_mismatch"
 
-    @staticmethod
-    def _notify_session_invalidated_on_commit(session_id: int, reason: str) -> None:
-        """Notify only after the revocation transaction is durable."""
-        from chat_sync.events import ChatSyncNotifier
-
-        def notify() -> None:
-            try:
-                ChatSyncNotifier.notify_device_session_invalidated(session_id, reason=reason)
-            except Exception:  # pragma: no cover - channel infrastructure failure
-                flow_logger.exception("device.session.invalidation_notify_failed session_id=%s", session_id)
-
-        transaction.on_commit(
-            notify
-        )
 
     @staticmethod
     def _claims_from_validated_token(validated_token: Any) -> dict:
@@ -126,9 +112,6 @@ class DeviceSessionService:
             old.revoked_reason = "replaced_by_other_user_on_install"
             old.save(update_fields=["status", "revoked_reason", "updated_at"])
             DeviceSessionService._blacklist_refresh_jti(old.refresh_jti)
-            DeviceSessionService._notify_session_invalidated_on_commit(
-                old.id, "replaced_by_other_user_on_install"
-            )
             flow_logger.info(
                 "device.session.revoked_on_install_user_switch",
                 extra={
@@ -225,9 +208,6 @@ class DeviceSessionService:
             old.revoked_reason = "replaced_by_new_device"
             old.save(update_fields=["status", "revoked_reason", "updated_at"])
             DeviceSessionService._blacklist_refresh_jti(old.refresh_jti)
-            DeviceSessionService._notify_session_invalidated_on_commit(
-                old.id, "replaced_by_new_device"
-            )
             if old.trusted_device_id:
                 TrustedDevice.objects.filter(pk=old.trusted_device_id).update(is_revoked=True)
             flow_logger.info(

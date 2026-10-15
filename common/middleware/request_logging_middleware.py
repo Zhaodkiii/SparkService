@@ -6,9 +6,6 @@ import os
 
 logger = logging.getLogger("accounts.request")
 io_logger = logging.getLogger("accounts.api_io")
-medical_io_logger = logging.getLogger("medical.api_io")
-chat_sync_io_logger = logging.getLogger("chat_sync.api_io")
-nutrition_io_logger = logging.getLogger("nutrition.api_io")
 API_IO_ENABLED = os.getenv("LOG_API_IO_ENABLED", "true").lower() in ("1", "true", "yes", "y")
 
 
@@ -320,10 +317,4 @@ class RequestLoggingMiddleware:
 
     @staticmethod
     def _io_logger_for_path(path: str):
-        if path.startswith("/api/v1/medical/"):
-            return medical_io_logger
-        if path.startswith("/api/v1/ai/chat/"):
-            return chat_sync_io_logger
-        if path.startswith("/api/v1/nutrition/"):
-            return nutrition_io_logger
         return io_logger

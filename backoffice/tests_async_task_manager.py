@@ -1,92 +1,30 @@
 from types import SimpleNamespace
 from unittest.mock import patch
-
 from django.test import SimpleTestCase
-
-from SparkService.celery import CHAT_AI_TASK_MODULES, app
-from backoffice.views import (
-    CELERY_MANAGED_TASKS,
-    CHAT_AI_REQUIRED_TASKS,
-    _celery_registered_tasks_status,
-    _celery_worker_queue_names,
-)
+from backoffice.views import CELERY_MANAGED_TASKS, CELERY_REQUIRED_TASKS, _celery_registered_tasks_status, _celery_worker_queue_names
 
 
-class CeleryAITaskRegistrationTests(SimpleTestCase):
-    def test_celery_composition_root_imports_all_ai_task_modules(self):
-        configured = set(app.conf.imports or ())
-
-        self.assertEqual(
-            set(CHAT_AI_TASK_MODULES),
-            {
-                "chat_sync.ai_tasks.run_tasks",
-                "chat_sync.ai_tasks.outbox_tasks",
-                "chat_sync.ai_tasks.recovery_tasks",
-            },
-        )
-        self.assertTrue(set(CHAT_AI_TASK_MODULES).issubset(configured))
-
-    @patch("backoffice.views.subprocess.run")
-    def test_registered_task_status_reports_all_required_tasks(self, run):
-        run.return_value = SimpleNamespace(
-            returncode=0,
-            stdout="\n".join(CHAT_AI_REQUIRED_TASKS),
-            stderr="",
-        )
-
+class CeleryTaskRegistrationTests(SimpleTestCase):
+    @patch('backoffice.views.subprocess.run')
+    def test_registered_tasks_include_account_security_tasks(self, run):
+        run.return_value = SimpleNamespace(returncode=0, stdout='\n'.join(CELERY_REQUIRED_TASKS), stderr='')
         result = _celery_registered_tasks_status()
+        self.assertTrue(result['healthy'])
+        self.assertEqual(result['missing'], [])
 
-        self.assertTrue(result["healthy"])
-        self.assertEqual(result["missing"], [])
-        self.assertEqual(result["registered"], list(CHAT_AI_REQUIRED_TASKS))
-
-    @patch("backoffice.views.subprocess.run")
-    def test_registered_task_status_exposes_missing_outbox_task(self, run):
-        run.return_value = SimpleNamespace(
-            returncode=0,
-            stdout="\n".join(
-                task for task in CHAT_AI_REQUIRED_TASKS if "outbox_tasks" not in task
-            ),
-            stderr="",
-        )
-
+    @patch('backoffice.views.subprocess.run')
+    def test_missing_otp_task_makes_worker_unhealthy(self, run):
+        missing = 'notification_center.tasks.execute_sms_otp_intent_task'
+        run.return_value = SimpleNamespace(returncode=0, stdout='\n'.join(n for n in CELERY_REQUIRED_TASKS if n != missing), stderr='')
         result = _celery_registered_tasks_status()
+        self.assertFalse(result['healthy'])
+        self.assertEqual(result['missing'], [missing])
 
-        self.assertFalse(result["healthy"])
-        self.assertEqual(
-            result["missing"],
-            ["chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox"],
-        )
+    def test_inventory_contains_only_retained_apps(self):
+        self.assertTrue(all(n.startswith(('accounts.', 'notification_center.', 'ai_config.')) for n, _, _ in CELERY_MANAGED_TASKS))
 
-    def test_managed_inventory_excludes_memory_tasks(self):
-        names = {name for name, _domain, _queue in CELERY_MANAGED_TASKS}
-        self.assertFalse(any("memory_tasks" in name for name in names))
-
-    def test_managed_inventory_excludes_knowledge_index_tasks(self):
-        names = {name for name, _domain, _queue in CELERY_MANAGED_TASKS}
-        self.assertFalse(any("knowledge_tasks" in name for name in names))
-        self.assertFalse(any(domain == "AI 知识库" for _name, domain, _queue in CELERY_MANAGED_TASKS))
-
-    def test_managed_inventory_includes_revenuecat_subscription_tasks(self):
-        tasks = {
-            name: (domain, queue)
-            for name, domain, queue in CELERY_MANAGED_TASKS
-            if domain == "RevenueCat 订阅"
-        }
-        self.assertEqual(
-            tasks,
-            {
-                "subscriptions.tasks.process_revenuecat_webhook_event": ("RevenueCat 订阅", "subscriptions"),
-                "subscriptions.tasks.reconcile_revenuecat_subscriptions_task": ("RevenueCat 订阅", "subscriptions"),
-                "subscriptions.tasks.retry_pending_revenuecat_webhooks_task": ("RevenueCat 订阅", "subscriptions"),
-                "subscriptions.tasks.sync_revenuecat_user_task": ("RevenueCat 订阅", "subscriptions"),
-            },
-        )
-
-    @patch.dict("os.environ", {"CELERY_QUEUES": "celery,subscriptions"}, clear=False)
-    def test_worker_queues_include_revenuecat_and_exclude_unused_default(self):
+    @patch.dict('os.environ', {'CELERY_QUEUES': 'celery,notification.security.high'}, clear=False)
+    def test_worker_consumes_security_queue(self):
         queues = _celery_worker_queue_names()
-
-        self.assertIn("subscriptions", queues)
-        self.assertIn("celery", queues)
-        self.assertNotIn("default", queues)
+        self.assertIn('notification.security.high', queues)
+        self.assertNotIn('default', queues)

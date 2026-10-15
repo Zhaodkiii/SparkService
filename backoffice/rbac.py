@@ -1,6 +1,7 @@
 from collections import defaultdict
+from django.db.models import Q
 
-from backoffice.models import AdminPermission, AdminRole, AdminUserRole
+from backoffice.models import AdminPermission, AdminRole, AdminUserRole, AdminRolePermission
 
 
 def get_user_role_codes(user_id: int) -> list[str]:
@@ -66,6 +67,9 @@ def get_user_menu_tree(user_id: int) -> list[dict]:
 
 
 def bootstrap_admin_permissions() -> None:
+    AdminPermission.objects.filter(
+        Q(code__contains="medical_data") | Q(code__contains="quick_questions") | Q(code__startswith="content.") | Q(code__startswith="menu:articles") | Q(code__startswith="menu:conversations") | Q(code__startswith="menu:version") | Q(code__startswith="menu:subscriptions") | Q(code__startswith="button:subscription:") | Q(code__startswith="button:version:")
+    ).update(is_active=False)
     role, _ = AdminRole.objects.get_or_create(
         code="super_admin",
         defaults={"name": "Super Admin", "description": "Full access"},
@@ -94,16 +98,12 @@ def bootstrap_admin_permissions() -> None:
         ("menu:notifications:suppressions", "异常与抑制", "menu", "/notifications/suppressions", "menu:notifications"),
         ("menu:notifications:analytics", "统计分析", "menu", "/notifications/analytics", "menu:notifications"),
         ("menu:notifications:channel_settings", "渠道设置", "menu", "/notifications/channel-settings", "menu:notifications"),
-        ("menu:version", "版本控制", "menu", "/version", ""),
-        ("menu:version:configs", "版本配置", "menu", "/version/configs", "menu:version"),
-        ("menu:version:logs", "检查日志", "menu", "/version/logs", "menu:version"),
         ("menu:ai", "AI 场景配置", "menu", "/ai-config", ""),
         ("menu:ai:scenario", "AI 场景配置", "menu", "/ai-config/scenarios", "menu:ai"),
         ("menu:ai:models", "模型目录", "menu", "/ai-config/models", "menu:ai"),
         ("menu:ai:small_tasks", "AI 小任务", "menu", "/ai-config/small-tasks", "menu:ai"),
         ("menu:ai:provider", "Provider 配置", "menu", "/ai-config/providers", "menu:ai"),
         ("menu:ai:trial", "试用期", "menu", "/ai-config/trials", "menu:ai"),
-        ("menu:subscriptions", "订阅与权益", "menu", "/subscriptions", ""),
         ("menu:rbac", "权限管理", "menu", "/rbac", ""),
         ("menu:audit", "审计日志", "menu", "/audit", ""),
         ("menu:audit:operator", "操作员日志", "menu", "/audit/admin", "menu:audit"),
@@ -113,49 +113,6 @@ def bootstrap_admin_permissions() -> None:
         ("audit:system:detail", "查看系统日志详情", "api", "/api/admin/v1/audit/system-logs/detail/", ""),
         ("audit:system:raw", "查看系统日志原文", "api", "/api/admin/v1/audit/system-logs/detail/", ""),
         ("audit:system:login", "查看登录日志", "api", "/api/admin/v1/audit/login-logs/", ""),
-        ("menu:conversations", "对话", "menu", "/conversations", ""),
-        ("menu:conversations:users", "用户对话", "menu", "/conversations/users", "menu:conversations"),
-        ("menu:medical_data", "医疗数据", "menu", "/medical-data", ""),
-        ("menu:medical_data:users", "用户医疗数据", "menu", "/medical-data/users", "menu:medical_data"),
-        ("menu:medical_data:quality", "数据质检", "menu", "/medical-data/quality", "menu:medical_data"),
-        ("menu:medical_data:attachments", "附件与识别", "menu", "/medical-data/attachments", "menu:medical_data"),
-        ("menu:medical_data:analytics", "医疗数据统计", "menu", "/medical-data/analytics", "menu:medical_data"),
-        ("menu:articles", "文章模块", "menu", "/articles", ""),
-        ("menu:articles:overview", "文章总览", "menu", "/articles/overview", "menu:articles"),
-        ("menu:articles:list", "文章管理", "menu", "/articles/list", "menu:articles"),
-        ("menu:articles:categories", "分类管理", "menu", "/articles/categories", "menu:articles"),
-        ("menu:articles:tags", "标签管理", "menu", "/articles/tags", "menu:articles"),
-        ("menu:articles:locales", "多语言管理", "menu", "/articles/locales", "menu:articles"),
-        ("menu:articles:analytics", "阅读数据", "menu", "/articles/analytics", "menu:articles"),
-        ("menu:articles:compliance", "来源合规", "menu", "/articles/compliance", "menu:articles"),
-        ("menu:articles:recycle_bin", "回收站", "menu", "/articles/recycle-bin", "menu:articles"),
-        ("content.article.read", "查看文章", "api", "", "menu:articles:list"),
-        ("content.article.create", "创建文章", "button", "", "menu:articles:list"),
-        ("content.article.update", "编辑文章", "button", "", "menu:articles:list"),
-        ("content.article.delete", "删除文章", "button", "", "menu:articles:list"),
-        ("content.article.publish", "发布文章", "button", "", "menu:articles:list"),
-        ("content.article.offline", "下架文章", "button", "", "menu:articles:list"),
-        ("content.article.archive", "归档文章", "button", "", "menu:articles:list"),
-        ("content.version.read", "查看文章版本", "api", "", "menu:articles:list"),
-        ("content.version.rollback", "回滚文章版本", "button", "", "menu:articles:list"),
-        ("content.category.read", "查看文章分类", "api", "", "menu:articles:categories"),
-        ("content.category.create", "创建文章分类", "button", "", "menu:articles:categories"),
-        ("content.category.update", "编辑文章分类", "button", "", "menu:articles:categories"),
-        ("content.category.delete", "删除文章分类", "button", "", "menu:articles:categories"),
-        ("content.tag.read", "查看文章标签", "api", "", "menu:articles:tags"),
-        ("content.tag.create", "创建文章标签", "button", "", "menu:articles:tags"),
-        ("content.tag.update", "编辑文章标签", "button", "", "menu:articles:tags"),
-        ("content.tag.delete", "删除文章标签", "button", "", "menu:articles:tags"),
-        ("content.tag.merge", "合并文章标签", "button", "", "menu:articles:tags"),
-        ("api:medical_data:user:list", "医疗数据用户列表", "api", "", "menu:medical_data:users"),
-        ("api:medical_data:member:list", "医疗数据成员列表", "api", "", "menu:medical_data:users"),
-        ("api:medical_data:member:complete", "成员医疗数据总览", "api", "", "menu:medical_data:users"),
-        ("api:medical_data:resource:detail", "医疗资源详情", "api", "", "menu:medical_data:users"),
-        ("button:medical_data:raw_json:view", "查看医疗原始 JSON", "button", "", "menu:medical_data:users"),
-        ("button:medical_data:attachment:view", "预览医疗附件", "button", "", "menu:medical_data:users"),
-        ("button:medical_data:attachment:download", "下载医疗附件", "button", "", "menu:medical_data:users"),
-        ("button:medical_data:sensitive:view", "查看医疗未脱敏字段", "button", "", "menu:medical_data:users"),
-        ("button:medical_data:export", "医疗数据导出", "button", "", "menu:medical_data:users"),
         ("button:user:status:update", "用户状态更新", "button", "", "menu:users"),
         ("button:user:pro:grant", "用户发放 Pro", "button", "", "menu:users"),
         ("button:user:pro:recycle", "用户回收 Pro", "button", "", "menu:users"),
@@ -167,8 +124,6 @@ def bootstrap_admin_permissions() -> None:
         ("button:notification:send", "发送通知", "button", "", "menu:notifications:users"),
         ("button:notification:template:edit", "编辑模板", "button", "", "menu:notifications:templates"),
         ("button:notification:sms:query_send_details", "查询短信回执", "button", "", "menu:notifications:records:sms"),
-        ("button:version:config:create", "版本配置新增", "button", "", "menu:version:configs"),
-        ("button:version:config:update", "版本配置更新", "button", "", "menu:version:configs"),
         ("button:ai:scenario:create", "AI场景新增", "button", "", "menu:ai:scenario"),
         ("button:ai:scenario:update", "AI场景更新", "button", "", "menu:ai"),
         ("button:ai:model:create", "模型目录新增", "button", "", "menu:ai:models"),
@@ -181,20 +136,9 @@ def bootstrap_admin_permissions() -> None:
         ("button:ai:trial:reject", "试用拒绝", "button", "", "menu:ai:trial"),
         ("button:ai:trial:recycle", "试用回收权限", "button", "", "menu:ai:trial"),
         ("button:ai:trial:grant", "试用发放权限", "button", "", "menu:ai:trial"),
-        ("button:subscription:event:replay", "重放订阅 Webhook", "button", "", "menu:subscriptions"),
-        ("button:subscription:user:sync", "重新同步订阅权益", "button", "", "menu:subscriptions"),
         ("button:rbac:role:assign", "角色分配", "button", "", "menu:rbac"),
-        ("menu:conversations:quick_questions", "快捷问题配置", "menu", "/conversations/quick-questions", "menu:conversations"),
-        ("conversation.quick_question.config.read", "查看快捷问题配置", "api", "", "menu:conversations:quick_questions"),
-        ("conversation.quick_question.config.create", "新增快捷问题", "button", "", "menu:conversations:quick_questions"),
-        ("conversation.quick_question.config.update", "编辑快捷问题", "button", "", "menu:conversations:quick_questions"),
-        ("conversation.quick_question.config.enable", "启用快捷问题", "button", "", "menu:conversations:quick_questions"),
-        ("conversation.quick_question.config.disable", "停用快捷问题", "button", "", "menu:conversations:quick_questions"),
-        ("conversation.quick_question.generated.read", "查看生成记录", "api", "", "menu:conversations:quick_questions"),
-        ("conversation.quick_question.click.read", "查看点击记录", "api", "", "menu:conversations:quick_questions"),
     ]
 
-    from backoffice.models import AdminPermission, AdminRolePermission
 
     for code, name, ptype, path, parent_code in defaults:
         permission, _ = AdminPermission.objects.get_or_create(

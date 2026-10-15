@@ -45,15 +45,12 @@ from ai_config.models import (
     TrialApplicationRequest,
 )
 from ai_config.services import TrialService
-from subscriptions.services.pro_entitlement_resolver import ProEntitlementResolver
-from app_version.models import AppVersionConfig, VersionCheckLog
-from chat_sync.models import ChatMessage, ChatThread
+from ai_config.entitlements import ProEntitlementResolver
 from common.permissions import AdminCodePermission, AdminOnlyPermission
 from common.response import error_response, success_response
 from django_celery_beat.models import PeriodicTask
 from django_celery_results.models import TaskResult
 from file_manager.models import ManagedFile
-from medical.models import MedicalCase, Member
 
 from backoffice.audit import write_audit_log
 from backoffice.models import AdminAuditLog, AdminPermission, AdminRole, AdminRolePermission, AdminUserRole
@@ -95,8 +92,6 @@ from backoffice.serializers import (
     AdminUserSocialIdentitySerializer,
     AdminUserStatusSerializer,
     AdminUserTrustedDeviceSerializer,
-    AppVersionConfigSerializer,
-    VersionCheckLogSerializer,
 )
 from notification_center.models import NotificationCampaign, NotificationMessage, NotificationTemplate
 from notification_center.services import NotificationCenterService
@@ -336,10 +331,10 @@ def _celery_ping_status() -> dict:
         return {"healthy": False, "returncode": -1, "output": "", "error": str(exc)[:500]}
 
 
-CHAT_AI_REQUIRED_TASKS = (
-    "chat_sync.ai_tasks.run_tasks.run_chat",
-    "chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox",
-    "chat_sync.ai_tasks.recovery_tasks.recover_chat_runs",
+CELERY_REQUIRED_TASKS = (
+    "accounts.deactivation.tasks.process_deactivation_task",
+    "notification_center.tasks.execute_sms_otp_intent_task",
+    "notification_center.tasks.execute_email_otp_intent_task",
 )
 
 # Every Celery task that can be executed by the SparkService worker.  Keep
@@ -352,31 +347,19 @@ CELERY_MANAGED_TASKS = (
     ("accounts.deactivation.tasks.schedule_deactivation_processing_task", "账号注销", "deactivation"),
     ("accounts.notification_tasks.send_notification_campaign_task", "账号通知", "notification.bulk"),
     ("ai_config.tasks.approve_trial_application_request_task", "AI 配置", "celery"),
-    ("chat_sync.ai_tasks.outbox_tasks.relay_chat_event_outbox", "AI 对话", "chat.events"),
-    ("chat_sync.ai_tasks.recovery_tasks.expire_chat_interactions", "AI 对话", "chat.recovery"),
-    ("chat_sync.ai_tasks.recovery_tasks.recover_chat_runs", "AI 对话", "chat.recovery"),
-    ("chat_sync.ai_tasks.run_tasks.resume_chat_run", "AI 对话", "chat.ai"),
-    ("chat_sync.ai_tasks.run_tasks.run_chat", "AI 对话", "chat.ai"),
-    ("content.tasks.publish_due_content_articles_task", "内容", "celery"),
     ("notification_center.tasks.execute_email_otp_intent_task", "通知中心", "notification.security.high"),
     ("notification_center.tasks.execute_notification_campaign_task", "通知中心", "notification.bulk"),
     ("notification_center.tasks.execute_sms_otp_intent_task", "通知中心", "notification.security.high"),
     ("notification_center.tasks.poll_sms_delivery_receipts_task", "通知中心", "notification.receipt"),
     ("notification_center.tasks.reconcile_notification_outbox_task", "通知中心", "notification.receipt"),
     ("notification_center.tasks.relay_notification_outbox_task", "通知中心", "notification.transactional"),
-    ("subscriptions.tasks.process_revenuecat_webhook_event", "RevenueCat 订阅", "subscriptions"),
-    ("subscriptions.tasks.reconcile_revenuecat_subscriptions_task", "RevenueCat 订阅", "subscriptions"),
-    ("subscriptions.tasks.retry_pending_revenuecat_webhooks_task", "RevenueCat 订阅", "subscriptions"),
-    ("subscriptions.tasks.sync_revenuecat_user_task", "RevenueCat 订阅", "subscriptions"),
-    ("task_system.notification_tasks.dispatch_task_notification_task", "任务通知", "celery"),
 )
 
 
 def _celery_registered_tasks_status() -> dict:
     """Verify task registration, not merely worker process/queue health.
 
-    A worker can answer ping and consume ``chat.events`` while rejecting every
-    event relay job when the module defining that task was never imported.
+    A worker can answer ping while missing account or notification task modules.
     ``inspect registered`` is the only useful readiness signal for this class
     of failure.
     """
@@ -393,14 +376,14 @@ def _celery_registered_tasks_status() -> dict:
             check=False,
         )
         output = (proc.stdout or "").strip()
-        registered = [name for name in CHAT_AI_REQUIRED_TASKS if name in output]
-        missing = [name for name in CHAT_AI_REQUIRED_TASKS if name not in output]
+        registered = [name for name in CELERY_REQUIRED_TASKS if name in output]
+        missing = [name for name in CELERY_REQUIRED_TASKS if name not in output]
         all_required = [name for name, _domain, _queue in CELERY_MANAGED_TASKS]
         all_registered = [name for name in all_required if name in output]
         all_missing = [name for name in all_required if name not in output]
         return {
             "healthy": proc.returncode == 0 and not missing,
-            "required": list(CHAT_AI_REQUIRED_TASKS),
+            "required": list(CELERY_REQUIRED_TASKS),
             "registered": registered,
             "missing": missing,
             "all_healthy": proc.returncode == 0 and not all_missing,
@@ -418,9 +401,9 @@ def _celery_registered_tasks_status() -> dict:
     except Exception as exc:
         return {
             "healthy": False,
-            "required": list(CHAT_AI_REQUIRED_TASKS),
+            "required": list(CELERY_REQUIRED_TASKS),
             "registered": [],
-            "missing": list(CHAT_AI_REQUIRED_TASKS),
+            "missing": list(CELERY_REQUIRED_TASKS),
             "all_healthy": False,
             "all_required": [name for name, _domain, _queue in CELERY_MANAGED_TASKS],
             "all_registered": [],
@@ -445,7 +428,7 @@ def _celery_worker_queue_names() -> list[str]:
             queue = str(route.get("queue") or "").strip()
             if queue:
                 names.append(queue)
-    return list(dict.fromkeys(names))
+    return [name for name in dict.fromkeys(names) if name not in {"chat.ai", "chat.events", "chat.recovery", "subscriptions"}]
 
 
 def _redis_broker_display(broker_url: str) -> str:
@@ -647,9 +630,9 @@ def _get_celery_runtime_status() -> dict:
     ping = _celery_ping_status() if worker_running else {"healthy": False, "returncode": -1, "output": "", "error": "worker_not_running"}
     registered_tasks = _celery_registered_tasks_status() if worker_running and ping["healthy"] else {
         "healthy": False,
-        "required": list(CHAT_AI_REQUIRED_TASKS),
+        "required": list(CELERY_REQUIRED_TASKS),
         "registered": [],
-        "missing": list(CHAT_AI_REQUIRED_TASKS),
+        "missing": list(CELERY_REQUIRED_TASKS),
         "returncode": -1,
         "output": "",
         "error": "worker_not_running_or_unreachable",
@@ -668,10 +651,6 @@ def _get_celery_runtime_status() -> dict:
         "registered_tasks": registered_tasks,
         "redis": redis_status,
         "worker_queues": _celery_worker_queue_names(),
-        "chat_ai": {
-            "server_runs_enabled": bool(getattr(settings, "CHAT_AI_SERVER_RUNS_ENABLED", False)),
-            "run_executor": str(getattr(settings, "CHAT_AI_RUN_EXECUTOR", "disabled")),
-        },
         "run_dir": str(RUN_DIR),
         "log_dir": str(LOG_DIR),
     }
@@ -738,14 +717,6 @@ class AdminDashboardOverviewView(APIView):
                 "total": User.objects.count(),
                 "active": User.objects.filter(is_active=True).count(),
                 "staff": User.objects.filter(is_staff=True).count(),
-            },
-            "chat": {
-                "threads": ChatThread.objects.filter(is_deleted=False).count(),
-                "messages": ChatMessage.objects.filter(tombstone=False).count(),
-            },
-            "medical": {
-                "members": Member.objects.filter(is_deleted=False).count(),
-                "cases": MedicalCase.objects.filter(is_deleted=False).count(),
             },
             "files": {
                 "managed": ManagedFile.objects.filter(is_deleted=False).count(),
@@ -1468,135 +1439,21 @@ class AdminNotificationCampaignListView(APIView):
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAppVersionConfigListCreateView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        queryset = AppVersionConfig.objects.select_related("created_by").all()
-        platform = (request.query_params.get("platform") or "").strip()
-        channel = (request.query_params.get("channel") or "").strip()
-        bundle_id = (request.query_params.get("bundle_id") or "").strip()
-        is_active = request.query_params.get("is_active")
-        if platform:
-            queryset = queryset.filter(platform=platform)
-        if channel:
-            queryset = queryset.filter(channel=channel)
-        if bundle_id:
-            queryset = queryset.filter(bundle_id__icontains=bundle_id)
-        if is_active in {"true", "false"}:
-            queryset = queryset.filter(is_active=(is_active == "true"))
-        page = int(request.query_params.get("page", "1"))
-        page_size = min(int(request.query_params.get("page_size", "20")), 100)
-        paginator = Paginator(queryset, page_size)
-        page_obj = paginator.get_page(page)
-        return success_response(
-            {
-                "items": AppVersionConfigSerializer(page_obj.object_list, many=True).data,
-                "pagination": {
-                    "page": page_obj.number,
-                    "page_size": page_size,
-                    "total": paginator.count,
-                    "total_pages": paginator.num_pages,
-                },
-            },
-            msg="success",
-            code=0,
-            status_code=status.HTTP_200_OK,
-        )
-
-    def post(self, request):
-        if not request.user.is_superuser and "button:version:config:create" not in get_user_permission_codes(request.user.id):
-            return error_response(msg="permission_denied", code=40303, status_code=status.HTTP_403_FORBIDDEN)
-        serializer = AppVersionConfigSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        obj = serializer.save(created_by=request.user)
-        write_audit_log(request, action="version.config.create", resource_type="app_version_config", resource_id=str(obj.id), status_code=201)
-        return success_response(AppVersionConfigSerializer(obj).data, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
-class AdminAppVersionConfigDetailView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:version:config:update"
-
-    def patch(self, request, config_id: int):
-        obj = get_object_or_404(AppVersionConfig, pk=config_id)
-        serializer = AppVersionConfigSerializer(obj, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        obj = serializer.save()
-        write_audit_log(request, action="version.config.update", resource_type="app_version_config", resource_id=str(obj.id), status_code=200)
-        return success_response(AppVersionConfigSerializer(obj).data, msg="updated", code=0, status_code=status.HTTP_200_OK)
-
-    def delete(self, request, config_id: int):
-        obj = get_object_or_404(AppVersionConfig, pk=config_id)
-        obj.is_active = False
-        obj.save(update_fields=["is_active", "updated_at"])
-        write_audit_log(request, action="version.config.disable", resource_type="app_version_config", resource_id=str(obj.id), status_code=200)
-        return success_response({"success": True}, msg="disabled", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminVersionCheckLogListView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        queryset = VersionCheckLog.objects.select_related("user", "config").all()
-        q = (request.query_params.get("q") or "").strip()
-        platform = (request.query_params.get("platform") or "").strip()
-        bundle_id = (request.query_params.get("bundle_id") or "").strip()
-        has_update = request.query_params.get("has_update")
-        force_update = request.query_params.get("force_update")
-        if q:
-            queryset = queryset.filter(
-                Q(device_id__icontains=q)
-                | Q(current_version__icontains=q)
-                | Q(latest_version__icontains=q)
-                | Q(request_id__icontains=q)
-            )
-        if platform:
-            queryset = queryset.filter(platform=platform)
-        if bundle_id:
-            queryset = queryset.filter(bundle_id__icontains=bundle_id)
-        if has_update in {"true", "false"}:
-            queryset = queryset.filter(has_update=(has_update == "true"))
-        if force_update in {"true", "false"}:
-            queryset = queryset.filter(force_update=(force_update == "true"))
-        page = int(request.query_params.get("page", "1"))
-        page_size = min(int(request.query_params.get("page_size", "20")), 100)
-        paginator = Paginator(queryset, page_size)
-        page_obj = paginator.get_page(page)
-        return success_response(
-            {
-                "items": VersionCheckLogSerializer(page_obj.object_list, many=True).data,
-                "pagination": {
-                    "page": page_obj.number,
-                    "page_size": page_size,
-                    "total": paginator.count,
-                    "total_pages": paginator.num_pages,
-                },
-            },
-            msg="success",
-            code=0,
-            status_code=status.HTTP_200_OK,
-        )
 
 
 SCENARIO_LABEL_ZH = {
     "chat": "对话",
     "embedding": "向量模型",
     "voice": "语音模型",
-    "medical_structured_extraction": "医疗文档结构化抽取",
-    "medical_document_type_recognition": "医疗文档类型识别",
-    "medical_case_extraction": "病例结构化抽取",
-    "health_exam_extraction": "体检报告结构化抽取",
-    "medical_report_extraction": "医疗报告结构化抽取",
-    "prescription_extraction": "处方结构化抽取",
-    "medication_extraction": "用药结构化抽取",
-    "medicine_box_extraction": "药品结构化抽取",
     "optimization_text": "文本优化模型",
     "optimization_visual": "视觉优化模型",
     "context_folding": "上下文折叠",
     "router": "Router 模型",
     "model_config": "模型配置",
-    "report_interpretation": "报告解读模型",
 }
 
 
@@ -1636,13 +1493,6 @@ class AdminAIToolOptionsView(APIView):
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAIServerToolOptionsView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        from chat_sync.ai_runtime.tools.server_tool_config import list_admin_server_tool_options
-
-        return success_response(list_admin_server_tool_options(), msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminAIScenarioBindingListCreateView(APIView):

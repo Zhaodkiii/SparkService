@@ -31,7 +31,6 @@ class AIScenarioModelBindingAdmin(admin.ModelAdmin):
         "system_provision",
         "brief_description",
         "ai_tool_scenarios",
-        "server_tool_scenarios",
         "related_task_codes",
     )
 
