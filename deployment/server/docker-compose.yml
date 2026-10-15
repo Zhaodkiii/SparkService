@@ -1,0 +1,150 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+    - ./.deploy.env
+    environment:
+      DB_HOST: ${DB_HOST:-127.0.0.1}
+      DB_PORT: ${DB_PORT:-3306}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://127.0.0.1:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://127.0.0.1:6379/0}
+      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LOG_ROOT: /app/logs
+      MEDIA_ROOT: /app/media
+      STATIC_ROOT: /app/staticfiles
+    command:
+    - gunicorn
+    - SparkService.wsgi:application
+    - --bind
+    - 127.0.0.1:${DJANGO_PORT:-12026}
+    - --workers
+    - '1'
+    - --threads
+    - '4'
+    - --timeout
+    - '90'
+    - --access-logfile
+    - '-'
+    - --error-logfile
+    - '-'
+    volumes:
+    - ./shared/logs:/app/logs
+    - ./shared/media:/app/media
+    - ./shared/staticfiles:/app/staticfiles
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - 'curl -fsS -H "X-Forwarded-Proto: https" http://127.0.0.1:$${DJANGO_PORT:-12026}/health/
+        >/dev/null'
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    cpus: '0.80'
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '3'
+    image: localhost/traveldiary-backend:latest
+  celery_worker:
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+    - ./.deploy.env
+    environment:
+      DB_HOST: ${DB_HOST:-127.0.0.1}
+      DB_PORT: ${DB_PORT:-3306}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://127.0.0.1:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://127.0.0.1:6379/0}
+      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LOG_ROOT: /app/logs
+      MEDIA_ROOT: /app/media
+      STATIC_ROOT: /app/staticfiles
+    command:
+    - celery
+    - -A
+    - SparkService
+    - worker
+    - --loglevel=INFO
+    - --concurrency=1
+    - --queues=celery,deactivation,cleanup,monitoring,notification.security.high,notification.bulk,notification.transactional,notification.receipt
+    volumes:
+    - ./shared/logs:/app/logs
+    - ./shared/media:/app/media
+    - ./shared/staticfiles:/app/staticfiles
+    cpus: '0.60'
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '3'
+    image: localhost/traveldiary-backend:latest
+  celery_beat:
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+    - ./.deploy.env
+    environment:
+      DB_HOST: ${DB_HOST:-127.0.0.1}
+      DB_PORT: ${DB_PORT:-3306}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://127.0.0.1:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://127.0.0.1:6379/0}
+      REDIS_HOST: ${REDIS_HOST:-127.0.0.1}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      LOG_ROOT: /app/logs
+      MEDIA_ROOT: /app/media
+      STATIC_ROOT: /app/staticfiles
+    command:
+    - celery
+    - -A
+    - SparkService
+    - beat
+    - --loglevel=${CELERY_LOGLEVEL:-INFO}
+    - --scheduler=django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+    - ./shared/logs:/app/logs
+    - ./shared/media:/app/media
+    - ./shared/staticfiles:/app/staticfiles
+    cpus: '0.25'
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    image: localhost/traveldiary-backend:latest
+  frontend:
+    image: docker.m.daocloud.io/library/nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+    - ./docker/nginx/backoffice.conf:/etc/nginx/templates/default.conf.template:ro
+    - ./shared/frontend-dist:/usr/share/nginx/html:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://127.0.0.1:$${FRONTEND_PORT:-12018}/health >/dev/null
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    cpus: '0.25'
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    network_mode: host
+    environment:
+      DJANGO_PORT: ${DJANGO_PORT:-12026}
+      FRONTEND_PORT: ${FRONTEND_PORT:-12018}
+      NGINX_ENVSUBST_FILTER: ^(DJANGO_PORT|FRONTEND_PORT)$

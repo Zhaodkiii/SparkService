@@ -445,6 +445,8 @@ DJANGO_CELERY_BEAT_TZ_AWARE = True
 # -------------------------
 # Security headers (only enforce in prod)
 # -------------------------
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 if not DEBUG:
     SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True

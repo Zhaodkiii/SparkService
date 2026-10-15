@@ -56,3 +56,11 @@ celery -A SparkService beat -l INFO --scheduler django_celery_beat.schedulers:Da
 统一发布入口为 `scripts/deploy_sparkservice.sh`，默认且唯一允许的目标是 `root@39.106.39.110`。**禁止将 TravelDiary 分支发布到 139.196.215.51**；修改环境变量或使用 SSH 别名均不能绕过目标检查。可执行 `bash scripts/deploy_sparkservice.sh --check-target` 做纯本地目标校验。
 
 发布前必须提供实际存在且已适配当前四服务拓扑的 `SERVER_TEMPLATE_DIR`。当前默认的相邻 `2026` 模板目录尚不存在；本轮不执行发布。管理前端默认同域 `/api/`，如使用独立 API 域名应显式设置已核实的 `VITE_API_BASE_URL`，不要沿用旧服务器域名。默认不取消远端已有部署；仅在明确授权后设置 `CANCEL_RUNNING_DEPLOY=1`。
+
+## 当前生产部署
+
+TravelDiary 独立域名为 `https://diary.dreamwhale.top`。宿主机 Nginx 将 `/api/` 和 `/health/` 转发至本机 12026，将管理后台根路径转发至 12018；FRP 的 2026/6018 端口及旧域名保持独立。TLS 证书由 Certbot webroot 签发并自动续期。
+
+服务器模板已纳入 `deployment/server`。生产后端使用 Gunicorn HTTP 服务，四应用服务共享宿主机网络；数据库为该服务器本机 MariaDB 的 sparkservice，专用数据库用户仅有该库权限。旧外部 RDS 地址无法解析，本次没有删除或修改外部 RDS 数据。
+
+一次性清库参数为 `RESET_DATABASE_NAME=sparkservice`，仅在用户明确要求数据库初始化时使用。普通发布不设置此变量。清库会永久删除当前配置应用库的全部数据，脚本同时校验目标 IP 与库名，不自动回滚数据。发布包排除数据库备份、密钥目录、SQL、SQLite、Redis 快照与临时文件。

@@ -6,7 +6,7 @@ set -euo pipefail
 # 项目源码目录（默认取当前脚本的上一级目录）
 SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 # 服务器模板目录（存放部署脚本等）
-SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$(cd "$SRC_DIR/.." && pwd)/2026}"
+SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$SRC_DIR/deployment/server}"
 # 前端后台目录
 FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
 # 远程服务器地址（用户名@IP）
@@ -58,6 +58,15 @@ PKG_PATH="/tmp/$PKG_NAME"
 EXCLUDES=(
   --exclude ".git"
   --exclude ".env"
+  --exclude ".env.*"
+  --exclude "数据库备份"
+  --exclude "apns_keys"
+  --exclude "*.sql"
+  --exclude "*.sql.gz"
+  --exclude "*.sqlite3"
+  --exclude "*.rdb"
+  --exclude "tmp"
+  --exclude "scripts/后台管理/logs"
   --exclude ".idea"
   --exclude ".vscode"
   --exclude ".venv"
@@ -109,7 +118,7 @@ fi
 # 新部署前先终止旧 deploy_remote.sh，让 flock 自动释放，避免一直提示“已有部署任务正在执行”。
 if [[ "$CANCEL_RUNNING_DEPLOY" == "1" ]]; then
   echo "==> 检查并取消服务器上未完成的旧部署任务"
-  ssh "$REMOTE_HOST" 'REMOTE_DEPLOY="'"$REMOTE_DEPLOY"'"; /usr/local/bin/python3.12 - "$REMOTE_DEPLOY" <<'"'"'PY'"'"'
+  ssh "$REMOTE_HOST" 'REMOTE_DEPLOY="'"$REMOTE_DEPLOY"'"; python3 - "$REMOTE_DEPLOY" <<'"'"'PY'"'"'
 import os
 import signal
 import subprocess
@@ -133,7 +142,7 @@ def find_deploy_pids():
             continue
         if pid == current_pid:
             continue
-        if remote_deploy in args and "deploy_remote.sh" in args and "python3.12 -" not in args:
+        if remote_deploy in args and "deploy_remote.sh" in args and "python3 -" not in args:
             pids.append(pid)
     return pids
 
@@ -162,7 +171,7 @@ PY
   ' || {
     echo "⚠️  取消旧部署任务时 SSH 返回异常，继续执行新的部署"
   }
-  ssh "$REMOTE_HOST" 'REMOTE_DEPLOY="'"$REMOTE_DEPLOY"'"; /usr/local/bin/python3.12 - "$REMOTE_DEPLOY" <<'"'"'PY'"'"'
+  ssh "$REMOTE_HOST" 'REMOTE_DEPLOY="'"$REMOTE_DEPLOY"'"; python3 - "$REMOTE_DEPLOY" <<'"'"'PY'"'"'
 import os
 import subprocess
 import sys
@@ -179,7 +188,7 @@ for line in output.splitlines():
         pid = int(pid_text)
     except ValueError:
         continue
-    if pid != current_pid and remote_deploy in args and "deploy_remote.sh" in args and "python3.12 -" not in args:
+    if pid != current_pid and remote_deploy in args and "deploy_remote.sh" in args and "python3 -" not in args:
         print("⚠️  仍检测到旧部署任务残留，但继续尝试新部署")
         raise SystemExit(0)
 print("旧部署任务已清理，继续部署")
@@ -204,7 +213,7 @@ else
   scp -r "$SERVER_TEMPLATE_DIR"/bin "$SERVER_TEMPLATE_DIR"/docker "$REMOTE_HOST:$REMOTE_BASE/"
 fi
 # 给远程脚本添加执行权限
-ssh "$REMOTE_HOST" "chmod +x '$REMOTE_BIN'/*.sh '$REMOTE_BASE'/docker/scripts/*.sh '$REMOTE_BASE'/docker/backup/*.sh"
+ssh "$REMOTE_HOST" "find '$REMOTE_BIN' '$REMOTE_BASE/docker' -type f -name '*.sh' -exec chmod +x {} +"
 
 # ========== 5.1 同步生产环境变量 ==========
 # 服务器 Docker Compose 使用 $REMOTE_BASE/.deploy.env。
@@ -254,7 +263,7 @@ fi
 
 # ========== 8. 在远程执行部署 ==========
 # 执行远程部署脚本，传入包路径和环境变量
-ssh "$REMOTE_HOST" "PIP_INDEX_URL='$PIP_INDEX_URL' SPARK_BASE='$REMOTE_BASE' bash '$REMOTE_DEPLOY' '$UPLOAD_DIR/$PKG_NAME'"
+ssh "$REMOTE_HOST" "PIP_INDEX_URL='$PIP_INDEX_URL' SPARK_BASE='$REMOTE_BASE' RESET_DATABASE_NAME='${RESET_DATABASE_NAME:-}' RELEASE_TARGET_IP='39.106.39.110' bash '$REMOTE_DEPLOY' '$UPLOAD_DIR/$PKG_NAME'"
 
 # 部署完成提示
 echo "SparkService deployed: $TS"
