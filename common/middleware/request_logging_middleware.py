@@ -163,6 +163,14 @@ class RequestLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if "/diary-presets/" in request.path:
+            # STS responses and download URL maps contain bearer secrets.
+            started = time.perf_counter()
+            response = self.get_response(request)
+            io_logger.info("preset request method=%s path=%s status=%s duration_ms=%s",
+                           request.method, request.path, response.status_code,
+                           int((time.perf_counter() - started) * 1000))
+            return response
         start = time.perf_counter()
         request_io_logger = self._io_logger_for_path(request.path)
         is_chat_ai_path = request.path.startswith("/api/v1/ai/chat/")

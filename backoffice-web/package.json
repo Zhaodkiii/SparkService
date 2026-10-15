@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ant-design/icons-vue": "^7.0.1",
+    "ali-oss": "^6.23.0",
     "ant-design-vue": "^4.2.6",
     "axios": "^1.14.0",
     "dayjs": "^1.11.20",
@@ -20,6 +21,7 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
     "@types/dompurify": "^3.2.0",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.12.0",

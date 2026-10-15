@@ -26,7 +26,12 @@ def health_check(_request):
     return JsonResponse({"status": "ok", "service": "SparkService 哈哈哈请求成功更新成功啦"})
 
 
+from diary_presets.views import Processor
+
 urlpatterns = [
+    path("api/v1/diary-presets/", include("diary_presets.urls")),
+    path("api/admin/v1/diary-presets/", include("diary_presets.admin_urls")),
+    path("api/internal/diary-presets/processor/", Processor.as_view()),
     path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/v1/auth/token/', TokenObtainUnifiedView.as_view(), name='token_obtain_pair'),

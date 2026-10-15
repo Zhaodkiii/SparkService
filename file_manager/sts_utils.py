@@ -102,6 +102,10 @@ def get_sts_credentials(
                 }
             ],
         }
+        # User attachment credentials must never access official template storage.
+        preset_prefix = getattr(settings, "DIARY_PRESETS_OSS_PREFIX", "traveldiary/presets/").strip("/")
+        policy["Statement"].append({"Effect": "Deny", "Action": ["oss:*"],
+                                    "Resource": [f"acs:oss:*:*:{bucket_name}/{preset_prefix}/*"]})
         request.set_Policy(json.dumps(policy))
 
         response = client.do_action_with_exception(request)

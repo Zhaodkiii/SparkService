@@ -20,3 +20,6 @@ PyJWT>=2.8,<3.0
 cryptography>=42.0,<47.0
 httpx[http2]>=0.27,<1.0
 gunicorn>=23.0,<24.0
+
+oss2>=2.19,<3
+Pillow>=11,<13

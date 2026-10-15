@@ -212,6 +212,7 @@ INSTALLED_APPS = [
     'accounts',
     'ai_config',
     'file_manager',
+    'diary_presets',
     'notification_center',
     'backoffice',
 ]
@@ -589,3 +590,8 @@ LOGGING = {
         "file_manager.api_io": {"handlers": ["console", "file_manager_file"], "level": LOG_LEVEL, "propagate": False},
     },
 }
+
+# Preset control-plane settings; secrets must only come from environment.
+DIARY_PRESETS_OSS_PREFIX = os.getenv("DIARY_PRESETS_OSS_PREFIX", "traveldiary/presets/")
+DIARY_PRESETS_UPLOAD_ROLE_ARN = os.getenv("DIARY_PRESETS_UPLOAD_ROLE_ARN", "")
+DIARY_PRESETS_PROCESSOR_TOKEN = os.getenv("DIARY_PRESETS_PROCESSOR_TOKEN", "")
