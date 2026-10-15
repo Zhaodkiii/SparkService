@@ -305,7 +305,7 @@ class Detail(APIView):
     def get(self, request, pk, number):
         version = get_object_or_404(Version, template_id=pk, number=number, template__active=True, template__series__active=True)
         snap = version.snapshot
-        return Response(dict(pages=[dict(id=p['data']['id'], title=p['data']['title'],
+        return Response(dict(manifest=snap['manifest'], page_data=[p['data'] for p in snap['pages']], pages=[dict(id=p['data']['id'], title=p['data']['title'],
             thumbnail_url=preview(snap['keys'][p['data']['preview']['thumbnailPath']]),
             preview_url=preview(snap['keys'][p['data']['preview']['largePath']])) for p in snap['pages']]))
 
