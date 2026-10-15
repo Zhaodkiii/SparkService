@@ -10,14 +10,23 @@ SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$(cd "$SRC_DIR/.." && pwd)/2026}"
 # 前端后台目录
 FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
 # 远程服务器地址（用户名@IP）
-REMOTE_HOST="${REMOTE_HOST:-root@139.196.215.51}"
+REMOTE_HOST="${REMOTE_HOST:-root@39.106.39.110}"
+# Enforce target isolation before SSH/SCP/rsync, configuration sync or cancellation.
+SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_ROOT/release_target_guard.sh"
+validate_release_target "$SRC_DIR" "$REMOTE_HOST"
+case "${1:-}" in
+  --check-target) exit 0 ;;
+  "") ;;
+  *) echo "用法: $0 [--check-target]" >&2; exit 2 ;;
+esac
 # 远程服务器部署根目录
 REMOTE_BASE="${REMOTE_BASE:-/root/2026}"
 # 远程上传文件存放目录
 UPLOAD_DIR="$REMOTE_BASE/uploads"
 # 远程脚本存放目录
 REMOTE_BIN="$REMOTE_BASE/bin"
-# 远程执行的部署脚本路径 这会是就分支。
+# 远程执行的部署脚本路径
 REMOTE_DEPLOY="$REMOTE_BIN/deploy_remote.sh"
 # 本地环境变量文件；每次发布会同步到服务器 $REMOTE_BASE/.deploy.env
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$SRC_DIR/.env}"
@@ -28,13 +37,13 @@ REMOTE_DEPLOY_ENV="$REMOTE_BASE/.deploy.env"
 # PyPI 镜像源（阿里云 HTTPS，避免新版 pip 拒绝不可信 HTTP 源）
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 # 前端生产 API 地址
-VITE_API_BASE_URL="${VITE_API_BASE_URL:-https://api.dreamhua.top}"
+VITE_API_BASE_URL="${VITE_API_BASE_URL:-}"
 # 是否在本地构建前端并上传 dist，避免 2C2G 服务器构建时卡死
 BUILD_FRONTEND_LOCAL="${BUILD_FRONTEND_LOCAL:-1}"
 # 是否使用 rsync 同步（1=启用，0=关闭）
 USE_RSYNC="${USE_RSYNC:-1}"
 # 是否在新部署前取消服务器上未完成的旧部署（1=启用）
-CANCEL_RUNNING_DEPLOY="${CANCEL_RUNNING_DEPLOY:-1}"
+CANCEL_RUNNING_DEPLOY="${CANCEL_RUNNING_DEPLOY:-0}"
 
 # ========== 2. 生成打包信息 ==========
 # 时间戳：用于区分版本
@@ -87,6 +96,12 @@ fi
 if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
   [[ -d "$FRONTEND_DIR" ]] || { echo "FRONTEND_DIR not found: $FRONTEND_DIR" >&2; exit 2; }
   command -v pnpm >/dev/null || { echo "pnpm not found" >&2; exit 2; }
+fi
+
+# Build the retained admin frontend before any remote side effects.
+if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
+  command -v rsync >/dev/null || { echo "rsync is required for frontend upload" >&2; exit 2; }
+  (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile && VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm build)
 fi
 
 # ========== 5. 远程初始化 ==========
@@ -209,16 +224,11 @@ else
   echo "==> 跳过环境变量同步：SYNC_DEPLOY_ENV=0"
 fi
 
-# ========== 6. 本地构建前端并上传 ==========
-# 2C2G 服务器不适合跑 vue-tsc/vite build；前端在本机产出 dist，服务器只用 nginx 托管静态文件。
+# ========== 6. 上传已在本地构建的管理后台 ==========
 if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
-  echo "==> 本地构建前端：VITE_API_BASE_URL=$VITE_API_BASE_URL"
-  (cd "$FRONTEND_DIR" && VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm install --frozen-lockfile && VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm build)
   ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_BASE/shared/frontend-dist'"
   rsync -az --delete "$FRONTEND_DIR/dist"/ "$REMOTE_HOST:$REMOTE_BASE/shared/frontend-dist/"
 fi
-
-
 
 # ========== 7. 代码打包并上传到远程 ==========
 # 如果启用 rsync 且本地安装了 rsync，使用 rsync 同步

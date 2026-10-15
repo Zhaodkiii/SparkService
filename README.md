@@ -50,3 +50,9 @@ celery -A SparkService beat -l INFO --scheduler django_celery_beat.schedulers:Da
 本轮验证：管理后台构建、Django 系统检查、迁移图和模型迁移一致性通过；166 项保留功能回归与新增的两项升级配置测试通过。完整套件共 266 项，264 项通过，另有两项在原始提交上也可复现的失败：邮箱 OTP 封禁检查，以及登录测试仍断言旧的 `access` 字段。它们不属于本轮裁剪改动，需要单独处理。
 
 运行隔离测试：`python manage.py test --settings=SparkService.test_settings`。该设置不运行历史 MySQL 迁移、不连接生产数据库，关闭真实短信与 APNs 凭证并使用内存邮件和消息代理。
+
+## 发布目标隔离
+
+统一发布入口为 `scripts/deploy_sparkservice.sh`，默认且唯一允许的目标是 `root@39.106.39.110`。**禁止将 TravelDiary 分支发布到 139.196.215.51**；修改环境变量或使用 SSH 别名均不能绕过目标检查。可执行 `bash scripts/deploy_sparkservice.sh --check-target` 做纯本地目标校验。
+
+发布前必须提供实际存在且已适配当前四服务拓扑的 `SERVER_TEMPLATE_DIR`。当前默认的相邻 `2026` 模板目录尚不存在；本轮不执行发布。管理前端默认同域 `/api/`，如使用独立 API 域名应显式设置已核实的 `VITE_API_BASE_URL`，不要沿用旧服务器域名。默认不取消远端已有部署；仅在明确授权后设置 `CANCEL_RUNNING_DEPLOY=1`。
