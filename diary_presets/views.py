@@ -124,7 +124,8 @@ class TemplateAdmin(viewsets.ModelViewSet):
         if request.method == 'GET':
             obj = self.get_object()
             return Response(dict(revision=obj.revision, pages=[dict(id=p['data']['id'], title=p['data']['title'],
-                thumbnail=preview(obj.draft['keys'][p['data']['preview']['thumbnailPath']]))
+                thumbnail=preview(obj.draft['keys'][p['data']['preview']['thumbnailPath']]),
+                preview=preview(obj.draft['keys'][p['data']['preview']['largePath']]))
                 for p in obj.draft.get('pages', [])], cover=obj.draft.get('manifest', {}).get('coverPageID')))
         with transaction.atomic():
             obj = lock_template(pk, request.data)
@@ -189,6 +190,32 @@ class UploadSerializer(serializers.Serializer):
 class UploadAdmin(viewsets.GenericViewSet):
     permission_classes = [PresetAdmin]
     queryset = Upload.objects.all()
+
+    def list(self, request):
+        qs = self.get_queryset().order_by('-created_at')
+        template = request.query_params.get('template')
+        if template:
+            qs = qs.filter(template_id=template)
+        return Response(list(qs[:100].values('id', 'template_id', 'mode', 'size', 'status', 'error', 'created_at')))
+
+    @action(detail=True, methods=['post'])
+    @transaction.atomic
+    def retry(self, request, pk=None):
+        obj = get_object_or_404(Upload.objects.select_for_update(), pk=pk)
+        if obj.status not in ['failed', 'conflict']:
+            raise ValidationError('只能重试失败或冲突任务')
+        template = lock_template(obj.template_id, request.data)
+        after = request.data.get('after_page', obj.after_page)
+        if after and after not in [p['data']['id'] for p in template.draft.get('pages', [])]:
+            raise ValidationError('插入位置已不存在')
+        obj.revision = template.revision
+        obj.after_page = after
+        obj.status = 'queued'
+        obj.error = ''
+        obj.lease = None
+        obj.lease_until = None
+        obj.save()
+        return Response({'status': obj.status}, status=202)
 
     def create(self, request):
         ser = UploadSerializer(data=request.data)

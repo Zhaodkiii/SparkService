@@ -69,3 +69,21 @@ class PresetTests(TestCase):
     def test_processor_requires_secret(self):
         response=self.client.post('/api/internal/diary-presets/processor/',{'action':'claim'},format='json')
         self.assertEqual(response.status_code,403)
+
+    def test_admin_upload_list_is_a_plain_array_and_scoped_to_template(self):
+        from .models import Upload
+        Upload.objects.create(template=self.template,actor=self.admin,revision=1,
+                              object_key='staging/test.zip',size=1)
+        self.client.force_authenticate(self.admin)
+        response=self.client.get('/api/admin/v1/diary-presets/uploads/',{'template':str(self.template.id)})
+        self.assertEqual(response.status_code,200)
+        self.assertIsInstance(response.data,list)
+        self.assertEqual(len(response.data),1)
+        self.assertNotIn('object_key',response.data[0])
+
+    def test_series_plain_response_contains_published_series(self):
+        self.client.force_authenticate(self.admin)
+        response=self.client.get('/api/admin/v1/diary-presets/series/')
+        self.assertEqual(response.status_code,200)
+        self.assertIsInstance(response.data,list)
+        self.assertEqual(response.data[0]['slug'],'islands')
