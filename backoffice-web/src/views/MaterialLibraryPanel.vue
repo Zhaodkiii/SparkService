@@ -24,22 +24,32 @@
   </a-tab-pane>
  </a-tabs>
  <a-modal v-model:open="adding" title="选择已有素材（共享资源）" :footer="null"><a-input-search v-model:value="availableQuery" @search="()=>loadAvailable()" placeholder="名称或关键词"/><a-list :data-source="available"><template #renderItem="{item}"><a-list-item><a-space><a-image :src="item.thumbnail_url" :width="45"/>{{item.name}}<a-button :disabled="target?.items.some((i:any)=>i.id===item.id)" @click="target.items.push({...item})">加入当前库</a-button></a-space></a-list-item></template></a-list><a-button v-if="availableNext" @click="loadAvailable(true)">更多</a-button></a-modal>
- <a-empty v-if="!libraries.length" description="当前手帐尚未发布素材库"/>
+ <a-empty v-if="!loading && !error && !libraries.length" description="当前手帐尚未发布素材库"/>
 </template>
 <script setup lang="ts">
 import {ref,watch} from 'vue';
 import http from '../api/http';
 const props=defineProps<{template:string}>();
-const libraries=ref<any[]>([]),categories=ref<any[]>([]),search=ref(''),error=ref(''),saving=ref(false);
+const libraries=ref<any[]>([]),categories=ref<any[]>([]),search=ref(''),error=ref(''),saving=ref(false),loading=ref(false);
 const base='/api/v1/materials/';
 const adding=ref(false),target=ref<any>(null),available=ref<any[]>([]),availableQuery=ref(''),availableNext=ref<number|null>(null);
 async function openAvailable(lib:any){target.value=lib;adding.value=true;await loadAvailable()}
-async function loadAvailable(more=false){try{const {data}=await http.get(base+'available/',{params:{type:target.value.type,q:availableQuery.value,after:more?availableNext.value:0}});available.value=more?available.value.concat(data.items):data.items;availableNext.value=data.next}catch(e:any){error.value=e.message}}
+async function loadAvailable(more=false){try{const data=await http.get<unknown, {items:any[];next:number|null}>(base+'available/',{params:{type:target.value.type,q:availableQuery.value,after:more?availableNext.value:0}});available.value=more?available.value.concat(data.items):data.items;availableNext.value=data.next}catch(e:any){error.value=e.message}}
 const columns=[{title:'预览',key:'image'},{title:'名称',key:'name'},{title:'分类',key:'category'},{title:'关键词 / 别名',key:'keywords'},{title:'收藏人数',key:'favorites'},{title:'操作',key:'actions'}];
 function matches(i:any){return [i.name,i.kind,i.subcategory,...i.keywords,...i.aliases].join(' ').includes(search.value)}
 function setCategory(i:any,v:string){[i.kind,i.subcategory]=v.split('/')}
 function move(lib:any,item:any,delta:number){const i=lib.items.indexOf(item),j=i+delta;if(j>=0&&j<lib.items.length){lib.items.splice(i,1);lib.items.splice(j,0,item)}}
-async function load(){try{const [a,b]=await Promise.all([http.get(base+'manage/'+props.template+'/'),http.get(base+'categories/')]);libraries.value=a.data;categories.value=b.data}catch(e:any){error.value=e.message}}
+async function load(){
+ const template=props.template;
+ loading.value=true;error.value='';libraries.value=[];
+ try{
+  const [a,b]=await Promise.all([http.get<unknown,any[]>(base+'manage/'+template+'/'),http.get<unknown,any[]>(base+'categories/')]);
+  if(template!==props.template)return;
+  if(!Array.isArray(a)||!Array.isArray(b))throw new Error('素材库响应格式异常，请刷新重试');
+  libraries.value=a;categories.value=b;
+ }catch(e:any){if(template===props.template)error.value=e.message}
+ finally{if(template===props.template)loading.value=false}
+}
 async function save(lib:any){saving.value=true;try{await http.post(base+'manage/'+props.template+'/',{library:lib.id,version:lib.version,items:lib.items});await load()}catch(e:any){error.value=JSON.stringify(e.response?.data||e.message)}finally{saving.value=false}}
 watch(()=>props.template,load,{immediate:true});
 </script>

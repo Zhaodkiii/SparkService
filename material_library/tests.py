@@ -41,6 +41,20 @@ class LibraryTests(TestCase):
         self.lib.active=False;self.lib.save()
         self.assertEqual(self.client.post(f'/api/v1/materials/revisions/{self.r.pk}/download/').status_code,400)
 
+    @patch('material_library.views.sign', return_value='https://example.oss-cn-beijing.aliyuncs.com/asset?signature=test')
+    def test_download_returns_only_oss_descriptor_and_admin_lists_library(self, sign):
+        path=f'/api/v1/materials/revisions/{self.r.pk}/download/'
+        self.assertEqual(self.client.get(path).status_code,405)
+        response=self.client.post(path)
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.data,dict(url=sign.return_value,sha256=self.r.resource_id,byte_size=12))
+        sign.assert_called_once_with(self.r.resource.object_key)
+        self.user.is_superuser=True;self.user.is_staff=True;self.user.save()
+        response=self.client.get(f'/api/v1/materials/manage/{self.lib.template_id}/')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(len(response.data),1)
+        self.assertEqual(response.data[0]['items'][0]['revision'],self.r.pk)
+
     def test_non_admin_cannot_publish(self):
         self.assertEqual(self.client.post(f'/api/v1/materials/manage/{self.lib.template_id}/',{},format='json').status_code,403)
 
