@@ -2,8 +2,11 @@ import secrets
 import json
 import hashlib
 import uuid
+import time
 from copy import deepcopy
 from datetime import timedelta
+from django.core.cache import cache
+from django.utils.http import parse_etags
 from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -324,6 +327,42 @@ class Catalog(APIView):
                 version=template.current.number, page_count=len(snap['pages']),
                 cover_url=preview(snap['keys'][cover['data']['preview']['thumbnailPath']])))
         return Response(dict(series=list(Series.objects.filter(active=True).values('slug', 'title')), books=rows))
+
+
+class Browse(APIView):
+    """Small, versioned projection, cached for less than the signed URL lifetime."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk, number):
+        # Always check publication visibility, including cache hits and conditional requests.
+        version = get_object_or_404(Version.objects.only('id'), template_id=pk, number=number,
+                                   template__active=True, template__series__active=True)
+        window = int(time.time()) // 300
+        expires_at = (window + 1) * 300
+        key = f'diary-preset-browse-v1:{version.pk}:{window}'
+        cached = cache.get(key)
+        if cached is None:
+            snap = version.snapshot
+            manifest = snap['manifest']
+            body = dict(title=manifest['title'], page_size=manifest['pageSize'],
+                        cover_page_id=manifest['coverPageID'], shell_page_id=manifest.get('shellPageID'),
+                        expires_at=expires_at,
+                        pages=[dict(id=p['data']['id'], title=p['data']['title'],
+                                    thumbnail_url=preview(snap['keys'][p['data']['preview']['thumbnailPath']]),
+                                    preview_url=preview(snap['keys'][p['data']['preview']['largePath']]))
+                               for p in snap['pages']])
+            # Hash the actual representation: a rebuilt cache with new signatures gets a new ETag.
+            etag = '"' + hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest() + '"'
+            cached = (body, etag)
+            cache.set(key, cached, timeout=max(1, expires_at - int(time.time())))
+        body, etag = cached
+        tags = parse_etags(request.headers.get('If-None-Match', ''))
+        matches = '*' in tags or etag in [tag.removeprefix('W/') for tag in tags]
+        response = Response(status=304) if matches else Response(body)
+        response['ETag'] = etag
+        response['Cache-Control'] = f'private, max-age={max(0, expires_at - int(time.time()))}'
+        response['Vary'] = 'Authorization'
+        return response
 
 
 class Detail(APIView):

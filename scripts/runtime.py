@@ -69,7 +69,7 @@ def command(name):
     if name == 'backend':
         return [python, str(ROOT / 'manage.py'), 'runserver', f"{os.environ.get('BACKEND_HOST', '127.0.0.1')}:{os.environ.get('BACKEND_PORT', '2026')}", '--noreload']
     if name == 'frontend':
-        return ['node', str(ROOT / 'backoffice-web/node_modules/vite/bin/vite.js'), '--host', os.environ.get('FRONTEND_HOST', 'localhost'), '--port', os.environ.get('FRONTEND_PORT', '6018'), '--strictPort']
+        return ['node', str(ROOT / 'backoffice-web/node_modules/vite/bin/vite.js'), str(ROOT / 'backoffice-web'), '--host', os.environ.get('FRONTEND_HOST', 'localhost'), '--port', os.environ.get('FRONTEND_PORT', '6018'), '--strictPort']
     base = [python, '-m', 'celery', '--workdir', str(ROOT), '-A', 'SparkService']
     if name == 'celery_worker':
         return base + ['worker', '--loglevel=INFO', '--pool=solo', '--queues', queues()]

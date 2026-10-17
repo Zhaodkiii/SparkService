@@ -87,3 +87,70 @@ class PresetTests(TestCase):
         self.assertEqual(response.status_code,200)
         self.assertIsInstance(response.data,list)
         self.assertEqual(response.data[0]['slug'],'islands')
+
+
+class BrowseTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.user = get_user_model().objects.create_user(username='browser')
+        series = Series.objects.create(slug='browse', title='Browse')
+        snap = snapshot()
+        for page in snap['pages']:
+            page['data']['preview'] = {'thumbnailPath': 'shared.png', 'largePath': 'shared.png'}
+        self.template = Template.objects.create(series=series, title='Browse', draft=snap)
+        publish(self.template, self.user)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.url = f'/api/v1/diary-presets/templates/{self.template.id}/1/browse/'
+
+    @patch('diary_presets.storage.sign', return_value='https://example.test/thumb')
+    def test_browse_omits_import_data_and_reuses_signed_response(self, sign):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        first = self.client.get(self.url)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(set(first.data), {'title', 'page_size', 'cover_page_id', 'shell_page_id', 'expires_at', 'pages'})
+        self.assertEqual(len(first.data['pages']), 2)
+        self.assertNotIn('manifest', first.data)
+        self.assertNotIn('page_data', first.data)
+        count = sign.call_count
+        with CaptureQueriesContext(connection) as queries:
+            second = self.client.get(self.url, HTTP_IF_NONE_MATCH=first['ETag'])
+        self.assertEqual(second.status_code, 304)
+        self.assertEqual(second.content, b'')
+        self.assertEqual(sign.call_count, count)
+        self.assertTrue(all('"snapshot"' not in q['sql'] for q in queries))
+        self.assertIn('private', first['Cache-Control'])
+
+    @patch('diary_presets.storage.sign', return_value='https://example.test/thumb')
+    def test_expiry_rotates_etag_even_when_signer_returns_same_url(self, sign):
+        with patch('diary_presets.views.time.time', return_value=1800000010):
+            first = self.client.get(self.url)
+        with patch('diary_presets.views.time.time', return_value=1800000310):
+            second = self.client.get(self.url, HTTP_IF_NONE_MATCH=first['ETag'])
+        self.assertEqual(second.status_code, 200)
+        self.assertNotEqual(first['ETag'], second['ETag'])
+        self.assertGreater(second.data['expires_at'], first.data['expires_at'])
+
+    @patch('diary_presets.storage.sign', return_value='https://example.test/thumb')
+    def test_cached_browse_still_checks_visibility_and_auth(self, sign):
+        first = self.client.get(self.url)
+        self.template.active = False
+        self.template.save(update_fields=['active'])
+        self.assertEqual(self.client.get(self.url, HTTP_IF_NONE_MATCH=first['ETag']).status_code, 404)
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.get(self.url).status_code, [401, 403])
+
+    @patch('diary_presets.storage.sign', return_value='https://example.test/thumb')
+    def test_new_version_has_separate_cache_and_preserves_download_plan(self, sign):
+        first = self.client.get(self.url)
+        self.template.title = 'Second version'
+        publish(self.template, self.user)
+        second = self.client.get(self.url.replace('/1/', '/2/'), HTTP_IF_NONE_MATCH=first['ETag'])
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data['title'], 'Second version')
+        plan = self.client.post(self.url.replace('/browse/', '/'), {'page_ids': ['b']}, format='json')
+        self.assertEqual(plan.status_code, 201)
+        self.assertIn('files', plan.data['manifest'])
+        self.assertEqual([p['id'] for p in plan.data['manifest']['pages']], ['b'])

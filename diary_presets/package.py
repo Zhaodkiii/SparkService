@@ -62,7 +62,7 @@ def process_archive(archive, directory, namespace, put):
                 raise ValueError('Invalid expanded size')
             dest.write_bytes(data)
     manifest = load_json((root / 'package.json').read_bytes())
-    if manifest['format'] != 'TravelDiary.PresetBook' or manifest['schemaVersion'] != 1 or manifest['layerSchemaVersion'] != 1:
+    if manifest['format'] != 'TravelDiary.PresetBook' or manifest['schemaVersion'] != 1 or manifest['layerSchemaVersion'] not in (1, 2):
         raise ValueError('Unsupported package schema')
     if not set(manifest['requiredCapabilities']) <= {'image', 'object', 'text', 'frame', 'drawing'}:
         raise ValueError('Unsupported capabilities')
@@ -106,6 +106,32 @@ def process_archive(archive, directory, namespace, put):
             if asset['pixelSize'] != dict(width=image.width, height=image.height):
                 raise ValueError('Asset dimensions mismatch')
     objects = {oid: load_json((root / relative(path)).read_bytes()) for oid, path in manifest['objectTable'].items()}
+    if manifest['layerSchemaVersion'] >= 2:
+        categories = {
+            'background': {'paper_texture', 'page', 'scene'},
+            'photo': {'slot', 'fixed', 'frame', 'photo_card'},
+            'paper': {'note', 'checklist', 'route', 'ticket', 'title_card'},
+            'text': {'title', 'body', 'date', 'quote', 'caption'},
+            'illustration': {'scene', 'object', 'botanical', 'tape', 'stamp', 'ornament'},
+            'branding': {'logo', 'seal', 'series_mark'},
+        }
+        for obj in objects.values():
+            for layer in obj.get('layers', []):
+                kind, subcategory, render_type = layer.get('kind'), layer.get('subcategory'), layer.get('renderType')
+                if subcategory not in categories.get(kind, set()):
+                    raise ValueError('Invalid layer semantic category')
+                if render_type == 'group':
+                    valid_render = bool(layer.get('contentID'))
+                elif render_type == 'image':
+                    valid_render = bool(layer.get('assetID'))
+                elif render_type == 'native_text':
+                    valid_render = kind == 'text' and layer.get('text') is not None
+                elif render_type in ('canvas', 'frame'):
+                    valid_render = True
+                else:
+                    valid_render = False
+                if not valid_render:
+                    raise ValueError('Invalid layer render type')
     closures = []
     for ref, page in zip(manifest['pages'], pages):
         needed = {ref['path'], *page['preview'].values()}
