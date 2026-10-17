@@ -1,0 +1,184 @@
+{
+  "a84025161b3e15cbd7592ce2": {
+    "include": true,
+    "name": "纸票_红色船票",
+    "kind": "paper",
+    "subcategory": "ticket",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "红色船票"
+    ]
+  },
+  "1250fbf25552bdd22dcdb9c1": {
+    "include": true,
+    "name": "装饰_顶部邮票拼贴",
+    "kind": "illustration",
+    "subcategory": "stamp",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "顶部邮票拼贴"
+    ]
+  },
+  "5af3c597366bdb3d1ade490e": {
+    "include": true,
+    "name": "纸票_邮票与船票拼贴",
+    "kind": "paper",
+    "subcategory": "ticket",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "邮票与船票拼贴"
+    ]
+  },
+  "9c8cec2951c3c13535407d6f": {
+    "include": true,
+    "name": "纸卡_底部填写卡",
+    "kind": "paper",
+    "subcategory": "note",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "底部填写卡"
+    ]
+  },
+  "227eb7bd940fcdf1c2a4997b": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "3fb61e82c48e09818cab9631": {
+    "include": true,
+    "name": "印章_桃花岛",
+    "kind": "illustration",
+    "subcategory": "stamp",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "桃花岛"
+    ]
+  },
+  "8c02ade6636ae4610ce8edf9": {
+    "include": true,
+    "name": "邮票_扇贝",
+    "kind": "illustration",
+    "subcategory": "stamp",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "扇贝"
+    ]
+  },
+  "97414e4e03375ffbaeb17703": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "5342ac844c6e70d63bec24ce": {
+    "include": true,
+    "name": "文字_在岛上浪费一个下午",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "在岛上浪费一个下午"
+    ]
+  },
+  "686695e6eadda674ac311994": {
+    "include": true,
+    "name": "便签_今天什么也没赶上",
+    "kind": "paper",
+    "subcategory": "note",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "今天什么也没赶上"
+    ]
+  },
+  "e5a345f59c24890e03ed6d40": {
+    "include": true,
+    "name": "纸卡_手写正文纸_空白",
+    "kind": "paper",
+    "subcategory": "note",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "空白"
+    ]
+  },
+  "1b6515a81170cc90f5cda2f2": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "2c2c91955d9a21ad5552bb17": {
+    "include": true,
+    "name": "文字_住在面朝大海的房间",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "住在面朝大海的房间"
+    ]
+  },
+  "fe3423c65e9d02f1afbd0748": {
+    "include": true,
+    "name": "文字_舟山枸杞岛",
+    "kind": "text",
+    "subcategory": "caption",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "舟山枸杞岛"
+    ]
+  },
+  "af7bd31c0ec58ea69250f9d6": {
+    "include": true,
+    "name": "纸卡_今天的天气",
+    "kind": "paper",
+    "subcategory": "checklist",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "今天的天气"
+    ]
+  },
+  "67fae7f8fb8eed90aec2a913": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "5392a866386acd1d6f8c3599": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "43ba2af0f03f9733778766ca": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "0ed354629facb8c9452aa45b": {
+    "include": false,
+    "reason": "固定照片或普通正文，不作为贴纸入口"
+  },
+  "2f50ec1b037bcf5974606665": {
+    "include": true,
+    "name": "文字_海风会替我们记得",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "海风会替我们记得"
+    ]
+  },
+  "5084d27e34148213920114fe": {
+    "include": true,
+    "name": "文字_我的海钓初体验",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "舟山",
+      "海岛",
+      "我的海钓初体验"
+    ]
+  }
+}

@@ -68,3 +68,41 @@ class LibraryTests(TestCase):
         self.assertEqual(result.data['items'][0]['name'],'空白便签')
         self.assertEqual(self.lib.favorites.count(),1)
         self.assertEqual(ResourceBlob.objects.count(),1)
+
+class LegacyExtractionTests(TestCase):
+    def test_legacy_background_and_only_published_pages(self):
+        import tempfile, json, hashlib, io
+        from pathlib import Path
+        from types import SimpleNamespace
+        from PIL import Image
+        from .extraction import collect
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            image=Image.new('RGBA',(4,4),(0,0,0,0));image.putpixel((1,1),(255,0,0,255))
+            stream=io.BytesIO();image.save(stream,format='PNG');data=stream.getvalue();digest=hashlib.sha256(data).hexdigest()
+            (root/'asset.png').write_bytes(data)
+            manifest={'assetTable':{'asset':{'path':'asset.png','sha256':digest}},'objectTable':{},'pages':[]}
+            for key,name in [('kept','背景_海水纸张'),('removed','组件_蓝色渡船插画')]:
+                obj={'role':'sticker','layers':[{'id':key,'name':name,'kind':'sticker','assetID':'asset'}]}
+                (root/(key+'.json')).write_text(json.dumps(obj))
+                manifest['objectTable'][key]=key+'.json'
+                page={'id':key,'rootContentID':key};(root/(key+'-page.json')).write_text(json.dumps(page))
+                manifest['pages'].append({'path':key+'-page.json'})
+            (root/'package.json').write_text(json.dumps(manifest))
+            template=SimpleNamespace(pk='template',title='舟山',current=SimpleNamespace(snapshot={'manifest':{'assetTable':manifest['assetTable'],'pages':[{'id':'namespace-kept','title':'保留页'}]}}))
+            rows=collect(root,template,{})
+            self.assertEqual(len(rows),1)
+            self.assertEqual((rows[0]['type'],rows[0]['kind'],rows[0]['subcategory']),('background','background','paper_texture'))
+            self.assertEqual(rows[0]['sources'][0]['page_id'],'namespace-kept')
+            obj=json.loads((root/'kept.json').read_text());obj['layers'][0]['name']='�照片卡乱码'
+            (root/'kept.json').write_text(json.dumps(obj))
+            self.assertEqual(collect(root,template,{}),[])
+            repaired=collect(root,template,{'kept':{'include':True,'name':'背景_纸张','kind':'background','subcategory':'paper_texture'}})
+            self.assertEqual(repaired[0]['name'],'背景_纸张')
+
+    def test_query_separator_is_not_a_route_component(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+        client=APIClient();client.force_authenticate(get_user_model().objects.create_user(username='route-check'))
+        self.assertEqual(client.get('/api/v1/materials/libraries/?type=sticker').status_code,200)
+        self.assertEqual(client.get('/api/v1/materials/libraries/%3Ftype=sticker').status_code,404)
