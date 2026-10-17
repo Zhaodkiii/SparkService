@@ -49,6 +49,7 @@
       </a-tab-pane>
       <a-tab-pane key="versions" tab="版本记录"><a-table :data-source="versions" row-key="number" :columns="[{title:'版本号',dataIndex:'number'},{title:'发布时间',dataIndex:'created_at'},{title:'操作',key:'action'}]"><template #bodyCell="{column,record}"><a-button v-if="column.key==='action'" type="link" @click="restore(record.number)">回滚并发布</a-button></template></a-table></a-tab-pane>
       <a-tab-pane key="uploads" tab="上传任务"><a-alert type="info" message="ZIP 文件直传 OSS；队列处理需要独立资源处理器在线。" show-icon/><a-button style="margin:12px 0" @click="run(loadHistory)">刷新任务</a-button><a-table :data-source="uploads" row-key="id" :columns="[{title:'创建时间',dataIndex:'created_at'},{title:'模式',dataIndex:'mode'},{title:'状态',dataIndex:'status'},{title:'详情',dataIndex:'error'},{title:'操作',key:'retry'}]"><template #bodyCell="{column,record}"><a-button v-if="column.key==='retry' &amp;&amp; ['failed','conflict'].includes(record.status)" type="link" @click="retryUpload(record.id)">重试</a-button></template></a-table></a-tab-pane>
+     <a-tab-pane key="materials" tab="贴纸与背景库"><MaterialLibraryPanel :key="book.id" :template="book.id" /></a-tab-pane>
      </a-tabs>
     </a-card>
    </div>
@@ -69,6 +70,7 @@ import { Modal, message } from 'ant-design-vue';
 import OSS from 'ali-oss';
 import { onBeforeRouteLeave } from 'vue-router';
 import http from '../api/http';
+import MaterialLibraryPanel from './MaterialLibraryPanel.vue';
 const base = '/api/admin/v1/diary-presets/';
 async function get(path: string, config?: any): Promise<any> { return http.get(base + path, config); }
 async function post(path: string, body?: any): Promise<any> { return http.post(base + path, body); }

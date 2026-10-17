@@ -213,6 +213,7 @@ INSTALLED_APPS = [
     'ai_config',
     'file_manager',
     'diary_presets',
+    'material_library',
     'notification_center',
     'backoffice',
 ]
