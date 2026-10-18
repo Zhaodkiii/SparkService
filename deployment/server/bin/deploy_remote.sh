@@ -9,8 +9,12 @@ set -a
 source "$BASE/.deploy.env"
 set +a
 export RESET_DATABASE_NAME="$RESET_REQUEST" RELEASE_TARGET_IP=39.106.39.110
-exec 9>"$BASE/.deploy.lock"
-flock -n 9 || { echo 'Another release is running' >&2; exit 1; }
+# Hold the lock in flock's parent process. --close prevents the long-lived
+# containers started below from inheriting the lock descriptor through conmon.
+if [[ "${DEPLOY_LOCK_GUARD:-}" != "$BASE/.deploy.lock" ]]; then
+    export DEPLOY_LOCK_GUARD="$BASE/.deploy.lock"
+    exec flock --nonblock --close "$BASE/.deploy.lock" "$0" "$PKG_PATH"
+fi
 TS="$(date +%Y%m%d_%H%M%S)"
 TARGET="$BASE/releases/$TS"
 mkdir -p "$TARGET" "$BASE/build" "$BASE/shared/logs" "$BASE/shared/media" "$BASE/shared/staticfiles" "$BASE/shared/frontend-dist"
