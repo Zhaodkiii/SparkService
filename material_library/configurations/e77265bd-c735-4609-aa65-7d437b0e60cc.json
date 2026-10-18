@@ -1,0 +1,702 @@
+{
+  "f120d173973d11fe11e88636": {
+    "include": true,
+    "name": "奶油棉纸",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "奶油色",
+      "纸张纹理",
+      "手帐背景"
+    ],
+    "aliases": [
+      "米色纸张"
+    ]
+  },
+  "1345d70cf7141a00ccedb6de": {
+    "include": true,
+    "name": "牵手成长插画",
+    "kind": "illustration",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "父母与孩子",
+      "牵手",
+      "落日",
+      "水彩插画"
+    ],
+    "aliases": [
+      "亲子插画",
+      "牵手插画"
+    ]
+  },
+  "26536b33db2a4ccbb4dedcbe": {
+    "include": true,
+    "name": "掌印成长轨迹",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "掌印",
+      "成长轨迹",
+      "手绘线条",
+      "封面装饰"
+    ],
+    "aliases": [
+      "小手印装饰"
+    ]
+  },
+  "d357a222d2eee1d0f901e17a": {
+    "include": true,
+    "name": "弯月成长轨迹",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "弯月",
+      "成长轨迹",
+      "夜晚",
+      "封面装饰"
+    ],
+    "aliases": [
+      "月亮轨迹"
+    ]
+  },
+  "70ca950701d5182718645693": {
+    "include": true,
+    "name": "嫩叶成长轨迹",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "嫩叶",
+      "成长轨迹",
+      "自然",
+      "封面装饰"
+    ],
+    "aliases": [
+      "叶片装饰"
+    ]
+  },
+  "19aec8b258a94782286ce34f": {
+    "include": true,
+    "name": "纸飞机成长轨迹",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "纸飞机",
+      "成长轨迹",
+      "旅行",
+      "封面装饰"
+    ],
+    "aliases": [
+      "纸飞机轨迹"
+    ]
+  },
+  "f23e44f18cda860dcf1b3f50": {
+    "include": true,
+    "name": "奶油居家纸景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "居家",
+      "书架",
+      "奶油色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "居家背景"
+    ]
+  },
+  "c6196cb9ca16e80e731a19d3": {
+    "include": true,
+    "name": "相框与空白信签",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "空白信签",
+      "孕前书信",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "e2b0288a99a421d28cc7ea92": {
+    "include": true,
+    "name": "扎带雏菊花束",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "雏菊",
+      "花束",
+      "花草",
+      "照片装饰"
+    ],
+    "aliases": [
+      "雏菊",
+      "小花束"
+    ]
+  },
+  "54910948a882ffbb4eb62f37": {
+    "include": true,
+    "name": "书架奶油纸景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "书架",
+      "居家",
+      "奶油色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "书架背景"
+    ]
+  },
+  "a549b6eed6de35327bb7dfed": {
+    "include": true,
+    "name": "胶带方框与空白纸签",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "胶带",
+      "空白纸签",
+      "照片装饰"
+    ],
+    "aliases": [
+      "方框相框",
+      "照片框"
+    ]
+  },
+  "9dfc00bde148fabadc4103cd": {
+    "include": true,
+    "name": "棕带雏菊花束",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "雏菊",
+      "花束",
+      "花草",
+      "照片装饰"
+    ],
+    "aliases": [
+      "雏菊",
+      "小花束"
+    ]
+  },
+  "7060914ca631fa3cdb53363f": {
+    "include": true,
+    "name": "相框与空白纸签",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "空白纸签",
+      "胶带装饰",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "b82f51545fccc0686b0f75dd": {
+    "include": true,
+    "name": "花瓶与旧书",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "花瓶",
+      "旧书",
+      "雏菊",
+      "居家装饰"
+    ],
+    "aliases": [
+      "书本花瓶"
+    ]
+  },
+  "28410833335d31e33284ee89": {
+    "include": true,
+    "name": "窗边奶油纸纹",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "窗边",
+      "奶油色",
+      "纸张纹理",
+      "手帐背景"
+    ],
+    "aliases": [
+      "窗边背景"
+    ]
+  },
+  "08f95608139538699cf1827e": {
+    "include": true,
+    "name": "粉色胶带方框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "照片相框",
+      "粉色胶带",
+      "空白照片框",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "粉色照片框"
+    ]
+  },
+  "12fda0ffc475c0e4428769e4": {
+    "include": true,
+    "name": "星月床铃",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "星月",
+      "床铃",
+      "婴儿房",
+      "童年装饰"
+    ],
+    "aliases": [
+      "婴儿床铃",
+      "月亮星星"
+    ]
+  },
+  "a4152f479ff2466f4e018b7b": {
+    "include": true,
+    "name": "蓝格蝴蝶结小熊",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "小熊",
+      "蓝格蝴蝶结",
+      "玩偶",
+      "童年装饰"
+    ],
+    "aliases": [
+      "小熊玩偶",
+      "泰迪熊"
+    ]
+  },
+  "b8e74639508ec36671582ad0": {
+    "include": true,
+    "name": "奶油格纹被褥纸面",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "奶油色",
+      "格纹",
+      "被褥",
+      "手帐背景"
+    ],
+    "aliases": [
+      "格纹纸张"
+    ]
+  },
+  "e92f2af116a2fbfc7d0a54e6": {
+    "include": true,
+    "name": "蓝格胶带相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "照片相框",
+      "蓝格胶带",
+      "空白照片框",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "蓝色照片框"
+    ]
+  },
+  "b0cf372e5cb22151f374e04d": {
+    "include": true,
+    "name": "粉格胶带相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "照片相框",
+      "粉格胶带",
+      "空白照片框",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "粉色照片框"
+    ]
+  },
+  "38f12db200fbe55954e541d9": {
+    "include": true,
+    "name": "旧书上的雏菊花瓶",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "亲子时光",
+      "新生儿",
+      "花瓶",
+      "旧书",
+      "雏菊",
+      "居家装饰"
+    ],
+    "aliases": [
+      "花瓶",
+      "书本花瓶"
+    ]
+  },
+  "0bfea23404f20f61a0172f2b": {
+    "include": true,
+    "name": "暖色卧室床边",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "夜晚陪伴",
+      "卧室",
+      "床边",
+      "暖色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "卧室背景"
+    ]
+  },
+  "b47f9f1e3625d74a2d7a0c50": {
+    "include": true,
+    "name": "球形壁灯",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "亲子时光",
+      "夜晚陪伴",
+      "壁灯",
+      "暖光",
+      "卧室装饰",
+      "居家"
+    ],
+    "aliases": [
+      "床头灯",
+      "壁灯"
+    ]
+  },
+  "e35d534a3cdfc78ebd2ca334": {
+    "include": true,
+    "name": "暖灯宽幅相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "夜晚陪伴",
+      "宽幅相框",
+      "暖灯",
+      "空白照片框",
+      "照片装饰"
+    ],
+    "aliases": [
+      "横向相框",
+      "照片框"
+    ]
+  },
+  "afbdda3658304502683daa9c": {
+    "include": true,
+    "name": "卧室窗边床景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "夜晚陪伴",
+      "卧室",
+      "窗边",
+      "床景",
+      "手帐背景"
+    ],
+    "aliases": [
+      "卧室背景"
+    ]
+  },
+  "530fef89a18698f351e6a968": {
+    "include": true,
+    "name": "暖灯怀抱相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "夜晚陪伴",
+      "照片相框",
+      "暖灯",
+      "空白照片框",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "d36e168c09175ca30f3eabca": {
+    "include": true,
+    "name": "床边小熊",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "亲子时光",
+      "夜晚陪伴",
+      "小熊",
+      "床边",
+      "玩偶",
+      "童年装饰"
+    ],
+    "aliases": [
+      "小熊玩偶"
+    ]
+  },
+  "a8ad8aee89238a34daac3d71": {
+    "include": true,
+    "name": "林间成长纸景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "认识世界",
+      "林间",
+      "自然观察",
+      "绿色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "林间背景"
+    ]
+  },
+  "3fd667b3cb8c19bb860bcae9": {
+    "include": true,
+    "name": "自然观察相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "认识世界",
+      "照片相框",
+      "自然观察",
+      "绿色胶带",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "自然照片框"
+    ]
+  },
+  "6cbb9f0039034ecf7352cc6a": {
+    "include": true,
+    "name": "林间花路纸景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "认识世界",
+      "林间",
+      "花路",
+      "自然",
+      "手帐背景"
+    ],
+    "aliases": [
+      "林间背景"
+    ]
+  },
+  "34101474a72d5b2ff514a084": {
+    "include": true,
+    "name": "校园水彩纸景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "校园",
+      "水彩",
+      "上学",
+      "手帐背景"
+    ],
+    "aliases": [
+      "校园背景"
+    ]
+  },
+  "3862cdcd04b75b84f2dc95f3": {
+    "include": true,
+    "name": "粉彩角贴相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "粉彩胶带",
+      "校园",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "ed0017a2ff646547b99dcf74": {
+    "include": true,
+    "name": "校园水彩背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "校园",
+      "水彩",
+      "上学",
+      "手帐背景"
+    ],
+    "aliases": [
+      "校园背景"
+    ]
+  },
+  "8cc914f7c4482f0472567cd9": {
+    "include": true,
+    "name": "蓝色角贴相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "蓝色胶带",
+      "校园",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "20b35493a8c7f6271758141f": {
+    "include": true,
+    "name": "公园林间纸景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "公园",
+      "林间",
+      "自然",
+      "手帐背景"
+    ],
+    "aliases": [
+      "公园背景"
+    ]
+  },
+  "3a3034eda7f5689b9d693d12": {
+    "include": true,
+    "name": "树叶装饰相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "树叶装饰",
+      "公园",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "822fa6dd65166953ba6eb7e0": {
+    "include": true,
+    "name": "公园花树背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "公园",
+      "花树",
+      "自然",
+      "手帐背景"
+    ],
+    "aliases": [
+      "公园背景"
+    ]
+  },
+  "856690af0682160442f56294": {
+    "include": true,
+    "name": "棕格胶带相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "照片相框",
+      "棕格胶带",
+      "公园",
+      "照片装饰"
+    ],
+    "aliases": [
+      "相框",
+      "照片框"
+    ]
+  },
+  "0a1460e6d2cb7fce893d7dfd": {
+    "include": true,
+    "name": "压叶花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "亲子时光",
+      "成长记录",
+      "压叶",
+      "花枝",
+      "植物",
+      "自然装饰"
+    ],
+    "aliases": [
+      "植物装饰",
+      "花叶"
+    ]
+  }
+}
