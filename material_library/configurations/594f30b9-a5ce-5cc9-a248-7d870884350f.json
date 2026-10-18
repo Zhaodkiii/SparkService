@@ -1,0 +1,1257 @@
+{
+  "79ca74b577359fc06d5ff58d": {
+    "include": true,
+    "name": "暖米白纸纹花瓣背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 暖米白纸纹花瓣"
+    ],
+    "aliases": [
+      "背景_暖米白纸纹花瓣"
+    ]
+  },
+  "41878b9e164da78327106296": {
+    "include": true,
+    "name": "情书与胶带相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 情书与胶带"
+    ],
+    "aliases": [
+      "相框_情书与胶带"
+    ]
+  },
+  "fcc932ac4a980371ec3409e5": {
+    "include": true,
+    "name": "干花与红绳",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "装饰 干花与红绳"
+    ],
+    "aliases": [
+      "装饰_干花与红绳"
+    ]
+  },
+  "6240678d82d1b132e7abf8d9": {
+    "include": true,
+    "name": "米白纸纹背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 米白纸纹"
+    ],
+    "aliases": [
+      "背景_米白纸纹"
+    ]
+  },
+  "c17e7db12fd76204ffc76949": {
+    "include": true,
+    "name": "左上花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 左上"
+    ],
+    "aliases": [
+      "花枝_左上"
+    ]
+  },
+  "ff465753c024eaa082fd661c": {
+    "include": true,
+    "name": "左下花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 左下"
+    ],
+    "aliases": [
+      "花枝_左下"
+    ]
+  },
+  "d62a8aa87f4d3ccc54e7bde5": {
+    "include": true,
+    "name": "右上花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 右上"
+    ],
+    "aliases": [
+      "花枝_右上"
+    ]
+  },
+  "b77ab2ca64993d76101613a3": {
+    "include": true,
+    "name": "右下花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 右下"
+    ],
+    "aliases": [
+      "花枝_右下"
+    ]
+  },
+  "8bb65b49d912755eb3eb3a65": {
+    "include": true,
+    "name": "上方爱心与蝴蝶结",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰线稿 上方爱心与蝴蝶结"
+    ],
+    "aliases": [
+      "装饰线稿_上方爱心与蝴蝶结"
+    ]
+  },
+  "029a64ea1d78fade2a7b365c": {
+    "include": true,
+    "name": "相识空白相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 主照片 相识"
+    ],
+    "aliases": [
+      "相框_主照片_相识"
+    ]
+  },
+  "d7cf439fe926d78a33801680": {
+    "include": true,
+    "name": "下方波浪爱心",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰线稿 下方波浪爱心"
+    ],
+    "aliases": [
+      "装饰线稿_下方波浪爱心"
+    ]
+  },
+  "30974a7525ef5502389a825a": {
+    "include": true,
+    "name": "时间书写线",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰线 时间书写线"
+    ],
+    "aliases": [
+      "装饰线_时间书写线"
+    ]
+  },
+  "9ed8ed1d6b1f1d4834ab35fb": {
+    "include": true,
+    "name": "地点书写线",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰线 地点书写线"
+    ],
+    "aliases": [
+      "装饰线_地点书写线"
+    ]
+  },
+  "c8e15ad515ff9fbb49aa7201": {
+    "include": true,
+    "name": "米白纸纹背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 米白纸纹"
+    ],
+    "aliases": [
+      "背景_米白纸纹"
+    ]
+  },
+  "6597e63893083959d5f89df4": {
+    "include": true,
+    "name": "右上花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 右上"
+    ],
+    "aliases": [
+      "花枝_右上"
+    ]
+  },
+  "fa3fdb4eb03b0b190d4ecf73": {
+    "include": true,
+    "name": "左侧",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 左侧"
+    ],
+    "aliases": [
+      "花枝_左侧"
+    ]
+  },
+  "7caaf2c3158947f1223d5182": {
+    "include": true,
+    "name": "右下花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 右下"
+    ],
+    "aliases": [
+      "花枝_右下"
+    ]
+  },
+  "c51c86cef1795f874f6f6790": {
+    "include": true,
+    "name": "左上横向相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 左上横向"
+    ],
+    "aliases": [
+      "相框_左上横向"
+    ]
+  },
+  "92b91d6b16f259e0c6060006": {
+    "include": true,
+    "name": "右下竖向相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 右下竖向"
+    ],
+    "aliases": [
+      "相框_右下竖向"
+    ]
+  },
+  "c97792edce4fec832da2fe62": {
+    "include": true,
+    "name": "第一印象与初次聊天便签",
+    "kind": "paper",
+    "subcategory": "note",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "便签",
+      "手帐纸卡",
+      "便签 第一印象与初次聊天"
+    ],
+    "aliases": [
+      "便签_第一印象与初次聊天"
+    ]
+  },
+  "ce07a672ced2ca2c8c7fc88c": {
+    "include": true,
+    "name": "爱心波浪",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰线稿 爱心波浪"
+    ],
+    "aliases": [
+      "装饰线稿_爱心波浪"
+    ]
+  },
+  "c6704b681a3b6cd0c6ddf582": {
+    "include": true,
+    "name": "暖米白与山野纸张背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 暖米白与山野纸张"
+    ],
+    "aliases": [
+      "背景_暖米白与山野纸张"
+    ]
+  },
+  "4562f831164579636ba11c06": {
+    "include": false,
+    "reason": "嵌入场景示例图，不作为可复用空白相框"
+  },
+  "366ef6dfb3109354778ca0c4": {
+    "include": true,
+    "name": "暖米白山野回忆纸张背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 暖米白山野回忆纸张"
+    ],
+    "aliases": [
+      "背景_暖米白山野回忆纸张"
+    ]
+  },
+  "fa27938cd14fd99ce2bf581f": {
+    "include": false,
+    "reason": "嵌入样例照片，不作为可复用空白相框"
+  },
+  "ad353f7477cc5e88a8754c00": {
+    "include": true,
+    "name": "暖白纸纹背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 暖白纸纹"
+    ],
+    "aliases": [
+      "背景_暖白纸纹"
+    ]
+  },
+  "cdee8a93abdae542a97c73b8": {
+    "include": true,
+    "name": "回家抱抱相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 回家抱抱"
+    ],
+    "aliases": [
+      "相框_回家抱抱"
+    ]
+  },
+  "3ffee703136c2c0264348e6c": {
+    "include": true,
+    "name": "小事一起做相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 小事一起做"
+    ],
+    "aliases": [
+      "相框_小事一起做"
+    ]
+  },
+  "7c8050a05f04c0cd454834ec": {
+    "include": true,
+    "name": "暖白纸纹背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 暖白纸纹"
+    ],
+    "aliases": [
+      "背景_暖白纸纹"
+    ]
+  },
+  "2001f7dae86d6da16a92a90d": {
+    "include": true,
+    "name": "居家相拥相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 居家相拥"
+    ],
+    "aliases": [
+      "相框_居家相拥"
+    ]
+  },
+  "baa28df3602b8c4e5f61f11a": {
+    "include": true,
+    "name": "小日常便签便签",
+    "kind": "paper",
+    "subcategory": "note",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "便签",
+      "手帐纸卡",
+      "卡片 小日常便签"
+    ],
+    "aliases": [
+      "卡片_小日常便签"
+    ]
+  },
+  "e65aa1c70892f998e6683099": {
+    "include": true,
+    "name": "草原晚霞与纸面背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 草原晚霞与纸面"
+    ],
+    "aliases": [
+      "背景_草原晚霞与纸面"
+    ]
+  },
+  "72fcd79379380cbeb7887037": {
+    "include": true,
+    "name": "主照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 主照片 手撕纸胶带"
+    ],
+    "aliases": [
+      "相框_主照片_手撕纸胶带"
+    ]
+  },
+  "eca8178bfd44f7999d86344a": {
+    "include": true,
+    "name": "暖棕手撕纸标题纸签",
+    "kind": "paper",
+    "subcategory": "title_card",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题底板",
+      "手帐纸卡",
+      "组件 标题纸签 暖棕手撕纸"
+    ],
+    "aliases": [
+      "组件_标题纸签_暖棕手撕纸"
+    ]
+  },
+  "f4a4f461a249c3ae2e69f478": {
+    "include": true,
+    "name": "草原晚霞与纸面背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 草原晚霞与纸面"
+    ],
+    "aliases": [
+      "背景_草原晚霞与纸面"
+    ]
+  },
+  "c82219f79e82e6642f1ab35d": {
+    "include": false,
+    "reason": "嵌入情侣照片，不进入通用贴纸库"
+  },
+  "636cae6c6904cb316f41c5fc": {
+    "include": false,
+    "reason": "嵌入情侣照片，不进入通用贴纸库"
+  },
+  "6f3884b6a946283b21740b87": {
+    "include": true,
+    "name": "黄花与山线插画",
+    "kind": "illustration",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景插画",
+      "手帐插画",
+      "自然插画 黄花与山线"
+    ],
+    "aliases": [
+      "自然插画_黄花与山线"
+    ]
+  },
+  "afa5f4d739aa2dbcf01ff335": {
+    "include": true,
+    "name": "红色爱心",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰 红色爱心"
+    ],
+    "aliases": [
+      "装饰_红色爱心"
+    ]
+  },
+  "a2a44608b254185605cad54f": {
+    "include": true,
+    "name": "手绘太阳",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "装饰",
+      "手帐贴纸",
+      "装饰 手绘太阳"
+    ],
+    "aliases": [
+      "装饰_手绘太阳"
+    ]
+  },
+  "81af92170ef15ff523d18179": {
+    "include": false,
+    "reason": "图像署名，不作为用户贴纸"
+  },
+  "88df8d7b19b68b46dd34ce4f": {
+    "include": true,
+    "name": "暖米色纸纹背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 暖米色纸纹"
+    ],
+    "aliases": [
+      "背景_暖米色纸纹"
+    ]
+  },
+  "94937bde1d6480308d236d95": {
+    "include": true,
+    "name": "主照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 主照片"
+    ],
+    "aliases": [
+      "相框_主照片"
+    ]
+  },
+  "3ed93e14ef48711743fc5a41": {
+    "include": true,
+    "name": "左下花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝蕾丝 左下"
+    ],
+    "aliases": [
+      "花枝蕾丝_左下"
+    ]
+  },
+  "b99a14854ea48e3e6e660e30": {
+    "include": true,
+    "name": "左上花枝压花",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 左上压花"
+    ],
+    "aliases": [
+      "花枝_左上压花"
+    ]
+  },
+  "2772340adab2247bcc75b48d": {
+    "include": true,
+    "name": "暖米色纸纹背景",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "纸纹",
+      "纸张背景",
+      "手帐底纹",
+      "背景 暖米色纸纹"
+    ],
+    "aliases": [
+      "背景_暖米色纸纹"
+    ]
+  },
+  "ddd064375cf3ccf99910e6f8": {
+    "include": true,
+    "name": "主照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 主照片"
+    ],
+    "aliases": [
+      "相框_主照片"
+    ]
+  },
+  "75616cbbe1b592dddd04fd81": {
+    "include": true,
+    "name": "右上花枝压花",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "花枝 右上压花"
+    ],
+    "aliases": [
+      "花枝_右上压花"
+    ]
+  },
+  "d3fc34f3e83e487f90ef082f": {
+    "include": true,
+    "name": "订婚纸面背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 订婚纸面"
+    ],
+    "aliases": [
+      "背景_订婚纸面"
+    ]
+  },
+  "f7a8699760d2231fa25f178a": {
+    "include": true,
+    "name": "订婚背影相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 订婚背影"
+    ],
+    "aliases": [
+      "相框_订婚背影"
+    ]
+  },
+  "a0eb45f997492f41c8ce7ac3": {
+    "include": true,
+    "name": "订婚彩带相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 订婚彩带"
+    ],
+    "aliases": [
+      "相框_订婚彩带"
+    ]
+  },
+  "fbc32a7b4cca63549b2fba81": {
+    "include": true,
+    "name": "婚礼纸面背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 婚礼纸面"
+    ],
+    "aliases": [
+      "背景_婚礼纸面"
+    ]
+  },
+  "6d24b2c9c75db6f1176e858b": {
+    "include": true,
+    "name": "婚礼照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 婚礼新人"
+    ],
+    "aliases": [
+      "相框_婚礼新人"
+    ]
+  },
+  "ddcc6172c5840c14b9d08120": {
+    "include": true,
+    "name": "婚宴厅与米白纸张背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 婚宴厅与米白纸张"
+    ],
+    "aliases": [
+      "背景_婚宴厅与米白纸张"
+    ]
+  },
+  "d882f474f11cf2472fb20f49": {
+    "include": true,
+    "name": "新人合照相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 新人合照"
+    ],
+    "aliases": [
+      "相框_新人合照"
+    ]
+  },
+  "7af98ca780703f6e8f92374a": {
+    "include": true,
+    "name": "左侧花枝烛光",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "组件 左侧花枝烛光"
+    ],
+    "aliases": [
+      "组件_左侧花枝烛光"
+    ]
+  },
+  "711aa8d6258ea81a94c14b23": {
+    "include": true,
+    "name": "右下花枝玫瑰",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "花草",
+      "花枝",
+      "手帐插画",
+      "组件 右下玫瑰"
+    ],
+    "aliases": [
+      "组件_右下玫瑰"
+    ]
+  },
+  "7fff704f9cb3276c69d1572f": {
+    "include": true,
+    "name": "宴会厅与奶油纸纹背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "场景底图",
+      "手帐背景",
+      "背景 宴会厅与奶油纸纹"
+    ],
+    "aliases": [
+      "背景_宴会厅与奶油纸纹"
+    ]
+  },
+  "275d118081e1f1fb9f7d4ad3": {
+    "include": true,
+    "name": "细节照片卡相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "空白相框",
+      "照片框",
+      "相片装饰",
+      "相框 屏幕细节照片卡"
+    ],
+    "aliases": [
+      "相框_屏幕细节照片卡"
+    ]
+  },
+  "b1ab8e4251dacd0452290ae5": {
+    "include": true,
+    "name": "顶部短句",
+    "kind": "text",
+    "subcategory": "quote",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "爱情短句",
+      "文字贴纸",
+      "顶部短句"
+    ],
+    "aliases": [
+      "文字图像_顶部短句"
+    ]
+  },
+  "2f2eed031ea3bfa2a4759a2f": {
+    "include": true,
+    "name": "大标题_爱情故事",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "大标题 爱情故事"
+    ],
+    "aliases": [
+      "文字图像_大标题_爱情故事"
+    ]
+  },
+  "8cfd7ee242159e4ada3367fb": {
+    "include": true,
+    "name": "阶段标签_相识",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "阶段标签 相识"
+    ],
+    "aliases": [
+      "文字图像_阶段标签_相识"
+    ]
+  },
+  "c34091848cc3de43e94d5285": {
+    "include": true,
+    "name": "主标题_很高兴认识你",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "主标题 很高兴认识你"
+    ],
+    "aliases": [
+      "文字图像_主标题_很高兴认识你"
+    ]
+  },
+  "cdfc5f692a667f2735201534": {
+    "include": true,
+    "name": "副标题_从一句你好",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "副标题 从一句你好"
+    ],
+    "aliases": [
+      "文字图像_副标题_从一句你好"
+    ]
+  },
+  "2015a33037973e31d22caa99": {
+    "include": true,
+    "name": "主标题_你好我是",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "主标题 你好我是"
+    ],
+    "aliases": [
+      "文字图像_主标题_你好我是"
+    ]
+  },
+  "db9b30a1394ab0942e23e910": {
+    "include": true,
+    "name": "标题_相遇故事从那天开始",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "标题 相遇故事从那天开始"
+    ],
+    "aliases": [
+      "文字图像_标题_相遇故事从那天开始"
+    ]
+  },
+  "3cc79d9bca1e0e374dba4069": {
+    "include": true,
+    "name": "结束语_这一天成了故事开头",
+    "kind": "text",
+    "subcategory": "quote",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "爱情短句",
+      "文字贴纸",
+      "结束语 这一天成了故事开头"
+    ],
+    "aliases": [
+      "文字图像_结束语_这一天成了故事开头"
+    ]
+  },
+  "a4673db360a1210e067a6e1c": {
+    "include": true,
+    "name": "相守题签",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "相守题签"
+    ],
+    "aliases": [
+      "文字图像_相守题签"
+    ]
+  },
+  "3604c3945059f88873afecce": {
+    "include": true,
+    "name": "大标题",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "大标题"
+    ],
+    "aliases": [
+      "文字图像_大标题"
+    ]
+  },
+  "c897484b2405592952f05ef0": {
+    "include": true,
+    "name": "副标题_相知一起旅行",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "副标题 相知一起旅行"
+    ],
+    "aliases": [
+      "文字图像_副标题_相知一起旅行"
+    ]
+  },
+  "f71e2ba3636e280380c646c4": {
+    "include": true,
+    "name": "大标题_慢慢读懂你",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "大标题 慢慢读懂你"
+    ],
+    "aliases": [
+      "文字图像_大标题_慢慢读懂你"
+    ]
+  },
+  "74b8d9ad3e810216bcfc25cf": {
+    "include": true,
+    "name": "大标题_不知不觉喜欢你",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "大标题 不知不觉喜欢你"
+    ],
+    "aliases": [
+      "文字图像_大标题_不知不觉喜欢你"
+    ]
+  },
+  "b47483a4d47e8955a691bb57": {
+    "include": true,
+    "name": "副标题_原来那时已经心动",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "副标题 原来那时已经心动"
+    ],
+    "aliases": [
+      "文字图像_副标题_原来那时已经心动"
+    ]
+  },
+  "13439272f7be20376b431991": {
+    "include": true,
+    "name": "那一刻的你",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "那一刻的你"
+    ],
+    "aliases": [
+      "文字图像_那一刻的你"
+    ]
+  },
+  "59f7c4081316ae33644e6d81": {
+    "include": true,
+    "name": "大标题_相伴",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "大标题 相伴"
+    ],
+    "aliases": [
+      "文字图像_大标题_相伴"
+    ]
+  },
+  "f9daebca861ebe071827bcf7": {
+    "include": true,
+    "name": "收尾",
+    "kind": "text",
+    "subcategory": "quote",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "爱情短句",
+      "文字贴纸",
+      "收尾"
+    ],
+    "aliases": [
+      "文字图像_收尾"
+    ]
+  },
+  "da863858179a5683c6400eb4": {
+    "include": true,
+    "name": "大标题_婚礼日常",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "大标题 婚礼日常"
+    ],
+    "aliases": [
+      "文字图像_大标题_婚礼日常"
+    ]
+  },
+  "6131d1153c5a8a9006ff5be9": {
+    "include": true,
+    "name": "副标题_属于我们的这一天",
+    "kind": "text",
+    "subcategory": "title",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "标题贴纸",
+      "文字贴纸",
+      "副标题 属于我们的这一天"
+    ],
+    "aliases": [
+      "文字图像_副标题_属于我们的这一天"
+    ]
+  },
+  "a2d6b379fad71dc1b32db258": {
+    "include": true,
+    "name": "引语_有你的地方日子就有了回响",
+    "kind": "text",
+    "subcategory": "quote",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "爱情短句",
+      "文字贴纸",
+      "引语 有你的地方日子就有了回响"
+    ],
+    "aliases": [
+      "文字图像_引语_有你的地方日子就有了回响"
+    ]
+  },
+  "f43c8034abc91fbd543c279d": {
+    "include": true,
+    "name": "结束语_往后的每一天也一起慢慢过",
+    "kind": "text",
+    "subcategory": "quote",
+    "keywords": [
+      "爱情故事",
+      "情侣手帐",
+      "爱情短句",
+      "文字贴纸",
+      "结束语 往后的每一天也一起慢慢过"
+    ],
+    "aliases": [
+      "文字图像_结束语_往后的每一天也一起慢慢过"
+    ]
+  }
+}
