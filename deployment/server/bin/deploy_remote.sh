@@ -37,7 +37,7 @@ compose run --rm web python manage.py makemigrations --check --dry-run
 compose run --rm web python manage.py migrate --noinput
 compose run --rm web python manage.py collectstatic --noinput
 ln -sfn "$TARGET" "$BASE/current"
-compose up -d --remove-orphans web celery_worker celery_beat frontend
+compose up -d --force-recreate --remove-orphans web celery_worker celery_beat frontend
 for attempt in $(seq 1 30); do
     if curl -fsS -H 'X-Forwarded-Proto: https' "http://127.0.0.1:${DJANGO_PORT:-12026}/health/" >/dev/null; then
         compose ps
