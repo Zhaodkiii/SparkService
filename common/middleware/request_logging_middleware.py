@@ -163,7 +163,7 @@ class RequestLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if "/diary-presets/" in request.path:
+        if "/diary-presets/" in request.path or "/print/" in request.path:
             # STS responses and download URL maps contain bearer secrets.
             started = time.perf_counter()
             response = self.get_response(request)

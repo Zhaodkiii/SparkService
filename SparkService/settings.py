@@ -213,6 +213,7 @@ INSTALLED_APPS = [
     'ai_config',
     'file_manager',
     'diary_presets',
+    'print_orders',
     'material_library',
     'notification_center',
     'backoffice',
@@ -409,6 +410,10 @@ CELERY_TASK_ROUTES = {
 }
 
 CELERY_BEAT_SCHEDULE = {
+    "print-orders-reconcile-payments": {
+        "task": "print_orders.tasks.reconcile_payments", "schedule": crontab(minute="*/1"),
+        "options": {"queue": "celery"},
+    },
     "process-due-account-deactivations": {
         "task": "accounts.deactivation.tasks.schedule_deactivation_processing_task",
         "schedule": crontab(minute="*/15"),
@@ -601,3 +606,8 @@ DIARY_PRESETS_PROCESSOR_TOKEN = os.getenv("DIARY_PRESETS_PROCESSOR_TOKEN", "")
 # Production keeps the dedicated OSS-region worker unless explicitly enabled.
 DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED = os.getenv("DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED", "false").lower() in {"1", "true", "yes"}
 PRESET_CONTROL_URL = os.getenv("PRESET_CONTROL_URL", "http://127.0.0.1:" + os.getenv("BACKEND_PORT", "2026"))
+
+# 实体印制：商品需后台完成打样确认后启用，支付密钥仅由部署环境注入。
+PRINT_OSS_PREFIX = os.getenv('PRINT_OSS_PREFIX', 'traveldiary/print/')
+for _print_key in ('APPID', 'MCHID', 'SERIAL', 'PRIVATE_KEY_PATH', 'PUBLIC_KEY_ID', 'PUBLIC_KEY_PATH', 'API_V3_KEY', 'NOTIFY_URL'):
+    globals()['PRINT_WXPAY_' + _print_key] = os.getenv('PRINT_WXPAY_' + _print_key, '')

@@ -28,7 +28,10 @@ def health_check(_request):
 
 from diary_presets.views import Processor
 
+
 urlpatterns = [
+    path("api/v1/print/", include("print_orders.urls")),
+    path("api/admin/v1/print/", include("print_orders.admin_urls")),
     path("api/v1/materials/", include("material_library.urls")),
     path("api/v1/diary-presets/", include("diary_presets.urls")),
     path("api/admin/v1/diary-presets/", include("diary_presets.admin_urls")),

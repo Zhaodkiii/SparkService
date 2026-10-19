@@ -176,7 +176,7 @@ const fallbackMenus = [
 const menus = computed(() => {
   const source = auth.menus.length ? auth.menus : fallbackMenus;
   if (auth.user?.is_superuser) {
-    return [...source, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
+    return [...source, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
   }
   return source.filter((item) => item.code !== 'menu:conversations');
 });

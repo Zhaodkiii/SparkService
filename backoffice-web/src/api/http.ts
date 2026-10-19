@@ -46,28 +46,22 @@ function refreshAccessToken(): Promise<void> {
   return refreshPromise;
 }
 
+export class ApiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) { super(message); this.name = 'ApiError'; this.status = status; }
+}
+function describeError(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(describeError).join('；');
+  if (value && typeof value === 'object') return Object.entries(value).map(([key, v]) =>
+    ['detail', 'non_field_errors'].includes(key) ? describeError(v) : `${key}：${describeError(v)}`).join('；');
+  return '';
+}
 function toDisplayError(error: AxiosError): Error {
   const status = error.response?.status;
   const body = error.response?.data as Record<string, unknown> | undefined;
-  if (body && typeof body === 'object' && 'msg' in body) {
-    const msg = body.msg;
-    if (typeof msg === 'string' && msg) {
-      return new Error(msg);
-    }
-    if (msg && typeof msg === 'object' && 'detail' in msg) {
-      const detail = (msg as { detail?: string }).detail;
-      if (typeof detail === 'string') {
-        return new Error(detail);
-      }
-    }
-  }
-  if (status === 401) {
-    return new Error('登录已过期，请重新登录');
-  }
-  if (error.message) {
-    return new Error(error.message);
-  }
-  return new Error('请求失败');
+  return new ApiError(status === 401 ? '登录已过期，请重新登录' :
+    describeError(body?.msg ?? body?.detail ?? body) || error.message || '请求失败', status);
 }
 
 http.interceptors.request.use((config) => {
@@ -93,7 +87,7 @@ http.interceptors.response.use(
             text = d;
           }
         }
-        return Promise.reject(new Error(text));
+        return Promise.reject(new ApiError(describeError(m) || text, payload.code));
       }
       return payload.data;
     }
