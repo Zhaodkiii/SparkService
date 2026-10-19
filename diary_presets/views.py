@@ -266,7 +266,7 @@ class ProcessorPermission(BasePermission):
 
 
 class Processor(APIView):
-    """Poll from a dedicated OSS-region worker, never run it on the API host."""
+    """Poll from the dedicated processor (or an opt-in local development process)."""
     authentication_classes = []
     permission_classes = [ProcessorPermission]
 

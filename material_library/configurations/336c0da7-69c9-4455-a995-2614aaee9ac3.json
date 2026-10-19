@@ -1,0 +1,805 @@
+{
+  "171e1e64974b7edcaef78199": {
+    "include": true,
+    "name": "奶油生日手帐纸",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "生日手帐",
+      "生日记录",
+      "奶油色",
+      "纸张纹理",
+      "手帐背景"
+    ],
+    "aliases": [
+      "生日纸张"
+    ]
+  },
+  "9164574152a509c40d332032": {
+    "include": true,
+    "name": "左侧金黄花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "生日装饰",
+      "金黄色",
+      "花枝",
+      "花草",
+      "封面装饰"
+    ],
+    "aliases": [
+      "花枝装饰"
+    ]
+  },
+  "e7382f093f1fb838b2bfcbd9": {
+    "include": true,
+    "name": "顶部黄花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "生日装饰",
+      "黄色花朵",
+      "花枝",
+      "花草",
+      "封面装饰"
+    ],
+    "aliases": [
+      "小花枝"
+    ]
+  },
+  "9ae5efabecd99f50a97e8ac3": {
+    "include": true,
+    "name": "生日蜡烛与花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "生日蜡烛",
+      "蜡烛",
+      "花枝",
+      "生日装饰",
+      "花草"
+    ],
+    "aliases": [
+      "蜡烛装饰"
+    ]
+  },
+  "d79272dcceed4f3b0a66ba27": {
+    "include": true,
+    "name": "亲子照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "亲子",
+      "照片相框",
+      "家庭照片",
+      "奶油色",
+      "相框装饰"
+    ],
+    "aliases": [
+      "亲子相框",
+      "照片框"
+    ]
+  },
+  "948cb0f6e20f9a913286934c": {
+    "include": true,
+    "name": "朋友照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "朋友",
+      "照片相框",
+      "生日合影",
+      "奶油色",
+      "相框装饰"
+    ],
+    "aliases": [
+      "朋友相框",
+      "照片框"
+    ]
+  },
+  "d5c2c857365e1bd7aaa18567": {
+    "include": true,
+    "name": "伴侣照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "照片相框",
+      "情侣",
+      "奶油色",
+      "相框装饰"
+    ],
+    "aliases": [
+      "情侣相框",
+      "照片框"
+    ]
+  },
+  "3abd301b5c645343cf337d80": {
+    "include": true,
+    "name": "长者照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "长者",
+      "照片相框",
+      "家庭纪念",
+      "奶油色",
+      "相框装饰"
+    ],
+    "aliases": [
+      "长辈相框",
+      "照片框"
+    ]
+  },
+  "7553aef5cf028d57210bd951": {
+    "include": true,
+    "name": "手撕信封",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "生日手帐",
+      "信封",
+      "手撕纸",
+      "信件",
+      "复古装饰",
+      "封面装饰"
+    ],
+    "aliases": [
+      "信封贴纸"
+    ]
+  },
+  "d41004df4e1c33d72399548c": {
+    "include": true,
+    "name": "红色丝带",
+    "kind": "illustration",
+    "subcategory": "ornament",
+    "keywords": [
+      "生日手帐",
+      "红色丝带",
+      "蝴蝶结",
+      "生日装饰",
+      "复古装饰"
+    ],
+    "aliases": [
+      "丝带装饰",
+      "红丝带"
+    ]
+  },
+  "72ed15605ab070afc095b7f9": {
+    "include": true,
+    "name": "中央生日花束",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "花束",
+      "生日装饰",
+      "黄色花朵",
+      "花草",
+      "封面装饰"
+    ],
+    "aliases": [
+      "花束装饰"
+    ]
+  },
+  "6d2b37638cc5365b1318733c": {
+    "include": true,
+    "name": "暖米客厅背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "生日记录",
+      "客厅",
+      "暖米色",
+      "家庭",
+      "手帐背景"
+    ],
+    "aliases": [
+      "客厅背景"
+    ]
+  },
+  "88a71bac40585ba591f01564": {
+    "include": true,
+    "name": "红结小熊",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "生日手帐",
+      "周岁",
+      "小熊",
+      "红色蝴蝶结",
+      "玩偶",
+      "童年"
+    ],
+    "aliases": [
+      "小熊玩偶",
+      "泰迪熊"
+    ]
+  },
+  "7dbc2de278690ae6a4651566": {
+    "include": true,
+    "name": "周岁主照相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "周岁",
+      "照片相框",
+      "宝宝生日",
+      "相框装饰",
+      "照片"
+    ],
+    "aliases": [
+      "周岁相框",
+      "照片框"
+    ]
+  },
+  "3fc207c365b92811d442b0d5": {
+    "include": true,
+    "name": "右页暖色客厅",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "周岁",
+      "客厅",
+      "家庭",
+      "暖色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "客厅背景"
+    ]
+  },
+  "97bcca60cafe43ce9fcbee12": {
+    "include": true,
+    "name": "沙发互动相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "周岁",
+      "照片相框",
+      "亲子互动",
+      "沙发",
+      "相框装饰"
+    ],
+    "aliases": [
+      "照片框",
+      "相框"
+    ]
+  },
+  "1e670530573ec1e59710b44e": {
+    "include": true,
+    "name": "生日合影相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "周岁",
+      "生日合影",
+      "照片相框",
+      "家庭",
+      "相框装饰"
+    ],
+    "aliases": [
+      "合影相框",
+      "照片框"
+    ]
+  },
+  "c4997624826b41a66190f9d9": {
+    "include": true,
+    "name": "暖木生日纸面",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "生日手帐",
+      "青春",
+      "暖木色",
+      "纸张纹理",
+      "手帐背景"
+    ],
+    "aliases": [
+      "木纹纸张"
+    ]
+  },
+  "1c4b0f2b77afeab2c53301d1": {
+    "include": true,
+    "name": "生日许愿相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "青春",
+      "生日许愿",
+      "照片相框",
+      "奶油色",
+      "相框装饰"
+    ],
+    "aliases": [
+      "许愿相框",
+      "照片框"
+    ]
+  },
+  "f8ef3ed3dde39402724ecb2e": {
+    "include": true,
+    "name": "右页暖木纸面",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "生日手帐",
+      "青春",
+      "暖木色",
+      "纸张纹理",
+      "手帐背景"
+    ],
+    "aliases": [
+      "木纹纸张"
+    ]
+  },
+  "0168f142c1bca6a183318d1b": {
+    "include": true,
+    "name": "集体合影相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "青春",
+      "集体合影",
+      "照片相框",
+      "朋友",
+      "相框装饰"
+    ],
+    "aliases": [
+      "合影相框",
+      "照片框"
+    ]
+  },
+  "9028dc31a29af2d354fd3e45": {
+    "include": true,
+    "name": "抱花照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "青春",
+      "抱花",
+      "照片相框",
+      "花束",
+      "相框装饰"
+    ],
+    "aliases": [
+      "花束相框",
+      "照片框"
+    ]
+  },
+  "3f87da06c2cee7c7a56b612b": {
+    "include": true,
+    "name": "水彩客厅背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "朋友",
+      "生日聚会",
+      "水彩客厅",
+      "室内",
+      "手帐背景"
+    ],
+    "aliases": [
+      "客厅背景"
+    ]
+  },
+  "5f503cfbf173b7ccc145be25": {
+    "include": true,
+    "name": "伙伴合影相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "朋友",
+      "伙伴合影",
+      "照片相框",
+      "聚会",
+      "相框装饰"
+    ],
+    "aliases": [
+      "朋友相框",
+      "合影相框"
+    ]
+  },
+  "582a6a3e413a5166e1d14093": {
+    "include": true,
+    "name": "右页水彩客厅",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "朋友",
+      "生日聚会",
+      "水彩客厅",
+      "室内",
+      "手帐背景"
+    ],
+    "aliases": [
+      "客厅背景"
+    ]
+  },
+  "27473d6ec37f7183d928aceb": {
+    "include": true,
+    "name": "伙伴照片相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "朋友",
+      "伙伴合影",
+      "照片相框",
+      "聚会",
+      "相框装饰"
+    ],
+    "aliases": [
+      "朋友相框",
+      "照片框"
+    ]
+  },
+  "588bca00b8a9f042f4345f8d": {
+    "include": true,
+    "name": "生日餐桌相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "朋友",
+      "生日餐桌",
+      "照片相框",
+      "生日聚会",
+      "相框装饰"
+    ],
+    "aliases": [
+      "餐桌相框",
+      "照片框"
+    ]
+  },
+  "6da052d206779e56475fcd85": {
+    "include": true,
+    "name": "暖灰客厅背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "暖灰色",
+      "客厅",
+      "生日记录",
+      "手帐背景"
+    ],
+    "aliases": [
+      "客厅背景"
+    ]
+  },
+  "8cbd4bbdf04ebcb96cf5c8c6": {
+    "include": true,
+    "name": "烛光空白相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "烛光",
+      "照片相框",
+      "生日许愿",
+      "相框装饰"
+    ],
+    "aliases": [
+      "烛光相框",
+      "照片框"
+    ]
+  },
+  "a8b14f92445eeac7ed1b2909": {
+    "include": true,
+    "name": "白色花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "白色花枝",
+      "花草",
+      "相框装饰",
+      "室内"
+    ],
+    "aliases": [
+      "花枝装饰"
+    ]
+  },
+  "f30fcc5d1035db3d1238c3e7": {
+    "include": true,
+    "name": "右页暖灰客厅",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "暖灰色",
+      "客厅",
+      "生日记录",
+      "手帐背景"
+    ],
+    "aliases": [
+      "客厅背景"
+    ]
+  },
+  "167572a5ed819663df441082": {
+    "include": true,
+    "name": "亲吻陪伴相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "亲吻",
+      "照片相框",
+      "纪念日",
+      "相框装饰"
+    ],
+    "aliases": [
+      "情侣相框",
+      "照片框"
+    ]
+  },
+  "d7f0d2d2c97afea1d7a5a431": {
+    "include": true,
+    "name": "杯子与书本",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "咖啡杯",
+      "书本",
+      "居家装饰",
+      "复古"
+    ],
+    "aliases": [
+      "杯书装饰"
+    ]
+  },
+  "cc06ad8da35546cc62e1e9b3": {
+    "include": true,
+    "name": "玻璃花瓶",
+    "kind": "illustration",
+    "subcategory": "object",
+    "keywords": [
+      "生日手帐",
+      "伴侣",
+      "玻璃花瓶",
+      "花草",
+      "居家装饰",
+      "复古"
+    ],
+    "aliases": [
+      "花瓶装饰"
+    ]
+  },
+  "7772a444be5a581442be34a8": {
+    "include": true,
+    "name": "左页暖木窗景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "木窗",
+      "城市窗景",
+      "暖色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "窗景背景"
+    ]
+  },
+  "24a1640d49f11153d4b7f38c": {
+    "include": true,
+    "name": "左侧连续花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "花枝",
+      "连续花边",
+      "紫色花朵",
+      "页面装饰"
+    ],
+    "aliases": [
+      "花边装饰"
+    ]
+  },
+  "bbbe381a023d07daef24d508": {
+    "include": true,
+    "name": "右下花枝与爱心",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "花枝",
+      "爱心",
+      "紫色花朵",
+      "页面装饰"
+    ],
+    "aliases": [
+      "爱心花枝"
+    ]
+  },
+  "8e7c590ef786fcf0d576fbf9": {
+    "include": true,
+    "name": "照片走廊卡",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "照片墙",
+      "照片走廊",
+      "相框",
+      "回忆"
+    ],
+    "aliases": [
+      "照片墙卡",
+      "照片展示卡"
+    ]
+  },
+  "c32451f1c5edb4b4c9675aef": {
+    "include": false
+  },
+  "a3dffe88bee52d53876b2beb": {
+    "include": true,
+    "name": "右页暖木窗景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "木窗",
+      "城市窗景",
+      "暖色",
+      "手帐背景"
+    ],
+    "aliases": [
+      "窗景背景"
+    ]
+  },
+  "c770d8b9f0e30a4f8f1f7335": {
+    "include": true,
+    "name": "双人庆生相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "双人庆生",
+      "照片相框",
+      "伴侣",
+      "纪念日"
+    ],
+    "aliases": [
+      "双人相框",
+      "照片框"
+    ]
+  },
+  "0e8e7479bbde6c70057b2b73": {
+    "include": true,
+    "name": "右侧白紫花枝",
+    "kind": "illustration",
+    "subcategory": "botanical",
+    "keywords": [
+      "生日手帐",
+      "中年纪念",
+      "白紫花枝",
+      "花草",
+      "页面装饰",
+      "植物"
+    ],
+    "aliases": [
+      "花枝装饰"
+    ]
+  },
+  "755df7defad23ad3160b7e5d": {
+    "include": true,
+    "name": "老街复古纸面",
+    "kind": "background",
+    "subcategory": "paper_texture",
+    "keywords": [
+      "生日手帐",
+      "双重纪念",
+      "老街",
+      "复古纸面",
+      "纸张纹理",
+      "手帐背景"
+    ],
+    "aliases": [
+      "老街纸张"
+    ]
+  },
+  "57ed383f3056ca80617a4410": {
+    "include": true,
+    "name": "老街牵手相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "双重纪念",
+      "老街",
+      "牵手",
+      "照片相框",
+      "纪念日"
+    ],
+    "aliases": [
+      "牵手相框",
+      "照片框"
+    ]
+  },
+  "e5814db111bfe9d151ada478": {
+    "include": true,
+    "name": "水彩老街背景",
+    "kind": "background",
+    "subcategory": "scene",
+    "keywords": [
+      "生日手帐",
+      "双重纪念",
+      "老街",
+      "水彩街景",
+      "复古",
+      "手帐背景"
+    ],
+    "aliases": [
+      "老街背景"
+    ]
+  },
+  "62ba5ec19acdeff4f19d16d0": {
+    "include": true,
+    "name": "窗边举杯相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "双重纪念",
+      "窗边",
+      "举杯",
+      "照片相框",
+      "纪念日"
+    ],
+    "aliases": [
+      "举杯相框",
+      "照片框"
+    ]
+  },
+  "4c059871ec03e5272dcdc13f": {
+    "include": true,
+    "name": "石墙肖像相框",
+    "kind": "photo",
+    "subcategory": "frame",
+    "keywords": [
+      "生日手帐",
+      "双重纪念",
+      "石墙",
+      "肖像相框",
+      "长者",
+      "纪念日"
+    ],
+    "aliases": [
+      "肖像相框",
+      "照片框"
+    ]
+  }
+}

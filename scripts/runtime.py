@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 RUN = ROOT / 'run'
 LOG = ROOT / 'logs'
-NAMES = ('backend', 'frontend', 'celery_worker', 'celery_beat')
+NAMES = ('backend', 'frontend', 'celery_worker', 'celery_beat', 'preset_processor')
 CHILDREN = {}
 
 
@@ -70,6 +70,8 @@ def command(name):
         return [python, str(ROOT / 'manage.py'), 'runserver', f"{os.environ.get('BACKEND_HOST', '127.0.0.1')}:{os.environ.get('BACKEND_PORT', '2026')}", '--noreload']
     if name == 'frontend':
         return ['node', str(ROOT / 'backoffice-web/node_modules/vite/bin/vite.js'), str(ROOT / 'backoffice-web'), '--host', os.environ.get('FRONTEND_HOST', 'localhost'), '--port', os.environ.get('FRONTEND_PORT', '6018'), '--strictPort']
+    if name == 'preset_processor':
+        return [python, str(ROOT / 'manage.py'), 'run_preset_processor']
     base = [python, '-m', 'celery', '--workdir', str(ROOT), '-A', 'SparkService']
     if name == 'celery_worker':
         return base + ['worker', '--loglevel=INFO', '--pool=solo', '--queues', queues()]
@@ -104,6 +106,14 @@ def stop(name):
 
 
 def start(name):
+    if name == 'preset_processor':
+        from diary_presets.processor_runtime import configuration_error
+        if not settings().DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED:
+            print('preset_processor: 本机托管未启用（使用独立云端 Worker）')
+            return
+        error = configuration_error(settings())
+        if error:
+            raise RuntimeError(error)
     if owned(pid_for(name)):
         print(f'{name}: 已在运行')
         return
@@ -136,11 +146,20 @@ def start(name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['start', 'stop', 'status', 'check-broker', 'queues'])
+    parser.add_argument('action', choices=['start', 'stop', 'status', 'check-broker', 'check-processor', 'queues'])
     parser.add_argument('name', nargs='?', choices=NAMES)
     args = parser.parse_args()
     if args.action == 'queues':
         print(queues())
+    elif args.action == 'check-processor':
+        from diary_presets.processor_runtime import configuration_error
+        if settings().DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED:
+            error = configuration_error(settings())
+            if error:
+                raise RuntimeError(error)
+            print('手帐资源处理: 本机配置完整')
+        else:
+            print('手帐资源处理: 独立部署，本机不托管')
     elif args.action == 'check-broker':
         import redis
         client = redis.Redis.from_url(settings().CELERY_BROKER_URL, socket_connect_timeout=2, socket_timeout=2)

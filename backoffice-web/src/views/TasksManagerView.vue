@@ -42,12 +42,26 @@
     </a-col>
   </a-row>
 
+  <a-card title="手帐资源处理 Worker" style="margin-top: 16px">
+    <a-space wrap>
+      <a-tag :color="status?.preset_processor?.healthy ? 'green' : 'orange'">
+        {{ !status?.preset_processor?.enabled ? '独立部署（本机未托管）' : status.preset_processor.healthy ? '运行中 · 可通信' : status.preset_processor.running ? '运行中 · 连接待恢复' : '未运行' }}
+      </a-tag>
+      <span>PID: {{ status?.preset_processor?.pid ?? '-' }}</span>
+      <span>排队：{{ status?.preset_processor?.queued ?? '-' }}</span>
+      <span>处理中：{{ status?.preset_processor?.processing ?? '-' }}</span>
+      <span v-if="status?.preset_processor?.current_job">当前任务：{{ status.preset_processor.current_job }}</span>
+    </a-space>
+    <div style="color: #999; margin-top: 8px">负责手帐 ZIP 解压、校验与发布；启用本机托管后随下方一键启停操作运行。</div>
+    <a-alert v-if="status?.preset_processor?.error" type="warning" show-icon :message="status.preset_processor.error" style="margin-top: 12px" />
+  </a-card>
+
   <a-card title="异步任务管理" style="margin-top: 16px">
     <template #extra>
       <a-space>
-        <a-button type="primary" :disabled="!canControl" :loading="actionLoading === 'start'" @click="doControl('start')">启动 Celery</a-button>
-        <a-button danger :disabled="!canControl" :loading="actionLoading === 'stop'" @click="doControl('stop')">停止 Celery</a-button>
-        <a-button :disabled="!canControl" :loading="actionLoading === 'restart'" @click="doControl('restart')">重启 Celery</a-button>
+        <a-button type="primary" :disabled="!canControl" :loading="actionLoading === 'start'" @click="doControl('start')">一键启动异步服务</a-button>
+        <a-button danger :disabled="!canControl" :loading="actionLoading === 'stop'" @click="doControl('stop')">停止异步服务</a-button>
+        <a-button :disabled="!canControl" :loading="actionLoading === 'restart'" @click="doControl('restart')">重启异步服务</a-button>
         <a-button
           :disabled="!canControl || !status || !!status.redis?.healthy || !redisManageable"
           :loading="actionLoading === 'start_redis'"
@@ -76,7 +90,7 @@
 
     <a-descriptions bordered :column="1" size="small">
       <a-descriptions-item label="总体状态">
-        <a-tag :color="overallHealthy ? 'green' : 'red'">{{ overallHealthy ? 'Worker+Beat 运行且核心任务已注册' : '异步任务未完全就绪' }}</a-tag>
+        <a-tag :color="overallHealthy ? 'green' : 'red'">{{ overallHealthy ? '托管的异步服务已就绪，Celery 任务已注册' : '异步任务未完全就绪' }}</a-tag>
       </a-descriptions-item>
       <a-descriptions-item label="run 目录">{{ status?.run_dir ?? '-' }}</a-descriptions-item>
       <a-descriptions-item label="log 目录">{{ status?.log_dir ?? '-' }}</a-descriptions-item>
@@ -198,7 +212,7 @@ async function doControl(action: ActionType) {
       time: now,
       action: action.toUpperCase(),
       name: item.name,
-      result: item.action,
+      result: item.error ? `${item.action}: ${item.error}` : item.action,
       pid: item.pid ? String(item.pid) : '-',
     }));
     operationRows.value = [...rows, ...operationRows.value].slice(0, 20);
@@ -229,7 +243,12 @@ async function doControl(action: ActionType) {
         message.warning(`Redis: ${r || '未知结果'}`);
       }
     } else {
-      message.success(`操作完成: ${action}`);
+      const failed = resp.operations.filter((item) => item.action === 'failed');
+      if (failed.length) {
+        message.error(failed.map((item) => `${item.name}: ${item.error || '操作失败'}`).join('；'));
+      } else {
+        message.success(`操作完成: ${action}`);
+      }
     }
   } finally {
     actionLoading.value = '';

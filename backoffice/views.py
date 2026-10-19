@@ -640,13 +640,17 @@ def _get_celery_runtime_status() -> dict:
     redis_status = _celery_redis_status()
     broker_url = (getattr(settings, "CELERY_BROKER_URL", None) or "").strip()
     redis_status["local_manageable"] = _redis_locally_manageable(broker_url)
+    from diary_presets.processor_runtime import runtime_status
+    preset_processor = runtime_status()
+    processor_ready = not preset_processor['enabled'] or preset_processor['healthy']
 
     return {
         "host": socket.gethostname(),
         "worker": {"pid": worker_pid, "running": worker_running},
         "beat": {"pid": beat_pid, "running": beat_running},
-        "overall_running": worker_running and beat_running,
-        "overall_healthy": worker_running and beat_running and ping["healthy"] and redis_status["healthy"] and registered_tasks["all_healthy"],
+        "preset_processor": preset_processor,
+        "overall_running": worker_running and beat_running and (not preset_processor['enabled'] or preset_processor['running']),
+        "overall_healthy": worker_running and beat_running and ping["healthy"] and redis_status["healthy"] and registered_tasks.get("all_healthy", False) and processor_ready,
         "ping": ping,
         "registered_tasks": registered_tasks,
         "redis": redis_status,
@@ -2105,6 +2109,24 @@ class AdminAsyncTaskManagerStatusView(APIView):
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
+def _control_preset_processor(action):
+    from scripts import runtime
+    if not settings.DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED:
+        return {'name': 'preset_processor', 'action': 'externally_managed'}
+    try:
+        was_running = runtime.owned(runtime.pid_for('preset_processor'))
+        if action == 'start':
+            runtime.start('preset_processor')
+            result = 'already_running' if was_running else 'started'
+        else:
+            runtime.stop('preset_processor')
+            result = 'stopped' if was_running else 'not_running'
+        return {'name': 'preset_processor', 'action': result,
+                'pid': runtime.pid_for('preset_processor')}
+    except (RuntimeError, OSError) as exc:
+        return {'name': 'preset_processor', 'action': 'failed', 'error': str(exc)}
+
+
 class AdminAsyncTaskManagerControlView(APIView):
     permission_classes = [AdminCodePermission]
     required_permission_code = "button:tasks:manager:control"
@@ -2165,12 +2187,14 @@ class AdminAsyncTaskManagerControlView(APIView):
 
         operations: list[dict] = []
         if action in {"stop", "restart"}:
+            operations.append(_control_preset_processor('stop'))
             operations.append(_stop_process("celery_beat.pid", "celery_beat"))
             operations.append(_stop_process("celery_worker.pid", "celery_worker"))
 
         if action in {"start", "restart"}:
             operations.append(_start_process_if_needed("celery_worker.pid", "celery_worker", celery_worker_cmd))
             operations.append(_start_process_if_needed("celery_beat.pid", "celery_beat", celery_beat_cmd))
+            operations.append(_control_preset_processor('start'))
 
         payload = {
             "action": action,

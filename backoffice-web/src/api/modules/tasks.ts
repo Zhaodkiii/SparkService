@@ -45,6 +45,18 @@ export interface TaskManagerStatusResponse {
   host: string;
   worker: { pid: number | null; running: boolean };
   beat: { pid: number | null; running: boolean };
+  preset_processor?: {
+    enabled: boolean;
+    pid: number | null;
+    running: boolean;
+    healthy: boolean;
+    connected: boolean;
+    error: string;
+    queued: number;
+    processing: number;
+    current_job: string | null;
+    last_seen: number | null;
+  };
   overall_running: boolean;
   overall_healthy?: boolean;
   ping: {
@@ -82,7 +94,7 @@ export interface TaskManagerStatusResponse {
 
 export interface TaskManagerControlResponse {
   action: 'start' | 'stop' | 'restart' | 'start_redis' | 'stop_redis';
-  operations: Array<{ name: string; action: string; pid?: number }>;
+  operations: Array<{ name: string; action: string; pid?: number | null; error?: string }>;
   status: TaskManagerStatusResponse;
 }
 

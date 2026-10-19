@@ -596,3 +596,8 @@ LOGGING = {
 DIARY_PRESETS_OSS_PREFIX = os.getenv("DIARY_PRESETS_OSS_PREFIX", "traveldiary/presets/")
 DIARY_PRESETS_UPLOAD_ROLE_ARN = os.getenv("DIARY_PRESETS_UPLOAD_ROLE_ARN", "")
 DIARY_PRESETS_PROCESSOR_TOKEN = os.getenv("DIARY_PRESETS_PROCESSOR_TOKEN", "")
+
+# Local development may manage the resource processor as a separate process.
+# Production keeps the dedicated OSS-region worker unless explicitly enabled.
+DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED = os.getenv("DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED", "false").lower() in {"1", "true", "yes"}
+PRESET_CONTROL_URL = os.getenv("PRESET_CONTROL_URL", "http://127.0.0.1:" + os.getenv("BACKEND_PORT", "2026"))

@@ -21,7 +21,7 @@ parse_options() {
       --check) CHECK_ONLY=1 ;;
       --help|-h)
         echo "用法: $0 [--no-frontend] [--no-async] [--check]"
-        echo "默认启动 API、管理后台、Celery Worker 与 Beat。Redis/数据库需预先运行。"
+        echo "默认启动 API、管理后台、Celery Worker、Beat 与手帐资源处理 Worker。Redis/数据库需预先运行。"
         echo "--check 仅检查环境、数据库迁移状态与 Redis，不启动服务。"
         exit 0 ;;
       *) echo "未知参数: $1" >&2; exit 2 ;;
@@ -45,6 +45,7 @@ require_prereqs() {
   }
   if [[ "$START_ASYNC" == 1 ]]; then
     runtime check-broker || { echo "请先启动配置的 Redis，或使用 --no-async。" >&2; exit 1; }
+    runtime check-processor
   fi
 }
 
@@ -53,12 +54,14 @@ start_all() {
   if [[ "$START_ASYNC" == 1 ]]; then
     runtime start celery_worker
     runtime start celery_beat
+    runtime start preset_processor
   fi
   if [[ "$START_FRONTEND" == 1 ]]; then runtime start frontend; fi
 }
 
 stop_all() {
   runtime stop frontend
+  runtime stop preset_processor
   runtime stop celery_beat
   runtime stop celery_worker
   runtime stop backend
