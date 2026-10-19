@@ -1,8 +1,6 @@
 import json
 import uuid
-import secrets
 from datetime import timedelta
-from django.conf import settings
 from django.db import transaction
 from django.db.models import Q, Count
 from django.http import HttpResponse
@@ -13,7 +11,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import Product, Order, Production, Event, Shipment, Receipt, FileCleanup
+from .models import Product, Order, Production, Event, Shipment, Receipt
 from .domain import OrderInput, Conflict, Unavailable, spec, quote, digest, validate_manifest
 from .services import event, cancel, reconcile
 from . import storage, wechat
@@ -58,6 +56,7 @@ def order_data(o, admin=False, user=None, summary=False):
         refund_state=o.refund_state, refund_reason=o.refund_reason,
         stage_started_at=o.stage_started_at.isoformat(), updated_at=o.updated_at.isoformat(),
         sheets_per_copy=(o.page_count+1)//2 if o.spec.get('duplex') else o.page_count,
+        cover_page_count=next((f['page_count'] for f in p.manifest if f['role']=='cover'), 0) if p else 0,
         checks=p.result.get('checks', []) if p else [],
         can_download=can_download(o, user) if admin and user else False,
         checklists=CHECKLISTS if admin else {})
@@ -153,7 +152,6 @@ class Orders(APIView):
         prod = Production.objects.create(order=o, number=old.number+1, manifest=d['files'], confirmed_hash=digest(d['files']))
         o.current_production = prod; o.snapshot = d['snapshot']; o.title = d['title']; o.file_state = 'uploading'; o.state = 'draft'
         o.exception_reason = ''; event(o, 'resubmitted', '已重新提交生产稿，等待上传与审核', request.user)
-        FileCleanup.objects.create(keys=storage.obsolete_keys(old))
         old.delete()
         receipt(o, d)
         return Response(order_data(o))
@@ -176,6 +174,14 @@ class Upload(APIView):
         if p.state == 'failed':
             p.state='uploading'; p.error=''; p.uploads={}; p.save()
             o.file_state='uploading'; event(o,'retry','重新上传生产文件',request.user)
+        uploads = request.data.get('uploads', {})
+        roles = {f['role'] for f in p.manifest}
+        if not isinstance(uploads, dict) or not set(uploads).issubset(roles): raise ValidationError('上传任务参数无效')
+        for role, upload_id in uploads.items():
+            if not isinstance(upload_id, str) or not 1 <= len(upload_id) <= 1024 or not all(c.isalnum() or c in '-_+/=' for c in upload_id):
+                raise ValidationError('上传会话参数无效')
+            p.uploads[role] = {'id': upload_id}
+        p.save(update_fields=['uploads'])
         return Response(dict(production_id=str(p.id), files=storage.multipart_plan(p)))
 
 
@@ -184,14 +190,15 @@ class CompleteUpload(APIView):
     @transaction.atomic
     def post(self, request, pk):
         o = get_object_or_404(Order.objects.select_for_update(), pk=pk, owner=request.user)
-        if o.state != 'draft': raise Conflict()
         p = o.current_production
         if request.data.get('production_id') != str(p.id): raise Conflict('生产稿已替换，请使用最新上传任务')
-        if p.state in ('checking','ready'): return Response(order_data(o))
-        if p.state != 'uploading': raise Conflict('请重新申请上传')
-        storage.complete(p)
-        p.state='checking'; p.error=''; p.save()
-        o.file_state='checking'; event(o,'uploaded','生产文件已上传，正在校验',request.user)
+        if p.state == 'ready' and o.state != 'cancelled': return Response(order_data(o))
+        if o.state != 'draft' or o.cancel_requested: raise Conflict('此订单当前不能提交文件')
+        roles = sorted(f['role'] for f in p.manifest)
+        if request.data.get('client_confirmed') is not True or request.data.get('completed_roles') != roles:
+            raise ValidationError('请在本机检查并完成本订单全部文件上传后提交')
+        storage.accept_client_upload(o)
+        event(o,'uploaded','客户端已完成生产稿检查与上传，等待人工审核' if o.state=='awaiting_review' else '生产稿已上传，请完成支付',request.user)
         return Response(order_data(o))
 
 
@@ -329,14 +336,14 @@ class AdminProducts(APIView):
         if p and request.data.get('revision')!=p.revision: raise Conflict()
         s=Input(p,data=request.data); s.is_valid(raise_exception=True)
         d=s.validated_data
-        if d.get('cover_mode','separate_front_back')!='separate_front_back': raise ValidationError('暂只支持独立封面封底')
+        d['cover_mode'] = 'optional_shell'
         if not 1<=d.get('min_pages',2)<=d.get('max_pages',200)<=500: raise ValidationError('页数限制不合法')
         if not 1<=d.get('max_quantity',10)<=100: raise ValidationError('每单份数须为 1–100')
         if not 1<=d.get('width_mm',148)<=500 or not 1<=d.get('height_mm',210)<=500: raise ValidationError('成品尺寸不合法')
         if not isinstance(d.get('regions',[]),list) or not all(isinstance(v,str) and v.strip() for v in d.get('regions',[])): raise ValidationError('配送地区需为名称列表')
         regions = list(dict.fromkeys(x.strip() for x in d.get('regions', [])))
         d['regions'] = regions
-        proof_fields = ('width_mm', 'height_mm', 'paper', 'binding', 'duplex', 'cover_mode')
+        proof_fields = ('width_mm', 'height_mm', 'paper', 'binding', 'duplex')
         changed = p and any(k in d and d[k] != getattr(p,k) for k in proof_fields)
         if changed and p.proof_approved and d.get('proof_approved') and not request.data.get('reproof_confirmed'):
             raise ValidationError('尺寸、纸张或工艺已变化，请重新实物打样并确认')
@@ -366,46 +373,3 @@ class Notification(APIView):
             return HttpResponse(status=204)
         except (ValueError,KeyError,TypeError):
             return Response({'code':'FAIL','message':'Invalid notification'},status=400)
-
-
-class WorkerPermission(BasePermission):
-    def has_permission(self,request,view):
-        token=getattr(settings,'PRINT_PROCESSOR_TOKEN','')
-        return bool(token and secrets.compare_digest(request.headers.get('X-Print-Token',''),token))
-
-
-class Processor(APIView):
-    authentication_classes=[]
-    permission_classes=[WorkerPermission]
-    @transaction.atomic
-    def post(self,request):
-        d=request.data
-        if d.get('action')=='claim':
-            p=Production.objects.select_for_update(skip_locked=True).filter(state='checking', order__state='draft').filter(Q(lease_until__isnull=True)|Q(lease_until__lt=timezone.now())).order_by('confirmed_at').first()
-            if not p:return Response(status=204)
-            if p.attempts>=5:
-                p.state='failed'; p.error='文件处理多次中断，请联系工作人员'; p.save()
-                o=Order.objects.select_for_update().get(pk=p.order_id); o.file_state='failed'; event(o,'check_failed',p.error)
-                return Response(status=204)
-            p.lease=uuid.uuid4(); p.lease_until=timezone.now()+timedelta(minutes=30); p.attempts+=1; p.save()
-            return Response(dict(id=str(p.id),lease=str(p.lease),files=[dict(**f,key=storage.staging(p,f['role'])) for f in p.manifest],
-                spec=p.order.spec,snapshot=p.order.snapshot,quantity=p.order.quantity,number=p.order.id.hex,
-                output_prefix=f'{storage.prefix()}production/{p.id}/{p.lease}/'))
-        p=get_object_or_404(Production.objects.select_for_update(),pk=d.get('id'))
-        if str(p.lease)!=d.get('lease') or not p.lease_until or p.lease_until<timezone.now():raise Conflict('处理租约已过期')
-        if p.state in ('ready','failed'): return Response({'state':p.state})
-        o=Order.objects.select_for_update().get(pk=p.order_id)
-        if o.state!='draft': raise Conflict('订单已取消或不可更新')
-        if d.get('error'):
-            p.state='failed'; p.error=str(d['error'])[:1000]; o.file_state='failed'
-        else:
-            result=d.get('result',{}); output=f'{storage.prefix()}production/{p.id}/{p.lease}/'
-            files=result.get('files',{})
-            if set(files)!={'interior','cover','manifest','production','archive'}:raise ValidationError('生产文件不完整')
-            for role,f in files.items():
-                if not isinstance(f,dict) or not str(f.get('key','')).startswith(output):raise ValidationError('生产路径非法')
-                if role in ('interior','cover') and f.get('sha256')!=next(x['sha256'] for x in p.manifest if x['role']==role):raise ValidationError('用户确认的生产稿发生变化')
-            p.result=result;p.state='ready';o.file_state='ready'
-            if o.payment_state in ('paid','not_required'): o.state='awaiting_review'
-        p.save(); event(o,'checked',('生产稿已就绪，等待印前审核' if o.payment_state in ('paid','not_required') else '生产文件已就绪，请支付') if p.state=='ready' else p.error)
-        return Response({'state':p.state})

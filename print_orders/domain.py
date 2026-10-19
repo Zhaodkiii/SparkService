@@ -36,13 +36,13 @@ class FileInput(serializers.Serializer):
 class PageInput(serializers.Serializer):
     page_id = serializers.UUIDField()
     revision_id = serializers.UUIDField()
-    role = serializers.ChoiceField(choices=['front', 'back', 'interior'])
+    role = serializers.ChoiceField(choices=['shell', 'interior'])
 
 
 class SnapshotInput(serializers.Serializer):
     book_id = serializers.UUIDField()
     catalog_revision = serializers.UUIDField()
-    pages = PageInput(many=True, min_length=3, max_length=502)
+    pages = PageInput(many=True, min_length=1, max_length=501)
     exporter_version = serializers.ChoiceField(choices=['print-v1'])
 
 
@@ -57,7 +57,7 @@ class OrderInput(serializers.Serializer):
     page_count = serializers.IntegerField(min_value=1, max_value=500)
     address = AddressInput()
     snapshot = SnapshotInput()
-    files = FileInput(many=True, min_length=2, max_length=2)
+    files = FileInput(many=True, min_length=1, max_length=2)
     confirmed = serializers.BooleanField()
     quote_total_fen = serializers.IntegerField(min_value=0)
 
@@ -76,8 +76,6 @@ def quote(product, count, quantity, region):
         raise ValidationError('页数或份数超出此规格限制')
     if region not in product.regions:
         raise ValidationError('此收货地区暂不支持配送，请选择支持的地区')
-    if product.cover_mode != 'separate_front_back':
-        raise ValidationError('此封面工艺尚不支持')
     sheets = math.ceil(count / 2) if product.duplex else count
     total = (0 if product.free_printing else (product.base_fen + product.page_fen * count) * quantity) + product.shipping_fen
     if total <= 0 and not product.free_printing:
@@ -88,18 +86,21 @@ def quote(product, count, quantity, region):
 
 def validate_manifest(data):
     files = data['files']
-    if {f['role'] for f in files} != {'interior', 'cover'}:
-        raise ValidationError('必须分别提供内页和封面 PDF')
+    roles = [f['role'] for f in files]
+    if len(set(roles)) != len(roles) or 'interior' not in roles:
+        raise ValidationError('必须提供内页 PDF，各文件角色不能重复')
     if next(f for f in files if f['role']=='interior')['page_count'] != data['page_count']:
         raise ValidationError('内页页数不一致')
-    if next(f for f in files if f['role']=='cover')['page_count'] != 2:
-        raise ValidationError('封面文件需包含封面和封底两面')
     pages = data['snapshot']['pages']
     ids = [str(p['page_id']) for p in pages]
-    if len(set(ids)) != len(ids) or [p['role'] for p in pages].count('front') != 1 or [p['role'] for p in pages].count('back') != 1:
-        raise ValidationError('封面封底必须分别指定，页面不能重复')
+    shell = [p for p in pages if p['role']=='shell']
+    if len(set(ids)) != len(ids) or len(shell) > 1 or (shell and pages[0]['role'] != 'shell'):
+        raise ValidationError('页面不能重复，外壳最多一页并须位于最前面')
+    covers = [f for f in files if f['role']=='cover']
+    if bool(shell) != bool(covers) or (covers and covers[0]['page_count'] != 1):
+        raise ValidationError('有外壳时单独交付一面外壳 PDF，无外壳时仅交付内页')
     inner = sum(p['role']=='interior' for p in pages)
-    if data['page_count'] not in (inner, inner + inner % 2):
+    if inner < 1 or data['page_count'] not in (inner, inner + inner % 2):
         raise ValidationError('印刷页数与页面映射不一致')
     if not data['confirmed']:
         raise ValidationError('请检查并确认生产稿')

@@ -17,9 +17,9 @@
     <div class="grid"><a-form-item label="宽度（mm）" required><a-input-number v-model:value="product.width_mm" :min="1" :max="500" :precision="0" /></a-form-item><a-form-item label="高度（mm）" required><a-input-number v-model:value="product.height_mm" :min="1" :max="500" :precision="0" /></a-form-item></div>
     <div class="grid"><a-form-item label="纸张" required><a-input v-model:value="product.paper" placeholder="纸张名称、克重等" :maxlength="120" /></a-form-item><a-form-item label="装订工艺" required><a-input v-model:value="product.binding" :maxlength="120" /></a-form-item></div>
     <a-form-item label="规格说明"><a-textarea v-model:value="product.description" :rows="2" /></a-form-item>
-    <a-alert type="info" message="无出血；正封面、封底独立交付，内页按阅读顺序交付。" show-icon />
+    <a-alert type="info" message="无出血；有外壳时单独交付外壳；全部内容页按阅读顺序作为内页，不抽取末页。" show-icon />
     <a-divider orientation="left">2. 印刷数量</a-divider>
-    <a-form-item label="内页双面印刷"><a-switch v-model:checked="product.duplex" /><span class="muted"> {{product.duplex?'每张内页纸印两面':'每张内页纸印一面'}}；封面、封底不计入内页面数。</span></a-form-item>
+    <a-form-item label="内页双面印刷"><a-switch v-model:checked="product.duplex" /><span class="muted"> {{product.duplex?'每张内页纸印两面':'每张内页纸印一面'}}；外壳（如有）不计入内页面数。</span></a-form-item>
     <div class="grid three"><a-form-item label="最少内页面数"><a-input-number v-model:value="product.min_pages" :min="1" :max="500" :precision="0" /></a-form-item><a-form-item label="最多内页面数"><a-input-number v-model:value="product.max_pages" :min="1" :max="500" :precision="0" /></a-form-item><a-form-item label="每单最多份数"><a-input-number v-model:value="product.max_quantity" :min="1" :max="100" :precision="0" /></a-form-item></div>
     <a-divider orientation="left">3. 费用与配送</a-divider>
     <a-form-item label="印制免费"><a-switch v-model:checked="product.free_printing" /></a-form-item>
@@ -52,12 +52,12 @@ const props=defineProps<{open:boolean}>(),emit=defineEmits<{close:[]}>();
 const products=ref<Product[]>([]),product=ref<Product>(),original=ref(''),error=ref(''),loading=ref(false),saving=ref(false),reproof=ref(false);
 const examplePages=ref(20),exampleQuantity=ref(1);
 const dirty=computed(()=>!!product.value && JSON.stringify(product.value)!==original.value);
-const materialChanged=computed(()=>{if(!product.value||!original.value)return false;const before=JSON.parse(original.value);return before.proof_approved && ['width_mm','height_mm','paper','binding','duplex','cover_mode'].some(k=>before[k]!== (product.value as unknown as Record<string,unknown>)[k])});
+const materialChanged=computed(()=>{if(!product.value||!original.value)return false;const before=JSON.parse(original.value);return before.proof_approved && ['width_mm','height_mm','paper','binding','duplex'].some(k=>before[k]!== (product.value as unknown as Record<string,unknown>)[k])});
 const readiness=computed(()=>{const p=product.value;if(!p)return [];return [{name:'纸张与装订工艺',ok:!!p.paper.trim()&&!!p.binding.trim()},{name:'打样通过并填写记录',ok:p.proof_approved&&!!p.proof_note.trim()&&(!materialChanged.value||reproof.value)},{name:'免费或有效价格',ok:p.free_printing||p.base_fen+p.page_fen*p.min_pages>0},{name:'配送地区与制作周期',ok:p.regions.some(x=>x.trim())&&!!p.lead_time.trim()},{name:'购买、退改和售后说明',ok:!!p.terms.trim()}]});
 const ready=computed(()=>readiness.value.length>0&&readiness.value.every(x=>x.ok));
 const exampleProduction=computed(()=>{const p=product.value;return !p||p.free_printing?0:(p.base_fen+p.page_fen*(examplePages.value||p.min_pages))*(exampleQuantity.value||1)});
 function discard(next:()=>void){if(saving.value)return;if(dirty.value)Modal.confirm({title:'放弃未保存的规格修改？',content:'当前修改尚未保存。',okText:'放弃修改',cancelText:'继续编辑',onOk:next});else next()}
-function setProduct(p?:Product){product.value=p?structuredClone(toRaw(p)):{title:'',active:false,proof_approved:false,proof_note:'',revision:1,width_mm:148,height_mm:210,paper:'',binding:'',description:'',cover_mode:'separate_front_back',duplex:true,min_pages:2,max_pages:200,max_quantity:10,free_printing:true,base_fen:0,page_fen:0,shipping_fen:0,regions:[],lead_time:'',terms:''};original.value=JSON.stringify(product.value);error.value='';reproof.value=false}
+function setProduct(p?:Product){product.value=p?structuredClone(toRaw(p)):{title:'',active:false,proof_approved:false,proof_note:'',revision:1,width_mm:148,height_mm:210,paper:'',binding:'',description:'',cover_mode:'optional_shell',duplex:true,min_pages:2,max_pages:200,max_quantity:10,free_printing:true,base_fen:0,page_fen:0,shipping_fen:0,regions:[],lead_time:'',terms:''};original.value=JSON.stringify(product.value);error.value='';reproof.value=false}
 function choose(p?:Product){discard(()=>setProduct(p))}
 function close(){discard(()=>{product.value=undefined;emit('close')})}
 watch(()=>props.open,async open=>{if(!open)return;loading.value=true;error.value='';try{products.value=await http.get('/api/admin/v1/print/products/') as unknown as Product[];setProduct(products.value[0])}catch(e){error.value=errorText(e)}finally{loading.value=false}});

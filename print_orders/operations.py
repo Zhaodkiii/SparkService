@@ -7,7 +7,7 @@ from .models import Shipment
 from .services import event, cancel
 
 CHECKLISTS = {
-    'approve': {'cover': '正封面和封底正确', 'pages': '内页页序及空白页正确', 'size': '尺寸、裁切和装订留白合适', 'quality': '图片与文字清晰'},
+    'approve': {'cover': '外壳（如有）与当前作品一致', 'pages': '内页页序及空白页正确', 'size': '尺寸、裁切和装订留白合适', 'quality': '图片与文字清晰'},
     'start': {'files': '已下载并核对当前生产稿', 'spec': '纸张、单双面、装订与份数已核对'},
     'finish': {'pages': '无漏页、错页或倒页', 'trim': '裁切与装订方向正确', 'appearance': '外观完整、印刷清晰', 'quantity': '成品份数正确'},
 }

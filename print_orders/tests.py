@@ -22,8 +22,8 @@ class PrintTests(TestCase):
         self.body=dict(key=str(uuid.uuid4()),product_id=str(self.product.id),product_revision=1,title='旅行',quantity=1,page_count=2,
             address=dict(name='测试用户',phone='13800000000',region='上海',detail='测试地址'),quote_total_fen=1020,confirmed=True,
             snapshot=dict(book_id=str(uuid.uuid4()),catalog_revision=str(uuid.uuid4()),exporter_version='print-v1',
-                pages=[dict(page_id=str(uuid.uuid4()),revision_id=str(uuid.uuid4()),role=role) for role in ['front','interior','back']]),
-            files=[dict(role=role,sha256='a'*64,size=10,page_count=2) for role in ['interior','cover']])
+                pages=[dict(page_id=str(uuid.uuid4()),revision_id=str(uuid.uuid4()),role=role) for role in ['shell','interior']]),
+            files=[dict(role=role,sha256='a'*64,size=10,page_count=1 if role=='cover' else 2) for role in ['interior','cover']])
     def create(self):
         r=self.client.post('/api/v1/print/orders/',self.body,format='json')
         self.assertEqual(r.status_code,201,r.data)
@@ -342,3 +342,40 @@ class DirectUploadTests(TestCase):
         self.assertEqual(self.client.post(url,data,format='json').status_code,200)
         o.refresh_from_db();self.assertEqual(o.state,'draft');self.assertEqual(o.payment_state,'unpaid')
         self.assertEqual(self.client.post('/api/internal/print/processor/',{}).status_code,404)
+
+class OptionalShellTests(TestCase):
+    setUp = PrintTests.setUp
+    create = PrintTests.create
+    def test_no_shell_order_uploads_only_interior_offline(self):
+        self.body['snapshot']['pages'] = [p for p in self.body['snapshot']['pages'] if p['role']=='interior']
+        self.body['files'] = [f for f in self.body['files'] if f['role']=='interior']
+        o = self.create()
+        o.payment_state='not_required';o.total_fen=0;o.save()
+        with patch('print_orders.storage.bucket', side_effect=AssertionError('No OSS requests')):
+            r=self.client.post(f'/api/v1/print/orders/{o.id}/complete-upload/',dict(production_id=str(o.current_production_id),client_confirmed=True,completed_roles=['interior']),format='json')
+        self.assertEqual(r.status_code,200,r.data)
+        self.assertEqual(r.data['cover_page_count'],0)
+        self.assertEqual(r.data['state'],'awaiting_review')
+        o.refresh_from_db();self.assertEqual(set(o.current_production.result['files']),{'interior'})
+
+    def test_all_content_including_first_and_last_are_preserved(self):
+        pages=[dict(page_id=str(uuid.uuid4()),revision_id=str(uuid.uuid4()),role='interior') for _ in range(3)]
+        self.body['snapshot']['pages'] = pages
+        self.body['files'] = [dict(role='interior',sha256='b'*64,size=300,page_count=4)]
+        self.body['page_count']=4;self.body['quote_total_fen']=1040
+        o=self.create()
+        self.assertEqual(o.snapshot['pages'],pages)
+        self.assertEqual(o.page_count,4)
+        self.client.force_authenticate(self.admin)
+        r=self.client.get(f'/api/admin/v1/print/orders/{o.id}/')
+        self.assertEqual(r.data['cover_page_count'],0)
+
+    def test_shell_is_optional_single_page_and_must_match_manifest(self):
+        self.body['files'][1]['page_count']=2
+        self.assertEqual(self.client.post('/api/v1/print/orders/',self.body,format='json').status_code,400)
+        self.body['files'][1]['page_count']=1
+        self.body['snapshot']['pages'].reverse()
+        self.assertEqual(self.client.post('/api/v1/print/orders/',self.body,format='json').status_code,400)
+        self.body['snapshot']['pages'].reverse()
+        self.body['snapshot']['pages'][0]['role']='back'
+        self.assertEqual(self.client.post('/api/v1/print/orders/',self.body,format='json').status_code,400)

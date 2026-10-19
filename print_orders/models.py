@@ -20,7 +20,7 @@ class Product(models.Model):
     binding = models.CharField(max_length=120)
     description = models.TextField(blank=True)
     # 首期支持无出血的独立封面+按序内页，禁止未实现工艺上线。
-    cover_mode = models.CharField(max_length=32, default='separate_front_back')
+    cover_mode = models.CharField(max_length=32, default='optional_shell')
     duplex = models.BooleanField(default=True)
     min_pages = models.PositiveIntegerField(default=2)
     max_pages = models.PositiveIntegerField(default=200)
