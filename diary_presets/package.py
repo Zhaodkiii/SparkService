@@ -69,7 +69,7 @@ def process_archive(archive, directory, namespace, put, private_request_id=None)
             raise ValueError('Private package/request mismatch')
     elif manifest.get('audience') == 'private' or manifest.get('customizationRequestID') or str(manifest.get('templateBookID','')).startswith('custom-'):
         raise ValueError('Private packages cannot enter the public publisher')
-    if manifest['format'] != 'TravelDiary.PresetBook' or manifest['schemaVersion'] != 1 or manifest['layerSchemaVersion'] not in (1, 2):
+    if manifest['format'] != 'TravelDiary.PresetBook' or manifest['schemaVersion'] not in (1, 2) or manifest['layerSchemaVersion'] not in (1, 2):
         raise ValueError('Unsupported package schema')
     if type(manifest.get('packageVersion')) is not int or manifest['packageVersion'] <= 0:
         raise ValueError('Invalid source package version')
@@ -88,12 +88,16 @@ def process_archive(archive, directory, namespace, put, private_request_id=None)
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = 50_000_000
     image_paths = {a['path'] for a in assets.values()}
+    for unit in manifest.get('readingUnits', []):
+        image_paths.update(unit.get('preview', {}).values())
     pages = [load_json((root / relative(p['path'])).read_bytes()) for p in manifest['pages']]
     ids = [p['id'] for p in pages]
     if len(set(ids)) != len(ids) or ids != [p['id'] for p in manifest['pages']] or manifest['coverPageID'] not in ids:
         raise ValueError('Invalid page identities/cover')
     if manifest.get('shellPageID') and manifest['shellPageID'] not in ids:
         raise ValueError('Invalid shell page')
+    from .reading_units import validate
+    validate(manifest)
     for page in pages:
         if page['size'] != manifest['pageSize']:
             raise ValueError('Page size mismatch')
@@ -176,6 +180,8 @@ def process_archive(archive, directory, namespace, put, private_request_id=None)
             mapping[identifier] = namespace + '-' + identifier
     for identifier in ids + list(assets):
         mapping[identifier] = namespace + '-' + identifier
+    for unit in manifest.get('readingUnits', []):
+        mapping[unit['id']] = namespace + '-' + unit['id']
     def rewrite(value):
         if isinstance(value, str): return mapping.get(value, value)
         if isinstance(value, list): return [rewrite(v) for v in value]

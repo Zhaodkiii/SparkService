@@ -66,7 +66,8 @@ class Command(BaseCommand):
                 raise CommandError('Template changed while uploading; resources retained, publication not applied')
             template.series = series
             template.title = options['title']
-            template.draft = snapshot
+            from diary_presets.reading_units import retain_confirmed_metadata
+            template.draft = retain_confirmed_metadata(template.draft, snapshot)
             publish(template, None)
             manifest_key = storage.prefix() + f'releases/{template.id}/{template.current.number}/package.json'
             client.put_object(manifest_key, json.dumps(template.current.snapshot['manifest'], ensure_ascii=False).encode(),

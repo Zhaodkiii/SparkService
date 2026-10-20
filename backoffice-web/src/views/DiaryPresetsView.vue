@@ -1,7 +1,7 @@
 <template>
  <div class="preset-console">
   <a-page-header title="预设手帐" sub-title="管理系列、手帐、单页和发布版本">
-   <template #extra><a-button :loading="loading" @click="run(load)">刷新</a-button><a-button type="primary" @click="openDialog('series')">新增系列</a-button></template>
+   <template #extra><a-button @click="globalSearchOpen=true">跨页搜索管理</a-button><a-button :loading="loading" @click="run(load)">刷新</a-button><a-button type="primary" @click="openDialog('series')">新增系列</a-button></template>
   </a-page-header>
   <a-alert v-if="error" type="error" show-icon :message="error" closable @close="error=''" />
   <div class="workspace">
@@ -31,6 +31,7 @@
       <a-space wrap><a-button @click="openDialog('book',true)">编辑手帐</a-button><a-button @click="setActive">{{book.active?'下架':'恢复展示'}}</a-button><a-button :disabled="!dirty" :loading="working" @click="saveDraft">保存草稿</a-button><a-button type="primary" :loading="working" @click="publish">保存并发布</a-button></a-space>
      </div>
      <a-tabs v-model:activeKey="tab">
+      <a-tab-pane key="search" tab="跨页与搜索信息"><PresetSearchMetadataPanel :key="book.id" :template-id="book.id" @changed="refreshBookRevision" /></a-tab-pane>
       <a-tab-pane key="pages" tab="页面管理">
        <a-alert type="info" show-icon message="拖动或前后移动可调整页序；修改保存为草稿，发布后客户端生效。" />
        <div class="upload-bar"><a-space wrap>
@@ -54,6 +55,7 @@
     </a-card>
    </div>
   </div>
+  <a-modal v-model:open="globalSearchOpen" title="全库跨页搜索管理" width="1200px" :footer="null"><PresetSearchMetadataPanel v-if="globalSearchOpen" @changed="refreshBookRevision" /></a-modal>
   <a-modal v-model:open="dialog" :title="(editID?'编辑':'新增')+(dialogKind==='series'?'系列':'手帐')" :confirm-loading="working" @ok="saveDialog" ok-text="保存" cancel-text="取消">
    <a-form layout="vertical"><a-form-item label="名称" required><a-input v-model:value="form.title" :maxlength="120"/></a-form-item>
     <a-form-item v-if="dialogKind==='series'" label="系列标识" required><a-input v-model:value="form.slug" placeholder="如 islands"/></a-form-item>
@@ -71,6 +73,9 @@ import OSS from 'ali-oss';
 import { onBeforeRouteLeave } from 'vue-router';
 import http from '../api/http';
 import MaterialLibraryPanel from './MaterialLibraryPanel.vue';
+import PresetSearchMetadataPanel from './PresetSearchMetadataPanel.vue';
+const globalSearchOpen=ref(false);
+async function refreshBookRevision(){if(book.value){const data=await get(`templates/${book.value.id}/`);book.value={...book.value,revision:data.revision};}}
 const base = '/api/admin/v1/diary-presets/';
 async function get(path: string, config?: any): Promise<any> { return http.get(base + path, config); }
 async function post(path: string, body?: any): Promise<any> { return http.post(base + path, body); }

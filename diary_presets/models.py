@@ -14,6 +14,51 @@ class Series(models.Model):
         ordering = ['position', 'id']
 
 
+class SearchTaxon(models.Model):
+    id = models.CharField(primary_key=True, max_length=120)
+    dimension = models.CharField(max_length=12, choices=[(v, v) for v in ('location', 'theme', 'style', 'usage')])
+    name = models.CharField(max_length=120)
+    aliases = models.JSONField(default=list)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT)
+    active = models.BooleanField(default=True)
+    merged_into = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT, related_name='merged_terms')
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['dimension', 'name'], name='preset_taxon_unique_name')]
+
+
+class SearchState(models.Model):
+    id = models.PositiveIntegerField(primary_key=True, default=1)
+    revision = models.PositiveIntegerField(default=1)
+
+
+class CatalogEntry(models.Model):
+    version = models.ForeignKey('Version', on_delete=models.CASCADE, related_name='search_entries')
+    entity_type = models.CharField(max_length=8, db_index=True)
+    entity_id = models.CharField(max_length=200)
+    position = models.PositiveIntegerField(default=0)
+    document = models.JSONField(default=dict)
+    search_text = models.TextField(default='', blank=True)
+    title_text = models.CharField(max_length=200, default='', blank=True, db_index=True)
+    page_text = models.TextField(default='', blank=True)
+    keyword_text = models.TextField(default='', blank=True)
+    child_text = models.TextField(default='', blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['version', 'entity_type', 'entity_id'], name='preset_entry_unique')]
+
+
+class CatalogEntryTerm(models.Model):
+    entry = models.ForeignKey(CatalogEntry, on_delete=models.CASCADE, related_name='indexed_terms')
+    taxon = models.ForeignKey(SearchTaxon, on_delete=models.PROTECT)
+    dimension = models.CharField(max_length=12)
+    rank = models.PositiveSmallIntegerField(default=5)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['entry', 'taxon'], name='preset_entry_taxon_unique')]
+        indexes = [models.Index(fields=['dimension', 'taxon', 'entry'], name='preset_term_lookup')]
+
+
 class Template(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     series = models.ForeignKey(Series, on_delete=models.PROTECT, related_name='templates')

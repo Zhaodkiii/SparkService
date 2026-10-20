@@ -23,15 +23,7 @@ from . import storage
 from .access import visible_version, authorize
 
 
-class Conflict(APIException):
-    status_code = 409
-    default_detail = '内容已修改，请刷新后重试'
-
-
-class PresetAdmin(BasePermission):
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_active and
-                    (request.user.is_superuser or request.user.has_perm('diary_presets.change_template')))
+from .admin_support import Conflict, PresetAdmin, lock_template, preview
 
 
 class SeriesSerializer(serializers.ModelSerializer):
@@ -55,13 +47,7 @@ class TemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'revision', 'current']
 
 
-def lock_template(pk, data):
-    obj = get_object_or_404(Template.objects.select_for_update(), pk=pk, audience='public')
-    if data.get('revision') != obj.revision:
-        raise Conflict()
-    return obj
-
-
+@transaction.atomic
 def publish(obj, actor):
     if not obj.draft or not obj.draft.get('pages'):
         raise ValidationError('至少需要一页')
@@ -69,15 +55,19 @@ def publish(obj, actor):
     manifest = snap['manifest']
     manifest.update(templateBookID=str(obj.id), title=obj.title, seriesID=obj.series.slug,
                     packageVersion=(obj.versions.order_by('-number').values_list('number', flat=True).first() or 0) + 1)
+    from .search import documents, index_version, bump
+    try:
+        documents(obj, snap)
+    except ValueError as exc:
+        raise ValidationError(str(exc))
     obj.current = Version.objects.create(template=obj, number=manifest['packageVersion'], snapshot=snap, actor=actor)
+    searchable_count = index_version(obj, obj.current)
     obj.draft = snap
     obj.revision += 1
     obj.save()
     Event.objects.create(actor=actor, template=obj, action='publish', detail={'version': obj.current.number})
-
-
-def preview(key):
-    return storage.sign(key) if key else None
+    bump()
+    return searchable_count
 
 
 class SeriesAdmin(viewsets.ModelViewSet):
@@ -94,7 +84,10 @@ class SeriesAdmin(viewsets.ModelViewSet):
         return Response(status=204)
 
 
-class TemplateAdmin(viewsets.ModelViewSet):
+from .search_views import TemplateSearchMixin
+
+
+class TemplateAdmin(TemplateSearchMixin, viewsets.ModelViewSet):
     permission_classes = [PresetAdmin]
     serializer_class = TemplateSerializer
     queryset = Template.objects.select_related('series', 'current').filter(audience='public')
@@ -158,6 +151,13 @@ class TemplateAdmin(viewsets.ModelViewSet):
                 if cover not in request.data['page_ids']:
                     raise ValidationError('封面必须属于该手帐')
                 obj.draft['manifest']['coverPageID'] = cover
+                metadata = obj.draft['manifest'].get('pageMetadata', {})
+                if metadata:
+                    for page_id, meta in metadata.items():
+                        if page_id == cover: meta['contentRole'] = 'front_cover'
+                        elif meta.get('contentRole') == 'front_cover': meta['contentRole'] = 'content'
+                    for unit in obj.draft['manifest'].get('readingUnits', []):
+                        if cover in (unit.get('leftPageID'), unit.get('rightPageID')): unit['searchEnabled'] = False
             obj.revision += 1
             obj.save()
         return Response(self.get_serializer(obj).data)
@@ -166,8 +166,8 @@ class TemplateAdmin(viewsets.ModelViewSet):
     @transaction.atomic
     def publish(self, request, pk=None):
         obj = lock_template(pk, request.data)
-        publish(obj, request.user)
-        return Response(self.get_serializer(obj).data)
+        count = publish(obj, request.user)
+        return Response(dict(self.get_serializer(obj).data, searchable_spread_count=count))
 
     @action(detail=True, methods=['get'])
     def versions(self, request, pk=None):
@@ -298,7 +298,8 @@ class Processor(APIView):
             obj.error = '手帐已修改；处理成果保留，请重新选择插入位置'
         else:
             try:
-                template.draft = merge(template.draft, result, obj.after_page) if obj.mode == 'page' else result
+                from .reading_units import retain_confirmed_metadata
+                template.draft = merge(template.draft, result, obj.after_page) if obj.mode == 'page' else retain_confirmed_metadata(template.draft, result)
                 publish(template, obj.actor)
                 obj.status = 'published'
             except ValueError as exc:
@@ -314,6 +315,15 @@ class Catalog(APIView):
     def get(self, request):
         rows = []
         for template in Template.objects.filter(audience='public', active=True, series__active=True, current__isnull=False).select_related('current', 'series')[:500]:
+            try:
+                schema_max = int(request.query_params.get('schema_max', 1))
+            except ValueError:
+                raise ValidationError('schema_max 无效')
+            if template.current.snapshot['manifest'].get('schemaVersion', 1) > schema_max:
+                compatible = template.versions.order_by('-number').filter(snapshot__manifest__schemaVersion=1).first()
+                if not compatible:
+                    continue
+                template.current = compatible
             snap = template.current.snapshot
             cover = next(p for p in snap['pages'] if p['data']['id'] == snap['manifest']['coverPageID'])
             rows.append(dict(id=str(template.id), title=template.title, series=template.series.slug,
@@ -339,10 +349,13 @@ class Browse(APIView):
             body = dict(title=manifest['title'], page_size=manifest['pageSize'],
                         cover_page_id=manifest['coverPageID'], shell_page_id=manifest.get('shellPageID'),
                         expires_at=expires_at,
-                        pages=[dict(id=p['data']['id'], title=p['data']['title'],
+                        pages=[dict(id=p['data']['id'], title=manifest.get('pageMetadata', {}).get(p['data']['id'], {}).get('displayTitle', p['data']['title']),
                                     thumbnail_url=preview(snap['keys'][p['data']['preview']['thumbnailPath']]),
                                     preview_url=preview(snap['keys'][p['data']['preview']['largePath']]))
                                for p in snap['pages']])
+            if manifest.get('schemaVersion') == 2:
+                body['reading_units'] = manifest.get('readingUnits', [])
+                body['page_metadata'] = manifest.get('pageMetadata', {})
             # Hash the actual representation: a rebuilt cache with new signatures gets a new ETag.
             etag = '"' + hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest() + '"'
             cached = (body, etag)
@@ -370,6 +383,16 @@ class Detail(APIView):
     def post(self, request, pk, number):
         version = visible_version(request.user, pk, number)
         ids = request.data.get('page_ids')
+        selection = request.data.get('selection')
+        if selection is not None:
+            if 'page_ids' in request.data or not isinstance(selection, dict) or selection.get('kind') != 'spread':
+                raise ValidationError('无效的跨页选择')
+            from .reading_units import page_ids, exclusion_reason
+            manifest = version.snapshot['manifest']
+            unit = next((u for u in manifest.get('readingUnits', []) if u['id'] == selection.get('unit_id')), None)
+            if not unit or not unit.get('searchEnabled') or exclusion_reason(manifest, unit):
+                raise ValidationError('此跨页不可添加')
+            ids = page_ids(unit)
         if ids is None:
             ids = [p['data']['id'] for p in version.snapshot['pages']]
         try:

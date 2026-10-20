@@ -9,6 +9,10 @@ def select(snapshot, page_ids):
         raise ValueError('Invalid selected pages')
     pages = [deepcopy(indexed[i]) for i in page_ids]
     paths = set().union(*(set(p['files']) for p in pages))
+    from .reading_units import subset
+    subset(manifest, page_ids)
+    for unit in manifest.get('readingUnits', []):
+        paths.update(v for v in unit.get('preview', {}).values() if isinstance(v, str) and v in snapshot['keys'])
     manifest['pages'] = [p for i in page_ids for p in manifest['pages'] if p['id'] == i]
     manifest['objectTable'] = {k: v for k, v in manifest['objectTable'].items() if v in paths}
     manifest['assetTable'] = {k: v for k, v in manifest['assetTable'].items() if v['path'] in paths}
@@ -39,6 +43,15 @@ def merge(base, added, after=''):
     index = existing.index(after) + 1 if after else len(existing)
     left['pages'][index:index] = deepcopy(right['pages'])
     result['pages'][index:index] = deepcopy(added['pages'])
+    if left.get('schemaVersion') == 2 or right.get('schemaVersion') == 2:
+        from .reading_units import suggest, subset
+        if left.get('schemaVersion') != 2:
+            initialized = suggest(base['manifest'])
+            left.update({k: initialized[k] for k in ('schemaVersion', 'pageMetadata', 'readingUnits', 'metadata')})
+        other = right if right.get('schemaVersion') == 2 else suggest(right)
+        left['pageMetadata'].update(deepcopy(other['pageMetadata']))
+        left['readingUnits'] += deepcopy(other['readingUnits'])
+        subset(left, [p['id'] for p in left['pages']])
     if set(result['keys']) & set(added['keys']):
         raise ValueError('Conflicting file paths')
     result['keys'].update(added['keys'])
