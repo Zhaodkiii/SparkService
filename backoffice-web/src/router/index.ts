@@ -30,6 +30,9 @@ router.beforeEach(async (to) => {
   if (to.meta.superAdminOnly && !auth.user?.is_superuser) {
     return '/dashboard';
   }
+  if (typeof to.meta.requiredPermission === 'string' && !auth.hasPermission(to.meta.requiredPermission)) {
+    return '/dashboard';
+  }
 
   return true;
 });

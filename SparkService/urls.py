@@ -27,15 +27,20 @@ def health_check(_request):
 
 
 from diary_presets.views import Processor
+from diary_customizations.processor import Processor as CustomizationProcessor
+from diary_presets.resource_queue import Processor as ResourceProcessor
 
 
 urlpatterns = [
+    path("api/v1/diary-customizations/", include("diary_customizations.urls")),
+    path("api/admin/v1/diary-customizations/", include("diary_customizations.admin_urls")),
+    path("api/internal/diary-customizations/processor/", CustomizationProcessor.as_view()),
     path("api/v1/print/", include("print_orders.urls")),
     path("api/admin/v1/print/", include("print_orders.admin_urls")),
     path("api/v1/materials/", include("material_library.urls")),
     path("api/v1/diary-presets/", include("diary_presets.urls")),
     path("api/admin/v1/diary-presets/", include("diary_presets.admin_urls")),
-    path("api/internal/diary-presets/processor/", Processor.as_view()),
+    path("api/internal/diary-presets/processor/", ResourceProcessor.as_view()),
     path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     path('api/v1/auth/token/', TokenObtainUnifiedView.as_view(), name='token_obtain_pair'),

@@ -8,14 +8,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from diary_presets.views import PresetAdmin
-from diary_presets.storage import sign
+from diary_presets.storage import sign as preset_sign, prefix as preset_prefix
+from rest_framework.exceptions import PermissionDenied
+
+def sign(key):
+    if not key.startswith(preset_prefix()+"blobs/"):
+        raise PermissionDenied("私人资源不能通过公共素材库访问")
+    return preset_sign(key)
 from .models import *
 from .catalog import CATEGORIES, ALIASES
 from .services import revision, publish_library
 
 
 def visible():
-    return MaterialLibrary.objects.filter(active=True, template__active=True, template__series__active=True, current__isnull=False)
+    return MaterialLibrary.objects.filter(template__audience='public', active=True, template__active=True, template__series__active=True, current__isnull=False)
 
 
 def library_json(lib, user):
@@ -110,11 +116,11 @@ class Favorite(AuthView):
         if not isinstance(request.data.get('favorite'), bool): raise ValidationError('favorite 必须为布尔值')
         if target not in ('libraries', 'items'): raise ValidationError('无效收藏类型')
         if target == 'libraries':
-            obj = get_object_or_404(MaterialLibrary, pk=pk)
+            obj = get_object_or_404(MaterialLibrary.objects.filter(template__audience='public'), pk=pk)
             model, field = LibraryFavorite, 'library'
             if request.data['favorite'] and not visible().filter(pk=pk).exists(): raise ValidationError('素材库不可用')
         else:
-            obj = get_object_or_404(Material, pk=pk)
+            obj = get_object_or_404(Material.objects.filter(libraryitem__version__library__template__audience='public').distinct(), pk=pk)
             model, field = MaterialFavorite, 'material'
             if request.data['favorite'] and (not obj.active or not LibraryItem.objects.filter(material=obj, version__library__in=visible(), version_id=F('version__library__current_id')).exists()):
                 raise ValidationError('素材不可用')

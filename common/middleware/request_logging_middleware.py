@@ -163,11 +163,11 @@ class RequestLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if "/diary-presets/" in request.path or "/print/" in request.path:
+        if any(part in request.path for part in ("/diary-presets/", "/print/", "/diary-customizations/", "/device/register/")):
             # STS responses and download URL maps contain bearer secrets.
             started = time.perf_counter()
             response = self.get_response(request)
-            io_logger.info("preset request method=%s path=%s status=%s duration_ms=%s",
+            io_logger.info("private request method=%s path=%s status=%s duration_ms=%s",
                            request.method, request.path, response.status_code,
                            int((time.perf_counter() - started) * 1000))
             return response

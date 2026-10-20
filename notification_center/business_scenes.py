@@ -153,6 +153,10 @@ SCENE_CATALOG: tuple[SceneDefinition, ...] = (
     _scene("operation.campaign.published", "运营活动发布", category=NotificationBusinessScene.Category.OPERATIONAL, channels=("apns", "email", "in_app")),
 )
 
+SCENE_CATALOG += tuple(_scene('diary.customization.'+action, name, channels=('apns',), topic_key='diary.customization', default_template_key='diary.customization.'+action, owner_team='traveldiary') for action,name in (
+    ('pending_reminder','定制人工提醒'),('info_requested','定制待补充'),('due_changed','定制日期调整'),('rejected','定制无法制作'),('cancelled','定制已取消'),
+    ('delivered','定制首次交付'),('redelivered','定制修订交付'),('delivery_withdrawn','定制交付撤回'),('delivery_rolled_back','定制版本回滚')))
+
 SCENE_BY_KEY = {definition.key: definition for definition in SCENE_CATALOG}
 if len(SCENE_BY_KEY) != len(SCENE_CATALOG):  # pragma: no cover - import-time invariant
     raise RuntimeError("duplicate notification business scene key")

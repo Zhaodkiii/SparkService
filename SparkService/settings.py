@@ -16,6 +16,7 @@ from pathlib import Path
 
 from celery.schedules import crontab
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 # Use PyMySQL as the MySQLdb driver for Django's mysql backend.
 # This avoids requiring the mysqlclient C extension in local/dev.
@@ -213,6 +214,7 @@ INSTALLED_APPS = [
     'ai_config',
     'file_manager',
     'diary_presets',
+    'diary_customizations',
     'print_orders',
     'material_library',
     'notification_center',
@@ -360,6 +362,9 @@ AI_TRIAL_AUTO_GRANT_COUNTRY_CODES = [
 # -------------------------
 # CORS
 # -------------------------
+# Browser business actions send this header to prevent duplicate mutations.
+# OPTIONS must allow it or the browser blocks POST before it reaches the API.
+CORS_ALLOW_HEADERS = (*default_headers, 'idempotency-key')
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "false").lower() in ("1", "true", "yes", "y")
 CORS_ALLOWED_ORIGINS = [
     item.strip()
@@ -397,6 +402,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"
 # 未显式配置路由的任务统一进入 celery；不要创建一个未被使用的 default 队列。
 CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
+    "diary_customizations.tasks.dispatch_notification": {"queue": "notification.transactional"},
     "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.cleanup_deactivation_backups_task": {"queue": "cleanup"},
@@ -598,6 +604,9 @@ LOGGING = {
 }
 
 # Preset control-plane settings; secrets must only come from environment.
+CUSTOMIZATIONS_OSS_PREFIX = os.getenv("CUSTOMIZATIONS_OSS_PREFIX", "traveldiary/customizations/")
+CUSTOMIZATIONS_ACCEPTING = os.getenv("CUSTOMIZATIONS_ACCEPTING", "true").lower() in ("1", "true", "yes")
+
 DIARY_PRESETS_OSS_PREFIX = os.getenv("DIARY_PRESETS_OSS_PREFIX", "traveldiary/presets/")
 DIARY_PRESETS_UPLOAD_ROLE_ARN = os.getenv("DIARY_PRESETS_UPLOAD_ROLE_ARN", "")
 DIARY_PRESETS_PROCESSOR_TOKEN = os.getenv("DIARY_PRESETS_PROCESSOR_TOKEN", "")

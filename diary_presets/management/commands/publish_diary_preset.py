@@ -31,6 +31,8 @@ class Command(BaseCommand):
             for block in iter(lambda: stream.read(1024**2), b''): hasher.update(block)
         source_hash = hasher.hexdigest()
         existing = Template.objects.filter(id=options['template_id']).first()
+        if existing and existing.audience != 'public':
+            raise CommandError('私人模板必须通过定制交付 API 发布')
         if existing and Event.objects.filter(template=existing, action='source-publish', detail__source_sha256=source_hash).exists():
             self.stdout.write('Already published identical archive; no duplicate version created')
             return

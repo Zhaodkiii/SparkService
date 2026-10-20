@@ -17,7 +17,8 @@ def bucket():
 
 
 def sign(key):
-    if not key.startswith(prefix() + 'blobs/'):
+    from diary_customizations.storage import prefix as private_prefix
+    if not key.startswith((prefix() + 'blobs/', private_prefix())):
         raise ValueError('Invalid resource key')
     return bucket().sign_url('GET', key, 900, slash_safe=True)
 

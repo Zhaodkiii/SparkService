@@ -25,6 +25,7 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         root = opts['package'].resolve()
         template = Template.objects.get(pk=opts['template'])
+        if template.audience != 'public': raise CommandError('私人定制不能发布到公共素材库')
         if not template.current_id: raise CommandError('请先发布预设')
         expected_version = template.current_id
         defaults = Path(__file__).resolve().parents[2] / 'configurations' / f'{template.pk}.json'

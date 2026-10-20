@@ -55,6 +55,7 @@ export interface TaskManagerStatusResponse {
     queued: number;
     processing: number;
     current_job: string | null;
+    current_scope?: 'public' | 'customization' | null;
     last_seen: number | null;
   };
   overall_running: boolean;

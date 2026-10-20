@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 from .models import Series, Template, Version, Upload, DownloadPlan, Event
 from .domain import select, merge
 from . import storage
+from .access import visible_version, authorize
 
 
 class Conflict(APIException):
@@ -55,7 +56,7 @@ class TemplateSerializer(serializers.ModelSerializer):
 
 
 def lock_template(pk, data):
-    obj = get_object_or_404(Template.objects.select_for_update(), pk=pk)
+    obj = get_object_or_404(Template.objects.select_for_update(), pk=pk, audience='public')
     if data.get('revision') != obj.revision:
         raise Conflict()
     return obj
@@ -96,7 +97,7 @@ class SeriesAdmin(viewsets.ModelViewSet):
 class TemplateAdmin(viewsets.ModelViewSet):
     permission_classes = [PresetAdmin]
     serializer_class = TemplateSerializer
-    queryset = Template.objects.select_related('series', 'current').all()
+    queryset = Template.objects.select_related('series', 'current').filter(audience='public')
     pagination_class = None
 
     def get_queryset(self):
@@ -218,13 +219,15 @@ class UploadAdmin(viewsets.GenericViewSet):
         obj.lease = None
         obj.lease_until = None
         obj.save()
+        from .resource_queue import enqueue
+        enqueue(obj)
         return Response({'status': obj.status}, status=202)
 
     def create(self, request):
         ser = UploadSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
-        obj = get_object_or_404(Template, pk=data.pop('template'))
+        obj = get_object_or_404(Template, pk=data.pop('template'), audience='public')
         if obj.revision != data['revision']:
             raise Conflict()
         uid = uuid.uuid4()
@@ -256,6 +259,8 @@ class UploadAdmin(viewsets.GenericViewSet):
             raise ValidationError('上传文件大小不匹配')
         obj.status = 'queued'
         obj.save()
+        from .resource_queue import enqueue
+        enqueue(obj)
         return Response(dict(id=str(obj.id), status=obj.status), status=202)
 
 
@@ -272,18 +277,6 @@ class Processor(APIView):
 
     @transaction.atomic
     def post(self, request):
-        if request.data.get('action') == 'claim':
-            # A failed lease is reclaimable. Late result cannot supersede a new lease.
-            from django.db.models import Q
-            obj = Upload.objects.select_for_update().filter(
-                Q(status='queued') | Q(status='processing', lease_until__lt=timezone.now())).order_by('created_at').first()
-            if not obj:
-                return Response(status=204)
-            obj.status = 'processing'
-            obj.lease = uuid.uuid4()
-            obj.lease_until = timezone.now() + timedelta(minutes=30)
-            obj.save()
-            return Response(dict(id=str(obj.id), lease=str(obj.lease), object_key=obj.object_key, size=obj.size, mode=obj.mode))
         obj = get_object_or_404(Upload.objects.select_for_update(), pk=request.data.get('id'))
         if obj.status != 'processing' or str(obj.lease) != request.data.get('lease') or obj.lease_until < timezone.now():
             raise Conflict('处理租约已过期')
@@ -320,13 +313,13 @@ class Catalog(APIView):
 
     def get(self, request):
         rows = []
-        for template in Template.objects.filter(active=True, series__active=True, current__isnull=False).select_related('current', 'series')[:500]:
+        for template in Template.objects.filter(audience='public', active=True, series__active=True, current__isnull=False).select_related('current', 'series')[:500]:
             snap = template.current.snapshot
             cover = next(p for p in snap['pages'] if p['data']['id'] == snap['manifest']['coverPageID'])
             rows.append(dict(id=str(template.id), title=template.title, series=template.series.slug,
                 version=template.current.number, page_count=len(snap['pages']),
                 cover_url=preview(snap['keys'][cover['data']['preview']['thumbnailPath']])))
-        return Response(dict(series=list(Series.objects.filter(active=True).values('slug', 'title')), books=rows))
+        return Response(dict(series=list(Series.objects.filter(active=True).exclude(slug='private-custom').values('slug', 'title')), books=rows))
 
 
 class Browse(APIView):
@@ -335,11 +328,10 @@ class Browse(APIView):
 
     def get(self, request, pk, number):
         # Always check publication visibility, including cache hits and conditional requests.
-        version = get_object_or_404(Version.objects.only('id'), template_id=pk, number=number,
-                                   template__active=True, template__series__active=True)
+        version = visible_version(request.user, pk, number)
         window = int(time.time()) // 300
         expires_at = (window + 1) * 300
-        key = f'diary-preset-browse-v1:{version.pk}:{window}'
+        key = f'diary-preset-browse-v2:{request.user.pk}:{version.pk}:{window}'
         cached = cache.get(key)
         if cached is None:
             snap = version.snapshot
@@ -369,14 +361,14 @@ class Detail(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk, number):
-        version = get_object_or_404(Version, template_id=pk, number=number, template__active=True, template__series__active=True)
+        version = visible_version(request.user, pk, number)
         snap = version.snapshot
         return Response(dict(manifest=snap['manifest'], page_data=[p['data'] for p in snap['pages']], pages=[dict(id=p['data']['id'], title=p['data']['title'],
             thumbnail_url=preview(snap['keys'][p['data']['preview']['thumbnailPath']]),
             preview_url=preview(snap['keys'][p['data']['preview']['largePath']])) for p in snap['pages']]))
 
     def post(self, request, pk, number):
-        version = get_object_or_404(Version, template_id=pk, number=number, template__active=True, template__series__active=True)
+        version = visible_version(request.user, pk, number)
         ids = request.data.get('page_ids')
         if ids is None:
             ids = [p['data']['id'] for p in version.snapshot['pages']]
@@ -393,7 +385,11 @@ class PlanURLs(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):
-        plan = get_object_or_404(DownloadPlan, pk=pk, owner=request.user, expires_at__gt=timezone.now())
+        plan = get_object_or_404(DownloadPlan, pk=pk, owner=request.user)
+        authorize(request.user, plan.version)
+        if plan.expires_at <= timezone.now():
+            plan.expires_at = timezone.now() + timedelta(days=7)
+            plan.save(update_fields=['expires_at'])
         paths = request.data.get('paths', [])
         if not isinstance(paths, list) or not 1 <= len(paths) <= 50 or any(not isinstance(p, str) or p not in plan.snapshot['keys'] for p in paths):
             raise ValidationError('Invalid resource selection')

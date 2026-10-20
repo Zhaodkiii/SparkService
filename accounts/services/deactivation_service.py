@@ -548,6 +548,9 @@ class DeactivationService:
     def _delete_domain_related_data(*, user):
         stats: dict[str, int] = {}
         now = timezone.now()
+        from diary_customizations.models import Request as CustomizationRequest, Delivery as CustomizationDelivery
+        stats['customizations.revoked'] = CustomizationDelivery.objects.filter(request__owner=user).update(status='withdrawn')
+        stats['customizations.deleted'] = CustomizationRequest.objects.filter(owner=user,deleted_at__isnull=True).update(deleted_at=now)
         DeactivationService._soft_delete_queryset("file_manager", "ManagedFile", {"user_id": user.id}, {"is_deleted": True, "deleted_at": now}, stats)
         DeactivationService._delete_optional_model("ai_config", "TrialApplication", {"user_id": user.id}, stats)
         return stats

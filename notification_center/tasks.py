@@ -89,7 +89,11 @@ def relay_notification_outbox_task(self):
     processed = 0
     for row in rows:
         try:
-            if row.aggregate_type == "notification_campaign" and row.event_type == "notification.campaign.dispatch":
+            if row.event_type == 'notification.diary_customization.dispatch':
+                from diary_customizations.tasks import dispatch_notification
+                task = dispatch_notification.delay(row.payload['intent_id'], row.payload['event_id'])
+                row.payload = {**row.payload, 'downstream_task_id': getattr(task,'id','')}
+            elif row.aggregate_type == "notification_campaign" and row.event_type == "notification.campaign.dispatch":
                 task = execute_notification_campaign_task.delay(row.payload.get("campaign_id"), row.payload.get("request_id", ""))
                 row.payload = {**(row.payload or {}), "downstream_task_id": getattr(task, "id", "")}
             elif row.aggregate_type == "notification_intent" and row.event_type == "notification.sms_otp.dispatch":
@@ -98,10 +102,16 @@ def relay_notification_outbox_task(self):
             elif row.aggregate_type == "notification_intent" and row.event_type == "notification.email_otp.dispatch":
                 task = execute_email_otp_intent_task.delay(row.payload.get("intent_id"), row.payload.get("message_id"))
                 row.payload = {**(row.payload or {}), "downstream_task_id": getattr(task, "id", "")}
+            else:
+                row.status = NotificationOutbox.Status.PROCESSED
+                row.last_error = 'unsupported_notification_outbox_event'
+                row.save(update_fields=['status','last_error','updated_at'])
+                logger.error('Unsupported notification outbox event id=%s', row.pk)
+                continue
             row.status = NotificationOutbox.Status.PROCESSING
             row.last_error = ""
             row.updated_at = timezone.now()
-            row.save(update_fields=["status", "last_error", "updated_at", "payload"])
+            NotificationOutbox.objects.filter(pk=row.pk).update(payload=row.payload)
             processed += 1
         except Exception as exc:  # noqa: BLE001
             row.status = NotificationOutbox.Status.FAILED

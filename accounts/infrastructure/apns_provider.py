@@ -57,7 +57,7 @@ class APNsProvider:
         return "https://api.sandbox.push.apple.com" if sandbox else "https://api.push.apple.com"
 
     @staticmethod
-    def send(*, device_token: str, title: str, body: str, payload: Optional[dict] = None, topic: str = "") -> tuple[bool, str, str]:
+    def send(*, device_token: str, title: str, body: str, payload: Optional[dict] = None, topic: str = "", expiration: int | None = None, collapse_id: str = "", thread_id: str = "", category: str = "") -> tuple[bool, str, str]:
         """
         Returns:
             (ok, reason, apns_id)
@@ -86,6 +86,11 @@ class APNsProvider:
                 "sound": "default",
             }
         }
+        if thread_id: data['aps']['thread-id'] = thread_id
+        if category: data['aps']['category'] = category
+        extra_headers = {}
+        if expiration is not None: extra_headers['apns-expiration'] = str(expiration)
+        if collapse_id: extra_headers['apns-collapse-id'] = collapse_id[:64]
         if payload:
             for k, v in payload.items():
                 if k != "aps":
@@ -98,6 +103,7 @@ class APNsProvider:
                     url,
                     json=data,
                     headers={
+                        **extra_headers,
                         "authorization": f"bearer {auth}",
                         "apns-topic": final_topic,
                         "apns-push-type": "alert",

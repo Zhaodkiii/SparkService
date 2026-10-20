@@ -31,7 +31,7 @@ def load_json(data):
     return json.loads(data, object_pairs_hook=unique, parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Non-finite JSON')))
 
 
-def process_archive(archive, directory, namespace, put):
+def process_archive(archive, directory, namespace, put, private_request_id=None):
     """put(data, MIME) -> immutable OSS key. Never called from Django API."""
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
@@ -47,6 +47,8 @@ def process_archive(archive, directory, namespace, put):
             path = relative(info.filename)
             if path in paths or stat.S_ISLNK(info.external_attr >> 16):
                 raise ValueError('Duplicate path or symlink')
+            if info.file_size > max(1, info.compress_size) * 1000:
+                raise ValueError('Suspicious archive compression ratio')
             if info.file_size > MAX_FILE:
                 raise ValueError('File too large')
             total += info.file_size
@@ -62,8 +64,15 @@ def process_archive(archive, directory, namespace, put):
                 raise ValueError('Invalid expanded size')
             dest.write_bytes(data)
     manifest = load_json((root / 'package.json').read_bytes())
+    if private_request_id:
+        if manifest.get('audience') != 'private' or manifest.get('customizationRequestID') != str(private_request_id) or manifest.get('templateBookID') != 'custom-' + str(private_request_id):
+            raise ValueError('Private package/request mismatch')
+    elif manifest.get('audience') == 'private' or manifest.get('customizationRequestID') or str(manifest.get('templateBookID','')).startswith('custom-'):
+        raise ValueError('Private packages cannot enter the public publisher')
     if manifest['format'] != 'TravelDiary.PresetBook' or manifest['schemaVersion'] != 1 or manifest['layerSchemaVersion'] not in (1, 2):
         raise ValueError('Unsupported package schema')
+    if type(manifest.get('packageVersion')) is not int or manifest['packageVersion'] <= 0:
+        raise ValueError('Invalid source package version')
     if not set(manifest['requiredCapabilities']) <= {'image', 'object', 'text', 'frame', 'drawing'}:
         raise ValueError('Unsupported capabilities')
     if not 1 <= len(manifest['pages']) <= 100:

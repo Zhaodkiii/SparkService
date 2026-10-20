@@ -50,9 +50,10 @@
       <span>PID: {{ status?.preset_processor?.pid ?? '-' }}</span>
       <span>排队：{{ status?.preset_processor?.queued ?? '-' }}</span>
       <span>处理中：{{ status?.preset_processor?.processing ?? '-' }}</span>
+      <a-tag v-if="status?.preset_processor?.current_scope">{{ status.preset_processor.current_scope === 'customization' ? '正在处理专属成品' : '正在处理公共手帐' }}</a-tag>
       <span v-if="status?.preset_processor?.current_job">当前任务：{{ status.preset_processor.current_job }}</span>
     </a-space>
-    <div style="color: #999; margin-top: 8px">负责手帐 ZIP 解压、校验与发布；启用本机托管后随下方一键启停操作运行。</div>
+    <div style="color: #999; margin-top: 8px">同一 Worker 处理公共手帐 ZIP 和专属定制成品 ZIP，从同一个队列按入队顺序领取任务；专属成品只生成待验收候选，不自动交付。用户照片不进入处理队列。一键启停同时管理这两类成品处理。</div>
     <a-alert v-if="status?.preset_processor?.error" type="warning" show-icon :message="status.preset_processor.error" style="margin-top: 12px" />
   </a-card>
 

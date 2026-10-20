@@ -7,7 +7,7 @@ from diary_presets.processor_runtime import configuration_error
 
 
 class Command(BaseCommand):
-    help = '本机运行手帐资源处理 Worker（独立进程，不占用 Celery）'
+    help = '本机运行公共手帐与专属定制成品资源 Worker（同一进程，不占用 Celery）'
 
     def handle(self, *args, **options):
         if not settings.DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED:
@@ -17,7 +17,7 @@ class Command(BaseCommand):
             raise CommandError(error)
         for key in ('DIARY_PRESETS_PROCESSOR_TOKEN', 'ALIYUN_ACCESS_KEY_ID',
                     'ALIYUN_ACCESS_KEY_SECRET', 'ALIYUN_OSS_BUCKET',
-                    'DIARY_PRESETS_OSS_PREFIX', 'PRESET_CONTROL_URL'):
+                    'DIARY_PRESETS_OSS_PREFIX', 'CUSTOMIZATIONS_OSS_PREFIX', 'PRESET_CONTROL_URL'):
             os.environ[key] = str(getattr(settings, key))
         # A workstation uses the public endpoint; the standalone cloud worker
         # retains its internal endpoint default.

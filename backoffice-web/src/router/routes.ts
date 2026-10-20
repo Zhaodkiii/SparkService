@@ -11,6 +11,7 @@ export const constantRoutes: RouteRecordRaw[] = [
     path: '/',
     component: () => import('../layouts/AdminLayout.vue'),
     children: [
+      { path: '/diary-customizations', name: 'DiaryCustomizations', component: () => import('../views/CustomizationRequestsView.vue'), meta: { title: '专属定制', requiredPermission: 'diary_presets.change_template' } },
       { path: '/print-orders', name: 'PrintOrders', component: () => import('../views/PrintOrdersView.vue'), meta: { title: '印制订单', superAdminOnly: true } },
       { path: '/diary-presets', name: 'DiaryPresets', component: () => import('../views/DiaryPresetsView.vue'), meta: { title: '预设手帐', superAdminOnly: true } },
       { path: '', redirect: '/dashboard' },

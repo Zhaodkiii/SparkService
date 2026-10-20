@@ -164,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useRoute } from 'vue-router';
 import { fetchNotificationLogDetail, fetchNotificationLogs, querySmsSendDetails, type NotificationMessageLog } from '../api/modules/notifications';
@@ -382,6 +382,12 @@ async function openDetail(logId: number) {
   detail.value = data;
   detailOpen.value = true;
 }
+watch(() => route.query.message_id, async (value) => {
+  const id=Number(value);
+  if (!Number.isSafeInteger(id) || id<=0) return;
+  try { await openDetail(id); }
+  catch { message.error('无法打开该通知记录，请确认访问权限或刷新重试'); }
+}, { immediate: true });
 
 async function querySmsReceipt(logId: number) {
   queryingId.value = logId;

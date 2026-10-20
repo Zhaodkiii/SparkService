@@ -703,6 +703,9 @@ class AdminAuthProfileView(APIView):
         bootstrap_admin_permissions()
         role_codes = get_user_role_codes(request.user.id)
         permission_codes = get_user_permission_codes(request.user.id)
+        # Match the Django permission enforced by private customization APIs.
+        if request.user.has_perm('diary_presets.change_template'):
+            permission_codes = list(set(permission_codes) | {'diary_presets.change_template'})
         payload = {
             "user": AdminUserSerializer(request.user).data,
             "roles": role_codes,

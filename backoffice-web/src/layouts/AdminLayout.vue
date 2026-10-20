@@ -176,9 +176,13 @@ const fallbackMenus = [
 const menus = computed(() => {
   const source = auth.menus.length ? auth.menus : fallbackMenus;
   if (auth.user?.is_superuser) {
-    return [...source, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
+    return [...source, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
   }
-  return source.filter((item) => item.code !== 'menu:conversations');
+  const result=source.filter((item) => item.code !== 'menu:conversations');
+  if (auth.hasPermission('diary_presets.change_template') && !result.some(item=>item.path==='/diary-customizations')) {
+    result.push({code:'menu:customizations',name:'专属定制',path:'/diary-customizations',children:[]});
+  }
+  return result;
 });
 
 const menuItems = computed(() =>

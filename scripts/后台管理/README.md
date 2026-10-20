@@ -27,3 +27,12 @@ Worker 只从当前 `CELERY_TASK_ROUTES` 读取所需队列；本地使用 solo 
 手帐 ZIP 使用独立的 `preset_processor` 进程，不是 Celery 任务。本机 `.env` 配置 `DIARY_PRESETS_LOCAL_PROCESSOR_ENABLED=true`、随机生成的 `DIARY_PRESETS_PROCESSOR_TOKEN`（API 与处理进程共用），以及现有 `ALIYUN_ACCESS_KEY_ID/SECRET`、`ALIYUN_OSS_BUCKET/ENDPOINT`。`PRESET_CONTROL_URL` 默认 `http://127.0.0.1:2026`，端口可随 `BACKEND_PORT` 覆盖。本机通过 OSS 公网 endpoint 处理；生产仍可关闭本机托管，独立部署 OSS 同区域 Worker。
 
 启用后，启动/停止/重启脚本以及后台“异步任务管理”的一键启停均包含手帐处理进程，PID 为 `run/preset_processor.pid`，日志为 `logs/preset_processor.stdout.log`、`logs/preset_processor.stderr.log`。页面同时显示实际控制 API 通信心跳、排队/处理中数量和配置/连接错误；仅有 PID 不算就绪。已上传的 queued 任务会自动领取，无需重新上传；通过校验后按原任务设置直接发布。
+
+
+### 统一手帐资源队列（2026-10-20）
+
+只保留一个“手帐资源处理 Worker”（`preset_processor`），通过现有一键启停管理。公共手帐 ZIP、专属定制交付 ZIP 同时进入 `diary_presets.ResourceTask` 一张持久化队列表，按入队顺序领取；任务管理只显示统一的排队数和处理中数，不运行单独的专属定制 Worker。用户照片不入队。
+
+升级顺序：停止旧 `preset_processor` → `python manage.py migrate`（含 `diary_presets/0003_resourcetask`，自动迁入存量任务）→ 启动原来的 `preset_processor`。本机可用 `python scripts/runtime.py stop preset_processor` / `python scripts/runtime.py start preset_processor`。生产环境在有 OSS 带宽的同地域工作机运行一个 `python worker.py` 容器，API 主机只登记和调度任务。
+
+处理完成后，公共手帐沿用原发布行为；专属定制只生成待验收候选，需要管理员逐版验收并手动正式交付。
