@@ -157,6 +157,8 @@ SCENE_CATALOG += tuple(_scene('diary.customization.'+action, name, channels=('ap
     ('pending_reminder','定制人工提醒'),('info_requested','定制待补充'),('due_changed','定制日期调整'),('rejected','定制无法制作'),('cancelled','定制已取消'),
     ('delivered','定制首次交付'),('redelivered','定制修订交付'),('delivery_withdrawn','定制交付撤回'),('delivery_rolled_back','定制版本回滚')))
 
+SCENE_CATALOG += (_scene('support.feedback.updated', '反馈有新回复', channels=('apns',), topic_key='support.feedback', owner_team='traveldiary'),)
+
 SCENE_BY_KEY = {definition.key: definition for definition in SCENE_CATALOG}
 if len(SCENE_BY_KEY) != len(SCENE_CATALOG):  # pragma: no cover - import-time invariant
     raise RuntimeError("duplicate notification business scene key")

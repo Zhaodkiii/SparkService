@@ -1,269 +1,126 @@
 #!/usr/bin/env bash
-# 启用严格模式：遇到错误立即退出、使用未定义变量退出、管道失败时整体失败
-set -euo pipefail
+set -Eeuo pipefail
+umask 077
 
-# ========== 1. 定义基础路径与配置变量 ==========
-# 项目源码目录（默认取当前脚本的上一级目录）
 SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-# 服务器模板目录（存放部署脚本等）
-SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$SRC_DIR/deployment/server}"
-# 前端后台目录
-FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
-# 远程服务器地址（用户名@IP）
-REMOTE_HOST="${REMOTE_HOST:-root@39.106.39.110}"
-# Enforce target isolation before SSH/SCP/rsync, configuration sync or cancellation.
 SCRIPT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+REMOTE_HOST="${REMOTE_HOST:-root@39.106.39.110}"
 source "$SCRIPT_ROOT/release_target_guard.sh"
 validate_release_target "$SRC_DIR" "$REMOTE_HOST"
 case "${1:-}" in
   --check-target) exit 0 ;;
-  "") ;;
-  *) echo "用法: $0 [--check-target]" >&2; exit 2 ;;
+  --preflight|"") MODE="${1:-release}" ;;
+  *) echo "用法: $0 [--check-target|--preflight]" >&2; exit 2 ;;
 esac
-# 远程服务器部署根目录
+
+SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$SRC_DIR/deployment/server}"
+FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
 REMOTE_BASE="${REMOTE_BASE:-/root/2026}"
-# 远程上传文件存放目录
-UPLOAD_DIR="$REMOTE_BASE/uploads"
-# 远程脚本存放目录
-REMOTE_BIN="$REMOTE_BASE/bin"
-# 远程执行的部署脚本路径
-REMOTE_DEPLOY="$REMOTE_BIN/deploy_remote.sh"
-# 本地环境变量文件；每次发布会同步到服务器 $REMOTE_BASE/.deploy.env
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$SRC_DIR/.env}"
-# 是否同步本地 .env 到服务器 .deploy.env（1=启用，0=关闭）
 SYNC_DEPLOY_ENV="${SYNC_DEPLOY_ENV:-1}"
-# 服务器 Docker Compose 使用的环境变量文件
-REMOTE_DEPLOY_ENV="$REMOTE_BASE/.deploy.env"
-# PyPI 镜像源（阿里云 HTTPS，避免新版 pip 拒绝不可信 HTTP 源）
-PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
-# 前端生产 API 地址
-VITE_API_BASE_URL="${VITE_API_BASE_URL:-}"
-# 是否在本地构建前端并上传 dist，避免 2C2G 服务器构建时卡死
 BUILD_FRONTEND_LOCAL="${BUILD_FRONTEND_LOCAL:-1}"
-# 是否使用 rsync 同步（1=启用，0=关闭）
 USE_RSYNC="${USE_RSYNC:-1}"
-# 是否在新部署前取消服务器上未完成的旧部署（1=启用）
-CANCEL_RUNNING_DEPLOY="${CANCEL_RUNNING_DEPLOY:-0}"
+PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
+VITE_API_BASE_URL="${VITE_API_BASE_URL:-}"
+PYTHON_BIN="${PYTHON_BIN:-$SRC_DIR/.venv/bin/python}"
+[[ -x "$PYTHON_BIN" ]] || PYTHON_BIN=python3
+PHASE=local-preflight
+LOCAL_STAGE=""
+REMOTE_STAGE=""
 
-# ========== 2. 生成打包信息 ==========
-# 时间戳：用于区分版本
-TS="$(date +%Y%m%d_%H%M%S)"
-# 打包文件名
-PKG_NAME="sparkservice_${TS}.tgz"
-# 本地临时打包路径
-PKG_PATH="/tmp/$PKG_NAME"
+cleanup() {
+  local result=$?
+  trap - EXIT
+  [[ -z "$LOCAL_STAGE" ]] || rm -rf "$LOCAL_STAGE"
+  if [[ "$result" != 0 ]]; then
+    printf '发布失败：阶段=%s，退出码=%s。\n' "$PHASE" "$result" >&2
+    [[ -z "$REMOTE_STAGE" ]] || printf '远端诊断目录：%s；请检查后再重试。\n' "$REMOTE_STAGE" >&2
+  fi
+  exit "$result"
+}
+trap cleanup EXIT
 
-# ========== 3. 打包排除文件/目录列表 ==========
-# 这些文件不会被上传到服务器（版本控制、环境、缓存、日志、编译文件等）
-EXCLUDES=(
-  --exclude ".git"
-  --exclude ".env"
-  --exclude ".env.*"
-  --exclude "数据库备份"
-  --exclude "apns_keys"
-  --exclude "*.sql"
-  --exclude "*.sql.gz"
-  --exclude "*.sqlite3"
-  --exclude "*.rdb"
-  --exclude "tmp"
-  --exclude "scripts/后台管理/logs"
-  --exclude ".idea"
-  --exclude ".vscode"
-  --exclude ".venv"
-  --exclude "venv"
-  --exclude "**/__pycache__"
-  --exclude "**/*.pyc"
-  --exclude ".DS_Store"
-  --exclude "**/.DS_Store"
-  --exclude "node_modules"
-  --exclude "backoffice-web/node_modules"
-  --exclude "backoffice-web/dist"
-  --exclude "share-web"
-  --exclude "logs"
-  --exclude "run"
-  --exclude "media"
-  --exclude "staticfiles"
-  --exclude "db.sqlite3"
-  --exclude "dump.rdb"
-  --exclude ".pytest_cache"
-  --exclude "scripts/deploy_sparkservice.sh"
-)
-
-# ========== 4. 环境检查 ==========
-# 检查 ssh 命令是否存在
-command -v ssh >/dev/null || { echo "ssh not found" >&2; exit 2; }
-# 检查 scp 命令是否存在
-command -v scp >/dev/null || { echo "scp not found" >&2; exit 2; }
-# 检查源码目录是否存在
-[[ -d "$SRC_DIR" ]] || { echo "SRC_DIR not found: $SRC_DIR" >&2; exit 2; }
-# 检查本地环境变量文件是否存在
-if [[ "$SYNC_DEPLOY_ENV" == "1" ]]; then
-  [[ -f "$DEPLOY_ENV_FILE" ]] || { echo "DEPLOY_ENV_FILE not found: $DEPLOY_ENV_FILE" >&2; exit 2; }
+[[ "$REMOTE_BASE" =~ ^/[a-zA-Z0-9_/-]+$ && "$REMOTE_BASE" != / && "$REMOTE_BASE" != */../* && "$REMOTE_BASE" != */.. ]] || {
+  echo 'REMOTE_BASE 必须是无空格、无 .. 的绝对目录，且不能为 /。' >&2; exit 2;
+}
+for flag in SYNC_DEPLOY_ENV BUILD_FRONTEND_LOCAL USE_RSYNC; do
+  [[ "${!flag}" == 0 || "${!flag}" == 1 ]] || { echo "$flag 只能为 0 或 1。" >&2; exit 2; }
+done
+[[ "${CANCEL_RUNNING_DEPLOY:-0}" == 0 ]] || {
+  echo '不再自动终止旧部署；请先诊断持锁任务，完成处理后重新发布。' >&2; exit 2;
+}
+[[ -z "${RESET_DATABASE_NAME:-}" ]] || {
+  echo '普通发布不允许清空数据库；请使用单独审查的数据库维护流程。' >&2; exit 2;
+}
+for tool in ssh scp tar shasum "$PYTHON_BIN"; do
+  command -v "$tool" >/dev/null || { echo "缺少命令：$tool" >&2; exit 2; }
+done
+if [[ "$USE_RSYNC" == 1 || "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
+  command -v rsync >/dev/null || { echo '缺少 rsync。' >&2; exit 2; }
 fi
-# 检查服务器模板脚本目录是否存在
-[[ -d "$SERVER_TEMPLATE_DIR/bin" ]] || { echo "server template bin not found: $SERVER_TEMPLATE_DIR/bin" >&2; exit 2; }
-if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
-  [[ -d "$FRONTEND_DIR" ]] || { echo "FRONTEND_DIR not found: $FRONTEND_DIR" >&2; exit 2; }
-  command -v pnpm >/dev/null || { echo "pnpm not found" >&2; exit 2; }
+for file in docker-compose.yml docker/backend.Dockerfile docker/scripts/backend-entrypoint.sh docker/nginx/backoffice.conf bin/deploy_remote.sh bin/release_checks.py; do
+  [[ -s "$SERVER_TEMPLATE_DIR/$file" ]] || { echo "缺少服务器模板：$file" >&2; exit 2; }
+done
+bash -n "$SERVER_TEMPLATE_DIR/bin/deploy_remote.sh"
+bash -n "$SERVER_TEMPLATE_DIR/docker/scripts/backend-entrypoint.sh"
+LOCAL_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/sparkservice-release.XXXXXX")"
+if [[ "$SYNC_DEPLOY_ENV" == 1 ]]; then
+  cp "$DEPLOY_ENV_FILE" "$LOCAL_STAGE/candidate.env"
+  chmod 600 "$LOCAL_STAGE/candidate.env"
+  "$PYTHON_BIN" "$SERVER_TEMPLATE_DIR/bin/release_checks.py" config "$LOCAL_STAGE/candidate.env"
 fi
+if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
+  command -v pnpm >/dev/null || { echo '缺少 pnpm。' >&2; exit 2; }
+  [[ -s "$FRONTEND_DIR/package.json" && -s "$FRONTEND_DIR/pnpm-lock.yaml" ]] || exit 2
+fi
+[[ "$MODE" != --preflight ]] || { echo '本地预检通过，未连接服务器。'; exit 0; }
 
-# Build the retained admin frontend before any remote side effects.
-if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
-  command -v rsync >/dev/null || { echo "rsync is required for frontend upload" >&2; exit 2; }
+PHASE=frontend-build
+if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
   (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile && VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm build)
+  [[ -s "$FRONTEND_DIR/dist/index.html" ]] || { echo '后台构建未生成 index.html。' >&2; exit 2; }
 fi
 
-# ========== 5. 远程初始化 ==========
-# 如果上一次部署卡在 docker build / pull / migrate，会持有 /root/2026/.deploy.lock。
-# 新部署前先终止旧 deploy_remote.sh，让 flock 自动释放，避免一直提示“已有部署任务正在执行”。
-if [[ "$CANCEL_RUNNING_DEPLOY" == "1" ]]; then
-  echo "==> 检查并取消服务器上未完成的旧部署任务"
-  ssh "$REMOTE_HOST" 'REMOTE_DEPLOY="'"$REMOTE_DEPLOY"'"; python3 - "$REMOTE_DEPLOY" <<'"'"'PY'"'"'
-import os
-import signal
-import subprocess
-import sys
-import time
+PHASE=package
+RELEASE_ID="$(date +%Y%m%d_%H%M%S)_$$_${RANDOM}"
+PKG_NAME=sparkservice.tgz
+EXCLUDES=(
+  --exclude .git --exclude .env --exclude '.env.*' --exclude .deploy.env --exclude '.deploy.env.*'
+  --exclude 数据库备份 --exclude apns_keys --exclude '*.sql' --exclude '*.sql.gz'
+  --exclude '*.sqlite3' --exclude '*.rdb' --exclude tmp --exclude scripts/后台管理/logs
+  --exclude .idea --exclude .vscode --exclude .venv --exclude venv --exclude __pycache__
+  --exclude '*.pyc' --exclude .DS_Store --exclude node_modules --exclude backoffice-web/dist
+  --exclude share-web --exclude logs --exclude run --exclude media --exclude staticfiles
+  --exclude .pytest_cache --exclude .vite --exclude scripts/deploy_sparkservice.sh
+)
+COPYFILE_DISABLE=1 tar -czf "$LOCAL_STAGE/$PKG_NAME" "${EXCLUDES[@]}" -C "$SRC_DIR" .
+(cd "$LOCAL_STAGE" && shasum -a 256 "$PKG_NAME" > "$PKG_NAME.sha256")
+printf 'release=%s\nbranch=%s\ncommit=%s\ndirty=%s\n' "$RELEASE_ID" \
+  "$(git -C "$SRC_DIR" branch --show-current)" "$(git -C "$SRC_DIR" rev-parse HEAD)" \
+  "$(if [[ -n "$(git -C "$SRC_DIR" status --porcelain)" ]]; then echo yes; else echo no; fi)" > "$LOCAL_STAGE/release.txt"
 
-remote_deploy = sys.argv[1]
-current_pid = os.getpid()
-
-def find_deploy_pids():
-    output = subprocess.check_output(["ps", "-eo", "pid=,args="], universal_newlines=True)
-    pids = []
-    for line in output.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        pid_text, _, args = line.partition(" ")
-        try:
-            pid = int(pid_text)
-        except ValueError:
-            continue
-        if pid == current_pid:
-            continue
-        if remote_deploy in args and "deploy_remote.sh" in args and "python3 -" not in args:
-            pids.append(pid)
-    return pids
-
-pids = find_deploy_pids()
-if not pids:
-    print("没有发现旧部署任务")
-    raise SystemExit(0)
-
-print("发现旧部署任务，正在终止: " + " ".join(map(str, pids)))
-for pid in pids:
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-
-time.sleep(3)
-pids = find_deploy_pids()
-if pids:
-    print("旧部署任务未退出，强制终止: " + " ".join(map(str, pids)))
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-PY
-  ' || {
-    echo "⚠️  取消旧部署任务时 SSH 返回异常，继续执行新的部署"
-  }
-  ssh "$REMOTE_HOST" 'REMOTE_DEPLOY="'"$REMOTE_DEPLOY"'"; python3 - "$REMOTE_DEPLOY" <<'"'"'PY'"'"'
-import os
-import subprocess
-import sys
-
-remote_deploy = sys.argv[1]
-current_pid = os.getpid()
-output = subprocess.check_output(["ps", "-eo", "pid=,args="], text=True)
-for line in output.splitlines():
-    line = line.strip()
-    if not line:
-        continue
-    pid_text, _, args = line.partition(" ")
-    try:
-        pid = int(pid_text)
-    except ValueError:
-        continue
-    if pid != current_pid and remote_deploy in args and "deploy_remote.sh" in args and "python3 -" not in args:
-        print("⚠️  仍检测到旧部署任务残留，但继续尝试新部署")
-        raise SystemExit(0)
-print("旧部署任务已清理，继续部署")
-PY
-  ' || true
-fi
-
-# 在远程服务器创建必要目录
-ssh "$REMOTE_HOST" "mkdir -p '$UPLOAD_DIR' '$REMOTE_BIN' '$REMOTE_BASE/shared/logs' '$REMOTE_BASE/shared/media' '$REMOTE_BASE/shared/staticfiles' '$REMOTE_BASE/shared/backups'"
-# 同步 Docker Compose 服务器模板，但不覆盖生产 .deploy.env，也不上传运行数据。
-if command -v rsync >/dev/null 2>&1; then
-  rsync -az \
-    --exclude ".deploy.env" \
-    --exclude "releases" \
-    --exclude "uploads" \
-    --exclude "shared" \
-    "$SERVER_TEMPLATE_DIR"/ "$REMOTE_HOST:$REMOTE_BASE/"
+PHASE=upload
+SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+REMOTE_STAGE="$REMOTE_BASE/uploads/$RELEASE_ID"
+ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" "umask 077; mkdir -p '$REMOTE_STAGE/server'"
+scp "${SSH_OPTIONS[@]}" "$LOCAL_STAGE/$PKG_NAME" "$LOCAL_STAGE/$PKG_NAME.sha256" "$LOCAL_STAGE/release.txt" "$REMOTE_HOST:$REMOTE_STAGE/"
+if [[ "$USE_RSYNC" == 1 ]]; then
+  rsync -az -e "ssh ${SSH_OPTIONS[*]}" --exclude .deploy.env --exclude '.deploy.env.*' --exclude shared --exclude uploads --exclude releases \
+    "$SERVER_TEMPLATE_DIR/" "$REMOTE_HOST:$REMOTE_STAGE/server/"
 else
-  scp "$SERVER_TEMPLATE_DIR"/docker-compose.yml "$REMOTE_HOST:$REMOTE_BASE/"
-  scp "$SERVER_TEMPLATE_DIR"/.docker.env.example "$REMOTE_HOST:$REMOTE_BASE/"
-  scp "$SERVER_TEMPLATE_DIR"/.deploy.env.example "$REMOTE_HOST:$REMOTE_BASE/"
-  scp -r "$SERVER_TEMPLATE_DIR"/bin "$SERVER_TEMPLATE_DIR"/docker "$REMOTE_HOST:$REMOTE_BASE/"
+  COPYFILE_DISABLE=1 tar -czf "$LOCAL_STAGE/server.tgz" --exclude .deploy.env --exclude '.deploy.env.*' --exclude shared --exclude uploads --exclude releases -C "$SERVER_TEMPLATE_DIR" .
+  scp "${SSH_OPTIONS[@]}" "$LOCAL_STAGE/server.tgz" "$REMOTE_HOST:$REMOTE_STAGE/"
+  ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" "tar -xzf '$REMOTE_STAGE/server.tgz' -C '$REMOTE_STAGE/server'"
 fi
-# 给远程脚本添加执行权限
-ssh "$REMOTE_HOST" "find '$REMOTE_BIN' '$REMOTE_BASE/docker' -type f -name '*.sh' -exec chmod +x {} +"
-
-# ========== 5.1 同步生产环境变量 ==========
-# 服务器 Docker Compose 使用 $REMOTE_BASE/.deploy.env。
-# 每次发布都用本地 SparkService/.env 覆盖服务器 .deploy.env，确保最新配置随发布生效。
-if [[ "$SYNC_DEPLOY_ENV" == "1" ]]; then
-  echo "==> 同步环境变量：$DEPLOY_ENV_FILE -> $REMOTE_HOST:$REMOTE_DEPLOY_ENV"
-  REMOTE_ENV_TMP="$UPLOAD_DIR/.deploy.env.${TS}.tmp"
-  scp "$DEPLOY_ENV_FILE" "$REMOTE_HOST:$REMOTE_ENV_TMP"
-  ssh "$REMOTE_HOST" "set -euo pipefail
-    if [[ -f '$REMOTE_DEPLOY_ENV' ]]; then
-      cp '$REMOTE_DEPLOY_ENV' '$REMOTE_DEPLOY_ENV.bak_${TS}'
-    fi
-    install -m 600 '$REMOTE_ENV_TMP' '$REMOTE_DEPLOY_ENV'
-    rm -f '$REMOTE_ENV_TMP'
-  "
-else
-  echo "==> 跳过环境变量同步：SYNC_DEPLOY_ENV=0"
+if [[ "$SYNC_DEPLOY_ENV" == 1 ]]; then
+  scp "${SSH_OPTIONS[@]}" "$LOCAL_STAGE/candidate.env" "$REMOTE_HOST:$REMOTE_STAGE/candidate.env"
+fi
+if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
+  rsync -az -e "ssh ${SSH_OPTIONS[*]}" "$FRONTEND_DIR/dist/" "$REMOTE_HOST:$REMOTE_STAGE/frontend/"
 fi
 
-# ========== 6. 上传已在本地构建的管理后台 ==========
-if [[ "$BUILD_FRONTEND_LOCAL" == "1" ]]; then
-  ssh "$REMOTE_HOST" "mkdir -p '$REMOTE_BASE/shared/frontend-dist'"
-  rsync -az --delete "$FRONTEND_DIR/dist"/ "$REMOTE_HOST:$REMOTE_BASE/shared/frontend-dist/"
-fi
-
-# ========== 7. 代码打包并上传到远程 ==========
-# 如果启用 rsync 且本地安装了 rsync，使用 rsync 同步
-if [[ "$USE_RSYNC" == "1" ]] && command -v rsync >/dev/null 2>&1; then
-  RSYNC_DIR="$UPLOAD_DIR/rsync_${TS}"
-  # 同步代码到远程临时目录
-  rsync -az --delete "${EXCLUDES[@]}" "$SRC_DIR"/ "$REMOTE_HOST:$RSYNC_DIR/"
-  # 在远程将同步后的代码打包成压缩包，并删除临时目录
-  ssh "$REMOTE_HOST" "cd '$RSYNC_DIR' && tar -czf '$UPLOAD_DIR/$PKG_NAME' . && rm -rf '$RSYNC_DIR'"
-else
-  # 不使用 rsync：本地先打包，再上传到服务器
-  export COPYFILE_DISABLE=1
-  TAR_BIN="tar"
-  # 如果有 gtar 则使用 gtar（兼容 macOS）
-  command -v gtar >/dev/null 2>&1 && TAR_BIN="gtar"
-  # 本地打包项目代码
-  "$TAR_BIN" -czf "$PKG_PATH" "${EXCLUDES[@]}" -C "$SRC_DIR" .
-  # 生成校验和文件，用于验证文件完整性
-  shasum -a 256 "$PKG_PATH" | awk '{print $1}' > "$PKG_PATH.sha256"
-  # 上传压缩包和校验文件到远程
-  scp "$PKG_PATH" "$PKG_PATH.sha256" "$REMOTE_HOST:$UPLOAD_DIR/"
-fi
-
-# ========== 8. 在远程执行部署 ==========
-# 执行远程部署脚本，传入包路径和环境变量
-ssh "$REMOTE_HOST" "PIP_INDEX_URL='$PIP_INDEX_URL' SPARK_BASE='$REMOTE_BASE' RESET_DATABASE_NAME='${RESET_DATABASE_NAME:-}' RELEASE_TARGET_IP='39.106.39.110' bash '$REMOTE_DEPLOY' '$UPLOAD_DIR/$PKG_NAME'"
-
-# 部署完成提示
-echo "SparkService deployed: $TS"
+PHASE=remote-release
+printf -v REMOTE_COMMAND 'SPARK_BASE=%q RELEASE_TARGET_IP=39.106.39.110 PIP_INDEX_URL=%q bash %q %q' \
+  "$REMOTE_BASE" "$PIP_INDEX_URL" "$REMOTE_STAGE/server/bin/deploy_remote.sh" "$REMOTE_STAGE/$PKG_NAME"
+ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" "$REMOTE_COMMAND" < /dev/null
+echo "SparkService deployed: $RELEASE_ID"

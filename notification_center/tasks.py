@@ -89,7 +89,11 @@ def relay_notification_outbox_task(self):
     processed = 0
     for row in rows:
         try:
-            if row.event_type == 'notification.diary_customization.dispatch':
+            if row.event_type == 'notification.support.dispatch':
+                from support_center.tasks import dispatch_notification
+                task = dispatch_notification.delay(row.payload['intent_id'], row.payload['event_id'])
+                row.payload = {**row.payload, 'downstream_task_id': getattr(task,'id','')}
+            elif row.event_type == 'notification.diary_customization.dispatch':
                 from diary_customizations.tasks import dispatch_notification
                 task = dispatch_notification.delay(row.payload['intent_id'], row.payload['event_id'])
                 row.payload = {**row.payload, 'downstream_task_id': getattr(task,'id','')}

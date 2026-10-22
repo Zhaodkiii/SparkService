@@ -216,6 +216,7 @@ INSTALLED_APPS = [
     'diary_presets',
     'diary_customizations',
     'print_orders',
+    'support_center',
     'material_library',
     'notification_center',
     'backoffice',
@@ -402,6 +403,8 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"
 # 未显式配置路由的任务统一进入 celery；不要创建一个未被使用的 default 队列。
 CELERY_TASK_DEFAULT_QUEUE = "celery"
 CELERY_TASK_ROUTES = {
+    "support_center.tasks.dispatch_notification": {"queue": "notification.transactional"},
+    "support_center.tasks.cleanup_support_data": {"queue": "cleanup"},
     "diary_customizations.tasks.dispatch_notification": {"queue": "notification.transactional"},
     "accounts.deactivation.tasks.process_deactivation_task": {"queue": "deactivation"},
     "accounts.deactivation.tasks.schedule_deactivation_processing_task": {"queue": "deactivation"},
@@ -416,6 +419,7 @@ CELERY_TASK_ROUTES = {
 }
 
 CELERY_BEAT_SCHEDULE = {
+    "support-center-cleanup": {"task": "support_center.tasks.cleanup_support_data", "schedule": 3600.0, "options": {"queue": "cleanup"}},
     "print-orders-reconcile-payments": {
         "task": "print_orders.tasks.reconcile_payments", "schedule": crontab(minute="*/1"),
         "options": {"queue": "celery"},

@@ -174,7 +174,9 @@ const fallbackMenus = [
 ];
 
 const menus = computed(() => {
-  const source = auth.menus.length ? auth.menus : fallbackMenus;
+  const supportChildren=[['tickets','反馈工单','view_ticket'],['content','帮助内容','edit_help'],['config','服务配置','manage_config']].filter(([, ,permission])=>auth.hasPermission('support_center.'+permission)).map(([path,name])=>({code:'menu:support:'+path,name:name!,path:'/support/'+path,children:[]}));
+  const source = [...(auth.menus.length ? auth.menus : fallbackMenus)];
+  if(supportChildren.length&&!source.some(m=>m.path==='/support')) source.push({code:'menu:support',name:'帮助与反馈',path:'/support',children:supportChildren});
   if (auth.user?.is_superuser) {
     return [...source, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
   }

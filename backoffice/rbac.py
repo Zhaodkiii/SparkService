@@ -140,6 +140,7 @@ def bootstrap_admin_permissions() -> None:
     ]
 
 
+    defaults += [(f'support_center.{code}', name, 'api', '', '') for code,name in [('view_ticket','查看反馈工单'),('view_all_tickets','查看全部反馈'),('reply_ticket','回复反馈'),('assign_ticket','分派反馈'),('close_ticket','关闭反馈'),('reopen_ticket','重开反馈'),('view_contact','查看反馈联系方式'),('redact_content','隐藏反馈内容'),('edit_help','编辑帮助'),('publish_help','发布帮助'),('manage_config','配置反馈服务')]]
     for code, name, ptype, path, parent_code in defaults:
         permission, _ = AdminPermission.objects.get_or_create(
             code=code,

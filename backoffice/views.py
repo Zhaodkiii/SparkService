@@ -704,6 +704,9 @@ class AdminAuthProfileView(APIView):
         role_codes = get_user_role_codes(request.user.id)
         permission_codes = get_user_permission_codes(request.user.id)
         # Match the Django permission enforced by private customization APIs.
+        for code in ['view_ticket','view_all_tickets','reply_ticket','assign_ticket','close_ticket','reopen_ticket','view_contact','redact_content','edit_help','publish_help','manage_config']:
+            if request.user.has_perm('support_center.'+code):
+                permission_codes.append('support_center.'+code)
         if request.user.has_perm('diary_presets.change_template'):
             permission_codes = list(set(permission_codes) | {'diary_presets.change_template'})
         payload = {

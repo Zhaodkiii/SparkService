@@ -1,0 +1,10 @@
+<script setup lang="ts">
+import {ref,onMounted} from 'vue';
+import {message} from 'ant-design-vue';
+import {support,type SupportConfig} from '../api/modules/support';
+const config=ref<SupportConfig|null>(null),error=ref(''),busy=ref(false),types=ref(''),templates=ref('');
+async function load(){try{config.value=await support.get('config/');types.value=JSON.stringify(config.value!.types,null,2);templates.value=config.value!.templates.join('\n\n');}catch(e){error.value=String(e);}}
+async function save(){if(!config.value)return;busy.value=true;error.value='';try{config.value=await support.patch('config/',{...config.value,types:JSON.parse(types.value),templates:templates.value.split('\n\n').map(t=>t.trim()).filter(Boolean)});message.success('服务配置已保存');}catch(e){error.value=String(e);}finally{busy.value=false;}}
+onMounted(load);
+</script>
+<template><div style="padding:24px;max-width:900px"><h2>反馈服务配置</h2><a-alert v-if="error" :message="error" type="error"/><a-alert type="info" message="暂停新单不影响已有工单处理。开放受理前，请配置真实客服权限、服务时间与帮助内容。" style="margin:16px 0"/><a-form v-if="config" layout="vertical"><a-form-item label="开放新反馈受理"><a-switch v-model:checked="config.accepting"/></a-form-item><a-form-item label="暂停受理提示"><a-input v-model:value="config.pause_message" :maxlength="300"/></a-form-item><a-form-item label="真实服务时间说明"><a-input v-model:value="config.service_hours" :maxlength="200"/></a-form-item><a-form-item label="联系渠道说明"><a-input v-model:value="config.contact" :maxlength="200"/></a-form-item><a-form-item label="已结束工单保留天数（须与隐私说明一致）"><a-input-number v-model:value="config.retention_days" :min="1" :max="3650"/></a-form-item><a-form-item label="问题类型（JSON 数组，含 code / name，已有 code 不复用）"><a-textarea v-model:value="types" :rows="10"/></a-form-item><a-form-item label="常用回复（每项之间空一行）"><a-textarea v-model:value="templates" :rows="8"/></a-form-item><a-space><a-button type="primary" @click="save" :loading="busy">保存配置</a-button><a-button @click="load">重新加载</a-button></a-space></a-form></div></template>

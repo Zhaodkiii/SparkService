@@ -32,6 +32,8 @@ from diary_presets.resource_queue import Processor as ResourceProcessor
 
 
 urlpatterns = [
+    path("api/v1/support/", include("support_center.urls")),
+    path("api/admin/v1/support/", include("support_center.admin_urls")),
     path("api/v1/diary-customizations/", include("diary_customizations.urls")),
     path("api/admin/v1/diary-customizations/", include("diary_customizations.admin_urls")),
     path("api/internal/diary-customizations/processor/", CustomizationProcessor.as_view()),
