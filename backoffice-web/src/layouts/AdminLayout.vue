@@ -178,8 +178,10 @@ const menus = computed(() => {
   const source = [...(auth.menus.length ? auth.menus : fallbackMenus)];
   if(supportChildren.length&&!source.some(m=>m.path==='/support')) source.push({code:'menu:support',name:'帮助与反馈',path:'/support',children:supportChildren});
   if (auth.user?.is_superuser) {
-    return [...source, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
+    return [...source, { code: 'menu:print-payments', name: '支付管理', path: '/print-payments', children: [] }, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
   }
+  if(['view_paymentattempt','query_payment','refund_order','change_paymentchannel'].some(p=>auth.hasPermission('print_orders.'+p))&&!source.some(m=>m.path==='/print-payments')) source.push({code:'menu:print-payments',name:'支付管理',path:'/print-payments',children:[]});
+  if(auth.hasPermission('print_orders.change_order')&&!source.some(m=>m.path==='/print-orders')) source.push({code:'menu:print-orders',name:'印制订单',path:'/print-orders',children:[]});
   const result=source.filter((item) => item.code !== 'menu:conversations');
   if (auth.hasPermission('diary_presets.change_template') && !result.some(item=>item.path==='/diary-customizations')) {
     result.push({code:'menu:customizations',name:'专属定制',path:'/diary-customizations',children:[]});

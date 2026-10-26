@@ -13,7 +13,7 @@ python manage.py seed_print_products
 
 种子命令幂等创建 A5（148×210mm）、ISO B5（176×250mm），启用免费印制，初始运费为 0。不会覆盖已有配置，不伪造纸张、工艺、打样状态或售后条款。后台 `/print-orders` → 印制规格中补全后启用。
 
-免费模式忽略基础费及内页面单价，运费独立计价。总价 0 的订单使用 `not_required` 支付状态；客户端确认上传完成后自动待审核，不创建微信交易，也不创建退款。运费大于 0 则仍使用微信支付。历史订单金额为快照，不随商品修改变化。
+免费模式忽略基础费及内页面单价，运费独立计价。总价 0 的订单使用 `not_required` 支付状态；客户端确认上传完成后自动待审核，不创建微信交易，也不创建退款。运费大于 0 时可从已开放的微信、支付宝渠道选择支付。历史订单金额为快照，不随商品修改变化。
 
 后台操作包含审核、下载 PDF、要求原订单修改重提、开始制作、质检、异常处理、发货及售后。
 
@@ -27,25 +27,48 @@ python manage.py seed_print_products
 
 本次接口需要与新版 iOS 同步发布；旧版客户端不再支持新的上传完成协议。发布时停止旧文件处理器并重启 API 和 Celery。人工印前审核继续保留。
 
-## 微信支付
+## 微信与支付宝支付（2026-10-24）
 
-总价为 0 无需微信配置。收费订单使用 API v3 普通商户 APP 支付、公钥验签模式。`wechat.env.example` 列出服务端配置；密钥文件只部署在服务端。公钥 ID 和 PEM 从微信商户平台获得，支持轮换时切换对应配置。
+总价为 0 不创建支付交易。收费订单使用后台已发布的支付渠道。新接口必须与新版 iOS 同步发布；服务端不再直接使用旧微信环境变量作为新订单支付配置。
 
-公开 HTTPS 回调 `/api/v1/print/wechat-notify/`。回调验证签名、时间戳、公钥 ID，AES-GCM 解密，再检查 appid、mchid、商户单号、币种、金额和交易流水。不能由客户端确认支付。
+部署步骤：
 
-已注册 Celery Beat 每分钟任务 `print_orders.tasks.reconcile_payments` 处理支付查询、过期关单和退款。Beat 与消费 `celery` 队列的 worker 需重启加载新任务；也可手动执行：
+```sh
+python manage.py migrate print_orders
+python manage.py init_print_payment_key
+```
+
+生产发布模板已将服务器 `shared/payment-secrets` 挂载到 API、Worker、Beat 的 `/app/.secrets`；发布时幂等初始化生产主密钥。源码包排除本地 `.secrets`，不会上传本机密钥。共享目录需独立安全备份。
+
+密钥生成命令只在文件不存在时创建 `.secrets/print-payment.key`（0600）。生产环境可通过 `PRINT_PAYMENT_ENCRYPTION_KEY` 提供 Fernet 密钥，或通过 `PRINT_PAYMENT_ENCRYPTION_KEY_FILE` 指向受控文件。API、Celery worker 必须使用同一密钥，并备份到安全密钥管理系统；丢失密钥将无法读取商户私钥。不要提交密钥文件到 Git，也不要在已有配置时直接更换加密主密钥。
+
+后台 `/print-payments` → 支付渠道：保存并检查配置后，可以直接核对并启用；启用前弹出二次确认，展示 AppID、商户和未完成的联调项目。联调和启用备注为可选项，服务端要求明确的 confirm_enable=true，并记录操作人、版本和实际联调状态。检查配置只检查本地格式和完整性，不代表商户平台已开通或真实支付已成功。默认两个渠道均关闭；免费订单照常使用。
+
+- 微信：API v3 普通商户 APP 支付，公钥验签模式；填写 AppID、商户号、证书序列号、API v3 密钥、商户私钥、微信支付公钥及公钥 ID。
+- 支付宝：APP 支付、RSA2 公钥模式；填写 AppID、商家 PID、应用私钥、支付宝公钥。当前不提供证书模式。支持保存沙箱配置，但不能将沙箱发布给正式用户。
+- 回调分别为公开 HTTPS `/api/v1/print/wechat-notify/`、`/api/v1/print/alipay-notify/`。服务端验签并核对商户身份、订单号、金额，客户端回跳只触发查单。
+
+每次修改商户材料创建新版本。历史支付与退款绑定原版本；停用渠道只停止新的支付申请。不要删除旧配置或撤销仍有未结束交易的商户密钥。后台不返回私钥明文，留空表示保留；配置和财务操作记录审计日志。
+
+重启 API、Celery worker 和 Beat。已注册每分钟 `print_orders.tasks.reconcile_payments`；查询异常使用指数退避，最多连续失败 10 次后转人工查询/重试。也可手动运行同一批处理：
 
 ```sh
 python manage.py reconcile_print_payments
 ```
 
-退款为当前整单全额退款，异步结果由查单确认。异常退款保留状态，需要商户侧处理；禁止人工直接改成退款成功。
+每个订单仅允许一个有效支付尝试。切换渠道先确认旧交易已结束；未创建到平台但仍有效的 APP 签名需等待期限结束，避免双付。迟到付款和重复付款生成原渠道退款。退款仅支持全额原路退回，使用固定退款单号重试；不能人工标记支付或退款成功。后台支付交易与退款记录提供查询、关单和失败重试。
 
 ## iOS
 
-已链接腾讯官方 WechatOpenSDK 2.0.9 XCFramework，并接入 PayReq、URL 回跳和 Universal Link 回跳。设置构建变量 `WECHAT_APP_ID`、`WECHAT_UNIVERSAL_LINK`。在签名配置添加对应 Associated Domains（applinks 域名），部署该域名的 apple-app-site-association；必须与微信开放平台的 Bundle ID、Universal Link 完全一致。不得使用示例域名正式签名。
+已链接腾讯 WechatOpenSDK 2.0.9 和支付宝 AlipaySDK 15.8.30 XCFramework。支付选择页仅显示后台开放渠道，检查本机配置与应用安装状态，并在回跳/回到前台后向服务端确认支付结果。
 
-正式微信支付必须在真机、微信及已开通 APP 支付商户环境验证。缺少配置或未安装微信时会显示不可支付，不模拟支付成功。
+微信需设置构建变量 `WECHAT_APP_ID`、`WECHAT_UNIVERSAL_LINK`，签名配置添加对应 Associated Domains，并部署 apple-app-site-association；与微信开放平台 Bundle ID 和 Universal Link 一致。
+
+支付宝回跳 scheme 为 `$(PRODUCT_BUNDLE_IDENTIFIER).alipay`，已配置 URL Types 及查询白名单。支付宝开放平台 APP 应用绑定必须与正式 Bundle ID 和商户配置一致。私钥只保存在服务端，不打包进 App。
+
+两种渠道均需在真实商户及真机环境验证：支付成功、用户取消、未安装支付 App、切换渠道、重复点击、回跳缺失、异步通知重放、全额退款、停用渠道后的历史订单查单。当前自动化测试使用模拟网关，不能替代正式联调；按最新业务要求，未完成联调时管理员也可二次确认直接启用，系统不会将未完成测试标记为通过。
+
+本次不增加任何服务端 OSS 下载或文件校验。
 
 ## 首期生产限制
 

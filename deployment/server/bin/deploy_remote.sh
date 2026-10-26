@@ -75,6 +75,10 @@ compose config > /dev/null
 PHASE=build
 compose build web
 docker image inspect docker.m.daocloud.io/library/nginx:1.27-alpine 9>&- >/dev/null 2>&1 || compose pull frontend
+PHASE=initialize-payment-key
+mkdir -p "$BASE/shared/payment-secrets"
+chmod 700 "$BASE/shared/payment-secrets"
+compose run --rm -T --no-deps web python manage.py init_print_payment_key
 PHASE=check-connections
 compose run --rm -T --no-deps web python deployment/server/bin/release_checks.py connections
 compose run --rm -T --no-deps web python manage.py check --database default
@@ -104,6 +108,8 @@ mv -f "$BASE/.deploy.env.next" "$BASE/.deploy.env"
 export DEPLOY_ENV_PATH="$BASE/.deploy.env"
 if [[ -d "$STAGE/frontend" ]]; then
   [[ ! -e "$BASE/shared/frontend-dist" ]] || mv "$BASE/shared/frontend-dist" "$STAGE/previous-frontend"
+  find "$STAGE/frontend" -type d -exec chmod 755 {} +
+  find "$STAGE/frontend" -type f -exec chmod 644 {} +
   mv "$STAGE/frontend" "$BASE/shared/frontend-dist"
 fi
 compose up -d --force-recreate --remove-orphans web celery_worker celery_beat frontend
@@ -112,7 +118,7 @@ PHASE=health
 healthy() {
   local service container
   for service in web celery_worker celery_beat frontend; do
-    container="$(COMPOSE_TIMEOUT=15 compose ps -q "$service")" || return 1
+    container="$(docker ps -q --filter "label=com.docker.compose.project=$(basename "$BASE")" --filter "label=com.docker.compose.service=$service" 9>&-)" || return 1
     [[ -n "$container" ]] || return 1
     docker inspect "$container" 9>&- | python3 -c '
 import json, sys
@@ -123,6 +129,7 @@ sys.exit(0 if state["Running"] and health in ("healthy", "none") and (sys.argv[1
   done
   curl -fsS --connect-timeout 3 --max-time 5 -H 'X-Forwarded-Proto: https' http://127.0.0.1:12026/health/ >/dev/null || return 1
   curl -fsS --connect-timeout 3 --max-time 5 http://127.0.0.1:12018/health >/dev/null || return 1
+  curl -fsS --connect-timeout 3 --max-time 5 http://127.0.0.1:12018/ >/dev/null || return 1
 }
 READY=0
 for attempt in $(seq 1 60); do

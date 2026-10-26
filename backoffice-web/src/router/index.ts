@@ -27,6 +27,7 @@ router.beforeEach(async (to) => {
     }
   }
 
+  if(to.meta.paymentAccess&&!['view_paymentattempt','query_payment','refund_order','change_paymentchannel'].some(p=>auth.hasPermission('print_orders.'+p))) return '/dashboard';
   if (to.meta.superAdminOnly && !auth.user?.is_superuser) {
     return '/dashboard';
   }

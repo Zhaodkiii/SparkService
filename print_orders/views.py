@@ -61,6 +61,11 @@ def order_data(o, admin=False, user=None, summary=False):
         can_download=can_download(o, user) if admin and user else False,
         checklists=CHECKLISTS if admin else {})
     if not summary:
+        from .payment_views import transaction_data, refund_data
+        from .models import PaymentRefund
+        result['payments'] = [transaction_data(a) for a in o.payments.select_related('config','order').order_by('-created_at')]
+        result['refunds'] = [refund_data(r) for r in PaymentRefund.objects.filter(attempt__order=o).select_related('attempt__config','attempt__order')]
+        result['payment_expires_at'] = o.payment_expires_at
         result['events'] = [dict(id=e.id, action=e.action, message=e.message, created_at=e.created_at,
             actor=(e.actor.get_username() if e.actor else '系统') if admin else ('工作人员' if e.actor_id and e.actor_id != o.owner_id else '本人' if e.actor_id else '系统'),
             details=e.details) for e in o.events.select_related('actor').order_by('id')]
@@ -202,26 +207,6 @@ class CompleteUpload(APIView):
         return Response(order_data(o))
 
 
-class Payment(APIView):
-    permission_classes = [IsAuthenticated]
-    def post(self, request, pk):
-        # 先持久化交易意图，网络超时后仍可用固定商户单号查单。
-        with transaction.atomic():
-            o = get_object_or_404(Order.objects.select_for_update(), pk=pk, owner=request.user)
-            if 'pay' not in actions(o): raise Conflict('当前订单不可支付，请刷新')
-            wechat.config()
-            if not o.product.active: raise Conflict('该规格已暂停接单')
-            if o.payment_expires_at and o.payment_expires_at <= timezone.now():
-                raise Conflict('支付期限已过，请取消订单后重新下单')
-            if not o.payment_expires_at: o.payment_expires_at=timezone.now()+timedelta(hours=2)
-            o.payment_started=True; o.save()
-        with transaction.atomic():
-            o = Order.objects.select_for_update().get(pk=pk)
-            if 'pay' not in actions(o): raise Conflict()
-            if not o.prepay_id: o.prepay_id=wechat.create(o); o.save()
-            return Response(wechat.app_parameters(o.prepay_id))
-
-
 class RefreshPayment(APIView):
     permission_classes = [IsAuthenticated]
     def post(self, request, pk):
@@ -305,7 +290,9 @@ class AdminDetail(APIView):
         check_revision(o, request.data)
         operate(o, request.data, request.user)
         receipt(o, request.data)
-        if request.data.get('action') == 'refresh_refund': o = reconcile(o.pk)
+        if request.data.get('action') == 'refresh_refund':
+            from .tasks import reconcile_payments
+            transaction.on_commit(lambda: reconcile_payments.delay())
         return Response(order_data(o,True,request.user))
 
 
@@ -357,19 +344,3 @@ class AdminProducts(APIView):
         if proof_changed: extra.update(proof_at=timezone.now(), proof_by=request.user.get_username())
         elif not d.get('proof_approved'): extra.update(proof_at=None, proof_by='')
         return Response(product_data(s.save(**extra)))
-
-
-
-class Notification(APIView):
-    authentication_classes=[]
-    permission_classes=[]
-    def post(self,request):
-        try:
-            data=wechat.notification(request.headers,request.body)
-            with transaction.atomic():
-                o=get_object_or_404(Order.objects.select_for_update(),pk=uuid.UUID(data['out_trade_no']))
-                from .services import apply_payment
-                apply_payment(o,data)
-            return HttpResponse(status=204)
-        except (ValueError,KeyError,TypeError):
-            return Response({'code':'FAIL','message':'Invalid notification'},status=400)

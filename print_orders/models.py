@@ -125,3 +125,99 @@ class FileCleanup(models.Model):
     keys = models.JSONField(default=list)
     created_at = models.DateTimeField(auto_now_add=True)
     last_error = models.CharField(max_length=120, blank=True)
+
+
+class PaymentChannel(models.Model):
+    code = models.CharField(max_length=16, primary_key=True, choices=[('wechat','微信支付'),('alipay','支付宝')])
+    enabled = models.BooleanField(default=False)
+    position = models.PositiveIntegerField(default=0)
+    revision = models.PositiveIntegerField(default=1)
+    current = models.ForeignKey('PaymentConfig', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+
+
+class PaymentConfig(models.Model):
+    channel = models.ForeignKey(PaymentChannel, on_delete=models.PROTECT, related_name='versions')
+    environment = models.CharField(max_length=16, default='production')
+    public = models.JSONField(default=dict)
+    encrypted = models.TextField()
+    checked_at = models.DateTimeField(null=True)
+    verified_note = models.TextField(blank=True)
+    actor = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PaymentAttempt(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name='payments')
+    config = models.ForeignKey(PaymentConfig, on_delete=models.PROTECT)
+    key = models.UUIDField()
+    amount = models.PositiveIntegerField()
+    state = models.CharField(max_length=24, default='creating')
+    active_slot = models.PositiveSmallIntegerField(null=True, default=1)
+    provider_id = models.CharField(max_length=100, null=True)
+    prepay_id = models.CharField(max_length=200, blank=True)
+    expires_at = models.DateTimeField()
+    paid_at = models.DateTimeField(null=True)
+    lease_until = models.DateTimeField(null=True)
+    checked_at = models.DateTimeField(null=True)
+    failure_count = models.PositiveIntegerField(default=0)
+    next_check_at = models.DateTimeField(null=True)
+    last_error = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['order','key'], name='print_payment_key'),
+                       models.UniqueConstraint(fields=['order','active_slot'], name='print_payment_active')]
+        permissions = [('query_payment', 'Query payment channel results')]
+
+
+class PaymentRefund(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    attempt = models.OneToOneField(PaymentAttempt, on_delete=models.PROTECT, related_name='refund')
+    amount = models.PositiveIntegerField()
+    reason = models.CharField(max_length=200)
+    state = models.CharField(max_length=24, default='pending')
+    provider_id = models.CharField(max_length=100, blank=True)
+    last_error = models.CharField(max_length=200, blank=True)
+    lease_until = models.DateTimeField(null=True)
+    checked_at = models.DateTimeField(null=True)
+    failure_count = models.PositiveIntegerField(default=0)
+    next_check_at = models.DateTimeField(null=True)
+    error_code = models.CharField(max_length=100, blank=True)
+    error_category = models.CharField(max_length=24, blank=True)
+    recovery_action = models.CharField(max_length=240, blank=True)
+    retry_mode = models.CharField(max_length=16, default='auto')
+    submission_started = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PaymentAudit(models.Model):
+    actor = models.CharField(max_length=150, blank=True)
+    action = models.CharField(max_length=40)
+    reference = models.CharField(max_length=100)
+    details = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PaymentProbe(models.Model):
+    """Isolated one-cent APP integration test; never enters order fulfillment."""
+    id=models.UUIDField(primary_key=True,default=uuid.uuid4,editable=False)
+    config=models.ForeignKey(PaymentConfig,on_delete=models.PROTECT,related_name='probes')
+    token=models.UUIDField(default=uuid.uuid4,editable=False)
+    actor=models.CharField(max_length=150)
+    amount=models.PositiveIntegerField(default=1)
+    state=models.CharField(max_length=24,default='created')
+    provider_id=models.CharField(max_length=100,blank=True)
+    prepay_id=models.CharField(max_length=200,blank=True)
+    refund_id=models.UUIDField(default=uuid.uuid4,editable=False)
+    refund_state=models.CharField(max_length=24,default='pending')
+    expires_at=models.DateTimeField()
+    lease_until=models.DateTimeField(null=True)
+    last_error=models.CharField(max_length=200,blank=True)
+    close_kind=models.CharField(max_length=24,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+    @property
+    def order(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(title='管理员支付联调（自动原路退款）')

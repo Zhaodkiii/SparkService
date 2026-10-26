@@ -85,7 +85,7 @@ PHASE=package
 RELEASE_ID="$(date +%Y%m%d_%H%M%S)_$$_${RANDOM}"
 PKG_NAME=sparkservice.tgz
 EXCLUDES=(
-  --exclude .git --exclude .env --exclude '.env.*' --exclude .deploy.env --exclude '.deploy.env.*'
+  --exclude .secrets --exclude .git --exclude .env --exclude '.env.*' --exclude .deploy.env --exclude '.deploy.env.*'
   --exclude 数据库备份 --exclude apns_keys --exclude '*.sql' --exclude '*.sql.gz'
   --exclude '*.sqlite3' --exclude '*.rdb' --exclude tmp --exclude scripts/后台管理/logs
   --exclude .idea --exclude .vscode --exclude .venv --exclude venv --exclude __pycache__

@@ -151,7 +151,8 @@ failure = os.environ.get("DOCKER_FAIL", "")
 if failure and failure in " ".join(args):
     sys.exit(42)
 if "ps" in args and "-q" in args:
-    print(args[-1])
+    service = next((arg.split("=", 2)[-1] for arg in args if arg.startswith("label=com.docker.compose.service=")), args[-1])
+    print(service)
 ''')
 
     def executable(self, name, text):

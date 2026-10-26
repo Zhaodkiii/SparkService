@@ -60,6 +60,17 @@ function describeError(value: unknown): string {
 function toDisplayError(error: AxiosError): Error {
   const status = error.response?.status;
   const body = error.response?.data as Record<string, unknown> | undefined;
+  const contentType = String(error.response?.headers?.['content-type'] ?? '');
+  const isHtml = contentType.includes('text/html') ||
+    (typeof body === 'string' && /^\s*(?:<!doctype\s+html|<html\b)/i.test(body));
+  if (isHtml) {
+    const message = status === 404
+      ? '请求的接口不存在，请检查后端版本和接口地址；本地更新后请重启 API 服务'
+      : status === 502 || status === 503 || status === 504
+        ? '后端服务暂不可用，请稍后重试'
+        : '服务器返回异常，请稍后重试或联系管理员';
+    return new ApiError(message, status);
+  }
   return new ApiError(status === 401 ? '登录已过期，请重新登录' :
     describeError(body?.msg ?? body?.detail ?? body) || error.message || '请求失败', status);
 }

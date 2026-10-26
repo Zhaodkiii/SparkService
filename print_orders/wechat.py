@@ -1,4 +1,8 @@
 """微信支付 API v3 普通商户 APP 支付。响应与通知均验签，密钥仅服务端持有。"""
+from contextvars import ContextVar
+
+active_config = ContextVar("print_wechat_config", default=None)
+
 import base64
 import json
 import secrets
@@ -14,6 +18,7 @@ from .domain import Unavailable
 
 
 def config():
+    if active_config.get() is not None: return active_config.get()
     values = {k: getattr(settings, 'PRINT_WXPAY_' + k, '') for k in (
         'APPID', 'MCHID', 'SERIAL', 'PRIVATE_KEY_PATH', 'PUBLIC_KEY_ID', 'PUBLIC_KEY_PATH', 'API_V3_KEY', 'NOTIFY_URL')}
     if not all(values.values()) or len(values['API_V3_KEY'].encode()) != 32 or not values['NOTIFY_URL'].startswith('https://'):
@@ -23,7 +28,7 @@ def config():
 
 def sign(message, cfg):
     try:
-        key = serialization.load_pem_private_key(Path(cfg['PRIVATE_KEY_PATH']).read_bytes(), password=None)
+        key = serialization.load_pem_private_key(cfg['PRIVATE_KEY'].encode() if 'PRIVATE_KEY' in cfg else Path(cfg['PRIVATE_KEY_PATH']).read_bytes(), password=None)
         return base64.b64encode(key.sign(message.encode(), padding.PKCS1v15(), hashes.SHA256())).decode()
     except (OSError, ValueError):
         raise Unavailable('微信支付证书配置不可用')
@@ -35,7 +40,7 @@ def verify(headers, body, cfg):
         stamp, nonce = headers['Wechatpay-Timestamp'], headers['Wechatpay-Nonce']
         if abs(time.time() - int(stamp)) > 300 or headers['Wechatpay-Serial'] != cfg['PUBLIC_KEY_ID']:
             raise ValueError('signature timestamp or key mismatch')
-        key = serialization.load_pem_public_key(Path(cfg['PUBLIC_KEY_PATH']).read_bytes())
+        key = serialization.load_pem_public_key(cfg['PUBLIC_KEY'].encode() if 'PUBLIC_KEY' in cfg else Path(cfg['PUBLIC_KEY_PATH']).read_bytes())
         key.verify(base64.b64decode(headers['Wechatpay-Signature'], validate=True),
                    f'{stamp}\n{nonce}\n'.encode() + body + b'\n', padding.PKCS1v15(), hashes.SHA256())
     except Exception as exc:
@@ -57,6 +62,12 @@ def request(method, path, payload=None):
         if response.status_code not in (200, 201, 204):
             code = response.json().get('code', '')
             if code == 'ORDER_NOT_EXIST': return {'trade_state':'NOT_EXIST'}
+            if code in ('RESOURCE_NOT_EXISTS','REFUND_NOT_EXIST') and method=='GET' and '/refund/' in path: return {'refund_absent':True}
+            from .payment_errors import GatewayError
+            if code in ('NOTENOUGH','ACCOUNT_ERROR','USER_ACCOUNT_ABNORMAL'):
+                raise GatewayError(code,'balance','微信商户退款资金不足或账户受限','请核对微信商户可用退款资金及账户状态后重试')
+            if code in ('NO_AUTH','SIGN_ERROR'):
+                raise GatewayError(code,'permission','微信商户权限或签名配置异常','请核对商户授权和当前交易配置后恢复处理')
             raise Unavailable('微信支付处理未完成，请刷新订单后重试')
         return response.json() if response.content else {}
     except (requests.RequestException, ValueError):
@@ -88,12 +99,12 @@ def close(order):
 
 def refund(order):
     return request('POST', '/v3/refund/domestic/refunds', dict(out_trade_no=order.id.hex,
-        out_refund_no='R' + order.id.hex, reason=order.refund_reason or '订单取消',
+        out_refund_no=getattr(order, 'refund_number', 'R' + order.id.hex), reason=order.refund_reason or '订单取消',
         amount=dict(refund=order.total_fen, total=order.total_fen, currency='CNY')))
 
 
 def query_refund(order):
-    return request('GET', '/v3/refund/domestic/refunds/R' + order.id.hex)
+    return request('GET', '/v3/refund/domestic/refunds/' + getattr(order, 'refund_number', 'R' + order.id.hex))
 
 
 def notification(headers, body):

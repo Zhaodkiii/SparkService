@@ -38,6 +38,7 @@ services:
     - ./shared/logs:/app/logs
     - ./shared/media:/app/media
     - ./shared/staticfiles:/app/staticfiles
+    - ./shared/payment-secrets:/app/.secrets
     healthcheck:
       test:
       - CMD-SHELL
@@ -81,6 +82,7 @@ services:
     - ./shared/logs:/app/logs
     - ./shared/media:/app/media
     - ./shared/staticfiles:/app/staticfiles
+    - ./shared/payment-secrets:/app/.secrets
     cpus: '0.60'
     mem_limit: 512m
     logging:
@@ -115,6 +117,7 @@ services:
     - ./shared/logs:/app/logs
     - ./shared/media:/app/media
     - ./shared/staticfiles:/app/staticfiles
+    - ./shared/payment-secrets:/app/.secrets
     cpus: '0.25'
     mem_limit: 256m
     logging:

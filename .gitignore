@@ -48,3 +48,6 @@ tmp/
 # Editor swap
 *.swp
 *~
+
+# Local encrypted-payment master key
+.secrets/

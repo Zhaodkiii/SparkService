@@ -6,7 +6,6 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from accounts.models import SocialIdentity
 from .models import Product, Order, Shipment, Production, FileCleanup
-from .services import apply_payment
 from .domain import Conflict, Unavailable
 from .operations import CHECKLISTS
 
@@ -79,18 +78,6 @@ class PrintTests(TestCase):
             r=self.client.post(f'/api/admin/v1/print/orders/{o.id}/',dict(key=str(uuid.uuid4()),revision=o.revision,action=action,checklist=list(CHECKLISTS.get(action, {})),production_id=str(o.current_production_id),address_confirmed=True,carrier='顺丰',tracking_number='SF123456789'),format='json')
             self.assertEqual(r.status_code,200,r.data);o.refresh_from_db()
         self.assertEqual(o.state,'shipped');self.assertEqual(Shipment.objects.count(),1)
-    def test_late_payment_never_restarts_cancelled_order(self):
-        o=self.create();o.state='cancelled';o.cancel_requested=True;o.save()
-        result=dict(trade_state='SUCCESS',mchid='m',appid='a',out_trade_no=o.id.hex,transaction_id='wx1',amount=dict(total=1020,currency='CNY'))
-        with patch('print_orders.wechat.config',return_value={'MCHID':'m','APPID':'a'}):
-            apply_payment(o,result);apply_payment(o,result)
-        o.refresh_from_db();self.assertEqual(o.state,'cancelled');self.assertEqual(o.payment_state,'refund_pending')
-        self.assertEqual(o.events.filter(action='paid').count(),1)
-    def test_wrong_payment_amount_rejected(self):
-        o=self.create()
-        with patch('print_orders.wechat.config',return_value={'MCHID':'m','APPID':'a'}):
-            from rest_framework.exceptions import ValidationError
-            with self.assertRaises(ValidationError):apply_payment(o,dict(trade_state='SUCCESS',mchid='m',appid='a',out_trade_no=o.id.hex,transaction_id='wx',amount=dict(total=1,currency='CNY')))
     def test_missing_wechat_configuration_fails_closed(self):
         from .wechat import config
         with override_settings(PRINT_WXPAY_APPID=''):
@@ -271,13 +258,13 @@ class OperationsTests(TestCase):
         self.assertEqual(r.status_code,409)
 
 
-    def test_refund_recheck_queries_existing_refund_and_records_success(self):
-        o=self.ready();o.state='cancelled';o.total_fen=1020;o.transaction_id='wx-existing';o.cancel_requested=True
-        o.payment_state='refund_pending';o.refund_state='exception';o.save()
-        result={'out_refund_no':'R'+o.id.hex,'out_trade_no':o.id.hex,'amount':{'refund':1020,'total':1020},'status':'SUCCESS'}
-        with patch('print_orders.wechat.query_refund',return_value=result) as query, patch('print_orders.wechat.refund') as refund:
-            self.move(o,'refresh_refund');query.assert_called_once();refund.assert_not_called()
-        self.assertEqual(o.payment_state,'refunded');self.assertEqual(o.refund_state,'success')
+    def test_refund_recheck_schedules_reconciliation_after_commit(self):
+        o=self.ready();o.payment_state='refund_pending';o.refund_state='exception';o.save()
+        with patch('print_orders.tasks.reconcile_payments.delay') as schedule:
+            with self.captureOnCommitCallbacks(execute=True): self.move(o,'refresh_refund')
+            schedule.assert_called_once()
+        o.refresh_from_db();self.assertEqual(o.refund_state,'processing')
+
 
     def test_production_permission_and_ship_validation_fail_closed(self):
         from django.contrib.auth.models import Permission

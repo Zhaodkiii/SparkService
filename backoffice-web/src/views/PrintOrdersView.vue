@@ -23,7 +23,7 @@
     <a-alert v-if="order.exception_reason" type="warning" show-icon :message="order.state==='needs_revision'?'等待用户修改后重提':'制作已暂停'" :description="order.exception_reason" class="gap" />
     <a-alert v-if="order.production_error" type="error" show-icon :message="order.production_error" class="gap" />
     <div v-if="order.after_sale_state" class="service-box"><h3>售后 · {{label(order.after_sale_state)}}</h3><p>{{order.after_sale_message}}</p><p v-if="order.after_sale_resolution">处理结果：{{order.after_sale_resolution}}</p><a-space><a-button v-for="a in saleActions" :key="a" @click="prepareAction(a)">{{actions[a]}}</a-button></a-space></div>
-    <div v-if="order.refund_state" class="service-box"><strong>退款：{{order.refund_state==='exception'?'异常，需要核对':label(order.payment_state)}}</strong><p>{{order.refund_reason}}</p><a-button v-if="order.allowed_actions.includes('refresh_refund')" @click="prepareAction('refresh_refund')">重新核对退款</a-button></div>
+    <div v-if="order.payments?.length" class="service-box"><strong>支付与退款</strong><p>{{label(order.payment_state)}} · 退款：{{label(order.refund_state)||'无'}}</p><a-button @click="openFinance">查看关联支付与退款记录</a-button></div><div v-if="order.refund_state" class="service-box"><strong>退款：{{order.refund_state==='exception'?'异常，需要核对':label(order.payment_state)}}</strong><p>{{order.refund_reason}}</p><a-button v-if="order.allowed_actions.includes('refresh_refund')" @click="prepareAction('refresh_refund')">重新核对退款</a-button></div>
     <a-tabs v-model:active-key="detailTab">
      <a-tab-pane key="production" tab="生产与审核">
       <a-descriptions bordered :column="2" size="small">
@@ -43,6 +43,7 @@
       <a-space class="gap"><a-button v-for="a in deliveryActions" :key="a" @click="prepareAction(a)">{{actions[a]}}</a-button></a-space>
       <a-descriptions bordered :column="1"><a-descriptions-item label="订单金额">{{order.total_fen===0?'免费':'¥'+money(order.total_fen)}} · {{label(order.payment_state)}}</a-descriptions-item><a-descriptions-item label="购买与售后约定">{{order.spec.terms}}</a-descriptions-item></a-descriptions>
      </a-tab-pane>
+     <a-tab-pane key="payments" tab="支付与退款"><a-empty v-if="!order.payments?.length" :description="order.total_fen===0?'免费订单，无需支付':'尚未发起支付'"/><a-card v-for="payment in order.payments||[]" :key="payment.id" style="margin-bottom:12px"><p>{{payment.channel==='alipay'?'支付宝':'微信支付'}} · ¥{{money(payment.amount)}} · {{payment.state==='succeeded'?'支付成功':payment.state==='closed'?'已关闭':'付款待确认'}}</p><p>支付单：{{payment.id}}</p><p>渠道流水：{{payment.provider_id||'—'}}</p><p>支付时间：{{payment.paid_at?date(payment.paid_at):'—'}}</p><a-alert v-if="payment.last_error" :message="payment.last_error" type="warning"/></a-card><a-card v-for="refund in order.refunds||[]" :key="refund.id" title="原路退款"><p>退款单：{{refund.id}}</p><p>¥{{money(refund.amount)}} · {{refund.state==='success'?'已退款':'处理中 / 待确认'}} · {{refund.reason}}</p><a-alert v-if="refund.last_error" :message="refund.last_error" type="warning"/></a-card><router-link to="/print-payments">进入支付管理处理交易</router-link></a-tab-pane>
      <a-tab-pane key="history" tab="操作记录"><a-timeline><a-timeline-item v-for="e in [...order.events].reverse()" :key="e.id"><strong>{{e.message||e.action}}</strong><p v-if="e.details.checklist" class="muted">已检查：{{e.details.checklist.join('；')}}</p><div class="muted">{{e.actor}} · {{date(e.created_at)}}</div></a-timeline-item></a-timeline></a-tab-pane>
     </a-tabs>
    </template></a-spin>
@@ -65,12 +66,16 @@
  </div>
 </template>
 <script setup lang="ts">
-import {computed,ref,onMounted,onUnmounted} from 'vue';
+import {computed,ref,onMounted,onUnmounted,watch} from 'vue';
+import {useRoute,useRouter} from 'vue-router';
 import {message} from 'ant-design-vue';
 import http,{ApiError} from '../api/http';
 import ProductDrawer from '../components/print/ProductDrawer.vue';
 import {type Order,type Shipment,states,actions,label,money,date,status,color,errorText} from '../components/print/types';
 const base='/api/admin/v1/print/';
+const route=useRoute(),router=useRouter();
+function openFinance(){if(order.value)void router.push({path:'/print-payments',query:{section:'transactions',q:order.value.id}})}
+watch(()=>route.query.order,value=>{if(typeof value==='string')openOrder(value)});
 const orders=ref<Order[]>([]),order=ref<Order>(),selectedID=ref(''),search=ref(''),state=ref(''),offset=ref(0),total=ref(0),counts=ref<Record<string,number>>({});
 const pageError=ref(''),detailError=ref(''),actionError=ref(''),listBusy=ref(false),detailBusy=ref(false),actionBusy=ref(false),fileBusy=ref(false),productsOpen=ref(false),detailTab=ref('production');
 const queues=[{key:'awaiting_review',name:'待审核',hint:'检查外壳与内页'},{key:'queued',name:'待制作',hint:'下载后开始制作'},{key:'producing',name:'制作中',hint:'完成后逐项质检'},{key:'ready_to_ship',name:'待发货',hint:'核对收件与物流'},{key:'after_sale',name:'售后待办',hint:'及时回应用户'},{key:'exception',name:'异常订单',hint:'重提、暂停或失败'}];
@@ -108,7 +113,7 @@ function downloadInstructions(){const o=order.value;if(!o)return;const text=[`�
 
 async function copyAddress(){if(!order.value)return;try{const a=order.value.address;await navigator.clipboard.writeText(`${a.name} ${a.phone}\n${a.region} ${a.detail}`);message.success('收货信息已复制')}catch{detailError.value='复制失败，请手动选择收货信息复制'}}
 let timer:ReturnType<typeof setInterval>;
-onMounted(()=>{void loadList();timer=setInterval(()=>{if(document.hidden||actionBusy.value||actionOpen.value)return;if(!listBusy.value)void loadList();if(!detailBusy.value)void loadDetail();if(previewURL.value&&links&&Date.parse(links.expires_at)<Date.now()+45000)void preview(previewRole.value,true)},30000)});
+onMounted(()=>{void loadList();if(typeof route.query.order==='string')openOrder(route.query.order);timer=setInterval(()=>{if(document.hidden||actionBusy.value||actionOpen.value)return;if(!listBusy.value)void loadList();if(!detailBusy.value)void loadDetail();if(previewURL.value&&links&&Date.parse(links.expires_at)<Date.now()+45000)void preview(previewRole.value,true)},30000)});
 onUnmounted(()=>{clearInterval(timer);listSequence++;detailSequence++});
 </script>
 <style scoped>
