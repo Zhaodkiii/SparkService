@@ -45,9 +45,14 @@ class TemplateSerializer(serializers.ModelSerializer):
         cover = obj.draft.get('manifest', {}).get('coverPageID')
         page = next((p for p in obj.draft.get('pages', []) if p['data']['id'] == cover), None)
         return preview(obj.draft['keys'][page['data']['preview']['thumbnailPath']]) if page else None
+    def validate_content_kind(self, value):
+        if self.instance and self.instance.current_id and self.instance.content_kind != value:
+            raise serializers.ValidationError('已发布素材不能变更类型，请新建对应类型的素材')
+        return value
+
     class Meta:
         model = Template
-        fields = ['id', 'series', 'title', 'description', 'position', 'active', 'revision', 'current', 'page_count', 'cover_url', 'import_statistics']
+        fields = ['id', 'content_kind', 'series', 'title', 'description', 'position', 'active', 'revision', 'current', 'page_count', 'cover_url', 'import_statistics']
         read_only_fields = ['id', 'revision', 'current']
 
 
@@ -57,7 +62,7 @@ def publish(obj, actor):
         raise ValidationError('至少需要一页')
     snap = deepcopy(obj.draft)
     manifest = snap['manifest']
-    manifest.update(templateBookID=str(obj.id), title=obj.title, seriesID=obj.series.slug,
+    manifest.update(templateBookID=str(obj.id), title=obj.title, seriesID=obj.series.slug, contentKind=obj.content_kind,
                     packageVersion=(obj.versions.order_by('-number').values_list('number', flat=True).first() or 0) + 1)
     from .search import documents, index_version, bump
     try:
@@ -105,6 +110,8 @@ class TemplateAdmin(TemplateSearchMixin, viewsets.ModelViewSet):
         qs = super().get_queryset()
         if self.request.query_params.get('series'):
             qs = qs.filter(series_id=self.request.query_params['series'])
+        if self.request.query_params.get('content_kind'):
+            qs = qs.filter(content_kind=self.request.query_params['content_kind'])
         return qs
 
     def get_serializer_context(self):
@@ -362,7 +369,13 @@ class Catalog(APIView):
 
     def get(self, request):
         rows = []
-        for template in Template.objects.filter(audience='public', active=True, series__active=True, current__isnull=False).select_related('current', 'series')[:500]:
+        content_kind = request.query_params.get('content_kind', 'journal')
+        if content_kind not in ('journal', 'album', 'all'):
+            raise ValidationError('content_kind 需为 journal/album/all')
+        templates = Template.objects.filter(audience='public', active=True, series__active=True, current__isnull=False)
+        if content_kind != 'all':
+            templates = templates.filter(content_kind=content_kind)
+        for template in templates.select_related('current', 'series')[:500]:
             try:
                 schema_max = int(request.query_params.get('schema_max', 1))
             except ValueError:
@@ -375,7 +388,7 @@ class Catalog(APIView):
             snap = template.current.snapshot
             cover = next(p for p in snap['pages'] if p['data']['id'] == snap['manifest']['coverPageID'])
             rows.append(dict(id=str(template.id), title=template.title, series=template.series.slug,
-                version=template.current.number, page_count=len(snap['pages']),
+                content_kind=template.content_kind, version=template.current.number, page_count=len(snap['pages']),
                 cover_url=preview(snap['keys'][cover['data']['preview']['thumbnailPath']])))
         return Response(dict(series=list(Series.objects.filter(active=True).exclude(slug='private-custom').values('slug', 'title')), books=rows))
 

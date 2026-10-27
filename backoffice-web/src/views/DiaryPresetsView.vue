@@ -19,7 +19,7 @@
      <template #extra><a-space><a-input-search v-model:value="query" placeholder="搜索手帐名称" allow-clear style="width:220px"/><a-button type="primary" @click="openDialog('book')">新增手帐</a-button></a-space></template>
      <a-table :data-source="filteredBooks" :columns="bookColumns" :scroll="{x:1120}" row-key="id" :loading="working" :pagination="{pageSize:8,showSizeChanger:true}">
       <template #bodyCell="{column,record}">
-       <template v-if="column.key==='book'"><a-space class="book-name"><a-image v-if="record.cover_url" :src="record.cover_url" :width="45"/><div><a @click="chooseBook(record)">{{record.title}}</a><div class="muted">{{record.description || '暂无简介'}}</div></div></a-space></template>
+       <template v-if="column.key==='book'"><a-space class="book-name"><a-image v-if="record.cover_url" :src="record.cover_url" :width="45"/><div><a @click="chooseBook(record)">{{record.title}}</a><a-tag v-if="record.content_kind==='album'">相册</a-tag><div class="muted">{{record.description || '暂无简介'}}</div></div></a-space></template>
        <template v-else-if="column.statKey">{{record.import_statistics?.[column.statKey] ?? '暂不可用'}}</template>
        <template v-else-if="column.key==='state'"><a-tag :color="record.active?(record.current?'green':'blue'):'default'">{{!record.active?'已下架':record.current?'已发布':'草稿'}}</a-tag></template>
        <template v-else-if="column.key==='actions'"><a-button type="link" @click="chooseBook(record)">管理单页</a-button></template>
@@ -67,7 +67,7 @@
   <a-modal v-model:open="dialog" :title="(editID?'编辑':'新增')+(dialogKind==='series'?'系列':'手帐')" :confirm-loading="working" @ok="saveDialog" ok-text="保存" cancel-text="取消">
    <a-form layout="vertical"><a-form-item label="名称" required><a-input v-model:value="form.title" :maxlength="120"/></a-form-item>
     <a-form-item v-if="dialogKind==='series'" label="系列标识" required><a-input v-model:value="form.slug" placeholder="如 islands"/></a-form-item>
-    <template v-else><a-form-item label="所属系列"><a-select v-model:value="form.series"><a-select-option v-for="s in series" :key="s.id" :value="s.id">{{s.title}}</a-select-option></a-select></a-form-item><a-form-item label="简介"><a-textarea v-model:value="form.description" :rows="3"/></a-form-item></template>
+    <template v-else><a-form-item label="素材类型"><a-select v-model:value="form.content_kind"><a-select-option value="journal">手帐模板</a-select-option><a-select-option value="album">预制相册</a-select-option></a-select></a-form-item><a-form-item label="所属系列"><a-select v-model:value="form.series"><a-select-option v-for="s in series" :key="s.id" :value="s.id">{{s.title}}</a-select-option></a-select></a-form-item><a-form-item label="简介"><a-textarea v-model:value="form.description" :rows="3"/></a-form-item></template>
     <a-form-item label="排序（较小值优先）"><a-input-number v-model:value="form.position" :min="0"/></a-form-item><a-form-item label="启用"><a-switch v-model:checked="form.active"/></a-form-item>
    </a-form>
   </a-modal>
@@ -107,7 +107,7 @@ async function patch(path: string, body?: any): Promise<any> { return http.patch
 async function put(path: string, body?: any): Promise<any> { return http.put(base + path, body); }
 
 interface Series { id: number; title: string; slug: string; position: number; active: boolean }
-interface Book { id: string; title: string; revision: number; active: boolean; cover_url?: string; page_count: number; series: number; position: number; description: string; current?: number; import_statistics?: Record<string, number> | null }
+interface Book { content_kind?: string; id: string; title: string; revision: number; active: boolean; cover_url?: string; page_count: number; series: number; position: number; description: string; current?: number; import_statistics?: Record<string, number> | null }
 interface Page { id: string; title: string; thumbnail: string; preview?: string; import_count?: number }
 const series = ref<Series[]>([]), books = ref<Book[]>([]), pages = ref<Page[]>([]);
 const seriesID = ref<number>(), book = ref<Book>(), cover = ref(''), drag = ref(0), error = ref('');
@@ -121,7 +121,7 @@ const versions = ref<Array<{ number: number; created_at: string }>>([]);
 const uploads = ref<any[]>([]);
 const preview = ref<Page>();
 const dialog = ref(false), dialogKind = ref('series'), editID = ref<number | string>();
-const form = ref({ title: '', slug: '', description: '', position: 0, active: true, series: 0 });
+const form = ref({ content_kind: 'journal', title: '', slug: '', description: '', position: 0, active: true, series: 0 });
 const uploadMode = ref('page'), afterPage = ref('');
 const inputFile = ref<HTMLInputElement>();
 const bookColumns = [
@@ -163,7 +163,7 @@ async function loadHistory() {
 function openDialog(kind: string, edit=false) {
  dialogKind.value=kind;editID.value=edit ? (kind==='series'?selectedSeries.value?.id:book.value?.id):undefined;
  const value=kind==='series'?selectedSeries.value:book.value;
- form.value={title:edit?value?.title||'':'',slug:edit&&kind==='series'?selectedSeries.value?.slug||'':'',
+ form.value={content_kind:edit&&kind==='book'?book.value?.content_kind||'journal':'journal',title:edit?value?.title||'':'',slug:edit&&kind==='series'?selectedSeries.value?.slug||'':'',
  description:edit&&kind==='book'?book.value?.description||'':'',position:edit?value?.position||0:0,
  active:edit?value?.active??true:true,series:seriesID.value||0};dialog.value=true;
 }

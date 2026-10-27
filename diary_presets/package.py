@@ -69,6 +69,8 @@ def process_archive(archive, directory, namespace, put, private_request_id=None)
             raise ValueError('Private package/request mismatch')
     elif manifest.get('audience') == 'private' or manifest.get('customizationRequestID') or str(manifest.get('templateBookID','')).startswith('custom-'):
         raise ValueError('Private packages cannot enter the public publisher')
+    if manifest.get('contentKind', 'journal') not in ('journal', 'album'):
+        raise ValueError('contentKind 需为 journal/album')
     if manifest['format'] != 'TravelDiary.PresetBook' or manifest['schemaVersion'] not in (1, 2) or manifest['layerSchemaVersion'] not in (1, 2):
         raise ValueError('Unsupported package schema')
     if type(manifest.get('packageVersion')) is not int or manifest['packageVersion'] <= 0:

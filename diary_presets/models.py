@@ -60,6 +60,7 @@ class CatalogEntryTerm(models.Model):
 
 
 class Template(models.Model):
+    content_kind = models.CharField(max_length=12, default='journal', choices=[('journal', '手帐'), ('album', '相册')], db_index=True)
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     series = models.ForeignKey(Series, on_delete=models.PROTECT, related_name='templates')
     audience = models.CharField(max_length=8, default='public', choices=[('public','Public'),('private','Private')], db_index=True)

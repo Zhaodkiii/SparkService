@@ -83,7 +83,7 @@ def documents(template, snapshot, terms=None):
 
     shared = {'template_id': str(template.id), 'template_book_id': manifest.get('templateBookID', str(template.id)),
               'version': manifest.get('packageVersion', 1), 'book_title': template.title, 'series': template.series.slug,
-              'book_page_count': len(pages), 'book_position': template.position}
+              'book_page_count': len(pages), 'book_position': template.position, 'content_kind': template.content_kind}
     cover = manifest['coverPageID']
     result = [('book', str(template.id), 0, dict(shared, title=template.title, page_count=len(pages),
                page_ids=list(pages), images=[image(cover)], fields=[{'text': template.title, 'field': 'title', 'source': 'explicit', 'rank': 0}], terms=[]))]
@@ -206,6 +206,9 @@ def run_search(params, owner, draft=None):
         raise ValidationError('limit 无效')
     if not 1 <= limit <= 60 or params.get('sort', 'relevance') not in ('relevance', 'recent'):
         raise ValidationError('limit 或排序无效')
+    content_kind = params.get('content_kind', 'journal')
+    if content_kind not in ('journal', 'album', 'all'):
+        raise ValidationError('content_kind 需为 journal/album/all')
     terms = taxonomy()
     filters = {}
     for dim, field in [('location', 'location_ids'), ('theme', 'theme_ids'), ('style', 'style_ids'), ('usage', 'usage_ids')]:
@@ -217,10 +220,10 @@ def run_search(params, owner, draft=None):
         ids = {terms[key].merged_into_id or key for key in ids}
         filters[dim] = ids
     state = SearchState.objects.filter(id=1).values_list('revision', flat=True).first() or 1
-    visibility = list(Template.objects.filter(audience='public').order_by('id').values_list('id', 'current_id', 'active', 'revision', 'series_id'))
+    visibility = list(Template.objects.filter(audience='public').order_by('id').values_list('id', 'current_id', 'active', 'revision', 'series_id', 'content_kind'))
     series_state = list(Series.objects.order_by('id').values_list('id', 'active', 'position'))
     revision = hashlib.sha256(str((state, visibility, series_state)).encode()).hexdigest()[:20]
-    signature = hashlib.sha256(json.dumps([kind, normalize(query), {k: sorted(v) for k, v in filters.items()}, params.get('series', ''), params.get('sort', 'relevance'), str(owner), limit], sort_keys=True).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps([content_kind, kind, normalize(query), {k: sorted(v) for k, v in filters.items()}, params.get('series', ''), params.get('sort', 'relevance'), str(owner), limit], sort_keys=True).encode()).hexdigest()
     offset = 0
     if params.get('cursor'):
         try:
@@ -237,6 +240,8 @@ def run_search(params, owner, draft=None):
     else:
         entries = CatalogEntry.objects.filter(entity_type=kind, version__template__audience='public', version__template__active=True,
             version__template__series__active=True, version_id=F('version__template__current_id'))
+        if content_kind != 'all':
+            entries = entries.filter(version__template__content_kind=content_kind)
         if params.get('series'):
             entries = entries.filter(version__template__series__slug=params['series'])
         for word in words:

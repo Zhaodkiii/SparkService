@@ -66,6 +66,7 @@ class Command(BaseCommand):
                 raise CommandError('Template changed while uploading; resources retained, publication not applied')
             template.series = series
             template.title = options['title']
+            template.content_kind = snapshot['manifest'].get('contentKind', 'journal')
             from diary_presets.reading_units import retain_confirmed_metadata
             template.draft = retain_confirmed_metadata(template.draft, snapshot)
             publish(template, None)
