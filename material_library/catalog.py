@@ -9,8 +9,12 @@ CATEGORIES = {
 ALIASES = {'便条':'便签','记事纸':'便签','花窗':'窗框','纸胶带':'胶带','纸纹':'纹理','纹理纸':'纹理'}
 
 def validate_category(kind, subcategory, material_type):
-    if kind not in CATEGORIES or subcategory not in CATEGORIES[kind][1] or (kind == 'background') != (material_type == 'background'):
+    from .models import MaterialCategory
+    if kind not in CATEGORIES or (kind == 'background') != (material_type == 'background'):
         raise ValueError('素材分类与库类型不匹配')
+    override=MaterialCategory.objects.filter(kind=kind,subcategory=subcategory).first()
+    if (override is not None and not override.active) or (override is None and subcategory not in CATEGORIES[kind][1]):
+        raise ValueError('分类不存在或已停用')
 
 
 def legacy_category(name, render_kind):

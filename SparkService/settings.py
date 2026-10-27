@@ -216,6 +216,7 @@ INSTALLED_APPS = [
     'diary_presets',
     'diary_customizations',
     'print_orders',
+    'regions',
     'support_center',
     'material_library',
     'notification_center',
@@ -223,6 +224,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'material_library.middleware.MaterialControlPlaneGuard',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -624,3 +626,16 @@ PRESET_CONTROL_URL = os.getenv("PRESET_CONTROL_URL", "http://127.0.0.1:" + os.ge
 PRINT_OSS_PREFIX = os.getenv('PRINT_OSS_PREFIX', 'traveldiary/print/')
 for _print_key in ('APPID', 'MCHID', 'SERIAL', 'PRIVATE_KEY_PATH', 'PUBLIC_KEY_ID', 'PUBLIC_KEY_PATH', 'API_V3_KEY', 'NOTIFY_URL'):
     globals()['PRINT_WXPAY_' + _print_key] = os.getenv('PRINT_WXPAY_' + _print_key, '')
+
+# Browser validates images and creates thumbnails; API performs only HEAD/COPY.
+# Optional emergency switch, no material processing worker is required.
+MATERIAL_UPLOADS_ENABLED = os.getenv('MATERIAL_UPLOADS_ENABLED', 'true').lower() == 'true'
+
+# Public administrative datasets; the provider credential never reaches clients.
+AMAP_WEB_SERVICE_KEY = os.getenv('AMAP_WEB_SERVICE_KEY', '').strip()
+REGIONS_SYNC_ENABLED = os.getenv('REGIONS_SYNC_ENABLED', 'true').lower() == 'true'
+REGIONS_SYNC_DAYS = max(1, int(os.getenv('REGIONS_SYNC_DAYS', '30')))
+REGIONS_CLIENT_CHECK_DAYS = min(30, max(1, int(os.getenv('REGIONS_CLIENT_CHECK_DAYS', '7'))))
+REGIONS_DAILY_REQUEST_BUDGET = max(0, int(os.getenv('REGIONS_DAILY_REQUEST_BUDGET', '4')))
+REGIONS_CDN_BASE_URL = os.getenv('REGIONS_CDN_BASE_URL', '').strip()
+CELERY_BEAT_SCHEDULE['regions-check'] = {'task': 'regions.tasks.check_regions', 'schedule': 3600.0}

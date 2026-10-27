@@ -2,12 +2,13 @@ import hashlib
 import json
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
-from .models import MaterialLibrary, LibraryVersion, LibraryItem, MaterialRevision
+from .models import MaterialLibrary, LibraryVersion, LibraryItem, MaterialRevision, TemplateLibraryBinding
 from .catalog import validate_category
 
 
 def revision(material, data):
-    validate_category(data['kind'], data['subcategory'], material.material_type)
+    try: validate_category(data['kind'], data['subcategory'], material.material_type)
+    except ValueError as error: raise ValidationError(str(error))
     for field in ('keywords', 'aliases'):
         values = data.get(field, [])
         if not isinstance(values, list) or len(values) > 40 or any(not isinstance(v, str) or len(v) > 60 for v in values):
@@ -36,6 +37,10 @@ def publish_library(library, revisions, expected):
         return library.current
     version = LibraryVersion.objects.create(library=library, number=actual + 1, preset_version=library.template.current)
     LibraryItem.objects.bulk_create([LibraryItem(version=version, revision=r, material=r.material, position=i) for i, r in enumerate(revisions)])
+    TemplateLibraryBinding.objects.get_or_create(preset_version=library.template.current, library_type=library.library_type, defaults={'library_version':version})
     library.current = version
-    library.save(update_fields=['current'])
+    from django.utils import timezone
+    if library.first_published_at is None: library.first_published_at=timezone.now()
+    library.state_revision+=1
+    library.save(update_fields=['current','first_published_at','state_revision'])
     return version

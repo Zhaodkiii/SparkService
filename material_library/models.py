@@ -37,21 +37,29 @@ class MaterialRevision(models.Model):
 
 class MaterialLibrary(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    template = models.ForeignKey('diary_presets.Template', on_delete=models.PROTECT, related_name='material_libraries')
+    template = models.ForeignKey('diary_presets.Template', null=True, blank=True, on_delete=models.PROTECT, related_name='material_libraries')
     library_type = models.CharField(max_length=16, choices=[('sticker', '贴纸'), ('background', '背景')])
     title = models.CharField(max_length=120)
     active = models.BooleanField(default=True)
     current = models.ForeignKey('LibraryVersion', null=True, on_delete=models.PROTECT, related_name='+')
 
+    first_published_at = models.DateTimeField(null=True, blank=True)
+    featured = models.BooleanField(default=False)
+    sort_order = models.IntegerField(default=0)
+    new_until = models.DateTimeField(null=True, blank=True)
+    state_revision = models.PositiveIntegerField(default=0)
+
     class Meta:
         constraints = [models.UniqueConstraint(fields=['template', 'library_type'], name='template_library_type')]
+        permissions = [('publish_materiallibrary','Can publish material libraries'),('takedown_materiallibrary','Can change material availability')]
 
 
 class LibraryVersion(models.Model):
     library = models.ForeignKey(MaterialLibrary, on_delete=models.PROTECT, related_name='versions')
     number = models.PositiveIntegerField()
-    preset_version = models.ForeignKey('diary_presets.Version', on_delete=models.PROTECT)
+    preset_version = models.ForeignKey('diary_presets.Version', null=True, blank=True, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
+    content = models.JSONField(default=dict)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['library', 'number'], name='library_version_number')]
@@ -83,3 +91,69 @@ class MaterialFavorite(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user', 'material'], name='user_material_favorite')]
+
+
+class LibraryDraft(models.Model):
+    library = models.OneToOneField(MaterialLibrary, on_delete=models.CASCADE, related_name='draft')
+    revision = models.PositiveIntegerField(default=1)
+    base_version = models.PositiveIntegerField(default=0)
+    content = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+
+
+class MaterialUpload(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    purpose = models.CharField(max_length=16)
+    name = models.CharField(max_length=120)
+    object_key = models.CharField(max_length=1024)
+    byte_size = models.PositiveBigIntegerField()
+    sha256 = models.CharField(max_length=64)
+    upload_metadata = models.JSONField(default=dict)
+    state = models.CharField(max_length=16, default='created')
+    error = models.CharField(max_length=300, blank=True)
+    expires_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+    resource = models.ForeignKey(ResourceBlob, null=True, on_delete=models.PROTECT, related_name='+')
+    thumbnail = models.ForeignKey(ResourceBlob, null=True, on_delete=models.PROTECT, related_name='+')
+
+
+class MaterialAudit(models.Model):
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    library = models.ForeignKey(MaterialLibrary, null=True, on_delete=models.PROTECT)
+    action = models.CharField(max_length=40)
+    detail = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class MaterialPublishJob(models.Model):
+    library = models.ForeignKey(MaterialLibrary, on_delete=models.PROTECT)
+    key = models.CharField(max_length=100)
+    digest = models.CharField(max_length=64)
+    version = models.ForeignKey(LibraryVersion, on_delete=models.PROTECT)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['library', 'key'], name='material_publish_key')]
+
+
+class TemplateLibraryBinding(models.Model):
+    preset_version = models.ForeignKey('diary_presets.Version', on_delete=models.PROTECT, related_name='material_bindings')
+    library_type = models.CharField(max_length=16)
+    library_version = models.ForeignKey(LibraryVersion, on_delete=models.PROTECT, related_name='template_bindings')
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['preset_version','library_type'],name='preset_material_binding')]
+
+
+class MaterialCategory(models.Model):
+    kind = models.CharField(max_length=32)
+    subcategory = models.CharField(max_length=32)
+    title = models.CharField(max_length=60)
+    active = models.BooleanField(default=True)
+    position = models.IntegerField(default=0)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['kind','subcategory'],name='material_category_key')]
+
+
+class MaterialTag(models.Model):
+    title = models.CharField(max_length=30, unique=True)
+    active = models.BooleanField(default=True)

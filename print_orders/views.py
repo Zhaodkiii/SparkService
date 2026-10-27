@@ -12,7 +12,7 @@ from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import Product, Order, Production, Event, Shipment, Receipt
-from .domain import OrderInput, Conflict, Unavailable, spec, quote, digest, validate_manifest
+from .domain import AddressInput, OrderInput, Conflict, Unavailable, spec, quote, digest, validate_manifest
 from .services import event, cancel, reconcile
 from . import storage, wechat
 from .operations import capabilities, can_download, operate, CHECKLISTS
@@ -98,9 +98,13 @@ class Quote(APIView):
             page_count = serializers.IntegerField(min_value=1, max_value=500)
             quantity = serializers.IntegerField(min_value=1, max_value=100)
             region = serializers.CharField(max_length=120)
+            address = AddressInput(required=False)
         s = Input(data=request.data); s.is_valid(raise_exception=True); d = s.validated_data
         p = get_object_or_404(Product, pk=d['product_id'])
-        return Response(dict(**quote(p, d['page_count'], d['quantity'], d['region']), product_revision=p.revision))
+        from regions.services import normalize_address
+        address = normalize_address(d['address'], p) if d.get('address') else None
+        shipping_region = address['region'] if address else d['region']
+        return Response(dict(**quote(p, d['page_count'], d['quantity'], shipping_region), product_revision=p.revision))
 
 
 class Orders(APIView):
@@ -127,14 +131,16 @@ class Orders(APIView):
             return Response(order_data(old))
         p = get_object_or_404(Product.objects.select_for_update(), pk=d['product_id'])
         if p.revision != d['product_revision']: raise Conflict('商品规格已更新，请重新准备生产稿')
-        q = quote(p, d['page_count'], d['quantity'], d['address']['region'])
+        from regions.services import normalize_address
+        address = normalize_address(d['address'], p)
+        q = quote(p, d['page_count'], d['quantity'], address['region'])
         if q['total_fen'] != d['quote_total_fen']: raise Conflict('报价已更新，请重新确认')
         validate_manifest(d)
         inner = sum(page['role']=='interior' for page in d['snapshot']['pages'])
         if d['page_count'] != inner + (inner % 2 if p.duplex else 0):
             raise ValidationError('单双面补白规则不匹配')
         o = Order.objects.create(owner=request.user, product=p, creation_key=d['key'], request_hash=fingerprint,
-            title=d['title'], spec=spec(p), address=d['address'], snapshot=d['snapshot'],
+            title=d['title'], spec=spec(p), address=address, snapshot=d['snapshot'],
             quantity=d['quantity'], page_count=d['page_count'], total_fen=q['total_fen'], payment_state='not_required' if q['total_fen']==0 else 'unpaid')
         prod = Production.objects.create(order=o, manifest=d['files'], confirmed_hash=digest(d['files']))
         o.current_production = prod; o.save()

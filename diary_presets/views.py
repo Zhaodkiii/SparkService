@@ -61,6 +61,10 @@ def publish(obj, actor):
     except ValueError as exc:
         raise ValidationError(str(exc))
     obj.current = Version.objects.create(template=obj, number=manifest['packageVersion'], snapshot=snap, actor=actor)
+    from material_library.models import MaterialLibrary, TemplateLibraryBinding
+    for library in MaterialLibrary.objects.filter(template=obj,current__isnull=False):
+        TemplateLibraryBinding.objects.get_or_create(preset_version=obj.current, library_type=library.library_type,
+            defaults={'library_version':library.current})
     searchable_count = index_version(obj, obj.current)
     obj.draft = snap
     obj.revision += 1

@@ -24,6 +24,11 @@ class AddressInput(serializers.Serializer):
     phone = serializers.RegexField(r'^\+?[0-9 -]{7,20}$')
     region = serializers.CharField(max_length=120)
     detail = serializers.CharField(max_length=240)
+    region_version = serializers.CharField(max_length=80, required=False, allow_null=True)
+    province_code = serializers.RegexField(r'^\d{6}$', required=False, allow_null=True)
+    city_code = serializers.RegexField(r'^\d{6}$', required=False, allow_null=True)
+    district_code = serializers.RegexField(r'^\d{6}$', required=False, allow_null=True)
+
 
 
 class FileInput(serializers.Serializer):

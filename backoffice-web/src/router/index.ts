@@ -27,6 +27,7 @@ router.beforeEach(async (to) => {
     }
   }
 
+  if(to.meta.materialAccess&&!['diary_presets.change_template','material_library.view_materiallibrary','material_library.change_materiallibrary','material_library.publish_materiallibrary','material_library.takedown_materiallibrary'].some(p=>auth.hasPermission(p))) return '/dashboard';
   if(to.meta.paymentAccess&&!['view_paymentattempt','query_payment','refund_order','change_paymentchannel'].some(p=>auth.hasPermission('print_orders.'+p))) return '/dashboard';
   if (to.meta.superAdminOnly && !auth.user?.is_superuser) {
     return '/dashboard';

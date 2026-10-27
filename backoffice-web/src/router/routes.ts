@@ -17,6 +17,7 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/diary-customizations', name: 'DiaryCustomizations', component: () => import('../views/CustomizationRequestsView.vue'), meta: { title: '专属定制', requiredPermission: 'diary_presets.change_template' } },
       { path: '/print-payments', name: 'PrintPayments', component: () => import('../views/PrintPaymentsView.vue'), meta: { title: '支付管理', paymentAccess: true } },
       { path: '/print-orders', name: 'PrintOrders', component: () => import('../views/PrintOrdersView.vue'), meta: { title: '印制订单', requiredPermission: 'print_orders.change_order' } },
+      { path: '/materials', name: 'Materials', component: () => import('../views/MaterialCatalogView.vue'), meta: { title: '素材管理', materialAccess: true } },
       { path: '/diary-presets', name: 'DiaryPresets', component: () => import('../views/DiaryPresetsView.vue'), meta: { title: '预设手帐', superAdminOnly: true } },
       { path: '', redirect: '/dashboard' },
       { path: '/dashboard', name: 'Dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '仪表盘', keepAlive: true } },
