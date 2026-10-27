@@ -1,5 +1,6 @@
 """Validate release configuration without printing credentials."""
 import os
+import json
 from pathlib import Path
 import sys
 from urllib.parse import urlsplit
@@ -33,6 +34,25 @@ def validate_config(values):
     queues = {queue.strip() for queue in values.get("CELERY_QUEUES", "").split(",")}
     if queues.intersection({"default", "chat.ai", "chat.events", "chat.recovery", "subscriptions"}):
         errors.append("CELERY_QUEUES 包含已删除队列")
+    # 生产必须保持接收端身份；按 settings.py 的布尔解析方式严格检查。
+    if values.get("MATERIAL_SYNC_ENVIRONMENT_ID") != "production":
+        errors.append("MATERIAL_SYNC_ENVIRONMENT_ID 必须为 production，不能使用本地环境身份")
+    if values.get("MATERIAL_SYNC_SOURCE_ENABLED", "false").lower() != "false":
+        errors.append("生产 MATERIAL_SYNC_SOURCE_ENABLED 必须为 false")
+    if values.get("MATERIAL_SYNC_RECEIVER_ENABLED", "").lower() != "true":
+        errors.append("生产 MATERIAL_SYNC_RECEIVER_ENABLED 必须为 true")
+    try:
+        keys = json.loads(values.get("MATERIAL_SYNC_ACCEPTED_KEYS", "{}"))
+        if not isinstance(keys, dict) or not keys:
+            raise ValueError()
+        for key, record in keys.items():
+            if (not isinstance(key, str) or not key.strip() or not isinstance(record, dict)
+                    or not isinstance(record.get("environment"), str)
+                    or not record["environment"].strip() or record["environment"] == "production"
+                    or not isinstance(record.get("secret"), str) or not record["secret"].strip()):
+                raise ValueError()
+    except (ValueError, TypeError):
+        errors.append("MATERIAL_SYNC_ACCEPTED_KEYS 必须配置有效来源身份和配对密钥（不显示密钥内容）")
     if errors:
         raise ValueError("；".join(errors))
 
@@ -108,7 +128,13 @@ def main():
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "SparkService.settings")
         try:
             validate_config(os.environ)
-            if mode == "connections":
+        except ValueError as error:
+            # validate_config only reports field names/rules, never credential values.
+            raise SystemExit(f"发布检查 {mode} 失败：{error}") from None
+        try:
+            if mode == "environment":
+                pass
+            elif mode == "connections":
                 check_connections()
             elif mode == "workers":
                 check_workers()

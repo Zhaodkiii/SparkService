@@ -31,6 +31,10 @@ def production_config(**overrides):
         "CORS_ALLOWED_ORIGINS": "https://diary.dreamwhale.top",
         "CELERY_BROKER_URL": "redis://127.0.0.1:6379/4",
         "CELERY_RESULT_BACKEND": "redis://127.0.0.1:6379/4",
+        "MATERIAL_SYNC_ENVIRONMENT_ID": "production",
+        "MATERIAL_SYNC_SOURCE_ENABLED": "false",
+        "MATERIAL_SYNC_RECEIVER_ENABLED": "true",
+        "MATERIAL_SYNC_ACCEPTED_KEYS": json.dumps({"test-local": {"environment": "local-authoring", "secret": "test-only-secret"}}),
         **overrides,
     }
 
@@ -52,6 +56,20 @@ class ReleaseConfigTests(unittest.TestCase):
         ):
             with self.subTest(keys=list(overrides)), self.assertRaises(ValueError):
                 checks.validate_config(production_config(**overrides))
+
+    def test_local_sync_identity_disabled_receiver_and_missing_keys_are_rejected(self):
+        for overrides in (
+            {"MATERIAL_SYNC_ENVIRONMENT_ID": "local-authoring"},
+            {"MATERIAL_SYNC_SOURCE_ENABLED": "true"},
+            {"MATERIAL_SYNC_RECEIVER_ENABLED": "false"},
+            {"MATERIAL_SYNC_ACCEPTED_KEYS": "{}"},
+            {"MATERIAL_SYNC_ACCEPTED_KEYS": "not-json-secret"},
+            {"MATERIAL_SYNC_ACCEPTED_KEYS": '{"k":{"environment":"production","secret":"hidden-secret"}}'},
+        ):
+            with self.subTest(keys=list(overrides)), self.assertRaises(ValueError) as error:
+                checks.validate_config(production_config(**overrides))
+            self.assertNotIn("hidden-secret", str(error.exception))
+            self.assertNotIn("not-json-secret", str(error.exception))
 
     def test_env_duplicate_keys_are_rejected_and_password_is_literal(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -235,12 +253,13 @@ if "ps" in args and "-q" in args:
         self.assertNotIn("Release complete:", result.stdout)
         self.assertEqual(self.base.joinpath("current").resolve(), self.old_release)
 
-    def run_entry_release(self, use_rsync):
+    def run_entry_release(self, use_rsync, preserve_env=False):
         source = self.folder / "source"
         source.mkdir()
         source.joinpath("manage.py").write_text("print('test source')\n")
         source.joinpath("requirements.txt").write_text("Django\n")
-        source.joinpath(".env").write_text("".join(f"{key}='{value}'\n" for key, value in production_config().items()))
+        source.joinpath(".env.production").write_text("".join(f"{key}='{value}'\n" for key, value in production_config().items()))
+        source.joinpath(".env").write_text("MATERIAL_SYNC_ENVIRONMENT_ID=local-authoring\n")
         frontend = source / "backoffice-web"
         frontend.joinpath("dist").mkdir(parents=True)
         frontend.joinpath("package.json").write_text("{}")
@@ -272,11 +291,13 @@ for source in args[:-1]:
 source, destination = sys.argv[-2:]
 shutil.copytree(source, destination.split(":", 1)[1], dirs_exist_ok=True)
 ''')
+        if preserve_env:
+            self.env.pop("SYNC_DEPLOY_ENV", None)
         result = subprocess.run(
             ["bash", str(ROOT / "scripts/deploy_sparkservice.sh")],
             env={**self.env, "SRC_DIR": str(source), "SERVER_TEMPLATE_DIR": str(TEMPLATE), "REMOTE_BASE": str(self.base),
-                 "REMOTE_HOST": "root@39.106.39.110", "DEPLOY_ENV_FILE": str(source / ".env"),
-                 "FRONTEND_DIR": str(frontend), "PYTHON_BIN": sys.executable, "SYNC_DEPLOY_ENV": "1",
+                 "REMOTE_HOST": "root@39.106.39.110", "DEPLOY_ENV_FILE": str(source / ".env.production"),
+                 "FRONTEND_DIR": str(frontend), "PYTHON_BIN": sys.executable, **({} if preserve_env else {"SYNC_DEPLOY_ENV": "1"}),
                  "USE_RSYNC": str(use_rsync), "BUILD_FRONTEND_LOCAL": "1", "CANCEL_RUNNING_DEPLOY": "0"},
             capture_output=True, text=True, timeout=40,
         )
@@ -286,7 +307,25 @@ shutil.copytree(source, destination.split(":", 1)[1], dirs_exist_ok=True)
         self.assertEqual(current.joinpath("manage.py").read_text(), "print('test source')\n")
         self.assertFalse(current.joinpath(".env").exists())
         self.assertEqual(self.frontend.joinpath("index.html").read_text(), "entry-frontend")
-        self.assertIn("DB_PASSWORD='test-password'", self.active_env.read_text())
+        self.assertFalse(current.joinpath(".env.production").exists())
+        if preserve_env:
+            self.assertIn("DB_PASSWORD=old-password", self.active_env.read_text())
+            self.assertNotIn("MATERIAL_SYNC_ENVIRONMENT_ID=local-authoring", self.active_env.read_text())
+        else:
+            self.assertIn("DB_PASSWORD='test-password'", self.active_env.read_text())
+
+    def test_entry_defaults_to_preserving_production_environment(self):
+        self.stage.joinpath('candidate.env').unlink()
+        self.run_entry_release(use_rsync=1, preserve_env=True)
+
+    def test_invalid_runtime_environment_stops_before_initialization_or_migrations(self):
+        result = self.run_release(DOCKER_FAIL="release_checks.py environment")
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_old_release_untouched()
+        trace=self.trace.read_text()
+        self.assertNotIn('init_print_payment_key',trace)
+        self.assertNotIn('migrate --noinput',trace)
+        self.assertIn('validate-environment',result.stderr)
 
     def test_entry_to_remote_release_with_rsync_upload(self):
         self.run_entry_release(use_rsync=1)

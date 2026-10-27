@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from datetime import timedelta
 import os
+import json
 from pathlib import Path
 
 from celery.schedules import crontab
@@ -639,3 +640,13 @@ REGIONS_CLIENT_CHECK_DAYS = min(30, max(1, int(os.getenv('REGIONS_CLIENT_CHECK_D
 REGIONS_DAILY_REQUEST_BUDGET = max(0, int(os.getenv('REGIONS_DAILY_REQUEST_BUDGET', '4')))
 REGIONS_CDN_BASE_URL = os.getenv('REGIONS_CDN_BASE_URL', '').strip()
 CELERY_BEAT_SCHEDULE['regions-check'] = {'task': 'regions.tasks.check_regions', 'schedule': 3600.0}
+
+# Cross-environment material metadata synchronization (disabled until configured).
+MATERIAL_SYNC_SOURCE_ENABLED = os.getenv('MATERIAL_SYNC_SOURCE_ENABLED', 'false').lower() == 'true'
+MATERIAL_SYNC_RECEIVER_ENABLED = os.getenv('MATERIAL_SYNC_RECEIVER_ENABLED', 'false').lower() == 'true'
+MATERIAL_SYNC_ENVIRONMENT_ID = os.getenv('MATERIAL_SYNC_ENVIRONMENT_ID', '')
+MATERIAL_SYNC_TARGET_BASE_URL = os.getenv('MATERIAL_SYNC_TARGET_BASE_URL', '')
+MATERIAL_SYNC_KEY_ID = os.getenv('MATERIAL_SYNC_KEY_ID', '')
+MATERIAL_SYNC_SECRET = os.getenv('MATERIAL_SYNC_SECRET', '')
+MATERIAL_SYNC_ACCEPTED_KEYS = json.loads(os.getenv('MATERIAL_SYNC_ACCEPTED_KEYS', '{}'))
+CELERY_BEAT_SCHEDULE['material-sync-recovery'] = {'task': 'material_library.tasks.recover_sync_tasks', 'schedule': 30.0}

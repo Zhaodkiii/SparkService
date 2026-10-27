@@ -51,7 +51,7 @@ class MaterialLibrary(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['template', 'library_type'], name='template_library_type')]
-        permissions = [('publish_materiallibrary','Can publish material libraries'),('takedown_materiallibrary','Can change material availability')]
+        permissions = [('publish_materiallibrary','Can publish material libraries'),('takedown_materiallibrary','Can change material availability'),('sync_materiallibrary','Can synchronize material libraries to production')]
 
 
 class LibraryVersion(models.Model):
@@ -157,3 +157,52 @@ class MaterialCategory(models.Model):
 class MaterialTag(models.Model):
     title = models.CharField(max_length=30, unique=True)
     active = models.BooleanField(default=True)
+
+
+class MaterialSyncTask(models.Model):
+    """Durable source tasks and target receipts; protocol identities never use user PKs."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    side = models.CharField(max_length=12)
+    source_environment = models.CharField(max_length=80)
+    library_uuid = models.UUIDField()
+    source_version = models.PositiveIntegerField()
+    content_hash = models.CharField(max_length=64)
+    snapshot = models.JSONField(default=dict)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    state = models.CharField(max_length=40, default='preflighting')
+    commit_status = models.CharField(max_length=20, default='not_committed')
+    result = models.JSONField(default=dict)
+    baseline = models.CharField(max_length=64, blank=True)
+    remote_id = models.CharField(max_length=64, blank=True)
+    remote_preflight_id = models.CharField(max_length=64, blank=True)
+    idempotency_key = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField(null=True)
+    lease_until = models.DateTimeField(null=True)
+    lease_token = models.CharField(max_length=64, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['side', 'library_uuid', 'created_at'], name='material_sync_history')]
+
+
+class MaterialSyncSlot(models.Model):
+    library_uuid = models.UUIDField(primary_key=True)
+    active_task = models.ForeignKey(MaterialSyncTask, null=True, on_delete=models.PROTECT)
+
+
+class MaterialSyncMapping(models.Model):
+    source_environment = models.CharField(max_length=80)
+    library_uuid = models.UUIDField()
+    source_version = models.PositiveIntegerField()
+    content_hash = models.CharField(max_length=64)
+    target_version = models.ForeignKey(LibraryVersion, on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['source_environment','library_uuid','source_version','content_hash'], name='material_sync_snapshot')]
+
+
+class MaterialSyncNonce(models.Model):
+    digest = models.CharField(max_length=64, primary_key=True)
+    expires_at = models.DateTimeField()

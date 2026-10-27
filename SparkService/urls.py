@@ -40,6 +40,7 @@ urlpatterns = [
     path("api/internal/diary-customizations/processor/", CustomizationProcessor.as_view()),
     path("api/v1/print/", include("print_orders.urls")),
     path("api/admin/v1/print/", include("print_orders.admin_urls")),
+    path("api/v1/material-sync/", include("material_library.sync_urls")),
     path("api/v1/materials/", include("material_library.urls")),
     path("api/v1/diary-presets/", include("diary_presets.urls")),
     path("api/admin/v1/diary-presets/", include("diary_presets.admin_urls")),

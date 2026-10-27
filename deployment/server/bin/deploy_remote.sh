@@ -75,6 +75,10 @@ compose config > /dev/null
 PHASE=build
 compose build web
 docker image inspect docker.m.daocloud.io/library/nginx:1.27-alpine 9>&- >/dev/null 2>&1 || compose pull frontend
+# 在支付初始化、数据库备份/迁移和服务切换之前检查实际容器环境。
+# 即使保留的是旧生产配置，也不能将开发环境身份或关闭的接收端继续发布。
+PHASE=validate-environment
+compose run --rm -T --no-deps web python deployment/server/bin/release_checks.py environment
 PHASE=initialize-payment-key
 mkdir -p "$BASE/shared/payment-secrets"
 chmod 700 "$BASE/shared/payment-secrets"

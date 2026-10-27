@@ -39,3 +39,13 @@ urlpatterns += [
  path('manage/tags/', admin.Dictionary.as_view(), {'target':'tags'}),
  path('manage/audit-logs/', admin.Audit.as_view()),
 ]
+
+from . import sync_api as sync
+urlpatterns += [
+ path('manage/sync/options/',sync.SyncOptions.as_view()),
+ path('manage/libraries/<uuid:pk>/production-sync/preflight/',sync.SourcePreflight.as_view()),
+ path('manage/libraries/<uuid:pk>/sync-history/',sync.SourceHistory.as_view()),
+ path('manage/sync-tasks/<uuid:pk>/',sync.SourceTask.as_view()),
+ path('manage/sync-tasks/<uuid:pk>/confirm/',sync.SourceConfirm.as_view()),
+ path('manage/sync-tasks/<uuid:pk>/retry/',sync.SourceRetry.as_view()),
+]

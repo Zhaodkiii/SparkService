@@ -5,7 +5,7 @@ import uuid
 from datetime import timedelta
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q, F, Max, Count
+from django.db.models import Q, F, Max, Count, OuterRef, Subquery
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -100,9 +100,10 @@ def clean_content(content,lib,strict=False):
 
 
 def admin_library_json(lib, user):
+    from .sync_protocol import sync_summary
     content = lib.current.content if lib.current_id else {}
     draft = getattr(lib, 'draft', None)
-    cover = ResourceBlob.objects.filter(pk=content.get('cover')).first()
+    cover = lib._list_cover if hasattr(lib, '_list_cover') else ResourceBlob.objects.filter(pk=content.get('cover')).first()
     total = lib.total_members if hasattr(lib, 'total_members') else (lib.current.items.count() if lib.current_id else 0)
     effective = lib.effective_members if hasattr(lib, 'effective_members') else (lib.current.items.filter(material__active=True).count() if lib.current_id else 0)
     template_enabled = not lib.template_id or (lib.template.active and lib.template.series.active)
@@ -111,6 +112,7 @@ def admin_library_json(lib, user):
               '关联模板或系列已停用' if not template_enabled else '待完善封面与展示信息' if not content else '')
     return dict(
         id=str(lib.pk), title=content.get('title',lib.title), type=lib.library_type,
+        production_sync=sync_summary(lib) if user.has_perm('material_library.sync_materiallibrary') else None,
         template_id=str(lib.template_id) if lib.template_id else None,
         origin_type='template' if lib.template_id else 'independent',
         version=lib.current.number if lib.current_id else 0, count=effective,
@@ -129,15 +131,41 @@ def admin_library_json(lib, user):
     )
 
 
-def admin_page(request, rows, serialize):
+def prepare_library_page(rows, user):
+    """Aggregate only the selected page, without grouping wide related JSON rows."""
+    versions = [row.current_id for row in rows if row.current_id]
+    counts = {row['version_id']: row for row in LibraryItem.objects.filter(
+        version_id__in=versions).order_by().values('version_id').annotate(
+            total=Count('id'), effective=Count('id', filter=Q(material__active=True)))}
+    covers = ResourceBlob.objects.in_bulk({row.current.content.get('cover') for row in rows
+                                         if row.current_id and row.current.content.get('cover')})
+    tasks = {}
+    if user.has_perm('material_library.sync_materiallibrary'):
+        latest = MaterialSyncTask.objects.filter(side='source', library_uuid=OuterRef('library_uuid')).order_by('-created_at', '-id')
+        tasks = {task.library_uuid: task for task in MaterialSyncTask.objects.filter(
+            side='source', library_uuid__in=[row.pk for row in rows],
+            pk=Subquery(latest.values('pk')[:1])).defer('snapshot')}
+    for row in rows:
+        count = counts.get(row.current_id, {})
+        row.total_members = count.get('total', 0)
+        row.effective_members = count.get('effective', 0)
+        row._list_cover = covers.get(row.current.content.get('cover')) if row.current_id else None
+        row._list_sync_task = tasks.get(row.pk)
+
+
+def admin_page(request, rows, serialize, prepare=None):
     # Opt-in pagination preserves existing administrative integrations.
     if request.query_params.get('paged') != '1':
-        return Response([serialize(row) for row in rows[:500]])
+        selected = list(rows[:500])
+        if prepare: prepare(selected)
+        return Response([serialize(row) for row in selected])
     page = serializers.IntegerField(min_value=1).run_validation(request.query_params.get('page', 1))
     size = serializers.IntegerField(min_value=1, max_value=100).run_validation(request.query_params.get('page_size', 20))
     pager = Paginator(rows, size)
     current = pager.get_page(page)
-    return Response(dict(items=[serialize(row) for row in current.object_list], total=pager.count,
+    selected = list(current.object_list)
+    if prepare: prepare(selected)
+    return Response(dict(items=[serialize(row) for row in selected], total=pager.count,
                          page=current.number, page_size=size))
 
 
@@ -165,10 +193,7 @@ class Templates(Admin):
 
 class Libraries(Admin):
     def get(self,request):
-        qs=public_libraries().select_related('template__series','current','draft__actor').annotate(
-            total_members=Count('current__items',distinct=True),
-            effective_members=Count('current__items',filter=Q(current__items__material__active=True),distinct=True)
-        ).order_by('sort_order','id')
+        qs=public_libraries().select_related('template__series','current','draft__actor').order_by('sort_order','id')
         if q:=request.query_params.get('q'): qs=qs.filter(title__icontains=q)
         if t:=request.query_params.get('type'):
             if t not in ('sticker','background'): raise ValidationError('无效类型')
@@ -181,7 +206,8 @@ class Libraries(Admin):
         if state=='draft': qs=qs.filter(current__isnull=True)
         elif state=='published': qs=qs.filter(current__isnull=False,active=True)
         elif state=='withdrawn': qs=qs.filter(current__isnull=False,active=False)
-        return admin_page(request,qs,lambda l:admin_library_json(l,request.user))
+        return admin_page(request,qs,lambda l:admin_library_json(l,request.user),
+                          prepare=lambda rows:prepare_library_page(rows,request.user))
     @transaction.atomic
     def post(self,request):
         title=clean_text(request.data.get('title'),60,True)

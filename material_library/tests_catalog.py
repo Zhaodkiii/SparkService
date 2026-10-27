@@ -38,6 +38,46 @@ class CatalogTests(TestCase):
         self.assertFalse(row['gallery_visible'])
         self.assertIsNotNone(row['cover'])
 
+    def test_admin_list_batches_page_queries_and_counts_only_current_members(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        lib=MaterialLibrary.objects.get(pk=self.pk)
+        old=LibraryVersion.objects.create(library=lib,number=2,content=self.content)
+        LibraryItem.objects.create(version=old,material=self.r.material,revision=self.r)
+        # Historical membership must not inflate the current version count.
+        for i in range(19):
+            other=MaterialLibrary.objects.create(title=f'批量{i}',library_type='sticker')
+            version=LibraryVersion.objects.create(library=other,number=1,content=self.content)
+            LibraryItem.objects.create(version=version,material=self.r.material,revision=self.r)
+            other.current=version;other.save()
+        self.r.material.active=False;self.r.material.save()
+        endpoint='/api/v1/materials/manage/libraries/'
+        # Warm up DRF throttling/permission bookkeeping before measuring SQL.
+        self.client.get(endpoint,{'paged':1,'page_size':1})
+        with CaptureQueriesContext(connection) as queries:
+            response=self.client.get(endpoint,{'paged':1,'page_size':20})
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.data['total'],20)
+        self.assertEqual(len(response.data['items']),20)
+        for row in response.data['items']:
+            self.assertEqual(row['count'],0)
+            self.assertEqual(row['total_count'],1)
+            self.assertIsNotNone(row['cover'])
+        self.assertLessEqual(len(queries),5, [q['sql'] for q in queries])
+        # The page fetch itself must not group the wide joined records.
+        page_sql=next(q['sql'] for q in queries if 'LIMIT 20' in q['sql'])
+        self.assertNotIn('GROUP BY',page_sql)
+
+    def test_admin_list_uses_latest_source_sync_task_and_preserves_legacy_shape(self):
+        import uuid
+        for side,state in [('source','failed'),('source','ready'),('target','conflict')]:
+            MaterialSyncTask.objects.create(side=side,source_environment='test',library_uuid=self.pk,
+                source_version=1,content_hash='a'*64,state=state,idempotency_key=uuid.uuid4().hex)
+        response=self.client.get('/api/v1/materials/manage/libraries/')
+        self.assertIsInstance(response.data,list)
+        self.assertEqual(response.data[0]['production_sync']['state'],'ready')
+        self.assertEqual(response.data[0]['count'],1)
+
     def test_draft_offers_latest_revision_without_mutating_published_members(self):
         newest=revision(self.r.material,dict(name='新版花枝',kind='illustration',subcategory='botanical',keywords=[],aliases=[],resource_id=self.blob.pk,thumbnail_id=self.blob.pk,sources=[]))
         data=self.client.get(self.base+'draft/').data

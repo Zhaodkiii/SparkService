@@ -4,6 +4,8 @@
     <a-alert v-if="uploadEnabled===false" :message="uploadUnavailableReason || 'OSS 上传暂不可用，请检查 OSS 配置'" type="warning" show-icon />
     <a-alert v-if="notice" :message="notice" type="success" closable @close="notice=''" />
     <a-alert v-if="error" :message="error" type="error" closable @close="error=''" />
+    <p v-if="syncOptions.can_sync">环境：{{syncOptions.environment}} · 目标：生产环境 <small v-if="!syncOptions.enabled">{{syncOptions.reason}}</small></p>
+    <MaterialProductionSync ref="productionSync" @options="value=>syncOptions=value" @synced="load()"/>
     <a-tabs v-model:activeKey="tab">
       <a-tab-pane key="packs" tab="贴纸包与背景库">
         <a-space wrap><a-input-search v-model:value="query" placeholder="搜索名称" @search="load(1)"/><a-button @click="load()">刷新</a-button><a-button type="primary" v-if="permissions.can_edit" @click="openCreate">新建素材包</a-button><a-select v-model:value="filterType" style="width:120px" :options="[{value:'',label:'全部类型'},{value:'sticker',label:'贴纸'},{value:'background',label:'背景'}]"/><a-select v-model:value="filterOrigin" style="width:130px" :options="[{value:'',label:'全部来源'},{value:'independent',label:'独立主题'},{value:'template',label:'模板关联'}]"/><a-select v-model:value="filterState" style="width:130px" :options="[{value:'',label:'全部状态'},{value:'published',label:'已上架'},{value:'draft',label:'未发布'},{value:'withdrawn',label:'已下架'}]"/></a-space>
@@ -12,6 +14,7 @@
             <div v-if="column.key==='summary'" class="pack-summary"><a-image v-if="record.cover" :src="record.cover.url" :width="64"/><span v-else class="missing-cover">待补封面</span><div><strong>{{record.title}}</strong><small>{{record.type==='sticker'?'贴纸包':'背景库'}} · {{record.template_title || '独立主题'}}</small></div></div>
             <span v-else-if="column.key==='count'">{{record.count}} / {{record.total_count ?? record.count}}</span>
             <span v-else-if="column.key==='display'">{{record.gallery_visible?'贴纸馆可见':'贴纸馆未展示'}}<small v-if="record.display_reason">{{record.display_reason}}</small><small v-if="record.template_id">模板配套版本请在编辑中查看</small></span>
+            <span v-else-if="column.key==='production_sync'">{{record.production_sync?.label || '—'}}<small v-if="record.production_sync?.target_version">生产 v{{record.production_sync.target_version}}</small><small v-if="record.production_sync?.checked_at">核实：{{dayjs(record.production_sync.checked_at).format('MM-DD HH:mm')}}</small></span>
             <span v-else-if="column.key==='updated'">{{record.updated_at?dayjs(record.updated_at).format('MM-DD HH:mm'):'—'}}<small>{{record.updated_by || ''}}</small></span>
 
             <span v-else-if="column.key==='sort'">{{record.featured?'推荐 · ':''}}{{record.sort_order}}</span>
@@ -19,6 +22,7 @@
             <a-space v-else-if="column.key==='actions'">
               <a-button @click="edit(record)">{{permissions.can_edit?'编辑':'查看'}}</a-button>
               <a-dropdown :trigger="['click']"><a-button>更多</a-button><template #overlay><a-menu :selectable="false">
+                <a-menu-item v-if="syncOptions.can_sync" :disabled="!syncOptions.enabled || !record.version || !record.active || !!record.template_id || record.type!=='sticker'" @click="productionSync?.open(record)">同步到生产</a-menu-item>
                 <a-menu-item @click="history(record)">历史版本</a-menu-item>
                 <a-menu-item v-if="permissions.can_edit" @click="error='';placementEdit={...record}">展示设置</a-menu-item>
                 <a-menu-item v-if="permissions.can_takedown" :disabled="!record.version" :danger="record.active" @click="confirmLibraryAvailability(record)">{{record.active?'下架素材包':'上架素材包'}}</a-menu-item>
@@ -77,6 +81,9 @@
 <script setup lang="ts">
 import {ref,reactive,onMounted,onBeforeUnmount,watch,computed} from 'vue';
 import {Modal} from 'ant-design-vue';
+import MaterialProductionSync from './MaterialProductionSync.vue';
+const productionSync=ref<InstanceType<typeof MaterialProductionSync>>();
+const syncOptions=ref<any>({can_sync:false,enabled:false});
 import {prepareMaterialImage,putImageToOSS} from './materialImageUpload';
 import dayjs from 'dayjs';
 import http from '../api/http';
@@ -98,7 +105,7 @@ function discardUpload(task:any){forgetUpload(accountID.value,task.uploadID);upl
 function uploadInContent(task:any,content:any){return task.attachedRevision?content.items.some((i:any)=>i.revision===task.attachedRevision):task.attachedResource&&(content.cover===task.attachedResource||content.previews.includes(task.attachedResource))}
 let disposed=false;let publishKey='';let editSession=0;let listRequest=0;let autoSaveTimer:ReturnType<typeof setTimeout>|undefined;const selectedItems=ref<number[]>([]),batchCategory=ref('');
 const dictionaryTarget=ref('categories'),dictionaryRows=ref<any[]>([]),dictionaryEdit=ref<any>(null);
-const columns=[{title:'素材包',key:'summary',width:290},{title:'有效 / 总数',key:'count',width:100},{title:'发布状态',key:'state',width:140},{title:'客户端展示',key:'display',width:170},{title:'推荐顺序',key:'sort',width:110},{title:'更新信息',key:'updated',width:130},{title:'操作',key:'actions',width:180}];
+const columns=[{title:'素材包',key:'summary',width:290},{title:'有效 / 总数',key:'count',width:100},{title:'发布状态',key:'state',width:140},{title:'客户端展示',key:'display',width:170},{title:'推荐顺序',key:'sort',width:110},{title:'生产同步',key:'production_sync',width:150},{title:'更新信息',key:'updated',width:130},{title:'操作',key:'actions',width:180}];
 const placementEdit=ref<any>(null);
 async function savePlacement(){const lib=placementEdit.value;try{await http.patch(base+`manage/libraries/${lib.id}/placement/`,{expected_state_revision:lib.state_revision,featured:lib.featured,sort_order:lib.sort_order,new_until:lib.new_until||null});placementEdit.value=null;await load();notice.value='展示设置已保存'}catch(e){fail(e)}}
 const draftSavedAt=ref<number>();
