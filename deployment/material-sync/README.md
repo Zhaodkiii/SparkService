@@ -14,7 +14,7 @@
 
 ## 首次部署
 
-1. 生产数据库先备份。用原 deploy_sparkservice.sh 发布兼容代码并执行迁移；默认 SYNC_DEPLOY_ENV=0 保留服务器 .deploy.env；显式同步必须设置 SYNC_DEPLOY_ENV=1 和独立生产 DEPLOY_ENV_FILE，禁止指向项目本地 .env。生产必须为 production / source=false / receiver=true，并配置 ACCEPTED_KEYS，否则发布在初始化、迁移、切换前停止。同步功能本身不会执行部署 shell。
+1. 生产数据库先备份。用原 deploy_sparkservice.sh 发布兼容代码并执行迁移；默认 SYNC_DEPLOY_ENV=1，本地 .env 参与发布；脚本在候选副本将同步身份转换为 production / source=false / receiver=true，并将本地 KEY_ID/SECRET 配对登记为生产 ACCEPTED_KEYS。远端合并保留既有接收凭证；同名不同凭证阻断，轮换请使用新 KEY_ID。本地原文件不变，生产发送凭证清空。设置 SYNC_DEPLOY_ENV=0 可保留服务器其他配置。环境依据已校验 SSH 生产目标确定，不依据操作系统、主机名或用户输入的环境身份猜测。同步功能本身不会执行部署 shell。
 2. 本地和生产均执行 `python manage.py migrate`，重启各自 API、现有 Celery worker、beat。恢复任务依赖 beat；生产 worker 必须加载新任务。
 3. 生产配置 MATERIAL_SYNC_RECEIVER_ENABLED=true、MATERIAL_SYNC_ENVIRONMENT_ID=production、SOURCE_ENABLED=false；配置 ACCEPTED_KEYS。密钥通过受保护环境文件分发，建议至少32随机字节，不写入仓库或前端。
 4. 本地配置 SOURCE_ENABLED=true、RECEIVER_ENABLED=false、ENVIRONMENT_ID=local-authoring、固定 TARGET_BASE_URL=https://diary.dreamwhale.top、KEY_ID和SECRET。KEY_ID对应生产ACCEPTED_KEYS中environment=local-authoring的记录。

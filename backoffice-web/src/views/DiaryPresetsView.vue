@@ -4,6 +4,7 @@
    <template #extra><a-button @click="globalSearchOpen=true">跨页搜索管理</a-button><a-button :loading="loading" @click="run(load)">刷新</a-button><a-button type="primary" @click="openDialog('series')">新增系列</a-button></template>
   </a-page-header>
   <a-alert v-if="error" type="error" show-icon :message="error" closable @close="error=''" />
+  <a-alert type="info" show-icon :message="statisticsNotice" style="margin-top:12px" />
   <div class="workspace">
    <a-card title="系列目录" class="series-panel" :loading="loading">
     <a-empty v-if="!series.length" description="暂无系列，请新增系列" />
@@ -16,9 +17,10 @@
    <div class="content-panel">
     <a-card v-if="selectedSeries" :title="selectedSeries.title+' · 手帐列表'">
      <template #extra><a-space><a-input-search v-model:value="query" placeholder="搜索手帐名称" allow-clear style="width:220px"/><a-button type="primary" @click="openDialog('book')">新增手帐</a-button></a-space></template>
-     <a-table :data-source="filteredBooks" :columns="bookColumns" row-key="id" :loading="working" :pagination="{pageSize:8,showSizeChanger:true}">
+     <a-table :data-source="filteredBooks" :columns="bookColumns" :scroll="{x:1120}" row-key="id" :loading="working" :pagination="{pageSize:8,showSizeChanger:true}">
       <template #bodyCell="{column,record}">
-       <template v-if="column.key==='book'"><a-space><a-image v-if="record.cover_url" :src="record.cover_url" :width="45"/><div><a @click="chooseBook(record)">{{record.title}}</a><div class="muted">{{record.description || '暂无简介'}}</div></div></a-space></template>
+       <template v-if="column.key==='book'"><a-space class="book-name"><a-image v-if="record.cover_url" :src="record.cover_url" :width="45"/><div><a @click="chooseBook(record)">{{record.title}}</a><div class="muted">{{record.description || '暂无简介'}}</div></div></a-space></template>
+       <template v-else-if="column.statKey">{{record.import_statistics?.[column.statKey] ?? '暂不可用'}}</template>
        <template v-else-if="column.key==='state'"><a-tag :color="record.active?(record.current?'green':'blue'):'default'">{{!record.active?'已下架':record.current?'已发布':'草稿'}}</a-tag></template>
        <template v-else-if="column.key==='actions'"><a-button type="link" @click="chooseBook(record)">管理单页</a-button></template>
       </template>
@@ -44,9 +46,15 @@
        <a-empty v-if="!pages.length" description="手帐暂无页面，请上传整本或单页资源包" />
        <div class="pages-grid"><a-card v-for="(p,index) in pages" :key="p.id" size="small" draggable="true" @dragstart="drag=index" @dragover.prevent @drop="move(drag,index)">
         <div class="page-preview" @click="preview=p"><img :src="p.thumbnail" :alt="p.title" loading="lazy"/><a-tag v-if="cover===p.id" color="blue" class="cover-tag">封面</a-tag></div>
-        <a-input v-model:value="p.title" :maxlength="200" @change="dirty=true"/><div class="muted">第 {{index+1}} 页</div>
+        <a-input v-model:value="p.title" :maxlength="200" @change="dirty=true"/><div class="muted">第 {{index+1}} 页 · 添加次数 {{p.import_count ?? '暂不可用'}}</div>
         <a-space wrap><a-button size="small" :disabled="index===0" @click="move(index,index-1)">前移</a-button><a-button size="small" :disabled="index===pages.length-1" @click="move(index,index+1)">后移</a-button><a-button size="small" @click="cover=p.id;dirty=true">设封面</a-button><a-button size="small" danger @click="remove(index)">删除</a-button></a-space>
        </a-card></div>
+      </a-tab-pane>
+      <a-tab-pane key="statistics" tab="单页添加统计">
+       <a-alert type="info" show-icon message="仅统计单页、多选及跨页添加；整本添加不增加单页次数。当前页列表不包含已移除页，可在此查看历史。" />
+       <a-space style="margin:12px 0"><a-select v-model:value="statisticsVersion" style="width:180px" @change="run(loadPageStatistics)"><a-select-option value="all">全部版本累计</a-select-option><a-select-option v-for="v in versions" :key="v.number" :value="String(v.number)">版本 {{v.number}}</a-select-option></a-select><a-button @click="run(loadPageStatistics)">刷新统计</a-button></a-space>
+       <a-alert v-if="pageStatsError" type="error" message="统计暂不可用，请重试" />
+       <a-table v-else :data-source="pageStats" row-key="id" :columns="[{title:'单页',dataIndex:'title'},{title:'来源页 ID',dataIndex:'id'},{title:'添加次数',dataIndex:'count',sorter:(a:any,b:any)=>a.count-b.count},{title:'状态',key:'removed'}]" :scroll="{x:650}"><template #bodyCell="{column,record}"><a-tag v-if="column.key==='removed'">{{record.removed?'已移除':'当前页'}}</a-tag></template></a-table>
       </a-tab-pane>
       <a-tab-pane key="versions" tab="版本记录"><a-table :data-source="versions" row-key="number" :columns="[{title:'版本号',dataIndex:'number'},{title:'发布时间',dataIndex:'created_at'},{title:'操作',key:'action'}]"><template #bodyCell="{column,record}"><a-button v-if="column.key==='action'" type="link" @click="restore(record.number)">回滚并发布</a-button></template></a-table></a-tab-pane>
       <a-tab-pane key="uploads" tab="上传任务"><a-alert type="info" message="ZIP 文件直传 OSS；队列处理需要独立资源处理器在线。" show-icon/><a-button style="margin:12px 0" @click="run(loadHistory)">刷新任务</a-button><a-table :data-source="uploads" row-key="id" :columns="[{title:'创建时间',dataIndex:'created_at'},{title:'模式',dataIndex:'mode'},{title:'状态',dataIndex:'status'},{title:'详情',dataIndex:'error'},{title:'操作',key:'retry'}]"><template #bodyCell="{column,record}"><a-button v-if="column.key==='retry' &amp;&amp; ['failed','conflict'].includes(record.status)" type="link" @click="retryUpload(record.id)">重试</a-button></template></a-table></a-tab-pane>
@@ -75,6 +83,22 @@ import http from '../api/http';
 import MaterialLibraryPanel from './MaterialLibraryPanel.vue';
 import PresetSearchMetadataPanel from './PresetSearchMetadataPanel.vue';
 const globalSearchOpen=ref(false);
+const statisticsStarted=ref<string>(), statisticsAvailable=ref(false);
+const statisticsVersion=ref('all'), pageStats=ref<any[]>([]), pageStatsError=ref(false);
+const statisticsNotice=computed(()=>statisticsAvailable.value && statisticsStarted.value
+ ? `统计自 ${new Date(statisticsStarted.value).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})} 启用；此前未统计。仅覆盖支持统计的客户端，成功添加后统计，离线操作联网后同步。`
+ : '统计启用信息暂不可用；历史添加未统计。');
+async function loadPageStatistics(){
+ if(!book.value)return;
+ const id=book.value.id, version=statisticsVersion.value;
+ pageStatsError.value=false;
+ try { const data=await get(`templates/${id}/page-statistics/`,{params:version==='all'?{}:{version}});
+ if(book.value?.id===id && statisticsVersion.value===version){
+ pageStats.value=data.pages;
+ if(version==='all'){const counts=new Map<string,number>(data.pages.map((p:any)=>[p.id,p.count]));pages.value=pages.value.map(p=>({...p,import_count:counts.get(p.id)??0}));}
+ }
+ }catch(e){if(book.value?.id===id){pageStats.value=[];pageStatsError.value=true;}throw e;}
+}
 async function refreshBookRevision(){if(book.value){const data=await get(`templates/${book.value.id}/`);book.value={...book.value,revision:data.revision};}}
 const base = '/api/admin/v1/diary-presets/';
 async function get(path: string, config?: any): Promise<any> { return http.get(base + path, config); }
@@ -83,8 +107,8 @@ async function patch(path: string, body?: any): Promise<any> { return http.patch
 async function put(path: string, body?: any): Promise<any> { return http.put(base + path, body); }
 
 interface Series { id: number; title: string; slug: string; position: number; active: boolean }
-interface Book { id: string; title: string; revision: number; active: boolean; cover_url?: string; page_count: number; series: number; position: number; description: string; current?: number }
-interface Page { id: string; title: string; thumbnail: string; preview?: string }
+interface Book { id: string; title: string; revision: number; active: boolean; cover_url?: string; page_count: number; series: number; position: number; description: string; current?: number; import_statistics?: Record<string, number> | null }
+interface Page { id: string; title: string; thumbnail: string; preview?: string; import_count?: number }
 const series = ref<Series[]>([]), books = ref<Book[]>([]), pages = ref<Page[]>([]);
 const seriesID = ref<number>(), book = ref<Book>(), cover = ref(''), drag = ref(0), error = ref('');
 const loading = ref(false), working = ref(false), dirty = ref(false), query = ref(''), tab = ref('pages');
@@ -101,7 +125,8 @@ const form = ref({ title: '', slug: '', description: '', position: 0, active: tr
 const uploadMode = ref('page'), afterPage = ref('');
 const inputFile = ref<HTMLInputElement>();
 const bookColumns = [
- {title:'手帐',key:'book'}, {title:'页数',dataIndex:'page_count',width:80},
+ {title:'手帐',key:'book',width:260}, {title:'页数',dataIndex:'page_count',width:80},
+ ...[['整本添加','book_count'],['选页添加','selection_count'],['选页累计页数','selected_page_count'],['使用人数','user_count']].map(([title,key])=>({title,key,statKey:key,width:125,sorter:(a:Book,b:Book)=>(a.import_statistics?.[key!] ?? -1)-(b.import_statistics?.[key!] ?? -1)})),
  {title:'状态',key:'state',width:100}, {title:'排序',dataIndex:'position',width:80}, {title:'操作',key:'actions',width:180}
 ];
 function ask(title: string, content: string): Promise<boolean> {
@@ -112,6 +137,8 @@ async function load() {
  loading.value=true;
  try {
   series.value=await get('series/');
+  try {const meta=await get('templates/statistics-metadata/');statisticsStarted.value=meta.started_at;statisticsAvailable.value=true;}catch{statisticsAvailable.value=false;}
+  if(seriesID.value){books.value=await get('templates/',{params:{series:seriesID.value}});if(book.value)await loadPageStatistics();}
   if (series.value.length && !seriesID.value) await chooseSeries(series.value[0]!.id);
  } finally {loading.value=false;}
 }
@@ -125,7 +152,7 @@ async function chooseBook(b: Book) {
  await run(async()=>{
  const data=await get(`templates/${b.id}/pages/`);
  book.value={...b,revision:data.revision};pages.value=data.pages;cover.value=data.cover;
- dirty.value=false;tab.value='pages';await loadHistory();
+ dirty.value=false;tab.value='pages';statisticsVersion.value='all';await loadHistory();await loadPageStatistics();
  });
 }
 async function loadHistory() {
@@ -194,5 +221,5 @@ onMounted(()=>run(load));
 onUnmounted(()=>{if(poll)clearTimeout(poll);uploadClient?.cancel();});
 </script>
 <style scoped>
-.preset-console{min-height:80vh}.workspace{display:flex;gap:20px;margin-top:16px;align-items:flex-start}.series-panel{width:230px;flex-shrink:0}.content-panel{flex:1;min-width:0}.detail-card{margin-top:20px}.book-heading{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:20px 0}.book-heading h2{margin:0 0 8px}.muted{color:#8c8c8c;font-size:12px;margin-top:5px}.pages-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;margin-top:20px}.page-preview{position:relative;height:245px;cursor:zoom-in;background:#fafafa;margin-bottom:12px}.page-preview img{width:100%;height:100%;object-fit:contain}.cover-tag{position:absolute;top:8px;left:8px}.upload-bar{margin:16px 0}.pages-grid .ant-space{margin-top:10px}@media(max-width:900px){.workspace{display:block}.series-panel{width:100%;margin-bottom:16px}.book-heading{display:block}}
+.preset-console{min-height:80vh}.book-name{min-width:210px}.book-name a{overflow-wrap:break-word}.workspace{display:flex;gap:20px;margin-top:16px;align-items:flex-start}.series-panel{width:230px;flex-shrink:0}.content-panel{flex:1;min-width:0}.detail-card{margin-top:20px}.book-heading{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:20px 0}.book-heading h2{margin:0 0 8px}.muted{color:#8c8c8c;font-size:12px;margin-top:5px}.pages-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px;margin-top:20px}.page-preview{position:relative;height:245px;cursor:zoom-in;background:#fafafa;margin-bottom:12px}.page-preview img{width:100%;height:100%;object-fit:contain}.cover-tag{position:absolute;top:8px;left:8px}.upload-bar{margin:16px 0}.pages-grid .ant-space{margin-top:10px}@media(max-width:900px){.workspace{display:block}.series-panel{width:100%;margin-bottom:16px}.book-heading{display:block}}
 </style>

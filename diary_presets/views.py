@@ -33,6 +33,10 @@ class SeriesSerializer(serializers.ModelSerializer):
 
 
 class TemplateSerializer(serializers.ModelSerializer):
+    import_statistics = serializers.SerializerMethodField()
+    def get_import_statistics(self, obj):
+        return self.context.get("import_statistics", {}).get(str(obj.pk))
+
     page_count = serializers.SerializerMethodField()
     cover_url = serializers.SerializerMethodField()
     def get_page_count(self, obj):
@@ -43,7 +47,7 @@ class TemplateSerializer(serializers.ModelSerializer):
         return preview(obj.draft['keys'][page['data']['preview']['thumbnailPath']]) if page else None
     class Meta:
         model = Template
-        fields = ['id', 'series', 'title', 'description', 'position', 'active', 'revision', 'current', 'page_count', 'cover_url']
+        fields = ['id', 'series', 'title', 'description', 'position', 'active', 'revision', 'current', 'page_count', 'cover_url', 'import_statistics']
         read_only_fields = ['id', 'revision', 'current']
 
 
@@ -103,6 +107,44 @@ class TemplateAdmin(TemplateSearchMixin, viewsets.ModelViewSet):
             qs = qs.filter(series_id=self.request.query_params['series'])
         return qs
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['import_statistics'] = getattr(self, '_import_statistics', {})
+        return context
+
+    def list(self, request, *args, **kwargs):
+        from .import_statistics import template_statistics
+        objects = list(self.filter_queryset(self.get_queryset()))
+        self._import_statistics = template_statistics([obj.pk for obj in objects])
+        return Response(self.get_serializer(objects, many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='statistics-metadata')
+    def statistics_metadata(self, request):
+        from .import_statistics import statistics_metadata
+        return Response(statistics_metadata())
+
+    @action(detail=True, methods=['get'], url_path='page-statistics')
+    def page_statistics(self, request, pk=None):
+        from .import_statistics import page_statistics, statistics_metadata
+        obj = self.get_object()
+        number = request.query_params.get('version')
+        if number is not None:
+            try: number = int(number)
+            except (TypeError, ValueError): raise ValidationError('版本号无效')
+            version = get_object_or_404(obj.versions, number=number)
+            versions = [version]
+        else:
+            versions = obj.versions.order_by('number')
+        titles = {}
+        for version in versions:
+            for page in version.snapshot.get('pages', []):
+                titles[page['data']['id']] = page['data']['title']
+        current = {p['data']['id'] for p in obj.draft.get('pages', [])}
+        counts = page_statistics(obj, number)
+        return Response(dict(statistics_metadata(), pages=[
+            dict(id=page_id, title=titles.get(page_id, page_id), count=counts.get(page_id, 0),
+                 removed=page_id not in current) for page_id in sorted(titles.keys() | counts.keys())]))
+
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         obj = lock_template(kwargs['pk'], request.data)
@@ -124,7 +166,9 @@ class TemplateAdmin(TemplateSearchMixin, viewsets.ModelViewSet):
     def pages(self, request, pk=None):
         if request.method == 'GET':
             obj = self.get_object()
-            return Response(dict(revision=obj.revision, pages=[dict(id=p['data']['id'], title=p['data']['title'],
+            from .import_statistics import page_statistics
+            counts = page_statistics(obj)
+            return Response(dict(revision=obj.revision, pages=[dict(id=p['data']['id'], title=p['data']['title'], import_count=counts.get(p['data']['id'], 0),
                 thumbnail=preview(obj.draft['keys'][p['data']['preview']['thumbnailPath']]),
                 preview=preview(obj.draft['keys'][p['data']['preview']['largePath']]))
                 for p in obj.draft.get('pages', [])], cover=obj.draft.get('manifest', {}).get('coverPageID')))

@@ -297,7 +297,7 @@ shutil.copytree(source, destination.split(":", 1)[1], dirs_exist_ok=True)
             ["bash", str(ROOT / "scripts/deploy_sparkservice.sh")],
             env={**self.env, "SRC_DIR": str(source), "SERVER_TEMPLATE_DIR": str(TEMPLATE), "REMOTE_BASE": str(self.base),
                  "REMOTE_HOST": "root@39.106.39.110", "DEPLOY_ENV_FILE": str(source / ".env.production"),
-                 "FRONTEND_DIR": str(frontend), "PYTHON_BIN": sys.executable, **({} if preserve_env else {"SYNC_DEPLOY_ENV": "1"}),
+                 "FRONTEND_DIR": str(frontend), "PYTHON_BIN": sys.executable, "SYNC_DEPLOY_ENV": "0" if preserve_env else "1",
                  "USE_RSYNC": str(use_rsync), "BUILD_FRONTEND_LOCAL": "1", "CANCEL_RUNNING_DEPLOY": "0"},
             capture_output=True, text=True, timeout=40,
         )
@@ -314,7 +314,7 @@ shutil.copytree(source, destination.split(":", 1)[1], dirs_exist_ok=True)
         else:
             self.assertIn("DB_PASSWORD='test-password'", self.active_env.read_text())
 
-    def test_entry_defaults_to_preserving_production_environment(self):
+    def test_entry_can_explicitly_preserve_production_environment(self):
         self.stage.joinpath('candidate.env').unlink()
         self.run_entry_release(use_rsync=1, preserve_env=True)
 

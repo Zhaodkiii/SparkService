@@ -16,10 +16,9 @@ esac
 SERVER_TEMPLATE_DIR="${SERVER_TEMPLATE_DIR:-$SRC_DIR/deployment/server}"
 FRONTEND_DIR="${FRONTEND_DIR:-$SRC_DIR/backoffice-web}"
 REMOTE_BASE="${REMOTE_BASE:-/root/2026}"
-# 日常发版默认保留服务器 .deploy.env，绝不自动同步开发机 .env。
-# 只有明确更新生产配置时才设置 SYNC_DEPLOY_ENV=1，并显式提供生产环境文件。
-DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-}"
-SYNC_DEPLOY_ENV="${SYNC_DEPLOY_ENV:-0}"
+# 保持历史行为：本地 .env 默认参与发布；候选副本按已校验生产目标转换同步身份。
+DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$SRC_DIR/.env}"
+SYNC_DEPLOY_ENV="${SYNC_DEPLOY_ENV:-1}"
 BUILD_FRONTEND_LOCAL="${BUILD_FRONTEND_LOCAL:-1}"
 USE_RSYNC="${USE_RSYNC:-1}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
@@ -60,24 +59,17 @@ done
 if [[ "$USE_RSYNC" == 1 || "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
   command -v rsync >/dev/null || { echo '缺少 rsync。' >&2; exit 2; }
 fi
-for file in docker-compose.yml docker/backend.Dockerfile docker/scripts/backend-entrypoint.sh docker/nginx/backoffice.conf bin/deploy_remote.sh bin/release_checks.py; do
+for file in docker-compose.yml docker/backend.Dockerfile docker/scripts/backend-entrypoint.sh docker/nginx/backoffice.conf bin/deploy_remote.sh bin/release_checks.py bin/prepare_production_env.py; do
   [[ -s "$SERVER_TEMPLATE_DIR/$file" ]] || { echo "缺少服务器模板：$file" >&2; exit 2; }
 done
 bash -n "$SERVER_TEMPLATE_DIR/bin/deploy_remote.sh"
 bash -n "$SERVER_TEMPLATE_DIR/docker/scripts/backend-entrypoint.sh"
 LOCAL_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/sparkservice-release.XXXXXX")"
 if [[ "$SYNC_DEPLOY_ENV" == 1 ]]; then
-  [[ -n "$DEPLOY_ENV_FILE" && -s "$DEPLOY_ENV_FILE" ]] || {
-    echo '同步生产配置必须显式设置 DEPLOY_ENV_FILE 为非空的生产配置文件；不能使用默认本地 .env。' >&2; exit 2;
-  }
-  "$PYTHON_BIN" - "$DEPLOY_ENV_FILE" "$SRC_DIR/.env" <<'PYENV'
-from pathlib import Path
-import sys
-if Path(sys.argv[1]).resolve() == Path(sys.argv[2]).resolve():
-    raise SystemExit('禁止同步项目本地 .env；请单独维护生产配置文件。')
-PYENV
+  [[ -s "$DEPLOY_ENV_FILE" ]] || { echo '发布配置文件不存在或为空。' >&2; exit 2; }
   cp "$DEPLOY_ENV_FILE" "$LOCAL_STAGE/candidate.env"
   chmod 600 "$LOCAL_STAGE/candidate.env"
+  "$PYTHON_BIN" "$SERVER_TEMPLATE_DIR/bin/prepare_production_env.py" "$LOCAL_STAGE/candidate.env"
   "$PYTHON_BIN" "$SERVER_TEMPLATE_DIR/bin/release_checks.py" config "$LOCAL_STAGE/candidate.env"
 else
   echo '配置策略：保留服务器 .deploy.env；本地 .env 不参与发布。'

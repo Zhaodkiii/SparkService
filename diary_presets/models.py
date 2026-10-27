@@ -138,3 +138,39 @@ class ResourceTask(models.Model):
             condition=(models.Q(upload__isnull=False, delivery_job__isnull=True) |
                        models.Q(upload__isnull=True, delivery_job__isnull=False)),
             name='resource_task_one_source')]
+
+
+class PresetStatisticsState(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    started_at = models.DateTimeField(default=timezone.now)
+
+
+class PresetImportEvent(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    operation_id = models.UUIDField()
+    template = models.ForeignKey(Template, on_delete=models.PROTECT, related_name='import_events')
+    version = models.ForeignKey(Version, on_delete=models.PROTECT)
+    mode = models.CharField(max_length=12, choices=[('book', 'Book'), ('selection', 'Selection')])
+    target_book_id = models.UUIDField()
+    completed_at = models.DateTimeField()
+    received_at = models.DateTimeField(auto_now_add=True)
+    payload_digest = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'operation_id'], name='preset_import_operation_unique'),
+            models.CheckConstraint(condition=models.Q(mode__in=['book', 'selection']), name='preset_import_valid_mode'),
+        ]
+        indexes = [models.Index(fields=['template', 'mode', 'received_at'], name='preset_import_stats')]
+
+
+class PresetImportItem(models.Model):
+    event = models.ForeignKey(PresetImportEvent, on_delete=models.CASCADE, related_name='items')
+    source_page_id = models.CharField(max_length=200)
+    target_page_id = models.UUIDField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['event', 'source_page_id'], name='preset_import_source_unique'),
+            models.UniqueConstraint(fields=['event', 'target_page_id'], name='preset_import_target_unique'),
+        ]
