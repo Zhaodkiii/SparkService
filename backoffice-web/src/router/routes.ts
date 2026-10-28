@@ -11,6 +11,8 @@ export const constantRoutes: RouteRecordRaw[] = [
     path: '/',
     component: () => import('../layouts/AdminLayout.vue'),
     children: [
+      { path: '/billing/transactions', name: 'BillingTransactions', component: () => import('../views/BillingTransactionsView.vue'), meta: { title: '交易中心', requiredPermission: 'billing.view_transactions' } },
+      { path: '/billing', name: 'Billing', component: () => import('../views/BillingView.vue'), meta: { title: '收费与权限', requiredPermission: 'billing.view_pricing' } },
       { path: '/support/tickets', component: () => import('../views/SupportTicketsView.vue'), meta: { title: '反馈工单', requiredPermission: 'support_center.view_ticket' } },
       { path: '/support/content', component: () => import('../views/SupportContentView.vue'), meta: { title: '帮助内容', requiredPermission: 'support_center.edit_help' } },
       { path: '/support/config', component: () => import('../views/SupportConfigView.vue'), meta: { title: '反馈服务配置', requiredPermission: 'support_center.manage_config' } },

@@ -1,3 +1,4 @@
+from billing.testing import legacy_free
 import io
 from datetime import timedelta
 from unittest.mock import patch, MagicMock
@@ -26,6 +27,7 @@ class CatalogTests(TestCase):
         response=self.client.patch(self.base+'draft/',{'expected_draft_revision':1,'content':self.content},format='json');self.assertEqual(response.status_code,200,response.data)
         self.publish={'expected_draft_revision':2,'expected_version':0,'idempotency_key':'first'}
         self.assertEqual(self.client.post(self.base+'publish/',self.publish,format='json').status_code,200)
+        legacy_free('sticker_library',MaterialLibrary.objects.get(pk=self.pk))
 
     def test_admin_retains_withdrawn_cover_and_marks_draft_changes(self):
         lib=MaterialLibrary.objects.get(pk=self.pk)

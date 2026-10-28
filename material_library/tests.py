@@ -1,3 +1,4 @@
+from billing.testing import legacy_free
 from unittest.mock import patch
 from django.test import TestCase
 from django.contrib.auth import get_user_model
@@ -19,6 +20,7 @@ class LibraryTests(TestCase):
         material=Material.objects.create(source_identity='suzhou:note',material_type='sticker')
         self.r=revision(material,dict(name='空白便签',kind='paper',subcategory='note',keywords=['纸卡'],aliases=['便条'],resource_id=blob.pk,thumbnail_id=blob.pk,sources=[]))
         self.v=publish_library(self.lib,[self.r],0)
+        legacy_free('sticker_library',self.lib)
 
     def test_publication_idempotent_and_conflict(self):
         self.assertEqual(publish_library(self.lib,[self.r],1).pk,self.v.pk)

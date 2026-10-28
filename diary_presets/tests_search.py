@@ -1,3 +1,4 @@
+from billing.testing import legacy_free
 from copy import deepcopy
 from unittest.mock import patch
 from django.contrib.auth import get_user_model
@@ -38,6 +39,7 @@ class SearchTests(TestCase):
             SearchTaxon.objects.create(id=key,name=name,dimension=dim,parent_id=parent,aliases=aliases)
         self.template=Template.objects.create(title='苏州园林合集',series=self.series,draft=fixture())
         publish(self.template,self.admin)
+        legacy_free('template',self.template)
         self.client=APIClient();self.client.force_authenticate(self.user)
     def search(self,q='',**params):return self.client.get('/api/v1/diary-presets/search/',{'kind':'spread','q':q,**params})
     def test_city_theme_and_specific_place(self,_):

@@ -48,6 +48,8 @@ def mutate(pk, actor, action, data, key, admin=False):
         if old.digest != digest or old.action != action: raise Conflict('幂等键已用于其他操作')
         return obj
     if data.get('expected_revision') != obj.revision: raise Conflict('资料已被其他操作更新；已保留你的输入，请先刷新并对比最新内容')
+    if action in ('cancel','reject','delete','edit','submit') and obj.diamond_fundings.exclude(status__in=['rejected','price_changed','refunded']).exists():
+        raise Conflict('该需求有待确认或已付款的钻石订单，请先完成付款核验及售后处理')
     message = data.get('message','')
     if not isinstance(message,str) or len(message)>3000: raise ValidationError('说明最多 3000 字')
     details = {}
@@ -100,6 +102,10 @@ def mutate(pk, actor, action, data, key, admin=False):
             if not sub: raise ValidationError('请选择制作依据')
             if not latest or sub.pk!=latest.pk: raise Conflict('请选择最新提交；历史资料仅供对照和下载')
             if obj.status=='in_production' and obj.accepted_submission_id==sub.pk: raise Conflict('该提交已经是当前制作依据')
+            if obj.billing_quotes.exists():
+                from billing.models import CustomizationFunding
+                if not CustomizationFunding.objects.filter(request=obj,status='funded',quote__scope_snapshot__submission_id=str(sub.pk)).exists():
+                    raise Conflict('数字定制尚未完成付款，不能开始制作')
             was_producing=obj.status=='in_production'
             obj.accepted_submission=sub; obj.assigned_to=actor; obj.status='in_production'
             obj.jobs.filter(kind='delivery',status__in=['uploading','queued','processing']).exclude(submission=sub).update(status='abandoned',error='制作依据已更新，请重新制作并上传',lease=None,lease_until=None)

@@ -175,6 +175,7 @@
         @close="w.success.value = ''"
       />
       <template v-if="d">
+        <CustomizationBillingPanel :request-id="d.id" :status="d.status" />
         <div class="workspace-head">
           <div>
             <div class="eyebrow">
@@ -805,6 +806,7 @@
   </main>
 </template>
 <script setup lang="ts">
+import CustomizationBillingPanel from '../components/billing/CustomizationBillingPanel.vue';
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import dayjs, { type Dayjs } from "dayjs";
 import { onBeforeRouteLeave } from "vue-router";

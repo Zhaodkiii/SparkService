@@ -1,3 +1,4 @@
+from billing.testing import legacy_free
 from copy import deepcopy
 from unittest.mock import patch
 from django.contrib.auth import get_user_model
@@ -24,6 +25,7 @@ class PresetTests(TestCase):
         self.series=Series.objects.create(slug='islands',title='海岛')
         self.template=Template.objects.create(series=self.series,title='test',draft=snapshot())
         publish(self.template,self.admin)
+        legacy_free('template',self.template)
         self.client=APIClient()
 
     def test_partial_closure_excludes_other_page(self):
@@ -36,6 +38,7 @@ class PresetTests(TestCase):
         old=self.template.current
         self.template.draft=select(self.template.draft,['b'])
         publish(self.template,self.admin)
+        legacy_free('template',self.template)
         old.refresh_from_db()
         self.assertEqual(len(old.snapshot['pages']),2)
         self.assertEqual(self.template.current.number,2)
@@ -100,6 +103,7 @@ class BrowseTests(TestCase):
             page['data']['preview'] = {'thumbnailPath': 'shared.png', 'largePath': 'shared.png'}
         self.template = Template.objects.create(series=series, title='Browse', draft=snap)
         publish(self.template, self.user)
+        legacy_free('template',self.template)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.url = f'/api/v1/diary-presets/templates/{self.template.id}/1/browse/'
@@ -147,6 +151,7 @@ class BrowseTests(TestCase):
         first = self.client.get(self.url)
         self.template.title = 'Second version'
         publish(self.template, self.user)
+        legacy_free('template',self.template)
         second = self.client.get(self.url.replace('/1/', '/2/'), HTTP_IF_NONE_MATCH=first['ETag'])
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.data['title'], 'Second version')

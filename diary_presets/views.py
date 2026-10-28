@@ -436,6 +436,8 @@ class Detail(APIView):
 
     def get(self, request, pk, number):
         version = visible_version(request.user, pk, number)
+        from billing.access import require_content
+        if version.template.audience == 'public': require_content(request, 'template', pk)
         snap = version.snapshot
         return Response(dict(manifest=snap['manifest'], page_data=[p['data'] for p in snap['pages']], pages=[dict(id=p['data']['id'], title=p['data']['title'],
             thumbnail_url=preview(snap['keys'][p['data']['preview']['thumbnailPath']]),
@@ -443,6 +445,8 @@ class Detail(APIView):
 
     def post(self, request, pk, number):
         version = visible_version(request.user, pk, number)
+        from billing.access import require_content
+        if version.template.audience == 'public': require_content(request, 'template', pk)
         ids = request.data.get('page_ids')
         selection = request.data.get('selection')
         if selection is not None:
@@ -471,6 +475,8 @@ class PlanURLs(APIView):
     def post(self, request, pk):
         plan = get_object_or_404(DownloadPlan, pk=pk, owner=request.user)
         authorize(request.user, plan.version)
+        from billing.access import require_content
+        if plan.version.template.audience == 'public': require_content(request, 'template', plan.version.template_id)
         if plan.expires_at <= timezone.now():
             plan.expires_at = timezone.now() + timedelta(days=7)
             plan.save(update_fields=['expires_at'])

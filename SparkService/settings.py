@@ -222,6 +222,7 @@ INSTALLED_APPS = [
     'material_library',
     'notification_center',
     'backoffice',
+    'billing',
 ]
 
 MIDDLEWARE = [
@@ -650,3 +651,26 @@ MATERIAL_SYNC_KEY_ID = os.getenv('MATERIAL_SYNC_KEY_ID', '')
 MATERIAL_SYNC_SECRET = os.getenv('MATERIAL_SYNC_SECRET', '')
 MATERIAL_SYNC_ACCEPTED_KEYS = json.loads(os.getenv('MATERIAL_SYNC_ACCEPTED_KEYS', '{}'))
 CELERY_BEAT_SCHEDULE['material-sync-recovery'] = {'task': 'material_library.tasks.recover_sync_tasks', 'schedule': 30.0}
+
+# Diamond billing: server credentials never leave this process.
+REVENUECAT_PROJECT_ID = os.getenv('REVENUECAT_PROJECT_ID', '39ff8161')
+REVENUECAT_APP_ID = os.getenv('REVENUECAT_APP_ID', 'app1a3fe5aada')
+REVENUECAT_MEMBER_ENTITLEMENT_ID = os.getenv('REVENUECAT_MEMBER_ENTITLEMENT_ID', 'entlbddbd128dd')
+REVENUECAT_V2_SECRET = os.getenv('REVENUECAT_V2_SECRET', '')
+REVENUECAT_PUBLIC_KEY = os.getenv('REVENUECAT_PUBLIC_KEY', '')
+REVENUECAT_WEBHOOK_AUTH = os.getenv('REVENUECAT_WEBHOOK_AUTH', '')
+REVENUECAT_CONFIRMED_REPLAY_SECONDS = int(os.getenv('REVENUECAT_CONFIRMED_REPLAY_SECONDS', '0'))
+BILLING_BUNDLE_ID = 'cn.zhaodk.TravelDiary'
+BILLING_APPLE_APP_ID = 6824512234
+BILLING_APPLE_ROOTS_DIR = BASE_DIR / 'billing' / 'certificates'
+DIAMOND_RECHARGE_ENABLED = os.getenv('DIAMOND_RECHARGE_ENABLED', 'false').lower() == 'true'
+DIAMOND_REDEMPTION_ENABLED = os.getenv('DIAMOND_REDEMPTION_ENABLED', 'false').lower() == 'true'
+DIAMOND_CUSTOMIZATION_ENABLED = os.getenv('DIAMOND_CUSTOMIZATION_ENABLED', 'false').lower() == 'true'
+MEMBERSHIP_SALES_ENABLED = os.getenv('MEMBERSHIP_SALES_ENABLED', 'false').lower() == 'true'
+
+CELERY_BEAT_SCHEDULE['billing-recovery'] = {'task': 'billing.tasks.process_pending', 'schedule': 30.0}
+
+BILLING_SANDBOX_SALES_ENABLED = os.getenv('BILLING_SANDBOX_SALES_ENABLED', 'false').lower() == 'true'
+
+# Explicitly enabled only on the local test server; never copy into production.
+BILLING_TEST_POLICY_CHANGES_ENABLED = os.getenv('BILLING_TEST_POLICY_CHANGES_ENABLED', 'false').lower() == 'true'

@@ -67,7 +67,7 @@ def detail(obj,admin=False):
             photo={**(asset_json(asset,False) if asset else {'available':False}),**saved,'position':saved.get('position',index)}
             photos.append(photo)
         resolved.append(dict(id=sub.pk,number=sub.number,snapshot=sub.snapshot,created_at=sub.created_at,resolved_assets=photos))
-    value=dict(id=str(obj.pk),number='C'+obj.created_at.strftime('%Y%m%d')+'-'+obj.pk.hex[:8].upper(),
+    value=dict(billing_quote_available=obj.billing_quotes.exists(),id=str(obj.pk),number='C'+obj.created_at.strftime('%Y%m%d')+'-'+obj.pk.hex[:8].upper(),
         title=obj.title,brief=obj.brief,status=obj.status,revision=obj.revision,created_at=obj.created_at,
         updated_at=obj.updated_at,due_at=obj.due_at,event_sequence=obj.event_sequence,
         last_read_sequence=obj.last_read_sequence,unread=obj.event_sequence>obj.last_read_sequence,

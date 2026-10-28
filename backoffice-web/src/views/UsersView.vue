@@ -115,6 +115,7 @@
   <AdminDetailModal v-model:open="detailModal.open" title="用户详情" :loading="detailModal.loading" width="1100px">
     <template v-if="detailModal.data">
       <div style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: flex-end">
+        <router-link v-if="auth.hasPermission('billing.view_transactions')" :to="{path: '/billing/transactions', query: {account: detailModal.data.user.id}}">查看资产与交易</router-link>
         <a-button v-if="showGrantPro" type="primary" @click="openGrant">发放 Pro</a-button>
         <a-button v-if="showRecyclePro" danger @click="openRecycle">回收 Pro</a-button>
       </div>

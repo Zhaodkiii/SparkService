@@ -23,3 +23,5 @@ gunicorn>=23.0,<24.0
 
 oss2>=2.19,<3
 Pillow>=11,<13
+
+app-store-server-library>=3,<4

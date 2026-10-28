@@ -160,6 +160,8 @@ class Download(AuthView):
             qs = qs.filter(version_id=F('version__library__current_id'))
         item = qs.first()
         if item is None: raise ValidationError('素材不可用，请刷新目录')
+        from billing.access import require_content
+        require_content(request, 'sticker_library', item.version.library_id)
         r = item.revision.resource
         result = dict(url=sign(r.object_key), sha256=r.pk, byte_size=r.byte_size)
         if request.query_params.get('schema') == '2':

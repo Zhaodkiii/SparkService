@@ -177,11 +177,13 @@ const menus = computed(() => {
   const supportChildren=[['tickets','反馈工单','view_ticket'],['content','帮助内容','edit_help'],['config','服务配置','manage_config']].filter(([, ,permission])=>auth.hasPermission('support_center.'+permission)).map(([path,name])=>({code:'menu:support:'+path,name:name!,path:'/support/'+path,children:[]}));
   const source = [...(auth.menus.length ? auth.menus : fallbackMenus)];
   if(supportChildren.length&&!source.some(m=>m.path==='/support')) source.push({code:'menu:support',name:'帮助与反馈',path:'/support',children:supportChildren});
+  if(auth.hasPermission('billing.view_transactions')&&!source.some(m=>m.path==='/billing/transactions')) source.push({code:'menu:transactions',name:'交易中心',path:'/billing/transactions',children:[]});
   if (auth.user?.is_superuser) {
-    return [...source, { code: 'menu:materials', name: '素材管理', path: '/materials', children: [] }, { code: 'menu:print-payments', name: '支付管理', path: '/print-payments', children: [] }, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
+    return [...source, { code: 'menu:billing', name: '收费与权限', path: '/billing', children: [] }, { code: 'menu:materials', name: '素材管理', path: '/materials', children: [] }, { code: 'menu:print-payments', name: '支付管理', path: '/print-payments', children: [] }, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
   }
   if(['view_paymentattempt','query_payment','refund_order','change_paymentchannel'].some(p=>auth.hasPermission('print_orders.'+p))&&!source.some(m=>m.path==='/print-payments')) source.push({code:'menu:print-payments',name:'支付管理',path:'/print-payments',children:[]});
   if(auth.hasPermission('print_orders.change_order')&&!source.some(m=>m.path==='/print-orders')) source.push({code:'menu:print-orders',name:'印制订单',path:'/print-orders',children:[]});
+  if(auth.hasPermission('billing.view_pricing')&&!source.some(m=>m.path==='/billing')) source.push({code:'menu:billing',name:'收费与权限',path:'/billing',children:[]});
   const result=source.filter((item) => item.code !== 'menu:conversations');
   if (['diary_presets.change_template','material_library.view_materiallibrary','material_library.change_materiallibrary','material_library.publish_materiallibrary','material_library.takedown_materiallibrary'].some(p=>auth.hasPermission(p)) && !result.some(item=>item.path==='/materials')) result.push({ code: 'menu:materials', name: '素材管理', path: '/materials', children: [] });
   if (auth.hasPermission('diary_presets.change_template') && !result.some(item=>item.path==='/diary-customizations')) {
