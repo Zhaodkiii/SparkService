@@ -76,6 +76,19 @@ def bootstrap_admin_permissions() -> None:
     )
 
     defaults = [
+        ("font_library.sync_fontfamily", "字体同步生产", "button", "", "menu:content:fonts"),
+        ("font_library.view_fontfamily", "查看字体", "button", "", "menu:content:fonts"),
+        ("font_library.change_fontfamily", "编辑字体", "button", "", "menu:content:fonts"),
+        ("font_library.upload_fontfamily", "上传字体", "button", "", "menu:content:fonts"),
+        ("font_library.publish_fontfamily", "发布字体", "button", "", "menu:content:fonts"),
+        ("font_library.takedown_fontfamily", "上下架字体", "button", "", "menu:content:fonts"),
+
+        ("menu:content", "内容资源", "menu", "/content", ""),
+        ("menu:content:templates", "模板管理", "menu", "/content/templates", "menu:content"),
+        ("menu:content:stickers", "贴纸管理", "menu", "/content/stickers", "menu:content"),
+        ("menu:content:backgrounds", "背景管理", "menu", "/content/backgrounds", "menu:content"),
+        ("menu:content:fonts", "字体管理", "menu", "/content/fonts", "menu:content"),
+
         ("menu:dashboard", "仪表盘", "menu", "/dashboard", ""),
         ("menu:tasks", "异步任务", "menu", "/tasks", ""),
         ("menu:tasks:dashboard", "异步任务看板", "menu", "/tasks", "menu:tasks"),

@@ -26,8 +26,9 @@ class Gone(APIException):
     default_detail = '内容已下架或分页已过期，请刷新'
 
 
-def public_libraries():
-    return MaterialLibrary.objects.filter(Q(template__isnull=True) | Q(template__audience='public'))
+def public_libraries(include_deleted=False):
+    qs = MaterialLibrary.objects.filter(Q(template__isnull=True) | Q(template__audience='public'))
+    return qs if include_deleted else qs.filter(deleted_at__isnull=True)
 
 
 def blob_json(blob):
@@ -123,9 +124,19 @@ class LibrariesV2(AuthView):
         qs = public_libraries().filter(favorites__user=request.user) if mine else visible()
         qs = qs.select_related('template__series', 'current')
         if typ := request.query_params.get('type'): qs = qs.filter(library_type=typ)
-        if template := request.query_params.get('template'):
-            from rest_framework import serializers
-            qs = qs.filter(template_id=serializers.UUIDField().run_validation(template))
+        template = request.query_params.get('template')
+        requested_version = request.query_params.get('template_version')
+        bound_versions = {}
+        if template:
+            template = serializers.UUIDField().run_validation(template)
+            from diary_presets.models import Template
+            book = get_object_or_404(Template, pk=template, audience='public', active=True, series__active=True)
+            version_number = positive_version(requested_version) if requested_version else (book.current.number if book.current_id else None)
+            bindings = TemplateLibraryBinding.objects.filter(preset_version__template=book, preset_version__number=version_number)
+            bound_versions = {b.library_version.library_id: b.library_version for b in bindings.select_related('library_version')}
+            qs = qs.filter(pk__in=bound_versions)
+        elif requested_version:
+            raise ValidationError('template_version 必须同时提供 template')
         terms=query_terms(request)
         for term in terms:
             qs = qs.filter(Q(title__icontains=term) | Q(current__content__description__icontains=term) | Q(current__content__tags__icontains=term))
@@ -138,12 +149,8 @@ class LibrariesV2(AuthView):
         if terms:
             term=terms[0]
             qs=qs.annotate(search_rank=Case(When(title__iexact=term,then=Value(0)),When(title__istartswith=term,then=Value(1)),default=Value(2),output_field=IntegerField())).order_by('search_rank','id')
-        version = positive_version(request.query_params['template_version']) if request.query_params.get('template_version') else None
         def serialize(lib):
-            binding = TemplateLibraryBinding.objects.filter(preset_version__template_id=lib.template_id,preset_version__number=version,library_type=lib.library_type).select_related('library_version').first() if version else None
-            v = binding.library_version if binding else lib.versions.filter(preset_version__number=version).order_by('-number').first() if version else lib.current
-            return library_json(lib,request.user,v)
-        if version: qs = qs.filter(Q(versions__template_bindings__preset_version__number=version) | Q(versions__preset_version__number=version)).distinct()
+            return library_json(lib, request.user, bound_versions.get(lib.pk))
         return Response(paginate(request, qs, serialize, 'libraries'))
 
 

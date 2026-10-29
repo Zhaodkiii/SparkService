@@ -49,3 +49,13 @@ urlpatterns += [
  path('manage/sync-tasks/<uuid:pk>/confirm/',sync.SourceConfirm.as_view()),
  path('manage/sync-tasks/<uuid:pk>/retry/',sync.SourceRetry.as_view()),
 ]
+
+from . import lifecycle_api as lifecycle
+urlpatterns += [
+ path('manage/templates/<uuid:template>/links/', lifecycle.TemplateLinks.as_view()),
+ path('manage/libraries/<uuid:pk>/links/', lifecycle.LibraryLinks.as_view()),
+ path('manage/libraries/<uuid:pk>/deletion-preview/', lifecycle.DeletionPreview.as_view()),
+ path('manage/libraries/<uuid:pk>/recycle/', lifecycle.Recycle.as_view()),
+ path('manage/cleanup/', lifecycle.CleanupScan.as_view()),
+ path('manage/cleanup/<uuid:pk>/execute/', lifecycle.CleanupExecute.as_view()),
+]

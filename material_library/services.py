@@ -26,6 +26,7 @@ def publish_library(library, revisions, expected):
     actual = library.current.number if library.current_id else 0
     if expected != actual:
         raise ValidationError('库已更新，请刷新后重新提交')
+    if library.deleted_at: raise ValidationError('素材包已删除，请先恢复')
     if not library.template.current_id:
         raise ValidationError('请先发布手帐预设')
     if len({r.material_id for r in revisions}) != len(revisions):
@@ -37,7 +38,8 @@ def publish_library(library, revisions, expected):
         return library.current
     version = LibraryVersion.objects.create(library=library, number=actual + 1, preset_version=library.template.current)
     LibraryItem.objects.bulk_create([LibraryItem(version=version, revision=r, material=r.material, position=i) for i, r in enumerate(revisions)])
-    TemplateLibraryBinding.objects.get_or_create(preset_version=library.template.current, library_type=library.library_type, defaults={'library_version':version})
+    from .models import TemplateMaterialLink
+    TemplateMaterialLink.objects.filter(library=library, library_version__isnull=True).update(library_version=version)
     library.current = version
     from django.utils import timezone
     if library.first_published_at is None: library.first_published_at=timezone.now()

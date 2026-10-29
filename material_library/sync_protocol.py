@@ -44,7 +44,7 @@ def revision_key(row):
 def snapshot_for(library):
     if library.template_id or library.library_type != 'sticker':
         raise SyncError('UNSUPPORTED_LIBRARY', '首期仅支持独立贴纸包')
-    if not library.current_id or not library.active:
+    if library.deleted_at or not library.current_id or not library.active:
         raise SyncError('SOURCE_UNAVAILABLE', '请先发布并上架素材包')
     version = library.current
     rows = list(version.items.select_related('revision__resource','revision__thumbnail','material').order_by('position','id'))
@@ -177,7 +177,7 @@ def inspect_target(s):
     validate_snapshot(s)
     lib=MaterialLibrary.objects.filter(pk=s['library_id']).select_related('current').first()
     if lib:
-        if not lib.active:raise SyncError('TARGET_WITHDRAWN','生产素材包已下架，请先在生产处理')
+        if lib.deleted_at or not lib.active:raise SyncError('TARGET_WITHDRAWN','生产素材包已下架，请先在生产处理')
         if lib.template_id or lib.library_type!='sticker':raise SyncError('MATERIAL_IDENTITY_CONFLICT','目标包类型或归属不同')
         d=LibraryDraft.objects.filter(library=lib).first()
         if d and (not lib.current_id or d.content!=lib.current.content):raise SyncError('TARGET_DRAFT_CONFLICT','生产存在未发布草稿')

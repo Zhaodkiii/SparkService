@@ -49,7 +49,14 @@ def publish(offer_id,actor,expected_draft_hash):
     if expected_draft_hash!=digest(draft.body): raise BillingError('DRAFT_CHANGED','收费草稿已变化，请重新查看影响后发布')
     previous=offer.current_policy_revision
     if (previous.revision if previous else 0)!=draft.expected_base_revision: raise BillingError('PRICE_CHANGED','草稿基于旧策略版本，请刷新后重新编辑并保存')
-    if not target_available(offer): raise BillingError('CONTENT_UNAVAILABLE')
+    if offer.target_kind == 'font':
+        # Stage an offer before the first font release, without making it redeemable.
+        from font_library.models import FontFamily
+        from font_library.services import issues
+        font=FontFamily.objects.get(pk=offer.target_id)
+        problems,_=issues(font,font.fontdraft.content,policy=False)
+        if problems: raise BillingError('CONTENT_UNAVAILABLE','；'.join(problems))
+    elif not target_available(offer): raise BillingError('CONTENT_UNAVAILABLE')
     form=PolicyInput(data=draft.body);form.is_valid(raise_exception=True);body=form.validated_data
     if body['access_mode'] in ('diamond_only','pro_or_diamond') and not settings.DIAMOND_REDEMPTION_ENABLED:
         raise BillingError('SALES_DISABLED','钻石兑换验收完成并开放后才能发布收费策略')

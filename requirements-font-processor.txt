@@ -1,0 +1,4 @@
+# Install only on independent operator host, not the bandwidth-limited API host.
+requests>=2.32,<3
+fonttools>=4.60,<5
+Pillow>=11,<13

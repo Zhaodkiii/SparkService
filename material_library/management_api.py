@@ -13,7 +13,7 @@ from rest_framework import serializers
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from diary_presets.storage import prefix
 from rest_framework.permissions import BasePermission
 
@@ -21,10 +21,15 @@ class MaterialAdminPermission(BasePermission):
     def has_permission(self,request,view):
         user=request.user
         if not user or not user.is_active: return False
+        if view.__class__.__name__ in ('Recycle', 'CleanupScan', 'CleanupExecute') and request.method != 'GET':
+            return user.is_superuser or user.has_perm('material_library.delete_materiallibrary')
         if user.is_superuser or user.has_perm("diary_presets.change_template"): return True
         action = "view_materiallibrary" if request.method == "GET" else "change_materiallibrary"
         if view.__class__.__name__ in ("Publish", "Validate"): action = "publish_materiallibrary"
         if view.__class__.__name__ in ("Availability","MaterialAvailability"): action = "takedown_materiallibrary"
+        if view.__class__.__name__ in ('Recycle', 'CleanupScan', 'CleanupExecute'): action = 'delete_materiallibrary'
+        if view.__class__.__name__ in ('LibraryLinks', 'TemplateLinks') and request.method != 'GET':
+            return user.has_perm('material_library.change_materiallibrary') and user.has_perm('diary_presets.change_template')
         return user.has_perm("material_library."+action)
 from .views import AuthView, item_json
 from .catalog_v2 import Conflict, blob_json, public_libraries
@@ -103,14 +108,15 @@ def admin_library_json(lib, user):
     from .sync_protocol import sync_summary
     content = lib.current.content if lib.current_id else {}
     draft = getattr(lib, 'draft', None)
-    cover = ResourceBlob.objects.filter(pk=content.get('cover')).first()
+    cover = lib._list_cover if hasattr(lib, '_list_cover') else ResourceBlob.objects.filter(pk=content.get('cover')).first()
     total = lib.total_members if hasattr(lib, 'total_members') else (lib.current.items.count() if lib.current_id else 0)
     effective = lib.effective_members if hasattr(lib, 'effective_members') else (lib.current.items.filter(material__active=True).count() if lib.current_id else 0)
-    template_enabled = not lib.template_id or (lib.template.active and lib.template.series.active)
+    template_enabled = not lib.template_id or lib.template.audience == 'public'
     available = bool(lib.current_id and lib.active and template_enabled)
     reason = ('尚未发布' if not lib.current_id else '素材包已下架' if not lib.active else
               '关联模板或系列已停用' if not template_enabled else '待完善封面与展示信息' if not content else '')
     return dict(
+        deleted_at=lib.deleted_at, deletion_reason=lib.deletion_reason,
         id=str(lib.pk), title=content.get('title',lib.title), type=lib.library_type,
         production_sync=sync_summary(lib) if user.has_perm('material_library.sync_materiallibrary') else None,
         template_id=str(lib.template_id) if lib.template_id else None,
@@ -134,13 +140,31 @@ def admin_library_json(lib, user):
 def admin_page(request, rows, serialize):
     # Opt-in pagination preserves existing administrative integrations.
     if request.query_params.get('paged') != '1':
-        return Response([serialize(row) for row in rows[:500]])
+        page_rows = list(rows[:500])
+        prepare_library_rows(page_rows)
+        return Response([serialize(row) for row in page_rows])
     page = serializers.IntegerField(min_value=1).run_validation(request.query_params.get('page', 1))
     size = serializers.IntegerField(min_value=1, max_value=100).run_validation(request.query_params.get('page_size', 20))
     pager = Paginator(rows, size)
     current = pager.get_page(page)
-    return Response(dict(items=[serialize(row) for row in current.object_list], total=pager.count,
+    page_rows = list(current.object_list)
+    prepare_library_rows(page_rows)
+    return Response(dict(items=[serialize(row) for row in page_rows], total=pager.count,
                          page=current.number, page_size=size))
+
+
+def prepare_library_rows(rows):
+    if not rows or not isinstance(rows[0], MaterialLibrary): return
+    counts = {row['version_id']:row for row in LibraryItem.objects.filter(version_id__in=[r.current_id for r in rows]).values('version_id').annotate(total=Count('pk'), effective=Count('pk',filter=Q(material__active=True)))}
+    covers = {b.pk:b for b in ResourceBlob.objects.filter(pk__in=[r.current.content.get('cover') for r in rows if r.current_id])}
+    tasks = {}
+    for task in MaterialSyncTask.objects.filter(side='source', library_uuid__in=[r.pk for r in rows]).defer('snapshot').order_by('-created_at','-id'):
+        tasks.setdefault(task.library_uuid, task)
+    for row in rows:
+        row.total_members = counts.get(row.current_id, {}).get('total',0)
+        row.effective_members = counts.get(row.current_id, {}).get('effective',0)
+        row._list_cover = covers.get(row.current.content.get('cover')) if row.current_id else None
+        row._list_sync_task = tasks.get(row.pk)
 
 
 class Options(Admin):
@@ -148,6 +172,8 @@ class Options(Admin):
         user = request.user
         legacy = user.is_superuser or user.has_perm('diary_presets.change_template')
         return Response(dict(user_id=user.pk, uploads_enabled=upload_status()[0],upload_unavailable_reason=upload_status()[1],
+            can_delete=user.is_superuser or user.has_perm('material_library.delete_materiallibrary'),
+            can_link=legacy or (user.has_perm('material_library.change_materiallibrary') and user.has_perm('diary_presets.change_template')),
             can_edit=legacy or user.has_perm('material_library.change_materiallibrary'),
             can_publish=legacy or user.has_perm('material_library.publish_materiallibrary'),
             can_takedown=legacy or user.has_perm('material_library.takedown_materiallibrary')))
@@ -160,17 +186,18 @@ class Templates(Admin):
         if q := request.query_params.get('q'): qs = qs.filter(title__icontains=q)
         typ = request.query_params.get('type', 'sticker')
         if typ not in ('sticker', 'background'): raise ValidationError('无效类型')
-        qs = qs.exclude(material_libraries__library_type=typ).order_by('title','id')
+        if request.query_params.get('include_linked') != '1':
+            qs = qs.exclude(material_links__library_type=typ, material_links__library__isnull=False)
+            qs = qs.exclude(Q(material_libraries__library_type=typ) & ~Q(material_links__library_type=typ))
+        qs = qs.order_by('title','id')
         return admin_page(request, qs, lambda t: dict(id=str(t.pk), title=t.title,
             series=t.series.title, version=t.current.number if t.current_id else 0, active=t.active))
 
 
 class Libraries(Admin):
     def get(self,request):
-        qs=public_libraries().select_related('template__series','current','draft__actor').annotate(
-            total_members=Count('current__items',distinct=True),
-            effective_members=Count('current__items',filter=Q(current__items__material__active=True),distinct=True)
-        ).order_by('sort_order','id')
+        qs=public_libraries(include_deleted=request.query_params.get('recycle') == '1').select_related('template__series','current','draft__actor').order_by('sort_order','id')
+        if request.query_params.get('recycle') == '1': qs=qs.filter(deleted_at__isnull=False)
         if q:=request.query_params.get('q'): qs=qs.filter(title__icontains=q)
         if t:=request.query_params.get('type'):
             if t not in ('sticker','background'): raise ValidationError('无效类型')
@@ -192,10 +219,14 @@ class Libraries(Admin):
         template=None
         if request.data.get('template_id'):
             from diary_presets.models import Template
-            template=get_object_or_404(Template,pk=serializers.UUIDField().run_validation(request.data['template_id']),audience='public')
-            if MaterialLibrary.objects.filter(template=template,library_type=typ).exists(): raise Conflict('模板已有关联主库')
-        lib=MaterialLibrary.objects.create(title=title,library_type=typ,template=template)
+            if not (request.user.is_superuser or request.user.has_perm('diary_presets.change_template')): raise PermissionDenied('缺少整本手帐关联权限')
+            template=get_object_or_404(Template.objects.select_for_update(),pk=serializers.UUIDField().run_validation(request.data['template_id']),audience='public')
+            if TemplateMaterialLink.objects.filter(template=template,library_type=typ,library__isnull=False).exists(): raise Conflict('模板已有关联主库')
+        lib=MaterialLibrary.objects.create(title=title,library_type=typ)
         LibraryDraft.objects.create(library=lib,content=draft_content(lib),actor=request.user)
+        if template:
+            old=TemplateMaterialLink.objects.filter(template=template,library_type=typ).first()
+            TemplateMaterialLink.objects.update_or_create(template=template, library_type=typ, defaults={'library':lib, 'library_version':None, 'actor':request.user,'revision':old.revision+1 if old else 1})
         audit(request,lib,'create',{})
         return Response(admin_library_json(lib,request.user),status=201)
 
@@ -209,7 +240,7 @@ class Draft(Admin):
         latest = {}
         for row in MaterialRevision.objects.filter(material_id__in=[r.material_id for r in rows], material__active=True).select_related('resource','thumbnail','material').order_by('-pk'):
             latest.setdefault(str(row.material_id), item_json(type('Item',(),{'revision':row})(),request.user))
-        bindings = list(TemplateLibraryBinding.objects.filter(library_version__library=lib).values('preset_version__number','library_version__number'))
+        bindings = list(TemplateLibraryBinding.objects.filter(library_version__library=lib).values('preset_version__template__title','preset_version__template_id','preset_version__number','library_version__number'))
         return Response(dict(latest_items=list(latest.values()),bindings=bindings,uploads_enabled=upload_status()[0],upload_unavailable_reason=upload_status()[1],content=d.content,revision=d.revision,base_version=d.base_version,items=[item_json(type('Item',(),{'revision':r})(),request.user) for r in rows],images=previews))
     @transaction.atomic
     def patch(self,request,pk):
@@ -251,8 +282,7 @@ class Publish(Admin):
         v=LibraryVersion.objects.create(library=lib,number=actual+1,preset_version=lib.template.current if lib.template_id else None,content=content)
         rows={r.pk:r for r in MaterialRevision.objects.filter(pk__in=[i['revision'] for i in content['items']])}
         LibraryItem.objects.bulk_create([LibraryItem(version=v,revision=rows[i['revision']],material_id=rows[i['revision']].material_id,position=n) for n,i in enumerate(content['items'])])
-        if lib.template_id:
-            TemplateLibraryBinding.objects.get_or_create(preset_version=lib.template.current,library_type=lib.library_type,defaults={'library_version':v})
+        TemplateMaterialLink.objects.filter(library=lib, library_version__isnull=True).update(library_version=v)
         lib.current=v;lib.title=content['title'];lib.state_revision+=1
         if lib.first_published_at is None: lib.first_published_at=timezone.now()
         lib.save()

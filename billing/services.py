@@ -27,6 +27,9 @@ def owns(identity,offer):
     return ContentOwnership.objects.filter(identity=identity,target_kind=offer.target_kind,target_id=offer.target_id,state='active').exists()
 
 def target_available(offer):
+    if offer.target_kind == "font":
+        from font_library.models import FontFamily
+        return FontFamily.objects.filter(pk=offer.target_id,active=True,current__isnull=False).exists()
     if offer.target_kind == 'template':
         from diary_presets.models import Template
         return Template.objects.filter(pk=offer.target_id,active=True,audience='public',series__active=True,current__isnull=False).exists()

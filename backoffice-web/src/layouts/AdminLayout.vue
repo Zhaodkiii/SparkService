@@ -173,7 +173,7 @@ const fallbackMenus = [
   },
 ];
 
-const menus = computed(() => {
+const legacyMenus = computed(() => {
   const supportChildren=[['tickets','反馈工单','view_ticket'],['content','帮助内容','edit_help'],['config','服务配置','manage_config']].filter(([, ,permission])=>auth.hasPermission('support_center.'+permission)).map(([path,name])=>({code:'menu:support:'+path,name:name!,path:'/support/'+path,children:[]}));
   const source = [...(auth.menus.length ? auth.menus : fallbackMenus)];
   if(supportChildren.length&&!source.some(m=>m.path==='/support')) source.push({code:'menu:support',name:'帮助与反馈',path:'/support',children:supportChildren});
@@ -192,19 +192,32 @@ const menus = computed(() => {
   return result;
 });
 
+const menus = computed(() => {
+  const children = [
+    ...(auth.user?.is_superuser ? [{code:'menu:content:templates',name:'模板管理',path:'/content/templates',children:[]}] : []),
+    ...(['diary_presets.change_template','material_library.view_materiallibrary','material_library.change_materiallibrary'].some(p=>auth.hasPermission(p)) ? [
+      {code:'menu:content:stickers',name:'贴纸管理',path:'/content/stickers',children:[]},
+      {code:'menu:content:backgrounds',name:'背景管理',path:'/content/backgrounds',children:[]}] : []),
+    ...(auth.hasPermission('font_library.view_fontfamily') ? [{code:'menu:content:fonts',name:'字体管理',path:'/content/fonts',children:[]}] : []),
+  ];
+  const prune=(items:any[]):any[]=>items.filter(x=>!['/materials','/diary-presets','/content'].includes(x.path)).map(x=>({...x,children:prune(x.children||[])}));
+  return [...prune(legacyMenus.value),...(children.length?[{code:'menu:content',name:'内容资源',path:'/content',children}]:[])];
+});
+
 const menuItems = computed(() =>
   menus.value.map((item) => ({
     key: item.path,
     label: item.name,
-    children: (item.children || []).map((child) => ({
+    children: (item.children || []).map((child:any) => ({
       key: child.path,
       label: child.name,
-      children: (child.children || []).map((grand) => ({ key: grand.path, label: grand.name })),
+      children: (child.children || []).map((grand:any) => ({ key: grand.path, label: grand.name })),
     })),
   })),
 );
 
 function resolveOpenKeys(path: string) {
+  if (path.startsWith('/content/')) return ['/content'];
   if (path.startsWith('/ai-config/')) {
     return ['/ai-config'];
   }

@@ -25,13 +25,16 @@ class ManageOffers(AuthView):
         from rest_framework import serializers
         from .models import BillingAudit
         class Input(serializers.Serializer):
-            target_kind=serializers.ChoiceField(choices=['template','sticker_library'])
+            target_kind=serializers.ChoiceField(choices=['template','sticker_library','font'])
             target_id=serializers.UUIDField()
         form=Input(data=request.data);form.is_valid(raise_exception=True)
         data=form.validated_data
         if data['target_kind']=='template':
             from diary_presets.models import Template
             target=get_object_or_404(Template,pk=data['target_id'],audience='public')
+        elif data['target_kind']=='font':
+            from font_library.models import FontFamily
+            target=get_object_or_404(FontFamily,pk=data['target_id'])
         else:
             from material_library.models import MaterialLibrary
             target=get_object_or_404(MaterialLibrary,pk=data['target_id'])

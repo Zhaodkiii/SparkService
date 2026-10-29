@@ -38,7 +38,7 @@ class RechargeProduct(UUIDRecord):
         constraints = [models.UniqueConstraint(fields=['rc_project_id','apple_product_id'], name='billing_recharge_store_product'), models.CheckConstraint(condition=Q(units__gt=0),name='billing_recharge_positive')]
 
 class ContentOffer(UUIDRecord):
-    target_kind = models.CharField(max_length=24, choices=[('template','Template'),('sticker_library','Sticker library')])
+    target_kind = models.CharField(max_length=24, choices=[('template','Template'),('sticker_library','Sticker library'),('font','Font')])
     target_id = models.UUIDField()
     title = models.CharField(max_length=160)
     ownership_scope = models.CharField(max_length=32, default='personal_permanent')

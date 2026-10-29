@@ -163,7 +163,7 @@ class RequestLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if any(part in request.path for part in ("/billing/", "/regions/", "/material-sync/", "/materials/", "/diary-presets/", "/print/", "/diary-customizations/", "/support/", "/device/register/")):
+        if any(part in request.path for part in ("/font-sync/", "/fonts/", "/billing/", "/regions/", "/material-sync/", "/materials/", "/diary-presets/", "/print/", "/diary-customizations/", "/support/", "/device/register/")):
             # STS responses and download URL maps contain bearer secrets.
             started = time.perf_counter()
             response = self.get_response(request)

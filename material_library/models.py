@@ -43,6 +43,9 @@ class MaterialLibrary(models.Model):
     active = models.BooleanField(default=True)
     current = models.ForeignKey('LibraryVersion', null=True, on_delete=models.PROTECT, related_name='+')
 
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=300, blank=True)
+
     first_published_at = models.DateTimeField(null=True, blank=True)
     featured = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
@@ -111,6 +114,7 @@ class MaterialUpload(models.Model):
     byte_size = models.PositiveBigIntegerField()
     sha256 = models.CharField(max_length=64)
     upload_metadata = models.JSONField(default=dict)
+    staging_cleaned_at = models.DateTimeField(null=True, blank=True)
     state = models.CharField(max_length=16, default='created')
     error = models.CharField(max_length=300, blank=True)
     expires_at = models.DateTimeField()
@@ -206,3 +210,26 @@ class MaterialSyncMapping(models.Model):
 class MaterialSyncNonce(models.Model):
     digest = models.CharField(max_length=64, primary_key=True)
     expires_at = models.DateTimeField()
+
+
+class TemplateMaterialLink(models.Model):
+    """Editable next-publication configuration; published bindings stay immutable."""
+    template = models.ForeignKey('diary_presets.Template', on_delete=models.PROTECT, related_name='material_links')
+    library_type = models.CharField(max_length=16)
+    library = models.ForeignKey(MaterialLibrary, null=True, on_delete=models.PROTECT, related_name='book_links')
+    library_version = models.ForeignKey(LibraryVersion, null=True, on_delete=models.PROTECT)
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['template', 'library_type'], name='template_material_link_unique')]
+
+
+class MaterialCleanupJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    state = models.CharField(max_length=16, default='preview')
+    entries = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

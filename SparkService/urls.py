@@ -32,6 +32,8 @@ from diary_presets.resource_queue import Processor as ResourceProcessor
 
 
 urlpatterns = [
+    path("api/v1/font-sync/", include("font_library.sync_urls")),
+    path("api/v1/fonts/", include("font_library.urls")),
     path("api/public/v1/", include("public_experience.urls")),
     path("api/v1/billing/", include("billing.urls")),
     path("api/v1/regions/", include("regions.urls")),

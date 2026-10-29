@@ -53,7 +53,7 @@ onMounted(() => run(load));
     <a-alert v-if="testPolicyChangesEnabled" type="info" message="当前为本地测试配置：钻石兑换已开放，允许将已有免费内容改为收费进行测试。" show-icon style="margin-bottom:16px" />
     <a-alert v-if="error && !selected" type="error" :message="error" show-icon />
     <a-space style="margin:16px 0" v-if="auth.hasPermission('billing.change_pricing_draft')">
-      <a-select v-model:value="registration.target_kind" style="width:130px" :options="[{value:'template',label:'手帐模板'},{value:'sticker_library',label:'贴纸包'}]" />
+      <a-select v-model:value="registration.target_kind" style="width:130px" :options="[{value:'template',label:'手帐模板'},{value:'sticker_library',label:'贴纸包'},{value:'font',label:'字体'}]" />
       <a-input v-model:value="registration.target_id" placeholder="内容 UUID" style="width:340px" />
       <a-button :loading="busy" :disabled="!registration.target_id" @click="register">添加收费策略草稿</a-button>
     </a-space>

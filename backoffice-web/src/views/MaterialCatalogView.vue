@@ -8,12 +8,12 @@
     <MaterialProductionSync ref="productionSync" @options="value=>syncOptions=value" @synced="load()"/>
     <a-tabs v-model:activeKey="tab">
       <a-tab-pane key="packs" tab="贴纸包与背景库">
-        <a-space wrap><a-input-search v-model:value="query" placeholder="搜索名称" @search="load(1)"/><a-button @click="load()">刷新</a-button><a-button type="primary" v-if="permissions.can_edit" @click="openCreate">新建素材包</a-button><a-select v-model:value="filterType" style="width:120px" :options="[{value:'',label:'全部类型'},{value:'sticker',label:'贴纸'},{value:'background',label:'背景'}]"/><a-select v-model:value="filterOrigin" style="width:130px" :options="[{value:'',label:'全部来源'},{value:'independent',label:'独立主题'},{value:'template',label:'模板关联'}]"/><a-select v-model:value="filterState" style="width:130px" :options="[{value:'',label:'全部状态'},{value:'published',label:'已上架'},{value:'draft',label:'未发布'},{value:'withdrawn',label:'已下架'}]"/></a-space>
+        <a-space wrap><a-input-search v-model:value="query" placeholder="搜索名称" @search="load(1)"/><a-button @click="load()">刷新</a-button><a-button type="primary" v-if="permissions.can_edit" @click="openCreate">新建素材包</a-button><a-select v-if="!fixedType" v-model:value="filterType" style="width:120px" :options="[{value:'',label:'全部类型'},{value:'sticker',label:'贴纸'},{value:'background',label:'背景'}]"/><a-select v-model:value="filterOrigin" style="width:130px" :options="[{value:'',label:'全部来源'},{value:'independent',label:'独立主题'},{value:'template',label:'模板关联'}]"/><a-select v-model:value="filterState" style="width:130px" :options="[{value:'',label:'全部状态'},{value:'published',label:'已上架'},{value:'draft',label:'未发布'},{value:'withdrawn',label:'已下架'}]"/></a-space>
         <a-table :data-source="filteredLibraries" :columns="columns" row-key="id" :loading="loading" :scroll="{x:1100}" :pagination="{current:libraryPage,pageSize:20,total:libraryTotal,showSizeChanger:false,showTotal:(total:number)=>`共 ${total} 个素材包`}" @change="(p:any)=>load(p.current)">
           <template #bodyCell="{column,record}">
             <div v-if="column.key==='summary'" class="pack-summary"><a-image v-if="record.cover" :src="record.cover.url" :width="64"/><span v-else class="missing-cover">待补封面</span><div><strong>{{record.title}}</strong><small>{{record.type==='sticker'?'贴纸包':'背景库'}} · {{record.template_title || '独立主题'}}</small></div></div>
             <span v-else-if="column.key==='count'">{{record.count}} / {{record.total_count ?? record.count}}</span>
-            <span v-else-if="column.key==='display'">{{record.gallery_visible?'贴纸馆可见':'贴纸馆未展示'}}<small v-if="record.display_reason">{{record.display_reason}}</small><small v-if="record.template_id">模板配套版本请在编辑中查看</small></span>
+            <span v-else-if="column.key==='display'">{{record.gallery_visible?'贴纸馆可见':'贴纸馆未展示'}}<small v-if="record.display_reason">{{record.display_reason}}</small><small v-if="record.template_id">配套管理：更多 → 关联整本手帐</small></span>
             <span v-else-if="column.key==='production_sync'">{{record.production_sync?.label || '—'}}<small v-if="record.production_sync?.target_version">生产 v{{record.production_sync.target_version}}</small><small v-if="record.production_sync?.checked_at">核实：{{dayjs(record.production_sync.checked_at).format('MM-DD HH:mm')}}</small></span>
             <span v-else-if="column.key==='updated'">{{record.updated_at?dayjs(record.updated_at).format('MM-DD HH:mm'):'—'}}<small>{{record.updated_by || ''}}</small></span>
 
@@ -23,6 +23,8 @@
               <a-button @click="edit(record)">{{permissions.can_edit?'编辑':'查看'}}</a-button>
               <a-dropdown :trigger="['click']"><a-button>更多</a-button><template #overlay><a-menu :selectable="false">
                 <a-menu-item v-if="syncOptions.can_sync" :disabled="!syncOptions.enabled || !record.version || !record.active || !!record.template_id || record.type!=='sticker'" @click="productionSync?.open(record)">同步到生产</a-menu-item>
+                <a-menu-item @click="lifecycle?.openLinks(record)">关联整本手帐</a-menu-item>
+                <a-menu-item v-if="permissions.can_delete" danger @click="lifecycle?.previewDelete(record)">删除整套</a-menu-item>
                 <a-menu-item @click="history(record)">历史版本</a-menu-item>
                 <a-menu-item v-if="permissions.can_edit" @click="error='';placementEdit={...record}">展示设置</a-menu-item>
                 <a-menu-item v-if="permissions.can_takedown" :disabled="!record.version" :danger="record.active" @click="confirmLibraryAvailability(record)">{{record.active?'下架素材包':'上架素材包'}}</a-menu-item>
@@ -40,14 +42,15 @@
         <a-list :data-source="dictionaryRows"><template #renderItem="{item}"><a-list-item>{{item.title}} · {{item.kind}} {{item.subcategory}} · {{item.active?'启用':'停用'}}<a-button v-if="permissions.can_edit" @click="dictionaryEdit={...item}">编辑</a-button></a-list-item></template></a-list>
       </a-tab-pane>
       <a-tab-pane key="audit" tab="发布与操作记录"><a-button @click="loadAudit">刷新</a-button><a-table :data-source="logs" :columns="[{title:'操作',dataIndex:'action'},{title:'时间',dataIndex:'created_at'},{title:'操作者',dataIndex:'actor_id'},{title:'详情',key:'detail'}]" row-key="id"><template #bodyCell="{column,record}"><code v-if="column.key==='detail'">{{JSON.stringify(record.detail)}}</code></template></a-table></a-tab-pane>
+      <a-tab-pane key="lifecycle" tab="回收站与 OSS 清理" force-render><MaterialLifecyclePanel ref="lifecycle" :type="fixedType" :can-delete="permissions.can_delete" :can-link="permissions.can_link" @changed="load()" /></a-tab-pane>
     </a-tabs>
     <a-modal :open="!!placementEdit" title="展示设置" @cancel="placementEdit=null" @ok="savePlacement"><a-alert v-if="placementEdit && error" :message="error" type="error"/><a-form v-if="placementEdit" layout="vertical"><a-form-item label="推荐"><a-switch v-model:checked="placementEdit.featured"/></a-form-item><a-form-item label="推荐顺序（数字越小越靠前，推荐包优先）"><a-input-number v-model:value="placementEdit.sort_order" :min="0"/></a-form-item><a-form-item label="上新标记截止时间（本地时区）"><a-date-picker :value="placementEdit.new_until?dayjs(placementEdit.new_until):null" show-time @change="(v:any)=>placementEdit.new_until=v?v.toISOString():null"/></a-form-item></a-form></a-modal>
     <a-modal :open="!!dictionaryEdit" title="维护分类或标签" @cancel="dictionaryEdit=null" @ok="saveDictionary"><template v-if="dictionaryEdit"><a-alert v-if="error" :message="error" type="error"/><a-input v-model:value="dictionaryEdit.title" placeholder="中文名称"/><template v-if="dictionaryTarget==='categories'"><a-select v-model:value="dictionaryEdit.kind" :options="categories.map(c=>({value:c.kind,label:c.title}))"/><a-input v-model:value="dictionaryEdit.subcategory" placeholder="英文稳定标识，如 botanical" :disabled="!!dictionaryEdit.id"/></template><a-switch v-model:checked="dictionaryEdit.active" checked-children="启用" un-checked-children="停用"/></template></a-modal>
     <a-modal v-model:open="creating" title="新建素材包" :confirm-loading="creatingBusy" @ok="create">
       <a-alert v-if="error" :message="error" type="error"/>
       <a-form layout="vertical"><a-form-item label="素材包名称" required><a-input v-model:value="newTitle" placeholder="例如：秋日旅行" :maxlength="60"/></a-form-item>
-      <a-form-item label="类型"><a-select v-model:value="newType" :options="[{value:'sticker',label:'贴纸'},{value:'background',label:'背景'}]" @change="newTemplate='';searchTemplates('')"/></a-form-item>
-      <a-form-item label="关联模板（可选，不选择则创建独立主题包）"><a-select v-model:value="newTemplate" allow-clear show-search :filter-option="false" :loading="templatesLoading" :options="templateOptions" placeholder="按模板名称搜索" @search="searchTemplates"/></a-form-item></a-form>
+      <a-form-item label="类型"><a-select v-if="!fixedType" v-model:value="newType" :options="[{value:'sticker',label:'贴纸'},{value:'background',label:'背景'}]" @change="newTemplate='';searchTemplates('')"/></a-form-item>
+      <a-form-item label="关联整本手帐（可选，下一次发布手帐时生效）"><a-select v-model:value="newTemplate" allow-clear show-search :filter-option="false" :loading="templatesLoading" :options="templateOptions" placeholder="按模板名称搜索" @search="searchTemplates"/></a-form-item></a-form>
     </a-modal>
     <a-drawer :open="!!selected" width="min(1100px, 96vw)" title="素材包草稿" @close="closeEditor">
       <template v-if="draft && selected">
@@ -55,7 +58,7 @@
         <a-alert v-if="notice" :message="notice" type="success" show-icon/>
         <a-alert v-if="uploadEnabled===false" :message="uploadUnavailableReason || 'OSS 上传暂不可用，当前可选用已有素材'" type="warning"/>
         <p>当前发布版本：v{{baseVersion}}。保存草稿不会改变客户端内容；发布新版本后，已下架的包仍保持下架。</p>
-        <a-collapse v-if="bindings.length"><a-collapse-panel key="bindings" header="模板固定版本关联"><p v-for="binding in bindings" :key="binding.preset_version__number">{{selected.template_title || '关联模板'}} v{{binding.preset_version__number}} → 素材包 v{{binding.library_version__number}}</p><p>发布素材包不会替换历史模板绑定，请在发布新模板版本时确认配套内容。</p></a-collapse-panel></a-collapse>
+        <a-collapse v-if="bindings.length"><a-collapse-panel key="bindings" header="模板固定版本关联"><p v-for="binding in bindings" :key="binding.preset_version__template_id+':'+binding.preset_version__number">{{binding.preset_version__template__title || selected.template_title || '关联模板'}} v{{binding.preset_version__number}} → 素材包 v{{binding.library_version__number}}</p><p>发布素材包不会替换历史模板绑定，请在发布新模板版本时确认配套内容。</p></a-collapse-panel></a-collapse>
         <a-alert v-if="dirty" message="有未保存修改，请保存后发布或离开。" type="warning"/>
         <a-form layout="vertical" :disabled="!permissions.can_edit || saving">
           <a-form-item label="名称"><a-input v-model:value="draft.title" :maxlength="60" @change="dirty=true"/></a-form-item>
@@ -81,7 +84,12 @@
 <script setup lang="ts">
 import {ref,reactive,onMounted,onBeforeUnmount,watch,computed} from 'vue';
 import {Modal} from 'ant-design-vue';
+import {useRoute} from 'vue-router';
+const route=useRoute();
+const fixedType=typeof route?.meta?.fixedMaterialType==='string'?route.meta.fixedMaterialType:'';
 import MaterialProductionSync from './MaterialProductionSync.vue';
+import MaterialLifecyclePanel from './MaterialLifecyclePanel.vue';
+const lifecycle=ref<InstanceType<typeof MaterialLifecyclePanel>>();
 const productionSync=ref<InstanceType<typeof MaterialProductionSync>>();
 const syncOptions=ref<any>({can_sync:false,enabled:false});
 import {prepareMaterialImage,putImageToOSS} from './materialImageUpload';
@@ -90,14 +98,14 @@ import http from '../api/http';
 import {readUploads,rememberUpload,forgetUpload,createUploadLimiter} from './materialUploadTasks';
 const base='/api/v1/materials/';
 const libraries=ref<any[]>([]),materials=ref<any[]>([]),logs=ref<any[]>([]),versions=ref<any[]>([]),categories=ref<any[]>([]);
-const filterType=ref(''),filterOrigin=ref(''),filterState=ref('');
+const filterType=ref(fixedType),filterOrigin=ref(''),filterState=ref('');
 const filteredLibraries=computed(()=>libraries.value.filter(l=>(!filterType.value||l.type===filterType.value)&&(!filterOrigin.value||l.origin_type===filterOrigin.value)&&(!filterState.value||(l.publication_state || (l.version===0?'draft':l.active?'published':'withdrawn'))===filterState.value)));
 const libraryPage=ref(1),libraryTotal=ref(0),materialPage=ref(1),materialTotal=ref(0),materialsLoading=ref(false);let materialRequest=0;
-const permissions=reactive({can_edit:true,can_publish:true,can_takedown:true});const accountID=ref<string>('');
+const permissions=reactive({can_edit:true,can_publish:true,can_takedown:true,can_delete:false,can_link:false});const accountID=ref<string>('');
 const creatingBusy=ref(false),templatesLoading=ref(false),templateOptions=ref<any[]>([]),usageOpen=ref(false),usageRows=ref<any[]>([]),usageNote=ref('');let templateRequest=0;
 const loading=ref(false),saving=ref(false),error=ref(''),query=ref(''),materialQuery=ref(''),tab=ref('packs');
 const selected=ref<any>(null),draft=ref<any>(null),revision=ref(0),baseVersion=ref(0),dirty=ref(false),images=ref<Record<string,any>>({}),itemIndex=ref<Record<number,any>>({});
-const creating=ref(false),newTitle=ref(''),newType=ref('sticker'),newTemplate=ref(''),picking=ref(false),preview=ref(false),showHistory=ref(false),historyLibrary=ref<any>(null),dragIndex=ref(-1),editingMaterial=ref<any>(null),editingCategory=ref('');
+const creating=ref(false),newTitle=ref(''),newType=ref(fixedType||'sticker'),newTemplate=ref(''),picking=ref(false),preview=ref(false),showHistory=ref(false),historyLibrary=ref<any>(null),dragIndex=ref(-1),editingMaterial=ref<any>(null),editingCategory=ref('');
 const replacementUpload=ref<any>(null);
 const uploads=ref<any[]>([]);const uploadLimit=createUploadLimiter(3);
 const uploadStateLabel=(state:string)=>({queued:'等待处理',processing:'本地处理',uploading:'直传 OSS 中',confirming:'确认文件中',verified:'已确认',failed:'待处理'}[state] || state);
@@ -187,7 +195,7 @@ function reloadDraft(){if(dirty.value){Modal.confirm({title:'重新加载会放�
 async function replaceMaterialFile(event:Event){const file=(event.target as HTMLInputElement).files?.[0];if(!file)return;const task=reactive({file,name:file.name,purpose:editingMaterial.value.kind==='background'?'background':'sticker',state:'queued',error:'',progress:0,replacement:true});replacementUpload.value=task;await runUpload(task)}
 function beforeUnload(e:BeforeUnloadEvent){if(dirty.value||uploads.value.some(t=>t.running||t.state==='queued')){e.preventDefault();e.returnValue=''}}
 watch([filterType,filterOrigin,filterState],()=>load(1));
-watch(tab,t=>{if(t==='items')loadMaterials();if(t==='audit')loadAudit();if(t==='dictionary')loadDictionary()});
+watch(tab,t=>{if(t==='items')loadMaterials();if(t==='audit')loadAudit();if(t==='dictionary')loadDictionary();if(t==='lifecycle')lifecycle.value?.refresh()});
 watch(draft,()=>{
  if(!dirty.value||saving.value||!selected.value)return;
  clearTimeout(autoSaveTimer);autoSaveTimer=setTimeout(()=>{if(dirty.value&&!saving.value)void save()},1200);

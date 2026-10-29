@@ -95,7 +95,12 @@ class Webhook(APIView):
 
 class ContentAccess(AuthView):
     def get(self,request,kind,pk):
-        if kind not in ('template','sticker_library'): return Response(status=404)
+        if kind not in ('template','sticker_library','font'): return Response(status=404)
+        if kind == 'font':
+            from font_library.models import FontFamily
+            from font_library.services import access
+            from django.shortcuts import get_object_or_404
+            return Response(access(request,get_object_or_404(FontFamily,pk=pk)))
         from .access import describe
         return Response(describe(request,kind,pk))
 

@@ -220,6 +220,7 @@ INSTALLED_APPS = [
     'regions',
     'support_center',
     'material_library',
+    'font_library',
     'notification_center',
     'backoffice',
     'billing',
@@ -674,3 +675,9 @@ BILLING_SANDBOX_SALES_ENABLED = os.getenv('BILLING_SANDBOX_SALES_ENABLED', 'fals
 
 # Explicitly enabled only on the local test server; never copy into production.
 BILLING_TEST_POLICY_CHANGES_ENABLED = os.getenv('BILLING_TEST_POLICY_CHANGES_ENABLED', 'false').lower() == 'true'
+
+# Font control plane: processor runs on an independent operator host, never on this API server.
+FONT_OSS_PREFIX = os.getenv('FONT_OSS_PREFIX', 'traveldiary/fonts/development/')
+FONT_PROCESSOR_TOKEN = os.getenv('FONT_PROCESSOR_TOKEN', '')
+
+CELERY_BEAT_SCHEDULE['font-sync-recovery'] = {'task': 'font_library.tasks.recover_sync_tasks', 'schedule': 30.0}

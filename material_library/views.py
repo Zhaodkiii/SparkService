@@ -21,7 +21,7 @@ from .services import revision, publish_library
 
 
 def visible():
-    return MaterialLibrary.objects.filter(Q(template__isnull=True) | Q(template__audience='public', template__active=True, template__series__active=True), active=True, current__isnull=False)
+    return MaterialLibrary.objects.filter(Q(template__isnull=True) | Q(template__audience='public'), active=True, current__isnull=False, deleted_at__isnull=True)
 
 
 def library_json(lib, user):
@@ -61,6 +61,22 @@ class Libraries(AuthView):
         if request.query_params.get('schema') == '2':
             from .catalog_v2 import LibrariesV2
             return LibrariesV2().get(request)
+        if template_id := request.query_params.get('template'):
+            from diary_presets.models import Template
+            book = get_object_or_404(Template, pk=serializers.UUIDField().run_validation(template_id), audience='public', active=True, series__active=True)
+            number = serializers.IntegerField(min_value=1).run_validation(request.query_params['template_version']) if request.query_params.get('template_version') else (book.current.number if book.current_id else None)
+            bindings = TemplateLibraryBinding.objects.filter(preset_version__template=book, preset_version__number=number).select_related('library_version__library')
+            result = []
+            for binding in bindings:
+                lib = binding.library_version.library
+                if not visible().filter(pk=lib.pk).exists(): continue
+                if request.query_params.get('type') and lib.library_type != request.query_params['type']: continue
+                if request.query_params.get('favorites') == '1' and not lib.favorites.filter(user=request.user).exists(): continue
+                version = binding.library_version
+                result.append(dict(id=str(lib.pk), template_id=str(book.pk), title=lib.title, type=lib.library_type,
+                    series=book.series.title, version=version.number, count=version.items.filter(material__active=True).count(),
+                    favorite_count=lib.favorites.count(), is_favorited=lib.favorites.filter(user=request.user).exists()))
+            return Response(result)
         qs = visible().filter(template__isnull=False).select_related('template__series', 'current').order_by('template__position', 'id')
         for key, field in [('type','library_type'), ('template','template_id'), ('series','template__series__slug')]:
             if value := request.query_params.get(key):
@@ -176,12 +192,12 @@ class Manage(AuthView):
     permission_classes = [PresetAdmin]
 
     def get(self, request, template):
-        libs = MaterialLibrary.objects.filter(template_id=template).select_related('template__series','current')
+        libs = MaterialLibrary.objects.filter(template_id=template,deleted_at__isnull=True).select_related('template__series','current')
         return Response([dict(**library_json(lib,request.user), items=[item_json(i,request.user) for i in lib.current.items.select_related('revision__resource','revision__thumbnail','revision__material')] if lib.current_id else []) for lib in libs])
 
     @transaction.atomic
     def post(self, request, template):
-        lib = get_object_or_404(MaterialLibrary, pk=serializers.UUIDField().run_validation(request.data.get('library')), template_id=template)
+        lib = get_object_or_404(MaterialLibrary, pk=serializers.UUIDField().run_validation(request.data.get('library')), template_id=template, deleted_at__isnull=True)
         entries = request.data.get('items')
         if not isinstance(entries, list) or len(entries)>2000: raise ValidationError('无效素材列表')
         revisions = []
