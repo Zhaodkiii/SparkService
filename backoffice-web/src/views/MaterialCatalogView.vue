@@ -11,7 +11,7 @@
         <a-space wrap><a-input-search v-model:value="query" placeholder="搜索名称" @search="load(1)"/><a-button @click="load()">刷新</a-button><a-button type="primary" v-if="permissions.can_edit" @click="openCreate">新建素材包</a-button><a-select v-if="!fixedType" v-model:value="filterType" style="width:120px" :options="[{value:'',label:'全部类型'},{value:'sticker',label:'贴纸'},{value:'background',label:'背景'}]"/><a-select v-model:value="filterOrigin" style="width:130px" :options="[{value:'',label:'全部来源'},{value:'independent',label:'独立主题'},{value:'template',label:'模板关联'}]"/><a-select v-model:value="filterState" style="width:130px" :options="[{value:'',label:'全部状态'},{value:'published',label:'已上架'},{value:'draft',label:'未发布'},{value:'withdrawn',label:'已下架'}]"/></a-space>
         <a-table :data-source="filteredLibraries" :columns="columns" row-key="id" :loading="loading" :scroll="{x:1100}" :pagination="{current:libraryPage,pageSize:20,total:libraryTotal,showSizeChanger:false,showTotal:(total:number)=>`共 ${total} 个素材包`}" @change="(p:any)=>load(p.current)">
           <template #bodyCell="{column,record}">
-            <div v-if="column.key==='summary'" class="pack-summary"><a-image v-if="record.cover" :src="record.cover.url" :width="64"/><span v-else class="missing-cover">待补封面</span><div><strong>{{record.title}}</strong><small>{{record.type==='sticker'?'贴纸包':'背景库'}} · {{record.template_title || '独立主题'}}</small></div></div>
+            <div v-if="column.key==='summary'" class="pack-summary"><a-image v-if="record.cover" :src="record.cover.url" :width="64"/><span v-else class="missing-cover">待补封面</span><div><strong>{{record.title}}</strong><small>{{['sticker','background'].includes(record.type)?'贴纸包':'背景库'}} · {{record.template_title || '独立主题'}}</small></div></div>
             <span v-else-if="column.key==='count'">{{record.count}} / {{record.total_count ?? record.count}}</span>
             <span v-else-if="column.key==='display'">{{record.gallery_visible?'贴纸馆可见':'贴纸馆未展示'}}<small v-if="record.display_reason">{{record.display_reason}}</small><small v-if="record.template_id">配套管理：更多 → 关联整本手帐</small></span>
             <span v-else-if="column.key==='production_sync'">{{record.production_sync?.label || '—'}}<small v-if="record.production_sync?.target_version">生产 v{{record.production_sync.target_version}}</small><small v-if="record.production_sync?.checked_at">核实：{{dayjs(record.production_sync.checked_at).format('MM-DD HH:mm')}}</small></span>
@@ -22,7 +22,7 @@
             <a-space v-else-if="column.key==='actions'">
               <a-button @click="edit(record)">{{permissions.can_edit?'编辑':'查看'}}</a-button>
               <a-dropdown :trigger="['click']"><a-button>更多</a-button><template #overlay><a-menu :selectable="false">
-                <a-menu-item v-if="syncOptions.can_sync" :disabled="!syncOptions.enabled || !record.version || !record.active || !!record.template_id || record.type!=='sticker'" @click="productionSync?.open(record)">同步到生产</a-menu-item>
+                <a-menu-item v-if="syncOptions.can_sync" :disabled="!syncOptions.enabled || !record.version || !record.active || !!record.template_id || !['sticker','background'].includes(record.type)" @click="productionSync?.open(record)">同步到生产</a-menu-item>
                 <a-menu-item @click="lifecycle?.openLinks(record)">关联整本手帐</a-menu-item>
                 <a-menu-item v-if="permissions.can_delete" danger @click="lifecycle?.previewDelete(record)">删除整套</a-menu-item>
                 <a-menu-item @click="history(record)">历史版本</a-menu-item>

@@ -42,8 +42,8 @@ def revision_key(row):
 
 
 def snapshot_for(library):
-    if library.template_id or library.library_type != 'sticker':
-        raise SyncError('UNSUPPORTED_LIBRARY', '首期仅支持独立贴纸包')
+    if library.template_id or library.library_type not in ('sticker','background'):
+        raise SyncError('UNSUPPORTED_LIBRARY', '仅支持独立贴纸或背景包')
     if library.deleted_at or not library.current_id or not library.active:
         raise SyncError('SOURCE_UNAVAILABLE', '请先发布并上架素材包')
     version = library.current
@@ -54,7 +54,7 @@ def snapshot_for(library):
             raise SyncError('SOURCE_UNAVAILABLE', '包内存在已下架素材')
         r=item.revision; key=revision_key(r)
         revisions[key] = dict(sync_revision_key=key, **revision_fields(r))
-        materials[str(item.material_id)] = dict(id=str(item.material_id),source_identity=item.material.source_identity,type='sticker')
+        materials[str(item.material_id)] = dict(id=str(item.material_id),source_identity=item.material.source_identity,type=library.library_type)
         resource_ids.update([r.resource_id,r.thumbnail_id])
         items.append(dict(material_id=str(item.material_id),sync_revision_key=key,position=len(items)))
     content=version.content
@@ -66,7 +66,7 @@ def snapshot_for(library):
                   library={k:content.get(k) for k in ('title','description','tags','cover','previews')},
                   resources=resources,materials=[materials[k] for k in sorted(materials)],
                   revisions=[revisions[k] for k in sorted(revisions)],items=items)
-    snapshot['library']['type']='sticker'
+    snapshot['library']['type']=library.library_type
     snapshot['content_hash']=content_hash(snapshot)
     validate_snapshot(snapshot)
     return snapshot
@@ -82,7 +82,7 @@ def validate_snapshot(s):
         uuid.UUID(s['library_id'])
         if not isinstance(s['source_version'],int) or isinstance(s['source_version'],bool) or s['source_version']<1:raise ValueError()
         lib=s['library']
-        if set(lib)!={'type','title','description','tags','cover','previews'} or lib['type']!='sticker':raise ValueError()
+        if set(lib)!={'type','title','description','tags','cover','previews'} or lib['type'] not in ('sticker','background'):raise ValueError()
         if not isinstance(lib['title'],str) or not 1<=len(lib['title'])<=60:raise ValueError()
         if not isinstance(lib['description'],str) or len(lib['description'])>1000:raise ValueError()
         def strings(xs, count, length):
@@ -106,7 +106,7 @@ def validate_snapshot(s):
         materials={}
         identities=set()
         for m in s['materials']:
-            if set(m)!={'id','source_identity','type'} or m['type']!='sticker':raise ValueError()
+            if set(m)!={'id','source_identity','type'} or m['type']!=lib['type']:raise ValueError()
             uuid.UUID(m['id'])
             if m['id'] in materials or m['source_identity'] in identities or not isinstance(m['source_identity'],str) or not 1<=len(m['source_identity'])<=240:raise ValueError()
             materials[m['id']]=m;identities.add(m['source_identity'])
@@ -121,7 +121,7 @@ def validate_snapshot(s):
             if not isinstance(r['name'],str) or not 1<=len(r['name'])<=120:raise ValueError()
             category=(r['kind'],r['subcategory'])
             if category not in validated_categories:
-                try:validate_category(*category,'sticker')
+                try:validate_category(*category,lib['type'])
                 except ValueError:raise SyncError('CATEGORY_UNAVAILABLE','生产素材分类不存在或已停用')
                 validated_categories.add(category)
             strings(r['keywords'],40,60);strings(r['aliases'],40,60)
@@ -143,6 +143,13 @@ def validate_snapshot(s):
 
 
 def sync_summary(lib):
+    if lib.template_id and lib.current_id:
+        from diary_presets.models import PresetSyncTask
+        from diary_presets.sync_protocol import library_snapshot
+        for parent in PresetSyncTask.objects.filter(side='source',library_uuid=lib.template_id,state='succeeded').order_by('-created_at')[:10]:
+            for spec in parent.snapshot.get('libraries',[]):
+                if spec['id']==str(lib.pk) and spec==library_snapshot(lib.current):
+                    return {'state':'succeeded','label':'已随整本同步','task_id':str(parent.pk),'target_version':spec['version'],'checked_at':parent.updated_at}
     t=(lib._list_sync_task if hasattr(lib, '_list_sync_task') else
        MaterialSyncTask.objects.filter(side='source',library_uuid=lib.pk).order_by('-created_at', '-id').first())
     if not t:return {'state':'not_synced','label':'未同步'}
@@ -178,7 +185,7 @@ def inspect_target(s):
     lib=MaterialLibrary.objects.filter(pk=s['library_id']).select_related('current').first()
     if lib:
         if lib.deleted_at or not lib.active:raise SyncError('TARGET_WITHDRAWN','生产素材包已下架，请先在生产处理')
-        if lib.template_id or lib.library_type!='sticker':raise SyncError('MATERIAL_IDENTITY_CONFLICT','目标包类型或归属不同')
+        if lib.template_id or lib.library_type!=s['library']['type']:raise SyncError('MATERIAL_IDENTITY_CONFLICT','目标包类型或归属不同')
         d=LibraryDraft.objects.filter(library=lib).first()
         if d and (not lib.current_id or d.content!=lib.current.content):raise SyncError('TARGET_DRAFT_CONFLICT','生产存在未发布草稿')
     for b in s['resources']:
@@ -187,7 +194,7 @@ def inspect_target(s):
     for spec in s['materials']:
         m=Material.objects.filter(pk=spec['id']).first()
         same=Material.objects.filter(source_identity=spec['source_identity']).first()
-        if (m and (m.source_identity!=spec['source_identity'] or m.material_type!='sticker')) or (same and str(same.pk)!=spec['id']):raise SyncError('MATERIAL_IDENTITY_CONFLICT','生产素材身份冲突')
+        if (m and (m.source_identity!=spec['source_identity'] or m.material_type!=s['library']['type'])) or (same and str(same.pk)!=spec['id']):raise SyncError('MATERIAL_IDENTITY_CONFLICT','生产素材身份冲突')
         if not m:continue
         if not m.active:raise SyncError('TARGET_WITHDRAWN','生产单张素材已下架')
         desired=next(r for r in s['revisions'] if r['material_id']==spec['id'])['sync_revision_key']

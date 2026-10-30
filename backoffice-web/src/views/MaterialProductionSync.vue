@@ -10,7 +10,7 @@
         <p>状态：{{stateLabel(task.state)}} · 任务 {{task.id}}</p>
         <p v-if="task.result?.total">OSS 已检查 {{task.result.checked || 0}} / {{task.result.total}}</p>
         <template v-if="task.result?.target_version!==undefined">
-          <p>生产当前 v{{task.result.target_version}} · {{task.result.count}} 枚贴纸</p>
+          <p>生产当前 v{{task.result.target_version}} · {{task.result.count}} 项素材</p>
           <p>新增 {{task.result.added || 0}} · 更新 {{task.result.updated || 0}} · 移出本包 {{task.result.removed || 0}}</p>
         </template>
         <a-alert v-if="task.result?.message" :message="task.result.message" :type="task.state==='succeeded'?'success':'info'"/>

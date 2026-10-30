@@ -33,6 +33,20 @@ class SeriesSerializer(serializers.ModelSerializer):
 
 
 class TemplateSerializer(serializers.ModelSerializer):
+    version = serializers.SerializerMethodField()
+    production_sync = serializers.SerializerMethodField()
+    has_draft_changes = serializers.SerializerMethodField()
+
+    def get_version(self, obj):
+        return obj.current.number if obj.current_id else 0
+
+    def get_production_sync(self, obj):
+        from .sync_protocol import sync_summary
+        return sync_summary(obj)
+
+    def get_has_draft_changes(self, obj):
+        return bool(obj.current_id and obj.draft != obj.current.snapshot)
+
     import_statistics = serializers.SerializerMethodField()
     def get_import_statistics(self, obj):
         return self.context.get("import_statistics", {}).get(str(obj.pk))
@@ -52,7 +66,7 @@ class TemplateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Template
-        fields = ['id', 'content_kind', 'series', 'title', 'description', 'position', 'active', 'revision', 'current', 'page_count', 'cover_url', 'import_statistics']
+        fields = ['id', 'content_kind', 'series', 'title', 'description', 'position', 'active', 'revision', 'current', 'page_count', 'cover_url', 'import_statistics', 'version', 'production_sync', 'has_draft_changes']
         read_only_fields = ['id', 'revision', 'current']
 
 

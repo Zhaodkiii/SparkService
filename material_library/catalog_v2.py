@@ -2,9 +2,10 @@
 import hashlib
 import json
 import uuid
+import time
 from datetime import timedelta
 from django.core import signing
-from django.core.cache import cache
+from django.core.cache import caches
 from django.db.models import F, Q, Case, When, Value, IntegerField
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -23,7 +24,11 @@ class Conflict(APIException):
 
 class Gone(APIException):
     status_code = 410
-    default_detail = '内容已下架或分页已过期，请刷新'
+    default_detail = '内容已下架'
+    def __init__(self, reason='CONTENT_UNAVAILABLE'):
+        messages = {'CONTENT_UNAVAILABLE': '内容已下架', 'CURSOR_EXPIRED': '分页游标已过期，请刷新',
+                    'SNAPSHOT_MISSING': '分页快照已失效，请刷新'}
+        super().__init__({'code': reason, 'message': messages[reason]})
 
 
 def public_libraries(include_deleted=False):
@@ -63,6 +68,7 @@ def item_data(row, user):
 
 def paginate(request, rows, serialize, identity):
     """Snapshot row IDs, bound to account, filters, endpoint; no signed URLs in cache."""
+    cache = caches['material_pagination']
     params = sorted((k, v) for k, v in request.query_params.items() if k not in ('cursor',))
     binding = hashlib.sha256(json.dumps([str(request.user.pk), identity, params]).encode()).hexdigest()
     cursor = request.query_params.get('cursor')
@@ -72,14 +78,17 @@ def paginate(request, rows, serialize, identity):
     except ValueError: raise ValidationError('limit 必须为 1—100')
     if cursor:
         try: token = signing.loads(cursor, salt='materials-cursor', max_age=1800)
-        except signing.BadSignature: raise Gone()
+        except signing.BadSignature: raise Gone('CURSOR_EXPIRED')
         if token.get('binding') != binding: raise ValidationError('游标不属于当前查询')
         ids = cache.get('materials-snapshot:'+token['id'])
-        if ids is None: raise Gone()
+        if ids is None: raise Gone('SNAPSHOT_MISSING')
         offset = token['offset']; snapshot = token['id']
     else:
         ids = [dict(id=str(row.pk),version_id=row.current_id) for row in rows] if identity == 'libraries' else [dict(id=str(row.pk)) for row in rows]
-        snapshot = uuid.uuid4().hex; offset = 0
+        # Reuse an identical snapshot within the validator window. Random IDs and
+        # timestamped cursors otherwise change every response and defeat ETag.
+        snapshot = hashlib.sha256(json.dumps([binding, ids, int(time.time() // 600)], sort_keys=True).encode()).hexdigest()
+        offset = 0
         cache.set('materials-snapshot:'+snapshot, ids, 1800)
     records = ids[offset:offset+limit]
     selected = [r['id'] for r in records]
@@ -96,7 +105,10 @@ def paginate(request, rows, serialize, identity):
                 index[record['id']].current=versions[record['version_id']]
     result = [serialize(index[pk]) for pk in selected if pk in index]
     next_offset = offset + limit
-    next_cursor = signing.dumps(dict(id=snapshot, offset=next_offset, binding=binding), salt='materials-cursor') if next_offset < len(ids) else None
+    next_cursor = None
+    if next_offset < len(ids):
+        next_cursor = cache.get_or_set('materials-cursor:' + snapshot + ':' + str(next_offset),
+            lambda: signing.dumps(dict(id=snapshot, offset=next_offset, binding=binding), salt='materials-cursor'), 1800)
     return dict(items=result, next_cursor=next_cursor, snapshot_token=snapshot)
 
 

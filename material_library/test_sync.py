@@ -213,3 +213,18 @@ class SyncTests(TestCase):
         t.refresh_from_db()
         self.assertEqual(t.state,'failed');self.assertEqual(t.attempts,3)
         self.assertTrue(t.result['manual_retry']);self.assertEqual(t.result['network_failures'],3)
+
+    @patch('material_library.sync_engine.verify_resources')
+    def test_independent_background_sync_keeps_type(self,_):
+        self.lib.library_type='background';self.lib.save()
+        self.rev.material.material_type='background';self.rev.material.save()
+        self.rev.kind='background';self.rev.subcategory='paper_texture';self.rev.save()
+        self.s=snapshot_for(self.lib)
+        s=self.target_snapshot()
+        from .models import Material
+        # Reuse stable material identity with the matching background kind.
+        t=self.task(s);receiver_import(t,'test');t.refresh_from_db()
+        target=MaterialLibrary.objects.get(pk=s['library_id'])
+        self.assertEqual(target.library_type,'background')
+        self.assertEqual(target.current.items.get().material.material_type,'background')
+        self.assertEqual(t.state,'succeeded')

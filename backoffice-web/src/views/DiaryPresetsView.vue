@@ -5,6 +5,8 @@
   </a-page-header>
   <a-alert v-if="error" type="error" show-icon :message="error" closable @close="error=''" />
   <a-alert type="info" show-icon :message="statisticsNotice" style="margin-top:12px" />
+  <PresetProductionSync ref="productionSync" @options="syncOptions=$event" @synced="run(load)" />
+  <a-alert v-if="syncOptions.can_sync && !syncOptions.enabled" type="warning" :message="syncOptions.reason" show-icon style="margin-top:12px" />
   <div class="workspace">
    <a-card title="系列目录" class="series-panel" :loading="loading">
     <a-empty v-if="!series.length" description="暂无系列，请新增系列" />
@@ -22,7 +24,8 @@
        <template v-if="column.key==='book'"><a-space class="book-name"><a-image v-if="record.cover_url" :src="record.cover_url" :width="45"/><div><a @click="chooseBook(record)">{{record.title}}</a><a-tag v-if="record.content_kind==='album'">相册</a-tag><div class="muted">{{record.description || '暂无简介'}}</div></div></a-space></template>
        <template v-else-if="column.statKey">{{record.import_statistics?.[column.statKey] ?? '暂不可用'}}</template>
        <template v-else-if="column.key==='state'"><a-tag :color="record.active?(record.current?'green':'blue'):'default'">{{!record.active?'已下架':record.current?'已发布':'草稿'}}</a-tag></template>
-       <template v-else-if="column.key==='actions'"><a-button type="link" @click="chooseBook(record)">管理单页</a-button></template>
+       <template v-else-if="column.key==='sync'"><a-tag :color="record.production_sync?.state==='succeeded'?'green':'default'">{{record.production_sync?.label || '未同步'}}</a-tag><div class="muted">已发布 v{{record.version || 0}}</div></template>
+       <template v-else-if="column.key==='actions'"><a-space wrap><a-button type="link" @click="chooseBook(record)">管理单页</a-button><a-button v-if="syncOptions.can_sync" type="link" :disabled="!syncOptions.enabled || !record.active || !record.version" @click="productionSync?.open(record)">整本同步到生产</a-button></a-space></template>
       </template>
      </a-table>
     </a-card>
@@ -81,6 +84,9 @@ import OSS from 'ali-oss';
 import { onBeforeRouteLeave } from 'vue-router';
 import http from '../api/http';
 import MaterialBookLinks from './MaterialBookLinks.vue';
+import PresetProductionSync from './PresetProductionSync.vue';
+const productionSync=ref<InstanceType<typeof PresetProductionSync>>();
+const syncOptions=ref<any>({can_sync:false,enabled:false});
 const materialCanLink=ref(false);
 onMounted(async()=>{try{const options:any=await http.get('/api/v1/materials/manage/options/');materialCanLink.value=!!options.can_link}catch{materialCanLink.value=false}});
 import PresetSearchMetadataPanel from './PresetSearchMetadataPanel.vue';
@@ -129,7 +135,7 @@ const inputFile = ref<HTMLInputElement>();
 const bookColumns = [
  {title:'手帐',key:'book',width:260}, {title:'页数',dataIndex:'page_count',width:80},
  ...[['整本添加','book_count'],['选页添加','selection_count'],['选页累计页数','selected_page_count'],['使用人数','user_count']].map(([title,key])=>({title,key,statKey:key,width:125,sorter:(a:Book,b:Book)=>(a.import_statistics?.[key!] ?? -1)-(b.import_statistics?.[key!] ?? -1)})),
- {title:'状态',key:'state',width:100}, {title:'排序',dataIndex:'position',width:80}, {title:'操作',key:'actions',width:180}
+ {title:'同步生产',key:'sync',width:130}, {title:'状态',key:'state',width:100}, {title:'排序',dataIndex:'position',width:80}, {title:'操作',key:'actions',width:240}
 ];
 function ask(title: string, content: string): Promise<boolean> {
  return new Promise(resolve => Modal.confirm({ title, content, okText:'确认', cancelText:'取消', onOk:()=>{resolve(true);}, onCancel:()=>{resolve(false);} }));

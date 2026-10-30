@@ -76,6 +76,7 @@ def bootstrap_admin_permissions() -> None:
     )
 
     defaults = [
+        ("diary_presets.sync_template", "整本模板同步生产", "button", "", "menu:content:templates"),
         ("font_library.sync_fontfamily", "字体同步生产", "button", "", "menu:content:fonts"),
         ("font_library.view_fontfamily", "查看字体", "button", "", "menu:content:fonts"),
         ("font_library.change_fontfamily", "编辑字体", "button", "", "menu:content:fonts"),

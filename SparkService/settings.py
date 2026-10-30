@@ -227,6 +227,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'common.middleware.catalog_cache.CatalogConditionalGetMiddleware',
     'material_library.middleware.MaterialControlPlaneGuard',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -681,3 +682,19 @@ FONT_OSS_PREFIX = os.getenv('FONT_OSS_PREFIX', 'traveldiary/fonts/development/')
 FONT_PROCESSOR_TOKEN = os.getenv('FONT_PROCESSOR_TOKEN', '')
 
 CELERY_BEAT_SCHEDULE['font-sync-recovery'] = {'task': 'font_library.tasks.recover_sync_tasks', 'schedule': 30.0}
+
+CELERY_BEAT_SCHEDULE['preset-sync-recovery'] = {'task': 'diary_presets.tasks.recover_sync_tasks', 'schedule': 30.0}
+
+CELERY_IMPORTS = tuple(globals().get('CELERY_IMPORTS', ())) + ('backoffice.content_sync',)
+CELERY_BEAT_SCHEDULE['content-sync-recovery'] = {'task': 'backoffice.content_sync.recover_batches', 'schedule': 30.0}
+
+# Pagination snapshots must survive worker changes and application restarts.
+# Dedicated namespace/database; never fall back to per-process memory in production.
+CACHES = globals().get('CACHES', {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}})
+CACHES['material_pagination'] = {
+    'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+    'LOCATION': os.getenv('MATERIAL_PAGINATION_REDIS_URL', 'redis://127.0.0.1:6379/2'),
+    'KEY_PREFIX': 'traveldiary:material-pagination:v2',
+    'TIMEOUT': 1800,
+    'OPTIONS': {'socket_connect_timeout': 2, 'socket_timeout': 2},
+}

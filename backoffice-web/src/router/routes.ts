@@ -19,6 +19,7 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/diary-customizations', name: 'DiaryCustomizations', component: () => import('../views/CustomizationRequestsView.vue'), meta: { title: '专属定制', requiredPermission: 'diary_presets.change_template' } },
       { path: '/print-payments', name: 'PrintPayments', component: () => import('../views/PrintPaymentsView.vue'), meta: { title: '支付管理', paymentAccess: true } },
       { path: '/print-orders', name: 'PrintOrders', component: () => import('../views/PrintOrdersView.vue'), meta: { title: '印制订单', requiredPermission: 'print_orders.change_order' } },
+      { path: '/content/sync', name: 'ContentSync', component: () => import('../views/ContentSyncView.vue'), meta: { title: '批量同步到生产', superAdminOnly: true } },
       { path: '/content/fonts', name: 'Fonts', component: () => import('../views/FontCatalogView.vue'), meta: { title: '字体管理', requiredPermission: 'font_library.view_fontfamily' } },
       { path: '/content/templates', name: 'ContentTemplates', component: () => import('../views/DiaryPresetsView.vue'), meta: { title: '模板管理', superAdminOnly: true } },
       { path: '/content/stickers', name: 'ContentStickers', component: () => import('../views/MaterialCatalogView.vue'), meta: { title: '贴纸管理', materialAccess: true, fixedMaterialType: 'sticker' } },

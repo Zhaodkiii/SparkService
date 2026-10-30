@@ -91,3 +91,19 @@ class AdminPermissionPreset(models.Model):
 
     def __str__(self):
         return self.key
+
+
+class ContentSyncBatch(models.Model):
+    """Local durable plan; snapshots stay immutable after user review."""
+    import uuid
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    state = models.CharField(max_length=24, default='preview', db_index=True)
+    plan_hash = models.CharField(max_length=64)
+    entries = models.JSONField(default=list)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['-created_at','-id'], name='content_sync_recent')]

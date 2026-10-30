@@ -194,6 +194,7 @@ const legacyMenus = computed(() => {
 
 const menus = computed(() => {
   const children = [
+    ...(auth.user?.is_superuser ? [{code:'menu:content:sync',name:'批量同步到生产',path:'/content/sync',children:[]}] : []),
     ...(auth.user?.is_superuser ? [{code:'menu:content:templates',name:'模板管理',path:'/content/templates',children:[]}] : []),
     ...(['diary_presets.change_template','material_library.view_materiallibrary','material_library.change_materiallibrary'].some(p=>auth.hasPermission(p)) ? [
       {code:'menu:content:stickers',name:'贴纸管理',path:'/content/stickers',children:[]},

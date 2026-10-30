@@ -29,6 +29,21 @@ class CatalogTests(TestCase):
         self.assertEqual(self.client.post(self.base+'publish/',self.publish,format='json').status_code,200)
         legacy_free('sticker_library',MaterialLibrary.objects.get(pk=self.pk))
 
+    @override_settings(MIDDLEWARE=['common.middleware.catalog_cache.CatalogConditionalGetMiddleware'])
+    def test_catalog_conditional_get_rechecks_favorites(self):
+        self.client = APIClient(); self.client.force_authenticate(self.user)
+        with patch('common.middleware.catalog_cache.time.time', return_value=1201), patch('material_library.catalog_v2.time.time', return_value=1201):
+            url = '/api/v1/materials/libraries/?schema=2'
+            first = self.client.get(url)
+            self.assertEqual(first.status_code, 200)
+            self.assertTrue(first.has_header('ETag'), dict(first.items()))
+            second = self.client.get(url, HTTP_IF_NONE_MATCH=first['ETag'])
+            self.assertEqual(second.status_code, 304)
+            self.client.post(f'/api/v1/materials/libraries/{self.pk}/favorite/', {'favorite': True}, format='json')
+            changed = self.client.get(url, HTTP_IF_NONE_MATCH=first['ETag'])
+            self.assertEqual(changed.status_code, 200)
+            self.assertTrue(changed.data['items'][0]['is_favorited'])
+
     def test_admin_retains_withdrawn_cover_and_marks_draft_changes(self):
         lib=MaterialLibrary.objects.get(pk=self.pk)
         lib.active=False;lib.save()
@@ -183,6 +198,32 @@ class CatalogTests(TestCase):
         self.assertEqual(response.data['items'][0]['availability'],'unavailable')
         self.assertEqual(response.data['items'][0]['thumbnail_url'],'')
         self.assertEqual(self.client.post(f'/api/v1/materials/items/{self.r.material_id}/favorite/',{'favorite':False},format='json').status_code,200)
+
+    def pagination_fixture(self):
+        lib = MaterialLibrary.objects.get(pk=self.pk)
+        material = Material.objects.create(source_identity='cursor-test', material_type='sticker')
+        r = revision(material, dict(name='分页', kind='illustration', subcategory='object', keywords=[], aliases=[], resource_id=self.blob.pk, thumbnail_id=self.blob.pk, sources=[]))
+        LibraryItem.objects.create(version=lib.current, revision=r, material=material, position=1)
+        return self.client.get('/api/v1/materials/items/?schema=2&limit=1').data['next_cursor']
+
+    def test_missing_snapshot_has_machine_readable_reason(self):
+        from django.core.cache import caches
+        cursor = self.pagination_fixture()
+        caches['material_pagination'].clear()
+        response = self.client.get('/api/v1/materials/items/', {'schema': '2', 'limit': 1, 'cursor': cursor})
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.data['msg']['code'], 'SNAPSHOT_MISSING')
+
+    def test_expired_cursor_is_distinct_from_unavailable_content(self):
+        from django.core import signing
+        cursor = self.pagination_fixture()
+        with patch('material_library.catalog_v2.signing.loads', side_effect=signing.SignatureExpired()):
+            response = self.client.get('/api/v1/materials/items/', {'schema': '2', 'limit': 1, 'cursor': cursor})
+        self.assertEqual(response.data['msg']['code'], 'CURSOR_EXPIRED')
+        import uuid
+        response = self.client.get(f'/api/v1/materials/items/{uuid.uuid4()}/')
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.data['msg']['code'], 'CONTENT_UNAVAILABLE')
 
     def test_snapshot_keeps_revision_when_pack_publishes_during_pagination(self):
         lib=MaterialLibrary.objects.get(pk=self.pk)

@@ -71,13 +71,13 @@ def receiver_import(t, token):
         if lib: list(LibraryDraft.objects.select_for_update().filter(library=lib))
         actual=inspect_target(s)
         if actual['target_fingerprint']!=t.baseline:raise SyncError('TARGET_CHANGED','生产内容已改变，请重新预检')
-        if not lib:lib=MaterialLibrary.objects.create(id=t.library_uuid,title=s['library']['title'],library_type='sticker')
+        if not lib:lib=MaterialLibrary.objects.create(id=t.library_uuid,title=s['library']['title'],library_type=s['library']['type'])
         if not actual['no_op']:
             for b in s['resources']:
                 ResourceBlob.objects.get_or_create(pk=b['sha256'],defaults={k:v for k,v in b.items() if k!='sha256'})
             mats={}
             for spec in s['materials']:
-                mats[spec['id']]=Material.objects.get_or_create(pk=spec['id'],defaults={'source_identity':spec['source_identity'],'material_type':'sticker'})[0]
+                mats[spec['id']]=Material.objects.get_or_create(pk=spec['id'],defaults={'source_identity':spec['source_identity'],'material_type':s['library']['type']})[0]
             rows={}
             for r in s['revisions']:
                 existing=next((x for x in mats[r['material_id']].revisions.all() if revision_key(x)==r['sync_revision_key']),None)

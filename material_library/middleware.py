@@ -6,12 +6,12 @@ from django.http import JsonResponse
 class MaterialControlPlaneGuard:
     def __init__(self,get_response):self.get_response=get_response
     def __call__(self,request):
-        sync=request.path.startswith(('/api/v1/material-sync/','/api/v1/font-sync/'))
-        materials=request.path.startswith(('/api/v1/materials/','/api/v1/fonts/'))
+        sync=request.path.startswith(('/api/v1/material-sync/','/api/v1/font-sync/','/api/v1/preset-sync/'))
+        materials=request.path.startswith(('/api/v1/materials/','/api/v1/fonts/','/api/admin/v1/content-sync/'))
         if (sync or materials) and request.method in ('POST','PATCH','PUT'):
             if request.content_type not in (('application/json',) if sync else ('application/json','')):
                 return JsonResponse({'code':'metadata_only','message':'此接口仅接收 JSON 元数据，文件请直传 OSS'},status=415)
-            limit=2*1024*1024 if sync else 262144
+            limit=16*1024*1024 if request.path.startswith('/api/v1/preset-sync/') else (2*1024*1024 if sync else 262144)
             try:size=int(request.META.get('CONTENT_LENGTH') or 0)
             except ValueError:size=limit+1
             if size>limit:return self.too_large()

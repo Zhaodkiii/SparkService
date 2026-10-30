@@ -76,6 +76,7 @@ class Template(models.Model):
 
     class Meta:
         ordering = ['position', 'id']
+        permissions = [('sync_template', 'Can synchronize whole templates to production')]
         constraints = [models.CheckConstraint(condition=(models.Q(audience='public', owner__isnull=True, customization_id__isnull=True) | models.Q(audience='private', owner__isnull=False, customization_id__isnull=False)), name='preset_valid_audience')]
 
 
@@ -175,3 +176,47 @@ class PresetImportItem(models.Model):
             models.UniqueConstraint(fields=['event', 'source_page_id'], name='preset_import_source_unique'),
             models.UniqueConstraint(fields=['event', 'target_page_id'], name='preset_import_target_unique'),
         ]
+
+
+class PresetSyncTask(models.Model):
+    """Durable source tasks and target receipts; protocol identities never use user PKs."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    side = models.CharField(max_length=12)
+    source_environment = models.CharField(max_length=80)
+    library_uuid = models.UUIDField()
+    source_version = models.PositiveIntegerField()
+    content_hash = models.CharField(max_length=64)
+    snapshot = models.JSONField(default=dict)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    state = models.CharField(max_length=40, default='preflighting')
+    commit_status = models.CharField(max_length=20, default='not_committed')
+    result = models.JSONField(default=dict)
+    baseline = models.CharField(max_length=64, blank=True)
+    remote_id = models.CharField(max_length=64, blank=True)
+    remote_preflight_id = models.CharField(max_length=64, blank=True)
+    idempotency_key = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField(null=True)
+    lease_until = models.DateTimeField(null=True)
+    lease_token = models.CharField(max_length=64, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['side', 'library_uuid', 'created_at'], name='preset_sync_history')]
+
+
+class PresetSyncSlot(models.Model):
+    library_uuid = models.UUIDField(primary_key=True)
+    active_task = models.ForeignKey(PresetSyncTask, null=True, on_delete=models.PROTECT)
+
+
+class PresetSyncMapping(models.Model):
+    source_environment = models.CharField(max_length=80)
+    library_uuid = models.UUIDField()
+    source_version = models.PositiveIntegerField()
+    content_hash = models.CharField(max_length=64)
+    target_version = models.ForeignKey(Version, on_delete=models.PROTECT)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['source_environment','library_uuid','source_version','content_hash'], name='preset_sync_snapshot')]
