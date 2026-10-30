@@ -44,9 +44,6 @@ def heartbeat(pk, token, **updates):
 
 def receiver_preflight(t, token):
     s=t.snapshot
-    inspect_target(s)
-    def progress(n,total):heartbeat(t.pk,token,result={'checked':n,'total':total})
-    verify_resources(s,progress)
     result=inspect_target(s)
     t.refresh_from_db();t.result=result;t.baseline=result['target_fingerprint'];t.state='ready'
     t.expires_at=timezone.now()+timedelta(minutes=10);t.save()
@@ -57,9 +54,6 @@ def receiver_import(t, token):
         verify_committed(t);return
     s=t.snapshot
     heartbeat(t.pk,token,state='checking')
-    pre=MaterialSyncTask.objects.filter(pk=t.remote_preflight_id,side='target',source_environment=t.source_environment,state='ready',content_hash=t.content_hash,baseline=t.baseline).first() if t.remote_preflight_id else None
-    if not pre or pre.updated_at<timezone.now()-timedelta(minutes=5):
-        verify_resources(s,lambda n,total:heartbeat(t.pk,token,result={**t.result,'checked':n,'total':total}))
     MaterialSyncSlot.objects.get_or_create(library_uuid=t.library_uuid)
     with transaction.atomic():
         slot=MaterialSyncSlot.objects.select_for_update().get(pk=t.library_uuid)

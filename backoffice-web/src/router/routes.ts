@@ -12,10 +12,11 @@ export const constantRoutes: RouteRecordRaw[] = [
     component: () => import('../layouts/AdminLayout.vue'),
     children: [
       { path: '/billing/transactions', name: 'BillingTransactions', component: () => import('../views/BillingTransactionsView.vue'), meta: { title: '交易中心', requiredPermission: 'billing.view_transactions' } },
-      { path: '/billing', name: 'Billing', component: () => import('../views/BillingView.vue'), meta: { title: '收费与权限', requiredPermission: 'billing.view_pricing' } },
+      { path: '/billing', name: 'Billing', component: () => import('../views/BillingView.vue'), meta: { title: '内容定价与使用权益', requiredPermission: 'billing.view_pricing' } },
       { path: '/support/tickets', component: () => import('../views/SupportTicketsView.vue'), meta: { title: '反馈工单', requiredPermission: 'support_center.view_ticket' } },
       { path: '/support/content', component: () => import('../views/SupportContentView.vue'), meta: { title: '帮助内容', requiredPermission: 'support_center.edit_help' } },
       { path: '/support/config', component: () => import('../views/SupportConfigView.vue'), meta: { title: '反馈服务配置', requiredPermission: 'support_center.manage_config' } },
+      { path: '/diary-customizations/packages', name: 'CustomizationPackages', component: () => import('../views/CustomizationPackagesView.vue'), meta: { title: '数字定制套餐', requiredPermission: 'billing.publish_pricing' } },
       { path: '/diary-customizations', name: 'DiaryCustomizations', component: () => import('../views/CustomizationRequestsView.vue'), meta: { title: '专属定制', requiredPermission: 'diary_presets.change_template' } },
       { path: '/print-payments', name: 'PrintPayments', component: () => import('../views/PrintPaymentsView.vue'), meta: { title: '支付管理', paymentAccess: true } },
       { path: '/print-orders', name: 'PrintOrders', component: () => import('../views/PrintOrdersView.vue'), meta: { title: '印制订单', requiredPermission: 'print_orders.change_order' } },

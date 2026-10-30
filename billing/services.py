@@ -32,7 +32,7 @@ def target_available(offer):
         return FontFamily.objects.filter(pk=offer.target_id,active=True,current__isnull=False).exists()
     if offer.target_kind == 'template':
         from diary_presets.models import Template
-        return Template.objects.filter(pk=offer.target_id,active=True,audience='public',series__active=True,current__isnull=False).exists()
+        return Template.objects.filter(pk=offer.target_id,active=True,audience='public',deleted_at__isnull=True,series__active=True,current__isnull=False).exists()
     if offer.target_kind == 'sticker_library':
         from material_library.views import visible
         return visible().filter(pk=offer.target_id).exists()

@@ -1,9 +1,9 @@
+from billing.flags import sales_enabled
 """Whole-book metadata protocol. Immutable OSS objects never pass through Django."""
 import json
 import uuid
 from copy import deepcopy
 from types import SimpleNamespace
-from concurrent.futures import ThreadPoolExecutor
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
@@ -58,7 +58,7 @@ def collect_taxa(manifest):
 
 
 def snapshot_for(template):
-    if template.audience != 'public' or not template.active or not template.series.active or not template.current_id:
+    if template.deleted_at or template.audience != 'public' or not template.active or not template.series.active or not template.current_id:
         raise SyncError('SOURCE_UNAVAILABLE','仅支持已发布、已上架的公开整本模板')
     version = template.current
     libraries = [library_snapshot(b.library_version) for b in version.material_bindings.select_related('library_version__library').order_by('library_type')]
@@ -234,7 +234,7 @@ def inspect_target(s):
     template=Template.objects.select_related('current','series').filter(pk=s['library_id']).first()
     if template:
         if template.audience!='public' or template.content_kind!=s['book']['content_kind']: raise SyncError('IDENTITY_CONFLICT','生产模板身份或类型不同')
-        if not template.active or not template.series.active: raise SyncError('TARGET_WITHDRAWN','生产模板或系列已停用')
+        if template.deleted_at or not template.active or not template.series.active: raise SyncError('TARGET_WITHDRAWN','生产模板或系列已停用')
         if not template.current_id or template.draft!=template.current.snapshot: raise SyncError('TARGET_DRAFT_CONFLICT','生产存在未发布整本草稿')
         if Upload.objects.filter(template=template).exclude(status__in=['done','published','failed','cancelled','ready','conflict']).exists(): raise SyncError('UPLOAD_IN_PROGRESS','生产模板有未完成上传')
         bindings={b.library_type:(b.library_version.library_id,b.library_version_id) for b in template.current.material_bindings.select_related('library_version')}
@@ -297,28 +297,14 @@ def inspect_target(s):
         form=PolicyInput(data={**policy,'expected_revision':0,'change_reason':'整本同步首次策略'})
         if not form.is_valid(): raise SyncError('POLICY_DEPENDENCY','首次价格策略依赖的附赠贴纸包尚未就绪，请先同步并配置其生产价格')
         mode=policy['access_mode']
-        if mode in ('diamond_only','pro_or_diamond') and not settings.DIAMOND_REDEMPTION_ENABLED: raise SyncError('SALES_DISABLED','生产钻石销售未开放')
-        if mode in ('pro_only','pro_or_diamond') and not settings.MEMBERSHIP_SALES_ENABLED: raise SyncError('SALES_DISABLED','生产会员服务未开放')
+        if mode in ('diamond_only','pro_or_diamond') and not sales_enabled('DIAMOND_REDEMPTION_ENABLED'): raise SyncError('SALES_DISABLED','生产钻石销售未开放')
+        if mode in ('pro_only','pro_or_diamond') and not sales_enabled('MEMBERSHIP_SALES_ENABLED'): raise SyncError('SALES_DISABLED','生产会员服务未开放')
     old={p['data']['id']:p for p in template.current.snapshot['pages']} if template and template.current_id else {}
     new={p['data']['id']:p for p in s['book']['snapshot']['pages']}
     return dict(adopt_existing=adopt_existing,missing_bindings=missing_bindings,no_op=current==s['content_hash'],target_version=number,next_version=number if current==s['content_hash'] else s['source_version'],
                 count=len(new),added=len(new.keys()-old.keys()),removed=len(old.keys()-new.keys()),updated=sum(old[k]!=new[k] for k in old.keys()&new.keys()),
                 library_count=len(s['libraries']),resource_count=len(resource_inventory(s)),target_fingerprint=target_state(s),
                 initial_policy=policy,pricing_action='保留生产现有价格' if offer else ('首次创建来源价格策略' if policy else '沿用模板现有默认访问规则'))
-
-
-def verify_resources(s,progress=None):
-    from .storage import bucket
-    objects=list(resource_inventory(s).values())
-    def check(obj):
-        try:
-            result=bucket().head_object(obj['object_key'])
-            if result.content_length!=obj['byte_size']: raise SyncError('RESOURCE_METADATA_MISMATCH','OSS 资源大小不符')
-        except SyncError: raise
-        except Exception as exc: raise SyncError('RESOURCE_MISSING' if getattr(exc,'status',None)==404 else 'OSS_CHECK_FAILED','OSS 资源缺失或访问失败',getattr(exc,'status',None)!=404)
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        for n,_ in enumerate(pool.map(check,objects),1):
-            if progress: progress(n,len(objects))
 
 
 def sync_summary(template):

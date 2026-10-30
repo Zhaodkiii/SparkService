@@ -238,7 +238,7 @@ def run_search(params, owner, draft=None):
         template, snapshot = draft
         candidates = [(k, key, pos, doc, template.position, 0) for k, key, pos, doc in documents(template, snapshot, terms) if k == kind]
     else:
-        entries = CatalogEntry.objects.filter(entity_type=kind, version__template__audience='public', version__template__active=True,
+        entries = CatalogEntry.objects.filter(entity_type=kind, version__template__audience='public', version__template__active=True, version__template__deleted_at__isnull=True,
             version__template__series__active=True, version_id=F('version__template__current_id'))
         if content_kind != 'all':
             entries = entries.filter(version__template__content_kind=content_kind)

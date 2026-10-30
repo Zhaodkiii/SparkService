@@ -1,3 +1,4 @@
+vi.mock('../src/stores/auth',()=>({useAuthStore:()=>({hasPermission:()=>true})}));
 import {describe,it,expect,vi,beforeEach,afterEach} from 'vitest';
 import {mount,flushPromises,type VueWrapper} from '@vue/test-utils';
 import Antd,{Modal} from 'ant-design-vue';

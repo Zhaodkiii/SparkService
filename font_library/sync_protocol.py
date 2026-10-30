@@ -1,3 +1,4 @@
+from billing.flags import sales_enabled
 """Portable font metadata. Shared immutable OSS keys; never upload/copy resource bodies."""
 import uuid
 import re
@@ -111,21 +112,14 @@ def inspect_target(s):
     if offer and not offer.current_policy_revision_id:raise SyncError('POLICY_REQUIRED','生产字体有未发布价格策略，请先在生产处理')
     mode=offer.current_policy_revision.access_mode if offer else s['initial_policy']['access_mode']
     if not offer:
-        if mode in ('diamond_only','pro_or_diamond') and not settings.DIAMOND_REDEMPTION_ENABLED:raise SyncError('SALES_DISABLED','生产钻石销售未开放，不能首次同步收费字体')
-        if mode in ('pro_only','pro_or_diamond') and not settings.MEMBERSHIP_SALES_ENABLED:raise SyncError('SALES_DISABLED','生产会员服务未开放')
+        if mode in ('diamond_only','pro_or_diamond') and not sales_enabled('DIAMOND_REDEMPTION_ENABLED'):raise SyncError('SALES_DISABLED','生产钻石销售未开放，不能首次同步收费字体')
+        if mode in ('pro_only','pro_or_diamond') and not sales_enabled('MEMBERSHIP_SALES_ENABLED'):raise SyncError('SALES_DISABLED','生产会员服务未开放')
     if mode!='free'  and 'paid_service' not in s['library']['license_scopes']:raise SyncError('LICENSE_SCOPE','生产收费策略需要付费服务授权')
     old={x['id']:x['asset_id'] for x in f.current.content['faces']} if f and f.current_id else {}
     new={x['id']:x['asset_id'] for x in s['library']['faces']}
     n=f.current.number if f and f.current_id else 0
     if current!=s['content_hash'] and s['source_version']<=n:raise SyncError('VERSION_CONFLICT','来源字体版本不高于生产版本，禁止覆盖或回退历史字体引用')
     return dict(initial_policy=s['initial_policy'] if not offer else None,pricing_action='保留生产现有价格' if offer else '首次创建来源价格策略',no_op=current==s['content_hash'],target_version=n,next_version=n if current==s['content_hash'] else s['source_version'],added=len(new.keys()-old.keys()),removed=len(old.keys()-new.keys()),updated=sum(old[k]!=new[k] for k in old.keys()&new.keys()),count=len(new),resource_count=len(s['resources']),target_fingerprint=fingerprint(s))
-
-def verify_resources(s,progress=None):
-    from .storage import verify
-    for n,a in enumerate(s['resources'],1):
-        try:verify(a['object_key'],a['byte_size'],a['mime'])
-        except Exception as exc:raise SyncError('RESOURCE_MISSING' if getattr(exc,'status',None)==404 else 'OSS_CHECK_FAILED','OSS 字体资源缺失或校验失败',getattr(exc,'status',None)!=404)
-        if progress:progress(n,len(s['resources']))
 
 def sync_summary(font):
     t=FontSyncTask.objects.filter(side='source',library_uuid=font.pk).order_by('-created_at').first()

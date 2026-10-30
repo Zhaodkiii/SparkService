@@ -47,6 +47,6 @@ async function preview(){await run(async()=>{batch.value=await http.post(base+'b
 function open(value:any){batch.value=value;visible.value=true;poll();}
 async function confirm(){await run(async()=>{batch.value=await http.post(base+'batches/'+batch.value.id+'/confirm/',{plan_hash:batch.value.plan_hash});await poll();});}
 async function retry(){await run(async()=>{batch.value=await http.post(base+'batches/'+batch.value.id+'/retry/',{});await poll();});}
-async function poll(){clearTimeout(timer);if(!batch.value)return;const id=batch.value.id;try{const data:any=await http.get(base+'batches/'+id+'/');if(batch.value?.id===id){const previous=batch.value.state;batch.value=data;if(previous!==data.state&&['succeeded','partial'].includes(data.state))await refresh();}}catch(e:any){error.value=e?.message||'查询失败';}if(visible.value&&batch.value?.state==='running')timer=setTimeout(poll,5000);}
+async function poll(){clearTimeout(timer);if(!batch.value)return;const id=batch.value.id;try{const data:any=await http.get(base+'batches/'+id+'/');if(batch.value?.id===id){const previous=batch.value.state;batch.value=data;if(previous!==data.state&&['succeeded','partial'].includes(data.state))await refresh();}}catch(e:any){error.value=e?.message||'查询失败';}if(visible.value&&batch.value?.state==='running')timer=setTimeout(poll,2000);}
 onMounted(refresh);onBeforeUnmount(()=>clearTimeout(timer));
 </script>

@@ -98,19 +98,22 @@ class PresetSyncTests(TestCase):
 
     def test_preflight_fingerprint_rechecked_before_commit(self):
         t=self.task();self.series.title='人工修改';self.series.save()
-        with patch('diary_presets.sync_engine.verify_resources'),self.assertRaises(SyncError): receiver_import(t,'lease')
+        with self.assertRaises(SyncError): receiver_import(t,'lease')
         self.assertFalse(Template.objects.filter(pk=t.library_uuid).exists())
 
-    def test_missing_oss_no_database_publication(self):
+    def test_sync_never_contacts_oss(self):
+        self.add_library()
         t=self.task()
-        with patch('diary_presets.storage.bucket') as bucket:
-            bucket.return_value.head_object.side_effect=RuntimeError('not available')
-            with self.assertRaises(SyncError): receiver_import(t,'lease')
-        self.assertFalse(Template.objects.filter(pk=t.library_uuid).exists())
+        with patch('diary_presets.storage.bucket', side_effect=AssertionError('OSS must not be contacted')) as bucket:
+            receiver_preflight(t,'lease')
+            receiver_import(t,'lease')
+            bucket.assert_not_called()
+        t.refresh_from_db()
+        self.assertEqual(t.state,'succeeded')
 
     def test_search_index_failure_rolls_back_book_and_dependencies(self):
         spec=self.add_library();t=self.task()
-        with patch('diary_presets.sync_engine.verify_resources'),patch('diary_presets.search.index_version',side_effect=RuntimeError('index')):
+        with patch('diary_presets.search.index_version',side_effect=RuntimeError('index')):
             with self.assertRaises(RuntimeError): receiver_import(t,'lease')
         self.assertFalse(Template.objects.filter(pk=t.library_uuid).exists())
         self.assertFalse(MaterialLibrary.objects.filter(pk=spec['id']).exists())

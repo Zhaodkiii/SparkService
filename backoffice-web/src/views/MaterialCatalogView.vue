@@ -25,6 +25,7 @@
                 <a-menu-item v-if="syncOptions.can_sync" :disabled="!syncOptions.enabled || !record.version || !record.active || !!record.template_id || !['sticker','background'].includes(record.type)" @click="productionSync?.open(record)">同步到生产</a-menu-item>
                 <a-menu-item @click="lifecycle?.openLinks(record)">关联整本手帐</a-menu-item>
                 <a-menu-item v-if="permissions.can_delete" danger @click="lifecycle?.previewDelete(record)">删除整套</a-menu-item>
+                <a-menu-item v-if="pricingAuth.hasPermission('billing.view_pricing')"><router-link :to="{path:'/billing',query:{target_kind:'sticker_library',target_id:record.id}}">配置收费策略</router-link></a-menu-item>
                 <a-menu-item @click="history(record)">历史版本</a-menu-item>
                 <a-menu-item v-if="permissions.can_edit" @click="error='';placementEdit={...record}">展示设置</a-menu-item>
                 <a-menu-item v-if="permissions.can_takedown" :disabled="!record.version" :danger="record.active" @click="confirmLibraryAvailability(record)">{{record.active?'下架素材包':'上架素材包'}}</a-menu-item>
@@ -82,6 +83,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import {useAuthStore as usePricingAuth} from '../stores/auth';
+const pricingAuth=usePricingAuth();
 import {ref,reactive,onMounted,onBeforeUnmount,watch,computed} from 'vue';
 import {Modal} from 'ant-design-vue';
 import {useRoute} from 'vue-router';

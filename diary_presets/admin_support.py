@@ -14,7 +14,7 @@ class PresetAdmin(BasePermission):
                     (request.user.is_superuser or request.user.has_perm('diary_presets.change_template')))
 
 def lock_template(pk, data):
-    obj = get_object_or_404(Template.objects.select_for_update(), pk=pk, audience='public')
+    obj = get_object_or_404(Template.objects.select_for_update(), pk=pk, audience='public',deleted_at__isnull=True)
     if data.get('revision') != obj.revision:
         raise Conflict()
     return obj

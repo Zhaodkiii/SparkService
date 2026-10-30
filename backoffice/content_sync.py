@@ -241,15 +241,26 @@ def enqueue(pk):
     try:run_batch.apply_async(args=[str(pk)])
     except Exception:pass # periodic durable recovery
 
+def notify_source_task(kind, task_id):
+    """Wake confirmed parent batches after the child lease has been released."""
+    key=str(task_id)
+    for batch in ContentSyncBatch.objects.filter(state='running').order_by().only('id','entries'):
+        if any(e.get('kind')==kind and e.get('task_id')==key for e in batch.entries):
+            enqueue(batch.pk)
+
+
 @shared_task(ignore_result=True)
-def run_batch(pk):
+def run_batch(pk, expected_updated=None):
     with transaction.atomic():
         b=ContentSyncBatch.objects.select_for_update().get(pk=pk)
         if b.state!='running':return
+        # Only the newest fallback timer may extend the polling chain.
+        if expected_updated and b.updated_at.isoformat()!=expected_updated:return
         if not allowed(b.actor):b.state='partial';b.save();return
         source_enabled()
         bykey={e['key']:e for e in b.entries}
         waiting=False
+        in_flight=sum(e['state']=='running' for e in b.entries)
         for e in b.entries:
             if e['state'] in ('succeeded','embedded','failed','blocked'):continue
             try:
@@ -257,12 +268,16 @@ def run_batch(pk):
                     e.update(state='blocked',message='前置依赖未完成');continue
                 if any(bykey[d]['state']!='succeeded' for d in e.get('dependencies',[])):waiting=True;continue
                 if not e.get('task_id'):
+                    if in_flight>=2:
+                        waiting=True
+                        continue
                     if frozen(e)!=e['snapshot']:raise SyncError('SOURCE_CHANGED','本地资源已变化，请新建批次')
                     active=task_model(e['kind']).objects.filter(side='source',library_uuid=e['id'],state__in=['preflighting','ready','queued','checking','committed','outcome_unknown','committed_verification_pending']).first()
                     if active:raise SyncError('TASK_IN_PROGRESS','此资源已有单项或其他批次任务，请先处理')
                     s=e['snapshot']
                     t=task_model(e['kind']).objects.create(side='source',source_environment=settings.MATERIAL_SYNC_ENVIRONMENT_ID,library_uuid=e['id'],source_version=s['source_version'],content_hash=s['content_hash'],snapshot=s,actor=b.actor,idempotency_key=uuid.uuid4().hex)
                     e.update(task_id=str(t.pk),state='running')
+                    in_flight+=1
                     transaction.on_commit(lambda kind=e['kind'],tid=t.pk:module(kind,'tasks').enqueue(tid))
                 else:t=task_model(e['kind']).objects.get(pk=e['task_id'])
                 if t.state=='ready':
@@ -272,12 +287,14 @@ def run_batch(pk):
                     transaction.on_commit(lambda kind=e['kind'],tid=t.pk:module(kind,'tasks').enqueue(tid))
                 if t.state=='succeeded':
                     e['state']='succeeded'
+                    in_flight-=1
                     for key in e.get('embedded',[]):bykey[key]['state']='succeeded'
                 elif t.state in ('failed','conflict','expired') or t.result.get('manual_retry'):
                     e.update(state='failed',message=t.result.get('message','预检过期或任务失败'))
+                    in_flight-=1
                 else:
                     waiting=True
-                    break
+                    continue
             except SyncError as exc:e.update(state='failed',message=exc.message)
             except ObjectDoesNotExist:e.update(state='failed',message='资源或同步回执已删除，请重新预览')
         pending=[e for e in b.entries if e['state'] in ('pending','running')]
@@ -285,7 +302,7 @@ def run_batch(pk):
             b.state='partial' if any(e['state'] in ('failed','blocked') for e in b.entries) else 'succeeded'
         b.save()
     if b.state=='running':
-        try:run_batch.apply_async(args=[str(pk)],countdown=10)
+        try:run_batch.apply_async(args=[str(pk),b.updated_at.isoformat()],countdown=10)
         except Exception:pass
 
 @shared_task(ignore_result=True)

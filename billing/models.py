@@ -260,3 +260,12 @@ class StorePayment(UUIDRecord):
     lifecycle = models.CharField(max_length=40, blank=True)
     lifecycle_at = models.DateTimeField(null=True)
     events = models.ManyToManyField(CurrencyEvent)
+
+class SalesControl(models.Model):
+    """Environment-local runtime switches; never part of resource sync snapshots."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    diamond_redemption_enabled = models.BooleanField(default=False)
+    membership_sales_enabled = models.BooleanField(default=False)
+    revision = models.PositiveIntegerField(default=0)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    updated_at = models.DateTimeField(auto_now=True)

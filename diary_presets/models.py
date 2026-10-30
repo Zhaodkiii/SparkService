@@ -73,6 +73,8 @@ class Template(models.Model):
     revision = models.PositiveIntegerField(default=0)
     current = models.ForeignKey('Version', null=True, blank=True, on_delete=models.PROTECT, related_name='+')
     draft = models.JSONField(default=dict)
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    deletion_reason = models.CharField(max_length=500, blank=True)
 
     class Meta:
         ordering = ['position', 'id']

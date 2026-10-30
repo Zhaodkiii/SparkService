@@ -78,7 +78,14 @@ def run_sync_task(pk):
         fail(t,SyncError('TASK_ERROR','任务执行失败，请检查服务日志或重新预检',True))
     finally:
         FontSyncTask.objects.filter(pk=pk,lease_token=token).update(lease_until=None,lease_token='')
-        if repeat:enqueue(pk,10)
+        current=FontSyncTask.objects.get(pk=pk)
+        if current.side=='source' and (current.state in ('ready','succeeded','failed','conflict','expired') or current.result.get('manual_retry')):
+            from backoffice.content_sync import notify_source_task
+            notify_source_task('font',pk)
+        if repeat:
+            # Fast normal polling, bounded backoff; retain slower network retries.
+            delay=10 if current.result.get('network_failures') else min(5,1+current.attempts//3)
+            enqueue(pk,delay)
 
 
 @shared_task(ignore_result=True)

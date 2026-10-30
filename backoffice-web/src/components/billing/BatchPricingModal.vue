@@ -1,0 +1,30 @@
+<script setup lang="ts">
+import {ref,computed,watch} from 'vue';
+import {Modal,message} from 'ant-design-vue';
+import http from '../../api/http';
+import {modes,kindLabel,policyLabel} from '../../features/billing/policy';
+const props=defineProps<{open:boolean;items:any[]}>();
+const emit=defineEmits<{close:[];saved:[result:any];busy:[value:boolean]}>();
+const form=ref({access_mode:'free',diamond_price:null as number|null,change_reason:'',overwrite_drafts:false});
+const preview=ref<any>(null),busy=ref(false),error=ref(''),savedSignature=ref('');
+const diamond=computed(()=>['diamond_only','pro_or_diamond'].includes(form.value.access_mode));
+const body=computed(()=>({...form.value,change_reason:form.value.change_reason.trim(),diamond_price:diamond.value?form.value.diamond_price:null,items:props.items.map(r=>({target_kind:r.target_kind,target_id:r.target_id}))}));
+const signature=computed(()=>JSON.stringify(body.value));
+const valid=computed(()=>props.items.length>0&&props.items.length<=100&&!!form.value.change_reason.trim()&&(!diamond.value||(Number.isInteger(form.value.diamond_price)&&Number(form.value.diamond_price)>=1&&Number(form.value.diamond_price)<=1000000)));
+const ready=computed(()=>!!preview.value&&savedSignature.value===signature.value);
+watch(()=>props.open,v=>{if(v){form.value={access_mode:'free',diamond_price:null,change_reason:'',overwrite_drafts:false};preview.value=null;error.value='';savedSignature.value='';}});
+watch(busy,v=>emit('busy',v));
+async function inspect(){if(!valid.value||busy.value)return;busy.value=true;error.value='';try{const requested=signature.value;const result:any=await http.post('/api/v1/billing/manage/batch-pricing/preview/',body.value);preview.value=result;savedSignature.value=requested;}catch(e:any){error.value=e.message;preview.value=null;}finally{busy.value=false;}}
+async function save(){if(!ready.value||!preview.value.save_count||busy.value)return;busy.value=true;error.value='';try{const result:any=await http.post('/api/v1/billing/manage/batch-pricing/save/',{...body.value,expected_preview_hash:preview.value.preview_hash});message.success(`已保存 ${result.saved_count} 项草稿，线上策略尚未变化`);emit('saved',result);}catch(e:any){error.value=e.message;preview.value=null;}finally{busy.value=false;}}
+function close(){if(busy.value)return;if(form.value.change_reason.trim()||preview.value){Modal.confirm({title:'关闭批量配置？',content:'尚未保存的批量配置将丢弃。',okText:'关闭',cancelText:'继续配置',onOk:()=>emit('close')});}else emit('close');}
+</script>
+<template>
+<a-modal :open="open" title="批量配置内容策略" :width="900" :footer="null" :closable="!busy" :mask-closable="false" @cancel="close">
+ <a-alert type="info" show-icon :message="`已选择 ${items.length} 项内容 · 本次仅保存草稿`" description="统一设置使用方式与价格；每项原有附赠素材和条款分别保留。保存后，在列表中逐项校验并发布。"/>
+ <a-alert v-if="error" type="error" :message="error" show-icon/>
+ <a-form layout="vertical" :disabled="busy" class="batch-form"><div class="fields"><a-form-item label="统一使用方式"><a-select v-model:value="form.access_mode" :options="modes"/></a-form-item><a-form-item v-if="diamond" label="每项永久解锁价格（钻石）" required><a-input-number v-model:value="form.diamond_price" :min="1" :max="1000000" :precision="0" style="width:100%"/></a-form-item></div><a-form-item label="统一变更说明" required><a-textarea v-model:value="form.change_reason" :maxlength="500" :rows="2" show-count placeholder="说明本次批量调整的原因"/></a-form-item><a-checkbox v-model:checked="form.overwrite_drafts">替换所选内容已有草稿中的使用方式、价格与变更说明</a-checkbox><small>默认跳过已有草稿；勾选替换时，仍保留该草稿的附赠素材和条款。过期草稿需要先单独处理。</small></a-form>
+ <a-space wrap><a-button :disabled="!valid||busy" :loading="busy" @click="inspect">预览批量变更</a-button><span v-if="!ready" class="muted">先预览，核对每项内容后再保存。</span></a-space>
+ <section v-if="ready" class="batch-preview"><h3>将保存 {{preview.save_count}} 项 · 跳过 {{preview.skipped_count}} 项</h3><a-alert v-if="preview.items.some((r:any)=>r.blockers.length)" type="warning" show-icon message="部分内容存在发布限制，可先保存草稿；发布前仍需逐项解决。"/><a-table :data-source="preview.items" :row-key="(r:any)=>r.target_kind+':'+r.target_id" :scroll="{x:650,y:330}" :pagination="false" :columns="[{title:'内容',key:'content',width:200},{title:'配置变更',key:'change',width:240},{title:'处理结果',key:'result',width:230}]"><template #bodyCell="{column,record}"><template v-if="column.key==='content'"><strong>{{record.title}}</strong><small>{{kindLabel(record.target_kind)}}</small></template><template v-else-if="column.key==='change'"><template v-if="!record.skipped">{{policyLabel(record.previous)}} → {{policyLabel(record.body)}}<small>保留 {{record.body.bundled_grants.length}} 个附赠素材 · {{record.body.terms_version}}</small></template><span v-else>{{policyLabel(record.previous)}}</span></template><template v-else-if="column.key==='result'"><a-tag v-if="record.skipped">跳过</a-tag><a-tag v-else color="blue">保存草稿</a-tag><small v-if="record.skipped">{{record.skip_reason}}</small><small v-for="b in record.blockers" :key="b.code+b.message" class="warning">发布限制：{{b.message}}</small></template></template></a-table><div class="actions"><a-button :disabled="busy" @click="close">取消</a-button><a-popconfirm :title="`确认保存 ${preview.save_count} 项草稿？`" description="线上策略不会立即变化，已有草稿按预览结果处理。" :disabled="!preview.save_count||busy" @confirm="save"><a-button type="primary" :loading="busy" :disabled="!preview.save_count||busy">保存 {{preview.save_count}} 项草稿</a-button></a-popconfirm></div></section>
+</a-modal>
+</template>
+<style scoped>.batch-form{margin:20px 0}.fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.batch-preview{margin-top:24px}.actions{display:flex;justify-content:flex-end;gap:12px;margin-top:20px}small,.muted{display:block;font-size:12px;color:#64748b;margin-top:6px}.warning{color:#a65b00}:deep(.ant-alert){margin-bottom:12px}@media(max-width:600px){.fields{grid-template-columns:1fr;gap:0}}</style>

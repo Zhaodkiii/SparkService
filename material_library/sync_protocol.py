@@ -220,22 +220,5 @@ def inspect_target(s):
         target_fingerprint=target_state(s))
 
 
-def verify_resources(s, progress=None):
-    from diary_presets.storage import bucket
-    from concurrent.futures import ThreadPoolExecutor
-    def check(b):
-        try:
-            h=bucket().head_object(b['object_key'])
-            if h.content_length!=b['byte_size'] or h.headers.get('Content-Type','').split(';')[0]!=b['mime']:
-                raise SyncError('RESOURCE_METADATA_MISMATCH','OSS 文件大小或类型不符')
-        except SyncError:raise
-        except Exception as exc:
-            code='RESOURCE_MISSING' if getattr(exc,'status',None)==404 else 'OSS_CHECK_FAILED'
-            raise SyncError(code,'OSS 文件缺失或访问失败，请检查上传及权限',code=='OSS_CHECK_FAILED')
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        for n,_ in enumerate(pool.map(check,s['resources']),1):
-            if progress:progress(n,len(s['resources']))
-
-
 def wire_environment():
     return dict(bucket=settings.ALIYUN_OSS_BUCKET,endpoint=settings.ALIYUN_OSS_ENDPOINT.rstrip('/'),prefix=prefix())

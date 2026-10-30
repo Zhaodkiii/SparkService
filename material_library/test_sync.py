@@ -52,8 +52,7 @@ class SyncTests(TestCase):
             s=copy.deepcopy(self.s);mutate(s)
             with self.assertRaises(SyncError):validate_snapshot(s)
 
-    @patch('material_library.sync_engine.verify_resources')
-    def test_create_and_repeated_import_keep_one_version(self,verify):
+    def test_create_and_repeated_import_keep_one_version(self):
         s=self.target_snapshot();t=self.task(s);receiver_import(t,'test');t.refresh_from_db()
         lib=MaterialLibrary.objects.get(pk=s['library_id'])
         self.assertEqual(lib.current.items.count(),1);self.assertEqual(t.state,'succeeded')
@@ -61,8 +60,7 @@ class SyncTests(TestCase):
         self.assertEqual(lib.versions.count(),1)
         self.assertEqual(lib.current.items.get().revision_id,self.rev.pk)
 
-    @patch('material_library.sync_engine.verify_resources')
-    def test_incremental_update_preserves_operational_settings(self,verify):
+    def test_incremental_update_preserves_operational_settings(self):
         t=self.task();receiver_import(t,'test')
         self.lib.featured=True;self.lib.sort_order=42;self.lib.save()
         s=copy.deepcopy(self.s);s['library']['description']='新增介绍';s['content_hash']=content_hash(s)
@@ -76,14 +74,12 @@ class SyncTests(TestCase):
         self.lib.active=True;self.lib.save();d=self.lib.draft;d.content={**d.content,'description':'人工草稿'};d.save()
         with self.assertRaisesMessage(SyncError,'草稿'):inspect_target(self.s)
 
-    @patch('material_library.sync_engine.verify_resources')
-    def test_baseline_change_prevents_commit(self,verify):
+    def test_baseline_change_prevents_commit(self):
         t=self.task();self.lib.state_revision+=1;self.lib.save()
         with self.assertRaisesMessage(SyncError,'已改变'):receiver_import(t,'test')
         self.assertEqual(self.lib.versions.count(),1)
 
-    @patch('material_library.sync_engine.verify_resources')
-    def test_transaction_rolls_back_partial_import(self,verify):
+    def test_transaction_rolls_back_partial_import(self):
         s=self.target_snapshot();t=self.task(s)
         with patch('material_library.sync_engine.MaterialAudit.objects.create',side_effect=RuntimeError('injected')):
             with self.assertRaises(RuntimeError):receiver_import(t,'test')
@@ -94,13 +90,14 @@ class SyncTests(TestCase):
         s=copy.deepcopy(self.s);s['materials'][0]['source_identity']='other';s['content_hash']=content_hash(s)
         with self.assertRaisesMessage(SyncError,'身份冲突'):inspect_target(s)
 
-    def test_oss_head_only(self):
-        bucket=MagicMock();bucket.head_object.return_value=MagicMock(content_length=10,headers={'Content-Type':'image/png'})
-        with patch('diary_presets.storage.bucket',return_value=bucket):verify_resources(self.s)
-        self.assertEqual(bucket.head_object.call_count,3);bucket.get_object.assert_not_called();bucket.put_object.assert_not_called()
-        bucket.head_object.return_value.content_length=11
-        with patch('diary_presets.storage.bucket',return_value=bucket):
-            with self.assertRaises(SyncError):verify_resources(self.s)
+    def test_sync_never_contacts_oss(self):
+        t=self.task(self.target_snapshot())
+        with patch('diary_presets.storage.bucket', side_effect=AssertionError('OSS must not be contacted')) as bucket:
+            receiver_preflight(t,'test')
+            receiver_import(t,'test')
+            bucket.assert_not_called()
+        t.refresh_from_db()
+        self.assertEqual(t.state,'succeeded')
 
     @override_settings(MATERIAL_SYNC_RECEIVER_ENABLED=True,MATERIAL_SYNC_ENVIRONMENT_ID='production',MATERIAL_SYNC_ACCEPTED_KEYS={'test':{'secret':'test-only-secret','environment':'local-authoring'}})
     def test_hmac_and_nonce_replay(self):
@@ -142,7 +139,6 @@ class SyncTests(TestCase):
     @patch('material_library.sync_api.authorize',return_value='local-authoring')
     @patch('material_library.sync_api.worker_ready',return_value=True)
     @patch('material_library.sync_api.enqueue')
-    @patch('material_library.sync_engine.verify_resources')
     def test_receiver_api_full_roundtrip_and_lost_response_recovery(self,*_):
         factory=APIRequestFactory();s=self.target_snapshot()
         def post(view,data):return view.as_view()(factory.post('/api/v1/material-sync/',data,format='json'))
@@ -180,8 +176,7 @@ class SyncTests(TestCase):
         req._stream=__import__('io').BytesIO(b'x'*(2*1024*1024+1));req.META['CONTENT_LENGTH']='0'
         self.assertEqual(guard(req).status_code,413)
 
-    @patch('material_library.sync_engine.verify_resources')
-    def test_import_remaps_integer_ids_into_independent_catalog(self,verify):
+    def test_import_remaps_integer_ids_into_independent_catalog(self):
         s=copy.deepcopy(self.s);old_revision=self.rev.pk
         # Simulate a clean destination with unrelated IDs already allocated.
         self.lib.current=None;self.lib.save();LibraryDraft.objects.all().delete();LibraryItem.objects.all().delete()
@@ -214,8 +209,7 @@ class SyncTests(TestCase):
         self.assertEqual(t.state,'failed');self.assertEqual(t.attempts,3)
         self.assertTrue(t.result['manual_retry']);self.assertEqual(t.result['network_failures'],3)
 
-    @patch('material_library.sync_engine.verify_resources')
-    def test_independent_background_sync_keeps_type(self,_):
+    def test_independent_background_sync_keeps_type(self):
         self.lib.library_type='background';self.lib.save()
         self.rev.material.material_type='background';self.rev.material.save()
         self.rev.kind='background';self.rev.subcategory='paper_texture';self.rev.save()
@@ -223,7 +217,12 @@ class SyncTests(TestCase):
         s=self.target_snapshot()
         from .models import Material
         # Reuse stable material identity with the matching background kind.
-        t=self.task(s);receiver_import(t,'test');t.refresh_from_db()
+        t=self.task(s)
+        with patch('diary_presets.storage.bucket', side_effect=AssertionError('OSS must not be contacted')) as bucket:
+            receiver_preflight(t,'test')
+            receiver_import(t,'test')
+            bucket.assert_not_called()
+        t.refresh_from_db()
         target=MaterialLibrary.objects.get(pk=s['library_id'])
         self.assertEqual(target.library_type,'background')
         self.assertEqual(target.current.items.get().material.material_type,'background')

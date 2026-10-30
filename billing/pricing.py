@@ -1,3 +1,4 @@
+from billing.flags import sales_enabled
 from django.db import transaction
 from django.conf import settings
 from rest_framework import serializers
@@ -34,12 +35,60 @@ class PolicyInput(serializers.Serializer):
 def save_draft(offer_id,body,actor):
     offer=ContentOffer.objects.select_for_update().get(pk=offer_id)
     form=PolicyInput(data=body);form.is_valid(raise_exception=True);data=form.validated_data
+    existing = ContentPolicyDraft.objects.filter(offer=offer).first()
+    if 'expected_draft_hash' in body and body['expected_draft_hash'] != (digest(existing.body) if existing else None):
+        raise BillingError('DRAFT_CHANGED', '其他操作员已修改草稿，请重新加载并对比后保存')
     actual=offer.current_policy_revision.revision if offer.current_policy_revision_id else 0
     if data['expected_revision']!=actual: raise BillingError('PRICE_CHANGED','策略已更新，请刷新')
     if data['bundled_grants'] and offer.target_kind!='template': raise BillingError('INVALID_BUNDLE')
     draft,_=ContentPolicyDraft.objects.update_or_create(offer=offer,defaults=dict(expected_base_revision=actual,body=data,actor=actor))
     BillingAudit.objects.create(actor=actor,action='save_pricing_draft',target=str(offer.pk),detail=data)
     return draft
+
+def publication_checks(offer, body):
+    blockers = []
+    def block(code, message, destination='/billing'):
+        blockers.append(dict(code=code, message=message, destination=destination))
+    current = offer.current_policy_revision
+    if body.get('expected_revision') != (current.revision if current else 0):
+        block('PRICE_CHANGED', '草稿基于旧策略版本，请对比最新策略后重新保存')
+    form = PolicyInput(data=body)
+    if not form.is_valid():
+        block('INVALID_POLICY', '；'.join(str(message) for messages in form.errors.values() for message in (messages if isinstance(messages, list) else [messages])))
+    if offer.target_kind == 'font':
+        from font_library.models import FontFamily, FontDraft
+        from font_library.services import issues
+        font = FontFamily.objects.filter(pk=offer.target_id).first()
+        draft = FontDraft.objects.filter(family=font).first() if font else None
+        if not font or not draft:
+            block('CONTENT_UNAVAILABLE', '字体或字体草稿不存在，请先完善字体内容', '/content/fonts')
+        else:
+            problems, _ = issues(font, draft.content, policy=False)
+            if problems:
+                block('CONTENT_UNAVAILABLE', '；'.join(problems), '/content/fonts')
+    elif not target_available(offer):
+        block('CONTENT_UNAVAILABLE', '内容尚未发布、已停用或不可交付，请先检查内容状态', '/content/templates' if offer.target_kind == 'template' else '/content/stickers')
+    mode = body.get('access_mode')
+    if mode in ('diamond_only', 'pro_or_diamond') and not sales_enabled('DIAMOND_REDEMPTION_ENABLED'):
+        block('SALES_DISABLED', '钻石兑换尚未开放，请联系服务管理员完成验收并开放')
+    if mode in ('pro_only', 'pro_or_diamond') and not (sales_enabled('MEMBERSHIP_SALES_ENABLED') or (settings.BILLING_TEST_POLICY_CHANGES_ENABLED and settings.BILLING_SANDBOX_SALES_ENABLED)):
+        block('SALES_DISABLED', '会员服务尚未开放，请联系服务管理员')
+    # Compare use rights without a permanent purchase. Existing ownerships are
+    # preserved independently; adding/removing a purchase option is not a loss
+    # of the free or membership scope.
+    included_users = {
+        'free': {'ordinary', 'pro'},
+        'pro_only': {'pro'},
+        'pro_or_diamond': {'pro'},
+        'diamond_only': set(),
+    }
+    if current and mode in included_users and not settings.BILLING_TEST_POLICY_CHANGES_ENABLED:
+        removed = included_users.get(current.access_mode, set()) - included_users[mode]
+        if removed:
+            affected = '普通用户的免费使用权益' if 'ordinary' in removed else 'Pro 会员的免额外付费使用权益'
+            block('MIGRATION_REQUIRED', f'本次调整会收回{affected}，暂不支持直接发布。请保留原有免费或 Pro 使用范围；如确需收回，需先完成老用户权益处理。已永久解锁的许可不受影响。')
+    return blockers
+
 
 @transaction.atomic
 def publish(offer_id,actor,expected_draft_hash):
@@ -49,21 +98,11 @@ def publish(offer_id,actor,expected_draft_hash):
     if expected_draft_hash!=digest(draft.body): raise BillingError('DRAFT_CHANGED','收费草稿已变化，请重新查看影响后发布')
     previous=offer.current_policy_revision
     if (previous.revision if previous else 0)!=draft.expected_base_revision: raise BillingError('PRICE_CHANGED','草稿基于旧策略版本，请刷新后重新编辑并保存')
-    if offer.target_kind == 'font':
-        # Stage an offer before the first font release, without making it redeemable.
-        from font_library.models import FontFamily
-        from font_library.services import issues
-        font=FontFamily.objects.get(pk=offer.target_id)
-        problems,_=issues(font,font.fontdraft.content,policy=False)
-        if problems: raise BillingError('CONTENT_UNAVAILABLE','；'.join(problems))
-    elif not target_available(offer): raise BillingError('CONTENT_UNAVAILABLE')
+    blockers = publication_checks(offer, draft.body)
+    if blockers:
+        first = blockers[0]
+        raise BillingError(first['code'], first['message'])
     form=PolicyInput(data=draft.body);form.is_valid(raise_exception=True);body=form.validated_data
-    if body['access_mode'] in ('diamond_only','pro_or_diamond') and not settings.DIAMOND_REDEMPTION_ENABLED:
-        raise BillingError('SALES_DISABLED','钻石兑换验收完成并开放后才能发布收费策略')
-    if body['access_mode'] in ('pro_only','pro_or_diamond') and not (settings.MEMBERSHIP_SALES_ENABLED or (settings.BILLING_TEST_POLICY_CHANGES_ENABLED and settings.BILLING_SANDBOX_SALES_ENABLED)):
-        raise BillingError('SALES_DISABLED','会员服务尚未开放')
-    if previous and previous.access_mode in ('free','pro_only','pro_or_diamond') and body['access_mode']!=previous.access_mode and not settings.BILLING_TEST_POLICY_CHANGES_ENABLED:
-        raise BillingError('MIGRATION_REQUIRED','已发布免费或 Pro 范围的变更需先制定权益迁移方案')
     policy=ContentPolicyRevision.objects.create(offer=offer,revision=draft.expected_base_revision+1,access_mode=body['access_mode'],diamond_price=body['diamond_price'],currency_code=body['currency_code'],pro_entitlement_key=body['pro_entitlement_key'],bundled_grants=body['bundled_grants'],terms_version=body['terms_version'],published_by=actor,content_scope_snapshot={'target_kind':offer.target_kind,'target_id':str(offer.target_id),'scope':offer.ownership_scope})
     offer.current_policy_revision=policy;offer.state='active';offer.save()
     BillingAudit.objects.create(actor=actor,action='publish_pricing',target=str(offer.pk),detail={'old_revision':draft.expected_base_revision,'new_revision':policy.revision,'reason':body['change_reason']})

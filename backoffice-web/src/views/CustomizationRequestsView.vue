@@ -17,6 +17,7 @@
       closable
       @close="w.listError.value = ''"
     />
+    <router-link v-if="packageAuth.hasPermission('billing.publish_pricing')" to="/diary-customizations/packages" style="display:inline-block;margin-bottom:16px">管理数字定制套餐 →</router-link>
     <div class="task-grid">
       <button
         v-for="item in buckets"
@@ -806,6 +807,8 @@
   </main>
 </template>
 <script setup lang="ts">
+import {useAuthStore as usePackageAuth} from '../stores/auth';
+const packageAuth=usePackageAuth();
 import CustomizationBillingPanel from '../components/billing/CustomizationBillingPanel.vue';
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import dayjs, { type Dayjs } from "dayjs";

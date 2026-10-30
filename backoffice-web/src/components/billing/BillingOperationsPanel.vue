@@ -1,22 +1,30 @@
 <script setup lang="ts">
-import { ref,onMounted } from 'vue';
+import {ref,watch,onMounted,onBeforeUnmount,onActivated,onDeactivated} from 'vue';
 import http from '../../api/http';
-import { useAuthStore } from '../../stores/auth';
-const auth=useAuthStore(),items=ref<any[]>([]),cases=ref<any[]>([]),reason=ref(''),selected=ref<string>(),busy=ref(false),error=ref('');
-async function load(){busy.value=true;error.value='';try{const r=await http.get<{items:any[];cases:any[]},{items:any[];cases:any[]}>('/api/v1/billing/manage/operations/');items.value=r.items;cases.value=r.cases;}catch(e){error.value=e instanceof Error?e.message:String(e);}finally{busy.value=false;} }
-async function compensate(){if(!selected.value||!reason.value.trim())return;busy.value=true;try{await http.post(`/api/v1/billing/manage/operations/${selected.value}/compensate/`,{reason:reason.value.trim()});selected.value=undefined;reason.value='';await load();}catch(e){error.value=e instanceof Error?e.message:String(e);}finally{busy.value=false;} }
-onMounted(load);
+import {useAuthStore} from '../../stores/auth';
+import {formatDate} from '../../features/billing/policy';
+const props=withDefaults(defineProps<{environment?:string}>(),{environment:'production'});
+const auth=useAuthStore(),items=ref<any[]>([]),total=ref(0),page=ref(1),query=ref(''),state=ref(''),busy=ref(false),error=ref(''),reason=ref(''),detail=ref<any>(null),detailBusy=ref(false),detailError=ref(''),result=ref(''),submitting=ref(false);
+let seq=0,detailSeq=0,timer:ReturnType<typeof setInterval>|undefined;
+const labels:Record<string,string>={prepared:'待处理',submitting:'提交中',succeeded:'已确认成功',unknown:'结果待核查',manual_review:'需人工核查',rejected:'已拒绝',debit:'扣除钻石',compensation:'返还钻石'};
+const label=(v:string)=>labels[v]||v;
+async function load(){const current=++seq;busy.value=true;error.value='';try{const r:any=await http.get('/api/v1/billing/manage/operations/',{params:{environment:props.environment,q:query.value,state:state.value,page:page.value}});if(current===seq){items.value=r.items;total.value=r.total;}}catch(e:any){if(current===seq)error.value=e.message;}finally{if(current===seq)busy.value=false;}}
+defineExpose({load});
+function search(){page.value=1;void load();}
+async function open(id:string,refresh=false){const current=++detailSeq;if(!refresh){detail.value={id};reason.value='';result.value='';}detailBusy.value=true;detailError.value='';try{const r:any=await http.get(`/api/v1/billing/manage/operations/${id}/`);if(current===detailSeq)detail.value=r;}catch(e:any){if(current===detailSeq)detailError.value=e.message;}finally{if(current===detailSeq)detailBusy.value=false;}}
+async function compensate(){if(!detail.value?.can_compensate||!reason.value.trim()||submitting.value)return;submitting.value=true;detailError.value='';try{const r:any=await http.post(`/api/v1/billing/manage/operations/${detail.value.id}/compensate/`,{reason:reason.value.trim()});result.value=r.state==='succeeded'?'补偿已确认完成，钻石已返还。':'补偿已受理，返还结果尚未确认，请保留此单继续核查。';await open(detail.value.id,true);await load();}catch(e:any){detailError.value=e.message;}finally{submitting.value=false;}}
+function close(){if(!submitting.value){detailSeq++;detail.value=null;}}
+function stop(){if(timer)clearInterval(timer);timer=undefined;}
+function start(){stop();timer=setInterval(()=>{if(!document.hidden&&!submitting.value&&!detailBusy.value&&detail.value?.compensation&&detail.value.compensation.state!=='succeeded')void open(detail.value.id,true);},10000);}
+watch(()=>props.environment,()=>{close();search();});onMounted(()=>{void load();start();});onActivated(start);onDeactivated(stop);onBeforeUnmount(()=>{stop();seq++;detailSeq++;});
 </script>
 <template>
-<a-alert v-if="error" type="error" :message="error" show-icon />
-<p>结果未知的扣钻需保留原交易核查；只有确认成功的扣钻可申请补偿。制作已开始的定制须进入人工售后。</p>
-<a-button :loading="busy" @click="load">刷新交易与异常</a-button>
-<a-table row-key="id" :data-source="items" :columns="[{title:'操作单',dataIndex:'id'},{title:'类型',dataIndex:'kind'},{title:'钻石变动',dataIndex:'delta'},{title:'状态',dataIndex:'state'},{title:'尝试次数',dataIndex:'attempt_count'},{title:'操作',key:'action'}]">
-<template #bodyCell="{column,record}"><a-button v-if="column.key==='action'&&record.kind==='debit'&&record.state==='succeeded'&&auth.hasPermission('billing.resolve_refund')" @click="selected=record.id">申请钻石补偿</a-button></template>
-</a-table>
-<a-table row-key="id" :data-source="cases" :columns="[{title:'待核查事项',dataIndex:'kind'},{title:'操作单',dataIndex:'operation_id'},{title:'创建时间',dataIndex:'created_at'}]" />
-<a-modal :open="!!selected" title="钻石补偿" :confirm-loading="busy" :ok-button-props="{disabled:!reason.trim()}" @cancel="selected=undefined" @ok="compensate">
-<p>确认后撤销本单授予的内容许可，并向原钱包返还已确认扣除的钻石。此操作会记录操作员与原因。</p>
-<a-textarea v-model:value="reason" :maxlength="500" placeholder="必须填写补偿原因" />
-</a-modal>
+<section><p class="muted">先核对用户、订单与将撤销的权益，再申请补偿。结果未知的扣钻保留原单核查；已开工定制进入人工售后。</p>
+<a-alert v-if="error" type="error" :message="error" show-icon/>
+<div class="filters"><a-input-search v-model:value="query" placeholder="用户名 / 内容名称 / 操作单或订单 ID" allow-clear @search="search"/><a-select v-model:value="state" :options="[{value:'',label:'全部处理状态'},...['prepared','submitting','succeeded','unknown','manual_review','rejected'].map(value=>({value,label:label(value)}))]" @change="search"/><a-button :loading="busy" @click="load">刷新</a-button></div>
+<a-table row-key="id" :data-source="items" :loading="busy" :scroll="{x:1000}" :pagination="{current:page,pageSize:20,total,showSizeChanger:false}" @change="(p:any)=>{page=p.current;load()}" :columns="[{title:'用户',key:'user',width:170},{title:'内容',dataIndex:'title',width:220},{title:'钻石变动',dataIndex:'delta',width:100},{title:'处理状态',key:'state',width:200},{title:'创建时间',key:'time',width:180},{title:'操作',key:'action',fixed:'right',width:130}]"><template #bodyCell="{column,record}"><template v-if="column.key==='user'">{{record.name}}<small>ID {{record.account_id}} · {{record.environment==='sandbox'?'沙盒':'正式'}}</small></template><template v-else-if="column.key==='state'">{{label(record.kind)}} · {{label(record.state)}}<small v-if="record.compensation">补偿：{{label(record.compensation.state)}}</small></template><template v-else-if="column.key==='time'">{{formatDate(record.created_at)}}</template><a-button v-else-if="column.key==='action'" type="link" @click="open(record.id)">核查详情</a-button></template><template #emptyText><a-empty description="当前环境和筛选条件下暂无钻石操作记录"/></template></a-table>
+<a-drawer :open="!!detail" title="钻石交易核查" width="min(640px,100vw)" :closable="!submitting" :mask-closable="!submitting" @close="close"><a-spin :spinning="detailBusy"><a-alert v-if="detailError" type="error" :message="detailError"/><a-alert v-if="result" type="info" :message="result" show-icon/><template v-if="detail?.name"><h3>{{detail.name}} · ID {{detail.account_id}}</h3><a-tag>{{detail.environment==='sandbox'?'沙盒测试':'正式环境'}}</a-tag><a-descriptions bordered :column="1"><a-descriptions-item label="内容">{{detail.title}}</a-descriptions-item><a-descriptions-item label="操作单">{{detail.id}}</a-descriptions-item><a-descriptions-item label="关联订单">{{detail.order_id||detail.funding_id}}</a-descriptions-item><a-descriptions-item label="钻石变动">{{detail.delta}}</a-descriptions-item><a-descriptions-item label="处理状态">{{label(detail.state)}}</a-descriptions-item><a-descriptions-item label="时间">{{formatDate(detail.created_at)}}</a-descriptions-item></a-descriptions>
+<p v-if="detail.compensation">补偿单 {{detail.compensation.id}}：<strong>{{label(detail.compensation.state)}}</strong> · {{detail.compensation.amount}} 钻石</p><a-button @click="open(detail.id,true)">刷新处理结果</a-button>
+<template v-if="detail.can_compensate&&auth.hasPermission('billing.resolve_refund')"><h3>补偿影响</h3><p>向原钱包返还 {{-detail.delta}} 钻石，并撤销本单授予的以下有效许可。提交后可能需要等待渠道确认。</p><ul><li v-for="g in detail.revoked_grants" :key="g.target_kind+g.target_id">{{g.title}}</li></ul><p v-if="!detail.revoked_grants?.length">本单没有待撤销的有效内容许可。</p><a-textarea v-model:value="reason" :maxlength="500" show-count placeholder="必填：核查结论与补偿原因"/><a-popconfirm :title="`确认向 ${detail.name} 返还 ${-detail.delta} 钻石并撤销上述许可？`" :disabled="!reason.trim()||submitting" @confirm="compensate"><a-button danger :loading="submitting" :disabled="!reason.trim()" style="margin-top:24px">申请钻石补偿</a-button></a-popconfirm></template><p v-else class="muted">{{detail.compensation_reason||'当前账号没有补偿权限'}}</p><router-link v-if="detail.request_id" to="/diary-customizations">进入专属定制售后 →</router-link><h3 v-if="detail.cases?.length">关联核查事项</h3><p v-for="c in detail.cases" :key="c.kind">{{c.kind}} · {{c.status==='open'?'待处理':'已关闭'}} · {{formatDate(c.created_at)}}</p></template></a-spin></a-drawer></section>
 </template>
+<style scoped>.filters{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}.filters .ant-input-search{width:360px;max-width:100%}.filters .ant-select{min-width:160px}.muted,small{color:#64748b}small{display:block;font-size:12px;margin-top:5px}:deep(.ant-alert){margin:12px 0}</style>

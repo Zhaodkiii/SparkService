@@ -15,7 +15,7 @@ vi.mock("../src/api/http", () => ({
   },
 }));
 vi.mock("../src/stores/auth", () => ({
-  useAuthStore: () => ({ user: { id: 7 } }),
+  useAuthStore: () => ({ user: { id: 7 }, hasPermission: () => true }),
 }));
 const photo = (id: string, note: string) => ({
   id,

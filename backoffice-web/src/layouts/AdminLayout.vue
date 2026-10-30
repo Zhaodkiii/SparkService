@@ -1,6 +1,6 @@
 <template>
   <a-layout class="layout-root">
-    <a-layout-sider :collapsed="collapsed" collapsible @collapse="(v: boolean) => (collapsed = v)">
+    <a-layout-sider :collapsed="collapsed" breakpoint="lg" :collapsed-width="0" :trigger="null" @breakpoint="(broken:boolean)=>{collapsed=broken}" collapsible @collapse="(v: boolean) => (collapsed = v)">
       <div class="logo">Spark Admin</div>
       <a-menu
         theme="dark"
@@ -27,7 +27,7 @@
     </a-layout-sider>
     <a-layout>
       <a-layout-header class="header-bar">
-        <div>{{ auth.user?.username }}</div>
+        <a-space><a-button type="text" @click="collapsed=!collapsed">{{collapsed?'展开导航':'收起导航'}}</a-button><span>{{ auth.user?.username }}</span></a-space>
         <a-button type="link" @click="logout">退出登录</a-button>
       </a-layout-header>
       <div class="tabs-wrap">
@@ -179,11 +179,11 @@ const legacyMenus = computed(() => {
   if(supportChildren.length&&!source.some(m=>m.path==='/support')) source.push({code:'menu:support',name:'帮助与反馈',path:'/support',children:supportChildren});
   if(auth.hasPermission('billing.view_transactions')&&!source.some(m=>m.path==='/billing/transactions')) source.push({code:'menu:transactions',name:'交易中心',path:'/billing/transactions',children:[]});
   if (auth.user?.is_superuser) {
-    return [...source, { code: 'menu:billing', name: '收费与权限', path: '/billing', children: [] }, { code: 'menu:materials', name: '素材管理', path: '/materials', children: [] }, { code: 'menu:print-payments', name: '支付管理', path: '/print-payments', children: [] }, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
+    return [...source, { code: 'menu:billing', name: '内容定价与使用权益', path: '/billing', children: [] }, { code: 'menu:materials', name: '素材管理', path: '/materials', children: [] }, { code: 'menu:print-payments', name: '支付管理', path: '/print-payments', children: [] }, { code: 'menu:print-orders', name: '印制订单', path: '/print-orders', children: [] }, { code: 'menu:customizations', name: '专属定制', path: '/diary-customizations', children: [] }, { code: 'menu:diary-presets', name: '预设手帐', path: '/diary-presets', children: [] }];
   }
   if(['view_paymentattempt','query_payment','refund_order','change_paymentchannel'].some(p=>auth.hasPermission('print_orders.'+p))&&!source.some(m=>m.path==='/print-payments')) source.push({code:'menu:print-payments',name:'支付管理',path:'/print-payments',children:[]});
   if(auth.hasPermission('print_orders.change_order')&&!source.some(m=>m.path==='/print-orders')) source.push({code:'menu:print-orders',name:'印制订单',path:'/print-orders',children:[]});
-  if(auth.hasPermission('billing.view_pricing')&&!source.some(m=>m.path==='/billing')) source.push({code:'menu:billing',name:'收费与权限',path:'/billing',children:[]});
+  if(auth.hasPermission('billing.view_pricing')&&!source.some(m=>m.path==='/billing')) source.push({code:'menu:billing',name:'内容定价与使用权益',path:'/billing',children:[]});
   const result=source.filter((item) => item.code !== 'menu:conversations');
   if (['diary_presets.change_template','material_library.view_materiallibrary','material_library.change_materiallibrary','material_library.publish_materiallibrary','material_library.takedown_materiallibrary'].some(p=>auth.hasPermission(p)) && !result.some(item=>item.path==='/materials')) result.push({ code: 'menu:materials', name: '素材管理', path: '/materials', children: [] });
   if (auth.hasPermission('diary_presets.change_template') && !result.some(item=>item.path==='/diary-customizations')) {
@@ -201,7 +201,7 @@ const menus = computed(() => {
       {code:'menu:content:backgrounds',name:'背景管理',path:'/content/backgrounds',children:[]}] : []),
     ...(auth.hasPermission('font_library.view_fontfamily') ? [{code:'menu:content:fonts',name:'字体管理',path:'/content/fonts',children:[]}] : []),
   ];
-  const prune=(items:any[]):any[]=>items.filter(x=>!['/materials','/diary-presets','/content'].includes(x.path)).map(x=>({...x,children:prune(x.children||[])}));
+  const prune=(items:any[]):any[]=>items.filter(x=>!['/materials','/diary-presets','/content'].includes(x.path)).map(x=>({...x,name:x.path==='/billing'?'内容定价与使用权益':x.name,children:prune(x.children||[])}));
   return [...prune(legacyMenus.value),...(children.length?[{code:'menu:content',name:'内容资源',path:'/content',children}]:[])];
 });
 
@@ -268,7 +268,7 @@ function onTabChange(key: string) {
   router.push(key);
 }
 
-function onTabEdit(targetKey: string | MouseEvent | KeyboardEvent, action: 'add' | 'remove') {
+async function onTabEdit(targetKey: string | MouseEvent | KeyboardEvent, action: 'add' | 'remove') {
   if (action !== 'remove') {
     return;
   }
@@ -277,13 +277,13 @@ function onTabEdit(targetKey: string | MouseEvent | KeyboardEvent, action: 'add'
   if (index < 0 || !tabs[index].closable) {
     return;
   }
+  if (route.path === key) {
+    const fallback = tabs[index - 1] || tabs[index + 1] || tabs[0];
+    const failure = await router.push(fallback?.key || '/dashboard');
+    if (failure) return;
+  }
   tabs.splice(index, 1);
   routeCacheVersion[key] = (routeCacheVersion[key] ?? 0) + 1;
-
-  if (route.path === key) {
-    const fallback = tabs[index - 1] || tabs[index] || tabs[0];
-    router.push(fallback?.key || '/dashboard');
-  }
 }
 
 function onOpenChange(keys: string[]) {
@@ -326,3 +326,5 @@ function logout() {
   padding: 16px;
 }
 </style>
+
+<style scoped> .layout-root > :deep(.ant-layout){min-width:0} @media(max-width:800px){.content-area{margin:10px!important;padding:0!important}.tabs-wrap{padding:8px!important}.logo{font-size:11px!important;padding:0 4px!important}} </style>

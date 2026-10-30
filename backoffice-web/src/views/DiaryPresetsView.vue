@@ -1,10 +1,11 @@
 <template>
  <div class="preset-console">
   <a-page-header title="预设手帐" sub-title="管理系列、手帐、单页和发布版本">
-   <template #extra><a-button @click="globalSearchOpen=true">跨页搜索管理</a-button><a-button :loading="loading" @click="run(load)">刷新</a-button><a-button type="primary" @click="openDialog('series')">新增系列</a-button></template>
+   <template #extra><a-button v-if="pricingAuth.user?.is_superuser" @click="lifecycle?.openBin()">模板回收站</a-button><a-button @click="globalSearchOpen=true">跨页搜索管理</a-button><a-button :loading="loading" @click="run(load)">刷新</a-button><a-button type="primary" @click="openDialog('series')">新增系列</a-button></template>
   </a-page-header>
   <a-alert v-if="error" type="error" show-icon :message="error" closable @close="error=''" />
   <a-alert type="info" show-icon :message="statisticsNotice" style="margin-top:12px" />
+  <TemplateLifecycle ref="lifecycle" @changed="run(lifecycleChanged)"/>
   <PresetProductionSync ref="productionSync" @options="syncOptions=$event" @synced="run(load)" />
   <a-alert v-if="syncOptions.can_sync && !syncOptions.enabled" type="warning" :message="syncOptions.reason" show-icon style="margin-top:12px" />
   <div class="workspace">
@@ -25,7 +26,7 @@
        <template v-else-if="column.statKey">{{record.import_statistics?.[column.statKey] ?? '暂不可用'}}</template>
        <template v-else-if="column.key==='state'"><a-tag :color="record.active?(record.current?'green':'blue'):'default'">{{!record.active?'已下架':record.current?'已发布':'草稿'}}</a-tag></template>
        <template v-else-if="column.key==='sync'"><a-tag :color="record.production_sync?.state==='succeeded'?'green':'default'">{{record.production_sync?.label || '未同步'}}</a-tag><div class="muted">已发布 v{{record.version || 0}}</div></template>
-       <template v-else-if="column.key==='actions'"><a-space wrap><a-button type="link" @click="chooseBook(record)">管理单页</a-button><a-button v-if="syncOptions.can_sync" type="link" :disabled="!syncOptions.enabled || !record.active || !record.version" @click="productionSync?.open(record)">整本同步到生产</a-button></a-space></template>
+       <template v-else-if="column.key==='actions'"><a-space wrap><a-button type="link" @click="chooseBook(record)">管理单页</a-button><a-button v-if="pricingAuth.user?.is_superuser" type="link" danger @click="inspectDeletion(record)">删除检查</a-button><a-button v-if="syncOptions.can_sync" type="link" :disabled="!syncOptions.enabled || !record.active || !record.version" @click="productionSync?.open(record)">整本同步到生产</a-button></a-space></template>
       </template>
      </a-table>
     </a-card>
@@ -33,7 +34,7 @@
     <a-card v-if="book" class="detail-card">
      <a-breadcrumb><a-breadcrumb-item>{{selectedSeries?.title}}</a-breadcrumb-item><a-breadcrumb-item>{{book.title}}</a-breadcrumb-item></a-breadcrumb>
      <div class="book-heading"><div><h2>{{book.title}}</h2><span class="muted">{{pages.length}} 页 · 工作修订 {{book.revision}}</span><a-tag v-if="dirty" color="orange">有未保存调整</a-tag></div>
-      <a-space wrap><a-button @click="openDialog('book',true)">编辑手帐</a-button><a-button @click="setActive">{{book.active?'下架':'恢复展示'}}</a-button><a-button :disabled="!dirty" :loading="working" @click="saveDraft">保存草稿</a-button><a-button type="primary" :loading="working" @click="publish">保存并发布</a-button></a-space>
+      <a-space wrap><a-button v-if="pricingAuth.user?.is_superuser" danger @click="inspectDeletion(book)">删除 / 回收站</a-button><router-link v-if="pricingAuth.hasPermission('billing.view_pricing')" :to="{path:'/billing',query:{target_kind:'template',target_id:book.id}}">配置收费策略</router-link><a-button @click="openDialog('book',true)">编辑手帐</a-button><a-button @click="setActive">{{book.active?'下架':'恢复展示'}}</a-button><a-button :disabled="!dirty" :loading="working" @click="saveDraft">保存草稿</a-button><a-button type="primary" :loading="working" @click="publish">保存并发布</a-button></a-space>
      </div>
      <a-tabs v-model:activeKey="tab">
       <a-tab-pane key="search" tab="跨页与搜索信息"><PresetSearchMetadataPanel :key="book.id" :template-id="book.id" @changed="refreshBookRevision" /></a-tab-pane>
@@ -78,6 +79,12 @@
  </div>
 </template>
 <script setup lang="ts">
+import TemplateLifecycle from '../components/TemplateLifecycle.vue';
+const lifecycle=ref<InstanceType<typeof TemplateLifecycle>>();
+async function lifecycleChanged(){book.value=undefined;pages.value=[];dirty.value=false;await load();}
+async function inspectDeletion(row:Book){if(await canLeave())lifecycle.value?.inspect(row);}
+import {useAuthStore as usePricingAuth} from '../stores/auth';
+const pricingAuth=usePricingAuth();
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Modal, message } from 'ant-design-vue';
 import OSS from 'ali-oss';

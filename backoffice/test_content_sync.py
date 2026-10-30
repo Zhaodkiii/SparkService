@@ -107,3 +107,50 @@ class BatchTests(TestCase):
         r=c.post('/api/admin/v1/content-sync/batches/',{'selection':[{'kind':'template','id':str(self.book.pk)}]},format='json')
         self.assertEqual(r.status_code,409)
         self.assertEqual(r.data['code'],'ALREADY_SYNCED')
+
+    @patch('diary_presets.tasks.enqueue')
+    @patch('backoffice.content_sync.enqueue')
+    def test_child_completion_wakes_parent_after_lease_release(self,wake,enqueue_child):
+        from diary_presets.models import PresetSyncTask
+        from diary_presets.tasks import run_sync_task
+        with patch('backoffice.content_sync.run_batch.apply_async'):
+            b=self.batch();run_batch(str(b.pk))
+        task=PresetSyncTask.objects.get()
+        def complete(t,token):
+            t.state='ready';t.expires_at=timezone.now()+timedelta(minutes=5);t.save()
+            return False
+        def check_lease(pk):
+            task.refresh_from_db()
+            self.assertIsNone(task.lease_until)
+            self.assertEqual(str(pk),str(b.pk))
+        wake.side_effect=check_lease
+        with patch('diary_presets.tasks.source_step',side_effect=complete):
+            run_sync_task(str(task.pk))
+        wake.assert_called_once()
+
+    @patch('diary_presets.tasks.enqueue')
+    @patch('backoffice.content_sync.run_batch.apply_async')
+    def test_parallel_dispatch_limited_to_two_and_advances_on_completion(self,*_):
+        from diary_presets.models import PresetSyncTask
+        books=[self.book]
+        for n in range(2):
+            book=Template.objects.create(series=self.book.series,title='book'+str(n),draft=deepcopy(self.book.current.snapshot))
+            publish(book,self.admin);books.append(book)
+        p=make_plan([dict(kind='template',id=str(b.pk)) for b in books])
+        batch=ContentSyncBatch.objects.create(actor=self.admin,entries=p,plan_hash=digest(p),state='running',expires_at=timezone.now()+timedelta(minutes=30))
+        run_batch(str(batch.pk))
+        self.assertEqual(PresetSyncTask.objects.count(),2)
+        run_batch(str(batch.pk))
+        self.assertEqual(PresetSyncTask.objects.count(),2)
+        task=PresetSyncTask.objects.get(library_uuid=books[0].pk);task.state='succeeded';task.save()
+        run_batch(str(batch.pk))
+        self.assertEqual(PresetSyncTask.objects.count(),3)
+
+    @patch('backoffice.content_sync.run_batch.apply_async')
+    def test_obsolete_fallback_does_not_spawn_another_poll_chain(self,dispatch):
+        b=self.batch()
+        obsolete=(b.updated_at-timedelta(seconds=1)).isoformat()
+        run_batch(str(b.pk),obsolete)
+        dispatch.assert_not_called()
+        b.refresh_from_db()
+        self.assertTrue(all(not e.get('task_id') for e in b.entries))

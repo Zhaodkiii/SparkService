@@ -43,7 +43,7 @@ class FontSyncTests(TestCase):
         receiver_import(t,token);t.refresh_from_db();self.assertEqual(t.state,'succeeded')
         f=FontFamily.objects.get(pk=self.font.pk);self.assertEqual(f.current.number,3)
         self.assertCountEqual(f.current.assets.values_list('object_key',flat=True),original)
-        self.assertEqual(verify.call_count,8)
+        verify.assert_not_called()
         before=FontRelease.objects.count();receiver_import(t,token);self.assertEqual(FontRelease.objects.count(),before)
         self.assertEqual(ContentOffer.objects.get(target_id=f.pk).current_policy_revision.access_mode,'free')
     @patch('font_library.storage.verify')
@@ -128,10 +128,13 @@ class FontSyncTests(TestCase):
         self.assertTrue(all(call.args[0]=='GET' for call in remote.call_args_list))
 
     @patch('font_library.storage.verify',side_effect=RuntimeError('offline'))
-    def test_oss_failure_prevents_target_write(self,verify):
+    def test_sync_succeeds_without_contacting_oss(self,verify):
         self.remove_source();t=self.task();token=claim(t.pk)
-        with self.assertRaises(SyncError):receiver_preflight(t,token)
-        self.assertFalse(FontFamily.objects.exists());self.assertFalse(FontRelease.objects.exists())
+        receiver_preflight(t,token)
+        receiver_import(t,token)
+        verify.assert_not_called()
+        t.refresh_from_db()
+        self.assertEqual(t.state,'succeeded')
 
     def test_inactive_production_offer_blocks_instead_of_duplicate_creation(self):
         ContentOffer.objects.filter(target_id=self.font.pk).update(state='draft')

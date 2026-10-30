@@ -72,6 +72,7 @@ class TemplateSerializer(serializers.ModelSerializer):
 
 @transaction.atomic
 def publish(obj, actor):
+    if obj.deleted_at: raise ValidationError('模板已在回收站中，请先恢复')
     if not obj.draft or not obj.draft.get('pages'):
         raise ValidationError('至少需要一页')
     snap = deepcopy(obj.draft)
@@ -112,10 +113,12 @@ class SeriesAdmin(viewsets.ModelViewSet):
 from .search_views import TemplateSearchMixin
 
 
-class TemplateAdmin(TemplateSearchMixin, viewsets.ModelViewSet):
+from .lifecycle import TemplateLifecycleMixin
+
+class TemplateAdmin(TemplateLifecycleMixin, TemplateSearchMixin, viewsets.ModelViewSet):
     permission_classes = [PresetAdmin]
     serializer_class = TemplateSerializer
-    queryset = Template.objects.select_related('series', 'current').filter(audience='public')
+    queryset = Template.objects.select_related('series', 'current').filter(audience='public',deleted_at__isnull=True)
     pagination_class = None
 
     def get_queryset(self):
@@ -294,7 +297,7 @@ class UploadAdmin(viewsets.GenericViewSet):
         ser = UploadSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
-        obj = get_object_or_404(Template, pk=data.pop('template'), audience='public')
+        obj = get_object_or_404(Template, pk=data.pop('template'), audience='public',deleted_at__isnull=True)
         if obj.revision != data['revision']:
             raise Conflict()
         uid = uuid.uuid4()
@@ -310,6 +313,7 @@ class UploadAdmin(viewsets.GenericViewSet):
     @action(detail=True, methods=['post'])
     def refresh(self, request, pk=None):
         obj = self.get_object()
+        if obj.template.deleted_at: raise ValidationError('模板已在回收站中，不能继续上传')
         if obj.status != 'uploading' or timezone.now() - obj.created_at > timedelta(days=1):
             raise ValidationError('上传会话已结束或过期')
         return Response(storage.credentials(obj.object_key))
@@ -318,6 +322,7 @@ class UploadAdmin(viewsets.GenericViewSet):
     @transaction.atomic
     def complete(self, request, pk=None):
         obj = get_object_or_404(Upload.objects.select_for_update(), pk=pk)
+        if obj.template.deleted_at: raise ValidationError('模板已在回收站中，不能继续处理上传')
         if obj.status != 'uploading':
             return Response(dict(id=str(obj.id), status=obj.status))
         if timezone.now() - obj.created_at > timedelta(days=1):
@@ -384,7 +389,7 @@ class Catalog(APIView):
         content_kind = request.query_params.get('content_kind', 'journal')
         if content_kind not in ('journal', 'album', 'all'):
             raise ValidationError('content_kind 需为 journal/album/all')
-        templates = Template.objects.filter(audience='public', active=True, series__active=True, current__isnull=False)
+        templates = Template.objects.filter(audience='public', deleted_at__isnull=True, active=True, series__active=True, current__isnull=False)
         if content_kind != 'all':
             templates = templates.filter(content_kind=content_kind)
         for template in templates.select_related('current', 'series')[:500]:

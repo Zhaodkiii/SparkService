@@ -8,7 +8,7 @@
   <a-select-option value="production">正式环境</a-select-option>
   <a-select-option value="sandbox">沙盒环境</a-select-option>
  </a-select>
- <a-input-search v-model:value="search" placeholder="用户名 / 用户 ID / RevenueCat 用户 ID" style="width:330px" allow-clear @search="reset"/>
+ <a-input-search v-if="section!=='operations'" v-model:value="search" placeholder="用户名 / 用户 ID / RevenueCat 用户 ID" style="width:330px" allow-clear @search="reset"/>
  <a-select v-if="isPayments" v-model:value="status" style="width:150px" @change="reset">
   <a-select-option value="all">全部交易状态</a-select-option>
   <a-select-option value="confirmed">支付已确认</a-select-option>
@@ -16,14 +16,15 @@
   <a-select-option v-if="section==='recharge'" value="pending_delivery">到账待确认</a-select-option>
   <a-select-option value="unknown_amount">金额待确认</a-select-option>
  </a-select>
- <a-range-picker :placeholder="['记录开始日期','记录结束日期']" v-model:value="dates" @change="reset"/>
- <a-tag v-if="account">用户 {{ account }} <a @click="account='';reset()">取消</a></a-tag>
- <a-tag v-if="identity">已筛选用户 <a @click="identity='';reset()">取消</a></a-tag>
+ <a-range-picker v-if="section!=='operations'" :placeholder="['记录开始日期','记录结束日期']" v-model:value="dates" @change="reset"/>
+ <a-tag v-if="account&&section!=='operations'">用户 {{ account }} <a @click="account='';reset()">取消</a></a-tag>
+ <a-tag v-if="identity&&section!=='operations'">已筛选用户 <a @click="identity='';reset()">取消</a></a-tag>
 </div>
 <a-alert v-if="unlinked" type="warning" :message="`${unlinked} 条回调无法关联用户，请核查服务端事件记录`"/>
 <a-alert v-if="pendingTopups" type="warning" show-icon :message="`${pendingTopups} 笔充值超过 5 分钟仍未确认到账，请在钻石充值中核查。`"/>
-<a-tabs v-model:activeKey="section" @change="changeSection"><a-tab-pane key="recharge" tab="钻石充值"/><a-tab-pane key="subscription" tab="会员订阅"/><a-tab-pane key="redemption" tab="钻石消费"/><a-tab-pane key="customization" tab="定制付款"/><a-tab-pane key="users" tab="用户资产"/><a-tab-pane key="activity" tab="收款动态"/><a-tab-pane key="alerts" tab="异常提醒"/><a-tab-pane key="physical" tab="实物付款"/></a-tabs>
+<a-tabs v-model:activeKey="section" @change="changeSection"><a-tab-pane key="recharge" tab="钻石充值"/><a-tab-pane key="subscription" tab="会员订阅"/><a-tab-pane key="redemption" tab="钻石消费"/><a-tab-pane key="customization" tab="定制付款"/><a-tab-pane key="users" tab="用户资产"/><a-tab-pane key="activity" tab="收款动态"/><a-tab-pane key="alerts" tab="异常提醒"/><a-tab-pane key="operations" tab="钻石核查与补偿"/><a-tab-pane key="physical" tab="实物付款"/></a-tabs>
 <template v-if="section==='physical'"><p>印制付款、渠道查询和原路退款在支付管理中处理。</p><router-link to="/print-payments">进入实物支付管理 →</router-link></template>
+<BillingOperationsPanel ref="operationsPanel" v-else-if="section==='operations'" :environment="environment"/>
 <template v-else>
 <div v-if="isPayments" class="summary"><b>{{ total }} 笔记录</b><span v-for="s in summary.amounts" :key="s.currency">{{ s.currency }} {{ s.amount }}</span><span>金额待确认 {{ summary.unknown_amounts||0 }} 笔</span><small>按当前筛选统计，排除已确认退款；不同币种分别统计，钻石消费不重复计入收入。</small></div>
 <a-table :data-source="items" :columns="columns" row-key="id" :loading="busy" :scroll="{x:1200}" :pagination="{current:page,pageSize:20,total,showSizeChanger:false}" @change="changePage">
@@ -48,12 +49,14 @@
 </section>
 </template>
 <script setup lang="ts">
+import BillingOperationsPanel from '../components/billing/BillingOperationsPanel.vue';
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue';
 import {useRoute} from 'vue-router';
 import type {Dayjs} from 'dayjs';
 import http from '../api/http';
 import {useAuthStore} from '../stores/auth';
 const route=useRoute(),auth=useAuthStore();
+const operationsPanel=ref<InstanceType<typeof BillingOperationsPanel>>();
 const environment=ref('production'),section=ref('recharge'),search=ref(''),status=ref('all'),identity=ref(''),account=ref(String(route.query.account||'')),dates=ref<[Dayjs,Dayjs]|null>(null);
 const autoRefresh=ref(true);let refreshTimer:ReturnType<typeof setInterval>|undefined;
 const items=ref<any[]>([]),summary=ref<any>({}),total=ref(0),page=ref(1),pendingTopups=ref(0),unlinked=ref(0),busy=ref(false),error=ref('');
@@ -69,7 +72,7 @@ const columns=computed(()=>{const head=[{title:'用户',key:'user',width:190}],t
  if(section.value==='users')return [...head,{title:'钻石余额快照',key:'balance',width:230},{title:'会员有效期',key:'member',width:240},...tail];
  if(['redemption','customization'].includes(section.value))return [...head,{title:'内容',dataIndex:'title'},{title:'消费钻石',dataIndex:'units'},...(section.value==='customization'?[{title:'定制单号',dataIndex:'request_id',width:220}]:[]),{title:'履约状态',key:'status'},{title:'时间',key:'time'},...tail];
  return [...head,{title:section.value==='activity'?'回调事件':'异常类型',key:'kind'},{title:'状态',key:'status'},{title:'时间',key:'time'},...tail];});
-async function load(background=false){const seq=++generation;if(section.value==='physical'){busy.value=false;return;}busy.value=true;error.value='';if(!background){items.value=[];summary.value={};total.value=0;unlinked.value=0;pendingTopups.value=0;}
+async function load(background=false){const seq=++generation;if(['physical','operations'].includes(section.value)){busy.value=false;if(section.value==='operations')await operationsPanel.value?.load();return;}busy.value=true;error.value='';if(!background){items.value=[];summary.value={};total.value=0;unlinked.value=0;pendingTopups.value=0;}
 try{const r=await http.get<any,any>('/api/v1/billing/manage/transactions/',{params:{environment:environment.value,section:section.value,page:page.value,status:status.value,search:search.value,identity:identity.value||undefined,account:account.value||undefined,start:dates.value?.[0].startOf('day').toISOString(),end:dates.value?.[1].add(1,'day').startOf('day').toISOString()}});if(seq!==generation)return;items.value=r.items;total.value=r.total;summary.value=r.summary;unlinked.value=r.unlinked_events;pendingTopups.value=r.pending_topups;}catch(e:any){if(seq===generation){error.value=e.message||'加载失败';items.value=[];summary.value={};total.value=0;}}finally{if(seq===generation)busy.value=false;}}
 function changeSection(){status.value='all';reset();}
 function reset(){page.value=1;void load();}function changePage(p:any){page.value=p.current;void load();}

@@ -1,4 +1,4 @@
-"""Durable sync with OSS HEAD validation before a short production commit."""
+"""Metadata-only sync over shared OSS; no object I/O during synchronization."""
 from django.db import transaction
 from django.utils import timezone
 from .models import *
@@ -43,8 +43,6 @@ def heartbeat(pk, token, **updates):
 
 
 def receiver_preflight(t,token):
-    inspect_target(t.snapshot)
-    verify_resources(t.snapshot,lambda n,total:heartbeat(t.pk,token,result={'checked':n,'total':total}))
     result=inspect_target(t.snapshot)
     t.refresh_from_db();t.result=result;t.baseline=result['target_fingerprint'];t.state='ready'
     t.expires_at=timezone.now()+timedelta(minutes=10);t.save()
@@ -56,7 +54,6 @@ def receiver_import(t, token):
         return
     s = t.snapshot
     heartbeat(t.pk, token, state='checking')
-    verify_resources(s, lambda n,total: heartbeat(t.pk,token,result={'checked':n,'total':total}))
     PresetSyncSlot.objects.get_or_create(library_uuid=t.library_uuid)
     from material_library.models import (MaterialLibrary, Material, MaterialRevision, ResourceBlob, LibraryVersion,
         LibraryItem, LibraryDraft, TemplateLibraryBinding, TemplateMaterialLink)
