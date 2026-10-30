@@ -59,3 +59,17 @@ urlpatterns += [
  path('manage/cleanup/', lifecycle.CleanupScan.as_view()),
  path('manage/cleanup/<uuid:pk>/execute/', lifecycle.CleanupExecute.as_view()),
 ]
+
+from . import user_stickers
+urlpatterns += [
+ path('personal/uploads/', user_stickers.Upload.as_view()),
+ path('personal/stickers/', user_stickers.Stickers.as_view()),
+ path('personal/stickers/<uuid:pk>/', user_stickers.StickerDetail.as_view()),
+]
+
+# Accept the network client's normalized paths without redirecting POST bodies.
+urlpatterns += [
+ path('personal/uploads', user_stickers.Upload.as_view()),
+ path('personal/stickers', user_stickers.Stickers.as_view()),
+ path('personal/stickers/<uuid:pk>', user_stickers.StickerDetail.as_view()),
+]

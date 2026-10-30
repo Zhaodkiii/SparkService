@@ -698,3 +698,6 @@ CACHES['material_pagination'] = {
     'TIMEOUT': 1800,
     'OPTIONS': {'socket_connect_timeout': 2, 'socket_timeout': 2},
 }
+
+# Optional environment namespace when personal stickers share one OSS bucket.
+USER_STICKER_OSS_ENV_PREFIX = os.getenv("USER_STICKER_OSS_ENV_PREFIX", "").strip("/")
