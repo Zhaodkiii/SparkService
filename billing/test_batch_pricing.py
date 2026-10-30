@@ -80,3 +80,48 @@ class BatchDraftTests(TestCase):
         with patch('common.permissions.has_permission_code',return_value=False):
             self.assertEqual(self.call('preview').status_code,403)
             self.assertEqual(self.call('save').status_code,403)
+
+    def test_publish_entire_batch_without_separate_draft_step(self):
+        preview=self.call('preview')
+        result=self.call('publish',{**self.body,'expected_preview_hash':preview.data['preview_hash']})
+        self.assertEqual(result.status_code,200);self.assertEqual(result.data['published_count'],2)
+        self.assertEqual(ContentPolicyRevision.objects.count(),3)
+        self.assertFalse(ContentPolicyDraft.objects.exists())
+        self.offer.refresh_from_db();self.assertEqual(self.offer.current_policy_revision.access_mode,'free')
+
+    def test_publish_blocks_all_if_any_item_is_blocked(self):
+        body={**self.body,'access_mode':'diamond_only','diamond_price':30}
+        preview=self.call('preview',body)
+        result=self.call('publish',{**body,'expected_preview_hash':preview.data['preview_hash']})
+        self.assertEqual(result.status_code,409);self.assertEqual(ContentPolicyRevision.objects.count(),1)
+        self.assertEqual(ContentOffer.objects.count(),1);self.assertFalse(ContentPolicyDraft.objects.exists())
+
+    def test_publish_rejects_skipped_existing_drafts(self):
+        old=dict(expected_revision=1,access_mode='pro_only',diamond_price=None,currency_code=None,pro_entitlement_key='member',bundled_grants=[],terms_version='draft-v4',change_reason='已有草稿')
+        save_draft(self.offer.pk,old,self.user)
+        preview=self.call('preview')
+        result=self.call('publish',{**self.body,'expected_preview_hash':preview.data['preview_hash']})
+        self.assertEqual(result.status_code,409);self.assertEqual(ContentPolicyRevision.objects.count(),1)
+        self.assertEqual(ContentPolicyDraft.objects.get(offer=self.offer).body['change_reason'],'已有草稿')
+
+    def test_publish_rolls_back_when_later_publish_fails(self):
+        preview=self.call('preview')
+        from .batch_pricing import publish as real_publish
+        from .identity import BillingError
+        count=0
+        def fail_second(*args,**kwargs):
+            nonlocal count
+            count+=1
+            if count==2:raise BillingError('TEST','模拟发布冲突')
+            return real_publish(*args,**kwargs)
+        with patch('billing.batch_pricing.publish',side_effect=fail_second):
+            result=self.call('publish',{**self.body,'expected_preview_hash':preview.data['preview_hash']})
+        self.assertEqual(result.status_code,409);self.assertEqual(ContentPolicyRevision.objects.count(),1)
+        self.assertEqual(ContentOffer.objects.count(),1);self.assertFalse(ContentPolicyDraft.objects.exists())
+        self.offer.refresh_from_db();self.assertEqual(self.offer.current_policy_revision.access_mode,'pro_only')
+
+    def test_publish_requires_both_permissions(self):
+        preview=self.call('preview');self.user.is_superuser=False;self.user.save()
+        with patch('common.permissions.has_permission_code',side_effect=lambda uid,p:p=='billing.publish_pricing'), patch('backoffice.rbac.has_permission_code',return_value=False):
+            result=self.call('publish',{**self.body,'expected_preview_hash':preview.data['preview_hash']})
+        self.assertEqual(result.status_code,403);self.assertEqual(ContentPolicyRevision.objects.count(),1)

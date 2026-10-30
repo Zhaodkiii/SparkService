@@ -7,7 +7,7 @@ from common.permissions import AdminCodePermission
 from .views import AuthView
 from .models import ContentOffer, ContentPolicyDraft, BillingAudit
 from .catalog import public_contents
-from .pricing import PolicyInput, publication_checks, save_draft
+from .pricing import PolicyInput, publication_checks, save_draft, publish
 from .services import digest
 from .identity import BillingError
 
@@ -71,12 +71,19 @@ def plan(data, lock=False):
 
 class BatchPricing(AuthView):
     permission_classes=[AdminCodePermission]
-    required_permission_code='billing.change_pricing_draft'
+    @property
+    def required_permission_code(self):
+        return 'billing.publish_pricing' if self.kwargs.get('action') == 'publish' else 'billing.change_pricing_draft'
     def post(self,request,action):
-        if action not in ('preview','save'):
+        if action not in ('preview','save','publish'):
             from rest_framework.exceptions import NotFound
             raise NotFound('不支持的批量操作')
         form=BatchInput(data=request.data);form.is_valid(raise_exception=True);data=form.validated_data
+        if action == 'publish':
+            from backoffice.rbac import has_permission_code
+            from rest_framework.exceptions import PermissionDenied
+            if not request.user.is_superuser and not has_permission_code(request.user.id, 'billing.change_pricing_draft'):
+                raise PermissionDenied('批量配置并发布需要草稿编辑和发布权限')
         if action=='preview':
             items,key=plan(data)
             return Response(dict(items=items,preview_hash=key,save_count=sum(not r['skipped'] for r in items),skipped_count=sum(r['skipped'] for r in items)))
@@ -84,7 +91,13 @@ class BatchPricing(AuthView):
             items,key=plan(data,lock=True)
             if data.get('expected_preview_hash')!=key:
                 raise BillingError('BATCH_CHANGED','所选内容、线上策略或草稿已变化，请重新预览后保存')
+            if action == 'publish':
+                if any(row['skipped'] for row in items):
+                    raise BillingError('BATCH_SKIPPED', '存在已跳过的草稿，请选择替换已有草稿或移除这些内容后重新预览')
+                if any(row['blockers'] for row in items):
+                    raise BillingError('BATCH_BLOCKED', '部分内容未通过发布检查，请解决限制后重新预览；本次没有发布任何内容')
             saved=[]
+            published=[]
             for row in items:
                 if row['skipped']: continue
                 offer,created=ContentOffer.objects.get_or_create(target_kind=row['target_kind'],target_id=row['target_id'],defaults={'title':row['title'],'state':'draft'})
@@ -92,5 +105,11 @@ class BatchPricing(AuthView):
                 current_draft=ContentPolicyDraft.objects.filter(offer=offer).first()
                 save_draft(offer.pk,{**row['body'],'expected_draft_hash':digest(current_draft.body) if current_draft else None},request.user)
                 saved.append(str(offer.pk))
+                if action == 'publish':
+                    policy = publish(offer.pk, request.user, digest(row['body']))
+                    published.append(dict(offer_id=str(offer.pk), title=row['title'], revision=policy.revision))
+            if action == 'publish':
+                BillingAudit.objects.create(actor=request.user, action='batch_publish_pricing', target='content-offers', detail={'offer_ids':saved,'reason':data['change_reason'],'preview_hash':key})
+                return Response(dict(published_count=len(published), items=published))
             BillingAudit.objects.create(actor=request.user,action='batch_save_pricing_drafts',target='content-offers',detail={'offer_ids':saved,'reason':data['change_reason'],'preview_hash':key})
             return Response(dict(saved_count=len(saved),skipped_count=len(items)-len(saved),offer_ids=saved))
