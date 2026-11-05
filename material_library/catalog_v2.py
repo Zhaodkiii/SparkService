@@ -1,4 +1,5 @@
 """Versioned material catalog. JSON control plane; images are signed OSS objects."""
+import secrets
 import hashlib
 import json
 import uuid
@@ -216,6 +217,16 @@ class ItemsV2(AuthView):
                     if request.query_params.get('type') and row.material.material_type != request.query_params['type']: continue
                     if any(term not in (row.revision.name+' '.join(row.revision.keywords+row.revision.aliases)) for term in query_terms(request)): continue
                     rows.append(row);seen.add(row.material_id)
+        if request.query_params.get('sort') == 'random':
+            count = serializers.IntegerField(min_value=1, max_value=8).run_validation(request.query_params.get('limit', 6))
+            raw_excluded = request.query_params.get('exclude', '')
+            excluded = {str(serializers.UUIDField().run_validation(value)) for value in raw_excluded.split(',') if value}
+            if len(excluded) > 500: raise ValidationError('排除项过多')
+            eligible = [row for row in rows if str(row.material_id) not in excluded and row.material.active]
+            chosen = secrets.SystemRandom().sample(eligible, min(count, len(eligible)))
+            response = Response(dict(draw_scope="published_stickers", items=[item_data(row, request.user) for row in chosen], next_cursor=None))
+            response['Cache-Control'] = 'no-store'
+            return response
         if pk and not terms: rows.sort(key=lambda r:(r.position,r.pk))
         def serialize(row):
             if not row.material.active or (not pk and not LibraryItem.objects.filter(material_id=row.material_id,version__library__in=visible(),version_id=F('version__library__current_id')).exists()):
