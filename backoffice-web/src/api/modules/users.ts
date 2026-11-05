@@ -153,23 +153,6 @@ export function fetchUserDetail(userId: number) {
   return http.get<unknown, AdminUserDetail>(`/api/admin/v1/users/${userId}/detail/`);
 }
 
-export function grantUserPro(
-  userId: number,
-  payload: { grant_days?: number; expires_at?: string | null; note?: string },
-) {
-  return http.post<unknown, { user_id: number; pro: AdminUserProSummary }>(
-    `/api/admin/v1/users/${userId}/pro/grant/`,
-    payload,
-  );
-}
-
-export function recycleUserPro(userId: number, payload: { note?: string } = {}) {
-  return http.post<unknown, { user_id: number; pro: AdminUserProSummary }>(
-    `/api/admin/v1/users/${userId}/pro/recycle/`,
-    payload,
-  );
-}
-
 export function assignUserRoles(userId: number, roleCodes: string[]) {
   return http.post(`/api/admin/v1/users/${userId}/roles/`, { role_codes: roleCodes });
 }

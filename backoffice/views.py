@@ -34,18 +34,6 @@ from accounts.models import (
 )
 from accounts.deactivation.tasks import process_deactivation_task
 from accounts.services.phone_number_service import PhoneNumberService
-from ai_config.models import (
-    AIModelCatalog,
-    AIProviderKeyConfig,
-    AIScenarioModelBinding,
-    ScenarioKey,
-    SmallTask,
-    SparkToolName,
-    TrialApplication,
-    TrialApplicationRequest,
-)
-from ai_config.services import TrialService
-from ai_config.entitlements import ProEntitlementResolver
 from common.permissions import AdminCodePermission, AdminOnlyPermission
 from common.response import error_response, success_response
 from django_celery_beat.models import PeriodicTask
@@ -58,14 +46,6 @@ from backoffice.query_params import InvalidAdminDatetimeParam, parse_admin_datet
 from backoffice.rbac import bootstrap_admin_permissions, get_user_menu_tree, get_user_permission_codes, get_user_role_codes
 from backoffice.sorting import resolve_admin_sort
 from backoffice.serializers import (
-    AdminAIModelCatalogCreateSerializer,
-    AdminAIModelCatalogSerializer,
-    AdminAIModelCatalogUpdateSerializer,
-    AdminAIProviderKeyCreateSerializer,
-    AdminAIProviderKeySerializer,
-    AdminAIProviderKeyUpdateSerializer,
-    AdminAIScenarioModelBindingSerializer,
-    AdminSmallTaskSerializer,
     AdminAuditLogSerializer,
     AdminDeactivationAuditSerializer,
     AdminDeactivationSerializer,
@@ -81,12 +61,8 @@ from backoffice.serializers import (
     AdminPermissionSerializer,
     AdminRolePermissionAssignSerializer,
     AdminRoleSerializer,
-    AdminTrialActionSerializer,
-    AdminTrialApplicationSerializer,
     AdminUserDeviceSessionSerializer,
     AdminUserListSerializer,
-    AdminUserProGrantSerializer,
-    AdminUserProRecycleSerializer,
     AdminUserRoleAssignSerializer,
     AdminUserSerializer,
     AdminUserSocialIdentitySerializer,
@@ -346,7 +322,6 @@ CELERY_MANAGED_TASKS = (
     ("accounts.deactivation.tasks.process_deactivation_task", "账号注销", "deactivation"),
     ("accounts.deactivation.tasks.schedule_deactivation_processing_task", "账号注销", "deactivation"),
     ("accounts.notification_tasks.send_notification_campaign_task", "账号通知", "notification.bulk"),
-    ("ai_config.tasks.approve_trial_application_request_task", "AI 配置", "celery"),
     ("notification_center.tasks.execute_email_otp_intent_task", "通知中心", "notification.security.high"),
     ("notification_center.tasks.execute_notification_campaign_task", "通知中心", "notification.bulk"),
     ("notification_center.tasks.execute_sms_otp_intent_task", "通知中心", "notification.security.high"),
@@ -757,7 +732,7 @@ class AdminUserListView(APIView):
                 data={"field": exc.field},
             )
 
-        queryset = User.objects.select_related("trial_application").annotate(
+        queryset = User.objects.all().annotate(
             _max_device_seen=Max("trusted_devices__last_seen"),
             _max_session_refresh=Max("device_sessions__last_refreshed_at"),
         ).prefetch_related(
@@ -880,7 +855,7 @@ class AdminUserDetailView(APIView):
     permission_classes = [AdminOnlyPermission]
 
     def get(self, request, user_id: int):
-        user = get_object_or_404(User.objects.select_related("trial_application"), pk=user_id)
+        user = get_object_or_404(User.objects.all(), pk=user_id)
         trusted_devices = TrustedDevice.objects.filter(user=user).order_by("-last_seen", "-id")
         device_sessions = (
             AccountDeviceSession.objects.filter(user=user)
@@ -888,8 +863,7 @@ class AdminUserDetailView(APIView):
             .order_by("-updated_at", "-id")
         )
         auth_identities = SocialIdentity.objects.filter(user=user).order_by("provider", "-updated_at", "-id")
-        pro = TrialService.build_pro_summary(user=user)
-        pro["is_pro"] = ProEntitlementResolver.is_pro_user(user=user)
+        pro = {"is_pro": False, "status": "none", "expires_at": None, "trial_id": None}
         user_data = AdminUserSerializer(user).data
         user_data["is_pro"] = pro["is_pro"]
         user_data["pro_status"] = pro["status"]
@@ -904,155 +878,10 @@ class AdminUserDetailView(APIView):
         return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
-def _send_membership_pro_notification(
-    *,
-    request,
-    user_id: int,
-    business_scene: str,
-    title: str,
-    body: str,
-    business_id: str,
-    channels: list[str],
-    status_value: str,
-    application_id=None,
-):
-    try:
-        NotificationCenterService.send_to_user_sync(
-            campaign_id=None,
-            user_id=user_id,
-            channels=channels,
-            title=title,
-            body=body,
-            payload={
-                "type": "ai_trial_application_result",
-                "status": status_value,
-                "application_id": application_id,
-                "refresh_ai_config": True,
-                "route": "ai_settings",
-            },
-            created_by_id=getattr(request.user, "id", None),
-            request_id=getattr(request, "request_id", "") or "",
-            business_scene=business_scene,
-            business_reference_type="trial_application",
-            business_id=business_id,
-            idempotency_key=f"{business_scene}:{business_id}:manual",
-            source="backoffice.user_pro",
-            actor_type="admin",
-            actor_id=str(getattr(request.user, "id", "") or ""),
-        )
-    except Exception:
-        # 通知失败不影响 Pro 操作结果
-        pass
 
 
-class AdminUserProGrantView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:user:pro:grant"
-
-    @transaction.atomic
-    def post(self, request, user_id: int):
-        target = get_object_or_404(User, pk=user_id)
-        serializer = AdminUserProGrantSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        note = serializer.validated_data.get("note", "")
-        try:
-            trial, grant_req, previous_status = TrialService.admin_grant_user_trial(
-                user=target,
-                grant_days=serializer.validated_data.get("grant_days"),
-                expires_at=serializer.validated_data.get("expires_at"),
-                note=note,
-            )
-        except ValueError as exc:
-            return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-
-        _send_membership_pro_notification(
-            request=request,
-            user_id=target.id,
-            business_scene="membership.pro_trial.manually_granted",
-            title="已发放 Pro 试用权限",
-            body="系统已为你发放 Pro 模型试用权限。",
-            business_id=str(grant_req.id),
-            channels=[
-                NotificationMessage.Channel.APNS,
-                NotificationMessage.Channel.EMAIL,
-                NotificationMessage.Channel.SMS,
-            ],
-            status_value="active",
-            application_id=grant_req.id,
-        )
-
-        pro = TrialService.build_pro_summary(user=target)
-        pro["is_pro"] = ProEntitlementResolver.is_pro_user(user=target)
-        payload = {"user_id": target.id, "pro": pro}
-        write_audit_log(
-            request,
-            action="admin.user.pro.grant",
-            resource_type="user",
-            resource_id=str(target.id),
-            status_code=200,
-            response_payload={
-                **payload,
-                "trial_id": trial.id,
-                "previous_status": previous_status,
-                "new_status": trial.status,
-                "expires_at": trial.expires_at.isoformat() if trial.expires_at else None,
-                "note": note,
-                "operator_user_id": getattr(request.user, "id", None),
-            },
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminUserProRecycleView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:user:pro:recycle"
-
-    @transaction.atomic
-    def post(self, request, user_id: int):
-        target = get_object_or_404(User, pk=user_id)
-        serializer = AdminUserProRecycleSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        note = serializer.validated_data.get("note", "")
-        try:
-            trial, previous_status = TrialService.admin_recycle_user_trial(user=target, note=note)
-        except ValueError as exc:
-            return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-
-        _send_membership_pro_notification(
-            request=request,
-            user_id=target.id,
-            business_scene="membership.pro_trial.revoked",
-            title="试用已收回",
-            body="你的 Pro 模型试用权限已被收回。",
-            business_id=str(trial.id),
-            channels=[
-                NotificationMessage.Channel.APNS,
-                NotificationMessage.Channel.EMAIL,
-            ],
-            status_value="expired",
-            application_id=None,
-        )
-
-        pro = TrialService.build_pro_summary(user=target)
-        pro["is_pro"] = ProEntitlementResolver.is_pro_user(user=target)
-        payload = {"user_id": target.id, "pro": pro}
-        write_audit_log(
-            request,
-            action="admin.user.pro.recycle",
-            resource_type="user",
-            resource_id=str(target.id),
-            status_code=200,
-            response_payload={
-                **payload,
-                "trial_id": trial.id,
-                "previous_status": previous_status,
-                "new_status": trial.status,
-                "expires_at": trial.expires_at.isoformat() if trial.expires_at else None,
-                "note": note,
-                "operator_user_id": getattr(request.user, "id", None),
-            },
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminDeviceListView(APIView):
@@ -1467,547 +1296,34 @@ SCENARIO_LABEL_ZH = {
 }
 
 
-def _scenario_key_valid(scenario_key: str) -> bool:
-    return scenario_key in {m.value for m in ScenarioKey}
-
-
-class AdminAIScenarioSummaryListView(APIView):
-    """Aggregate counts and default model for each configured scenario."""
-
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        rows_out = []
-        for member in ScenarioKey:
-            key = member.value
-            qs = AIScenarioModelBinding.objects.filter(scenario=key)
-            active = qs.filter(is_active=True).order_by("position", "id")
-            default_row = active.filter(is_default=True).first()
-            rows_out.append(
-                {
-                    "scenario": key,
-                    "label": SCENARIO_LABEL_ZH.get(key, key),
-                    "models_count": qs.count(),
-                    "default_model": default_row.bootstrap_name() if default_row else None,
-                    "active_bindings": active.count(),
-                }
-            )
-        return success_response(rows_out, msg="success", code=0, status_code=status.HTTP_200_OK)
-
-
-class AdminAIToolOptionsView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        payload = [{"value": item.value, "label": item.label} for item in SparkToolName]
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
 
 
-class AdminAIScenarioBindingListCreateView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request, scenario_key: str):
-        if not _scenario_key_valid(scenario_key):
-            return error_response(msg="invalid_scenario", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-        rows = (
-            AIScenarioModelBinding.objects.select_related("model")
-            .filter(scenario=scenario_key)
-            .order_by("position", "id")
-        )
-        payload = AdminAIScenarioModelBindingSerializer(rows, many=True).data
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
-
-    def post(self, request, scenario_key: str):
-        permission_codes = get_user_permission_codes(request.user.id)
-        if not request.user.is_superuser and "button:ai:scenario:create" not in permission_codes:
-            return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
-        if not _scenario_key_valid(scenario_key):
-            return error_response(msg="invalid_scenario", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-        serializer = AdminAIScenarioModelBindingSerializer(data=request.data, context={"scenario": scenario_key})
-        serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            serializer.save()
-        payload = serializer.data
-        write_audit_log(
-            request,
-            action="admin.ai.scenario_binding.create",
-            resource_type="ai_scenario_binding",
-            resource_id=str(payload["id"]),
-            status_code=201,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
-class AdminAIScenarioBindingDetailView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:ai:scenario:update"
-
-    def patch(self, request, binding_id: int):
-        row = get_object_or_404(AIScenarioModelBinding, pk=binding_id)
-        serializer = AdminAIScenarioModelBindingSerializer(row, data=request.data, partial=True, context={"scenario": row.scenario})
-        serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            serializer.save()
-        payload = serializer.data
-        write_audit_log(
-            request,
-            action="admin.ai.scenario_binding.update",
-            resource_type="ai_scenario_binding",
-            resource_id=str(row.id),
-            status_code=200,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
-
-    def delete(self, request, binding_id: int):
-        row = get_object_or_404(AIScenarioModelBinding, pk=binding_id)
-        others = AIScenarioModelBinding.objects.filter(scenario=row.scenario).exclude(pk=row.pk)
-        if not others.exists():
-            return error_response(msg="cannot_delete_last_binding", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-        with transaction.atomic():
-            was_default = row.is_default
-            row.delete()
-            if was_default:
-                nxt = others.filter(is_active=True).order_by("position", "id").first() or others.order_by("position", "id").first()
-                if nxt and not AIScenarioModelBinding.objects.filter(scenario=nxt.scenario, is_default=True).exists():
-                    nxt.is_default = True
-                    nxt.save()
-        write_audit_log(
-            request,
-            action="admin.ai.scenario_binding.delete",
-            resource_type="ai_scenario_binding",
-            resource_id=str(binding_id),
-            status_code=200,
-            response_payload={},
-        )
-        return success_response({}, msg="deleted", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAIModelCatalogListView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        rows = AIModelCatalog.objects.all().order_by("position", "name")
-        payload = AdminAIModelCatalogSerializer(rows, many=True).data
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
-
-    def post(self, request):
-        permission_codes = get_user_permission_codes(request.user.id)
-        if not request.user.is_superuser and "button:ai:model:create" not in permission_codes:
-            return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
-        serializer = AdminAIModelCatalogCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        row = serializer.save()
-        payload = AdminAIModelCatalogSerializer(row).data
-        write_audit_log(
-            request,
-            action="admin.ai.model_catalog.create",
-            resource_type="ai_model_catalog",
-            resource_id=str(row.id),
-            status_code=201,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
-class AdminAIModelCatalogDetailView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:ai:model:update"
-
-    def patch(self, request, catalog_id: int):
-        row = get_object_or_404(AIModelCatalog, pk=catalog_id)
-        serializer = AdminAIModelCatalogUpdateSerializer(row, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        payload = AdminAIModelCatalogSerializer(row).data
-        write_audit_log(
-            request,
-            action="admin.ai.model_catalog.update",
-            resource_type="ai_model_catalog",
-            resource_id=str(row.id),
-            status_code=200,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminSmallTaskListCreateView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        rows = SmallTask.objects.filter(is_deleted=False).order_by("source", "id")
-        payload = AdminSmallTaskSerializer(rows, many=True).data
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
-
-    def post(self, request):
-        permission_codes = get_user_permission_codes(request.user.id)
-        if not request.user.is_superuser and "button:ai:small_task:create" not in permission_codes:
-            return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
-        data = request.data.copy()
-        data.setdefault("source", SmallTask.Source.SERVICE)
-        serializer = AdminSmallTaskSerializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        row = serializer.save()
-        payload = AdminSmallTaskSerializer(row).data
-        write_audit_log(
-            request,
-            action="admin.ai.small_task.create",
-            resource_type="ai_small_task",
-            resource_id=str(row.id),
-            status_code=201,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
-class AdminSmallTaskDetailView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:ai:small_task:update"
-
-    def patch(self, request, task_id: int):
-        row = get_object_or_404(SmallTask, pk=task_id, is_deleted=False)
-        serializer = AdminSmallTaskSerializer(row, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        payload = AdminSmallTaskSerializer(row).data
-        write_audit_log(
-            request,
-            action="admin.ai.small_task.update",
-            resource_type="ai_small_task",
-            resource_id=str(row.id),
-            status_code=200,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
-
-    def delete(self, request, task_id: int):
-        row = get_object_or_404(SmallTask, pk=task_id, is_deleted=False)
-        row.is_deleted = True
-        row.save(update_fields=["is_deleted", "updated_at"])
-        write_audit_log(
-            request,
-            action="admin.ai.small_task.delete",
-            resource_type="ai_small_task",
-            resource_id=str(task_id),
-            status_code=200,
-            response_payload={},
-        )
-        return success_response({}, msg="deleted", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAIProviderKeyListView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        kind = (request.query_params.get("kind") or "").strip()
-        queryset = AIProviderKeyConfig.objects.all().order_by("kind", "position", "company", "name")
-        if kind:
-            queryset = queryset.filter(kind=kind)
-        payload = AdminAIProviderKeySerializer(queryset, many=True).data
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
-
-    def post(self, request):
-        permission_codes = get_user_permission_codes(request.user.id)
-        if not request.user.is_superuser and "button:ai:provider:create" not in permission_codes:
-            return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
-        serializer = AdminAIProviderKeyCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        row = serializer.save()
-        payload = AdminAIProviderKeySerializer(row).data
-        write_audit_log(
-            request,
-            action="admin.ai.provider.create",
-            resource_type="ai_provider",
-            resource_id=str(row.id),
-            status_code=201,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="created", code=0, status_code=status.HTTP_201_CREATED)
 
 
-class AdminAIProviderKeyDetailView(APIView):
-    permission_classes = [AdminCodePermission]
-    required_permission_code = "button:ai:provider:update"
-
-    def patch(self, request, provider_id: int):
-        row = get_object_or_404(AIProviderKeyConfig, pk=provider_id)
-        serializer = AdminAIProviderKeyUpdateSerializer(row, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        payload = AdminAIProviderKeySerializer(row).data
-        write_audit_log(
-            request,
-            action="admin.ai.provider.update",
-            resource_type="ai_provider",
-            resource_id=str(row.id),
-            status_code=200,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAITrialListView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request):
-        queryset = (
-            TrialApplication.objects.select_related("user")
-            .prefetch_related(
-                Prefetch(
-                    "user__trusted_devices",
-                    queryset=TrustedDevice.objects.order_by("-last_seen", "-id"),
-                ),
-                Prefetch(
-                    "user__trial_application_requests",
-                    queryset=TrialApplicationRequest.objects.order_by("-created_at", "-id"),
-                ),
-            )
-            .all()
-            .order_by("-created_at", "-id")
-        )
-        status_filter = (request.query_params.get("status") or "").strip()
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-
-        page = int(request.query_params.get("page", "1"))
-        page_size = min(int(request.query_params.get("page_size", "20")), 100)
-        paginator = Paginator(queryset, page_size)
-        page_obj = paginator.get_page(page)
-
-        payload = {
-            "items": AdminTrialApplicationSerializer(page_obj.object_list, many=True).data,
-            "pagination": {
-                "page": page_obj.number,
-                "page_size": page_size,
-                "total": paginator.count,
-                "total_pages": paginator.num_pages,
-            },
-        }
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAITrialDetailView(APIView):
-    permission_classes = [AdminOnlyPermission]
-
-    def get(self, request, trial_id: int):
-        row = get_object_or_404(
-            TrialApplication.objects.select_related("user").prefetch_related(
-                Prefetch(
-                    "user__trusted_devices",
-                    queryset=TrustedDevice.objects.order_by("-last_seen", "-id"),
-                ),
-                Prefetch(
-                    "user__trial_application_requests",
-                    queryset=TrialApplicationRequest.objects.order_by("-created_at", "-id"),
-                ),
-            ),
-            pk=trial_id,
-        )
-        payload = AdminTrialApplicationSerializer(row).data
-        return success_response(payload, msg="success", code=0, status_code=status.HTTP_200_OK)
 
 
-class AdminAITrialActionView(APIView):
-    # 权限码与动作绑定（approve/reject/recycle/grant），这里不使用 AdminCodePermission 的单码校验。
-    permission_classes = [AdminOnlyPermission]
 
-    @transaction.atomic
-    def post(self, request, trial_id: int, action: str):
-        trial = get_object_or_404(TrialApplication.objects.select_for_update(), pk=trial_id)
-        serializer = AdminTrialActionSerializer(data=request.data, context={"action": action})
-        serializer.is_valid(raise_exception=True)
-        note = serializer.validated_data.get("note", "").strip()
 
-        now = timezone.now()
-        if action == "approve":
-            trial.status = TrialApplication.Status.ACTIVE
-            trial.grant_source = TrialApplication.GrantSource.MANUAL
-            trial.started_at = now
-            trial.expires_at = now + timedelta(days=TrialService._trial_days())
-            trial.approved_at = now
-            trial.rejected_at = None
-            required_code = "button:ai:trial:approve"
-        elif action == "reject":
-            trial.status = TrialApplication.Status.REJECTED
-            trial.grant_source = TrialApplication.GrantSource.MANUAL
-            trial.rejected_at = now
-            trial.approved_at = None
-            required_code = "button:ai:trial:reject"
-        elif action == "recycle":
-            required_code = "button:ai:trial:recycle"
-        elif action == "grant":
-            required_code = "button:ai:trial:grant"
-        else:
-            return error_response(msg="invalid_action", code=40001, status_code=status.HTTP_400_BAD_REQUEST)
 
-        if not request.user.is_superuser and required_code not in get_user_permission_codes(request.user.id):
-            return error_response(msg="permission_denied", code=40301, status_code=status.HTTP_403_FORBIDDEN)
 
-        if action == "recycle":
-            try:
-                trial, _previous_status = TrialService.admin_recycle_user_trial(user=trial.user, note=note)
-            except ValueError as exc:
-                return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-            payload = AdminTrialApplicationSerializer(trial).data
-            write_audit_log(
-                request,
-                action=f"admin.ai.trial.{action}",
-                resource_type="trial_application",
-                resource_id=str(trial.id),
-                status_code=200,
-                response_payload=payload,
-            )
-            return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
-
-        if action == "grant":
-            try:
-                trial, grant_req, _previous_status = TrialService.admin_grant_user_trial(
-                    user=trial.user,
-                    grant_days=serializer.validated_data.get("grant_days"),
-                    expires_at=serializer.validated_data.get("expires_at"),
-                    note=note,
-                )
-            except ValueError as exc:
-                return error_response(msg=str(exc), code=40001, status_code=status.HTTP_400_BAD_REQUEST)
-            try:
-                NotificationCenterService.send_to_user_sync(
-                    campaign_id=None,
-                    user_id=trial.user_id,
-                    channels=[
-                        NotificationMessage.Channel.APNS,
-                        NotificationMessage.Channel.EMAIL,
-                        NotificationMessage.Channel.SMS,
-                    ],
-                    title="已发放 Pro 试用权限",
-                    body="系统已为你发放 Pro 模型试用权限。",
-                    payload={
-                        "type": "ai_trial_application_result",
-                        "status": "active",
-                        "application_id": grant_req.id,
-                        "refresh_ai_config": True,
-                        "route": "ai_settings",
-                    },
-                    created_by_id=getattr(request.user, "id", None),
-                    request_id=getattr(request, "request_id", "") or "",
-                    business_scene="membership.pro_trial.manually_granted",
-                    business_reference_type="trial_application",
-                    business_id=str(grant_req.id),
-                    idempotency_key=f"membership.pro_trial.manually_granted:{grant_req.id}:manual",
-                    source="backoffice.ai_trial",
-                    actor_type="admin",
-                    actor_id=str(getattr(request.user, "id", "") or ""),
-                )
-            except Exception:
-                pass
-            payload = AdminTrialApplicationSerializer(trial).data
-            write_audit_log(
-                request,
-                action=f"admin.ai.trial.{action}",
-                resource_type="trial_application",
-                resource_id=str(trial.id),
-                status_code=200,
-                response_payload=payload,
-            )
-            return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
-
-        if note:
-            trial.note = note
-        trial.save()
-
-        # 同步申请流水（若存在 pending 流水则标记为通过/拒绝），并对通过/拒绝发送 APNs 通知。
-        pending_req = (
-            TrialApplicationRequest.objects.select_for_update()
-            .filter(
-                user_id=trial.user_id,
-                source=TrialApplicationRequest.Source.APPLICATION,
-                status=TrialApplication.Status.PENDING,
-            )
-            .order_by("-sequence")
-            .first()
-        )
-        if action == "approve":
-            if pending_req:
-                pending_req.status = TrialApplication.Status.ACTIVE
-                pending_req.approved_at = now
-                pending_req.rejected_at = None
-                pending_req.save(update_fields=["status", "approved_at", "rejected_at", "updated_at"])
-            try:
-                NotificationCenterService.send_to_user_sync(
-                    campaign_id=None,
-                    user_id=trial.user_id,
-                    channels=[
-                        NotificationMessage.Channel.APNS,
-                        NotificationMessage.Channel.EMAIL,
-                        NotificationMessage.Channel.SMS,
-                    ],
-                    title="试用申请已通过",
-                    body="你的 Pro 模型试用申请已通过，现在可以使用服务端模型。",
-                    payload={
-                        "type": "ai_trial_application_result",
-                        "status": "active",
-                        "application_id": pending_req.id if pending_req else None,
-                        "refresh_ai_config": True,
-                        "route": "ai_settings",
-                    },
-                    created_by_id=getattr(request.user, "id", None),
-                    request_id=getattr(request, "request_id", "") or "",
-                    business_scene="membership.pro_trial.application_approved",
-                    business_reference_type="trial_application",
-                    business_id=str(pending_req.id if pending_req else trial.id),
-                    idempotency_key=f"membership.pro_trial.application_approved:{pending_req.id if pending_req else trial.id}:manual",
-                    source="backoffice.ai_trial",
-                    actor_type="admin",
-                    actor_id=str(getattr(request.user, "id", "") or ""),
-                )
-            except Exception:
-                # 通知失败不影响人工审核结果
-                pass
-        elif action == "reject":
-            if pending_req:
-                pending_req.status = TrialApplication.Status.REJECTED
-                pending_req.rejected_at = now
-                pending_req.approved_at = None
-                pending_req.save(update_fields=["status", "rejected_at", "approved_at", "updated_at"])
-            try:
-                NotificationCenterService.send_to_user_sync(
-                    campaign_id=None,
-                    user_id=trial.user_id,
-                    channels=[NotificationMessage.Channel.APNS],
-                    title="试用申请未通过",
-                    body="你的 Pro 模型试用申请未通过。",
-                    payload={
-                        "type": "ai_trial_application_result",
-                        "status": "rejected",
-                        "application_id": pending_req.id if pending_req else None,
-                        "refresh_ai_config": True,
-                        "route": "ai_settings",
-                    },
-                    created_by_id=getattr(request.user, "id", None),
-                    request_id=getattr(request, "request_id", "") or "",
-                    business_scene="membership.pro_trial.application_rejected",
-                    business_reference_type="trial_application",
-                    business_id=str(pending_req.id if pending_req else trial.id),
-                    idempotency_key=f"membership.pro_trial.application_rejected:{pending_req.id if pending_req else trial.id}:manual",
-                    source="backoffice.ai_trial",
-                    actor_type="admin",
-                    actor_id=str(getattr(request.user, "id", "") or ""),
-                )
-            except Exception:
-                pass
-
-        payload = AdminTrialApplicationSerializer(trial).data
-        write_audit_log(
-            request,
-            action=f"admin.ai.trial.{action}",
-            resource_type="trial_application",
-            resource_id=str(trial.id),
-            status_code=200,
-            response_payload=payload,
-        )
-        return success_response(payload, msg="updated", code=0, status_code=status.HTTP_200_OK)
 
 
 class AdminAsyncTaskDashboardView(APIView):

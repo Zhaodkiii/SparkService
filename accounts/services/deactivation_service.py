@@ -499,7 +499,7 @@ class DeactivationService:
             "accounts.phone_otps": len(payload["accounts"]["phone_otps"]),
         }
         for model in apps.get_models():
-            if model._meta.app_label in {"file_manager", "ai_config"}:
+            if model._meta.app_label in {"file_manager"}:
                 data = DeactivationService._model_user_index(model=model, user_id=user.id)
                 if data["count"] > 0:
                     key = f"{model._meta.app_label}.{model.__name__}"
@@ -552,7 +552,6 @@ class DeactivationService:
         stats['customizations.revoked'] = CustomizationDelivery.objects.filter(request__owner=user).update(status='withdrawn')
         stats['customizations.deleted'] = CustomizationRequest.objects.filter(owner=user,deleted_at__isnull=True).update(deleted_at=now)
         DeactivationService._soft_delete_queryset("file_manager", "ManagedFile", {"user_id": user.id}, {"is_deleted": True, "deleted_at": now}, stats)
-        DeactivationService._delete_optional_model("ai_config", "TrialApplication", {"user_id": user.id}, stats)
         return stats
 
     @staticmethod

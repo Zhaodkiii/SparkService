@@ -56,7 +56,7 @@ urlpatterns = [
     path('api/v1/auth/token/', TokenObtainUnifiedView.as_view(), name='token_obtain_pair'),
     path('api/v1/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/v1/', include('accounts.urls')),
-    path('api/v1/ai/', include('ai_config.urls')),
+    path('api/v1/ai-production/', include('ai_production.urls')),
     path('api/v1/files/', include('file_manager.urls')),
     path('api/v1/oss/', include('file_manager.oss_urls')),
     path('api/admin/v1/', include('backoffice.urls')),

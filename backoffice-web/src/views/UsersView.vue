@@ -63,11 +63,6 @@
         <a-tag :color="record.is_active ? 'green' : 'red'">{{ record.is_active ? '启用' : '禁用' }}</a-tag>
       </template>
     </a-table-column>
-    <a-table-column title="是否 Pro" key="is_pro" :width="100">
-      <template #default="{ record }">
-        <a-tag :color="record.is_pro ? 'green' : 'default'">{{ record.is_pro ? 'Pro' : '非 Pro' }}</a-tag>
-      </template>
-    </a-table-column>
     <a-table-column
       title="注册时间"
       key="date_joined"
@@ -116,8 +111,6 @@
     <template v-if="detailModal.data">
       <div style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: flex-end">
         <router-link v-if="auth.hasPermission('billing.view_transactions')" :to="{path: '/billing/transactions', query: {account: detailModal.data.user.id}}">查看资产与交易</router-link>
-        <a-button v-if="showGrantPro" type="primary" @click="openGrant">发放 Pro</a-button>
-        <a-button v-if="showRecyclePro" danger @click="openRecycle">回收 Pro</a-button>
       </div>
 
       <a-descriptions bordered :column="2" size="small">
@@ -132,11 +125,6 @@
         </a-descriptions-item>
         <a-descriptions-item label="是否 Staff">{{ detailModal.data.user.is_staff ? '是' : '否' }}</a-descriptions-item>
         <a-descriptions-item label="是否 Superuser">{{ detailModal.data.user.is_superuser ? '是' : '否' }}</a-descriptions-item>
-        <a-descriptions-item label="Pro 权益" :span="2">
-          <a-tag :color="detailModal.data.pro.is_pro ? 'green' : 'default'">
-            {{ proSummaryText(detailModal.data.pro) }}
-          </a-tag>
-        </a-descriptions-item>
         <a-descriptions-item label="注册时间">{{ formatDateTime(detailModal.data.user.date_joined) }}</a-descriptions-item>
         <a-descriptions-item label="最近登录">{{ formatDateTime(detailModal.data.user.last_login) }}</a-descriptions-item>
       </a-descriptions>
@@ -289,33 +277,7 @@
     </template>
   </AdminDetailModal>
 
-  <a-modal v-model:open="grantModal.open" title="发放 Pro 权益" :confirm-loading="grantModal.loading" @ok="submitGrant">
-    <a-form layout="vertical">
-      <a-form-item label="试用时长">
-        <a-radio-group v-model:value="grantModal.preset">
-          <a-radio :value="6">6 天</a-radio>
-          <a-radio :value="15">15 天</a-radio>
-          <a-radio :value="30">30 天</a-radio>
-          <a-radio :value="90">90 天</a-radio>
-          <a-radio value="custom">自定义</a-radio>
-        </a-radio-group>
-      </a-form-item>
-      <a-form-item v-if="grantModal.preset === 'custom'" label="自定义天数">
-        <a-input-number v-model:value="grantModal.customDays" :min="1" :max="3650" style="width: 100%" />
-      </a-form-item>
-      <a-form-item label="备注">
-        <a-textarea v-model:value="grantModal.note" :maxlength="255" show-count placeholder="可选" />
-      </a-form-item>
-    </a-form>
-  </a-modal>
 
-  <a-modal v-model:open="recycleModal.open" title="回收 Pro 权益" :confirm-loading="recycleModal.loading" @ok="submitRecycle">
-    <a-form layout="vertical">
-      <a-form-item label="备注" required>
-        <a-textarea v-model:value="recycleModal.note" :maxlength="255" show-count placeholder="请填写回收原因" />
-      </a-form-item>
-    </a-form>
-  </a-modal>
 
 </template>
 
@@ -326,11 +288,8 @@ import type { Dayjs } from 'dayjs';
 import {
   fetchUserDetail,
   fetchUsers,
-  grantUserPro,
-  recycleUserPro,
   updateUserStatus,
   type AdminUserDetail,
-  type AdminUserProSummary,
 } from '../api/modules/users';
 import { useAuthStore } from '../stores/auth';
 import { useTableSort } from '../composables/useTableSort';
@@ -368,39 +327,13 @@ const detailModal = reactive({
 });
 
 
-const grantModal = reactive({
-  open: false,
-  loading: false,
-  preset: 15 as number | 'custom',
-  customDays: 15,
-  note: '',
-});
-
-const recycleModal = reactive({
-  open: false,
-  loading: false,
-  note: '',
-});
-
 const canUpdate = computed(() => auth.hasPermission('button:user:status:update'));
-const canGrantPro = computed(() => auth.hasPermission('button:user:pro:grant'));
-const canRecyclePro = computed(() => auth.hasPermission('button:user:pro:recycle'));
 const actionsColWidth = computed(() =>
   calcActionsColWidth({
     buttons: 2 + (canUpdate.value ? 1 : 0),
     min: 120,
   }),
 );
-
-const showGrantPro = computed(() => {
-  if (!canGrantPro.value || !detailModal.data) return false;
-  const status = detailModal.data.pro.status;
-  return !detailModal.data.pro.is_pro && status !== 'pending';
-});
-
-const showRecyclePro = computed(() => {
-  return Boolean(canRecyclePro.value && detailModal.data?.pro.is_pro);
-});
 
 const { sortQuery, getColumnSortOrder, handleTableChange } = useTableSort({
   defaultSortBy: 'date_joined',
@@ -416,32 +349,6 @@ const { sortQuery, getColumnSortOrder, handleTableChange } = useTableSort({
   },
 });
 
-function proStatusLabel(status: string) {
-  switch (status) {
-    case 'pending':
-      return '审核中';
-    case 'active':
-      return '生效中';
-    case 'rejected':
-      return '已拒绝';
-    case 'expired':
-      return '已过期';
-    case 'none':
-      return '未开通';
-    default:
-      return status || '-';
-  }
-}
-
-function proSummaryText(pro: AdminUserProSummary) {
-  if (pro.is_pro) {
-    return `Pro · ${proStatusLabel(pro.status)} · 到期 ${formatDateTime(pro.expires_at)}`;
-  }
-  if (pro.status && pro.status !== 'none') {
-    return `非 Pro · ${proStatusLabel(pro.status)}`;
-  }
-  return '非 Pro';
-}
 
 function sessionStatusLabel(status: string) {
   switch (status) {
@@ -525,69 +432,6 @@ async function openUserDetail(record: AdminUser) {
   }
 }
 
-
-async function refreshDetailAndList() {
-  if (detailModal.data?.user.id) {
-    detailModal.data = await fetchUserDetail(detailModal.data.user.id);
-  }
-  await load();
-}
-
-function openGrant() {
-  grantModal.open = true;
-  grantModal.loading = false;
-  grantModal.preset = 15;
-  grantModal.customDays = 15;
-  grantModal.note = '';
-}
-
-async function submitGrant() {
-  const userId = detailModal.data?.user.id;
-  if (!userId) return;
-  const days = grantModal.preset === 'custom' ? Number(grantModal.customDays) : Number(grantModal.preset);
-  if (!days || days < 1) {
-    message.error('请输入有效天数');
-    return;
-  }
-  grantModal.loading = true;
-  try {
-    await grantUserPro(userId, { grant_days: days, note: grantModal.note || undefined });
-    message.success('已发放 Pro 权益');
-    grantModal.open = false;
-    await refreshDetailAndList();
-  } catch (error: any) {
-    message.error(error?.message || '发放失败');
-  } finally {
-    grantModal.loading = false;
-  }
-}
-
-function openRecycle() {
-  recycleModal.open = true;
-  recycleModal.loading = false;
-  recycleModal.note = '';
-}
-
-async function submitRecycle() {
-  const userId = detailModal.data?.user.id;
-  if (!userId) return;
-  const note = recycleModal.note.trim();
-  if (!note) {
-    message.error('请填写回收备注');
-    return;
-  }
-  recycleModal.loading = true;
-  try {
-    await recycleUserPro(userId, { note });
-    message.success('已回收 Pro 权益');
-    recycleModal.open = false;
-    await refreshDetailAndList();
-  } catch (error: any) {
-    message.error(error?.message || '回收失败');
-  } finally {
-    recycleModal.loading = false;
-  }
-}
 
 function onStatusAction(record: AdminUser) {
   if (record.is_active) {

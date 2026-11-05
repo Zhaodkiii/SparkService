@@ -103,7 +103,7 @@ def check_workers():
     active = inspector.active_queues() or {}
     if not pings:
         raise RuntimeError("Worker 未响应")
-    required_tasks = set(settings.CELERY_TASK_ROUTES) | {"ai_config.tasks.approve_trial_application_request_task"}
+    required_tasks = set(settings.CELERY_TASK_ROUTES)
     required_queues = {settings.CELERY_TASK_DEFAULT_QUEUE} | {route["queue"] for route in settings.CELERY_TASK_ROUTES.values()}
     for worker in pings:
         tasks = set(registered.get(worker, []))

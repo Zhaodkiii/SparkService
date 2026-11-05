@@ -26,7 +26,6 @@ from accounts.services.login_service import LoginService
 from accounts.services.web_apple_identity_service import WebAppleIdentityService
 from accounts.services.web_session_service import WebSessionService
 from common.exceptions import APIError
-from ai_config.entitlements import ProEntitlementResolver
 
 flow_logger = logging.getLogger("accounts.flow")
 
@@ -95,7 +94,6 @@ class WebAppleLoginService:
         email: str = "",
         full_name: str = "",
     ) -> dict[str, Any]:
-        from ai_config.services import TrialService
 
         flow_logger.info(
             "Web Apple 登录鉴权开始",
@@ -234,7 +232,7 @@ class WebAppleLoginService:
             "account_resolution": account_resolution,
             "identity_scope": identity_scope,
             "deactivation_cancelled": cancel_result,
-            "is_pro": ProEntitlementResolver.is_pro_user(user=user),
+            "is_pro": False,
         }
         flow_logger.info(
             "Web Apple 登录鉴权成功并签发 Web 令牌",

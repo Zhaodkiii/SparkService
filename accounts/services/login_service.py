@@ -17,27 +17,16 @@ from accounts.services.device_linking_service import DeviceLinkingService
 from accounts.services.device_session_service import DeviceSessionService
 from accounts.services.identity_scope_service import IdentityScopeService
 from accounts.services.phone_number_service import PhoneNumberService
-from ai_config.services import TrialService
-from ai_config.entitlements import ProEntitlementResolver
 
 flow_logger = logging.getLogger("accounts.flow")
 
 
 class LoginService:
-    @staticmethod
-    def _try_grant_auto_trial(*, user, bundle_id: str, device_id: str, request_id: str):
-        # 登录自动试用仅对 settings.AI_TRIAL_AUTO_GRANT_COUNTRY_CODES 内国家生效；失败/跳过不影响登录。
-        TrialService.try_grant_auto_trial_for_login_device(
-            user=user,
-            bundle_id=bundle_id,
-            device_id=device_id,
-            request_id=request_id,
-        )
 
     @staticmethod
     def _prepare_login_entitlements(*, user, bundle_id: str, device_id: str, request_id: str) -> None:
         """
-        登录侧效应：先关联可信设备（供 country_code 判断），再尝试自动发放 Pro。
+        登录时关联可信设备。
         必须在计算响应 is_pro 与返回 token 之前完成（APP-STARTUP-000003）。
         """
         DeviceLinkingService.try_attach_user_to_trusted_device(
@@ -46,17 +35,11 @@ class LoginService:
             bundle_id=bundle_id,
             request_id=request_id,
         )
-        LoginService._try_grant_auto_trial(
-            user=user,
-            bundle_id=bundle_id,
-            device_id=device_id,
-            request_id=request_id,
-        )
 
     @staticmethod
     def _apply_is_pro(*, user, payload: dict[str, Any]) -> dict[str, Any]:
-        """在设备关联与自动发放完成后写入最终 is_pro。"""
-        payload["is_pro"] = ProEntitlementResolver.is_pro_user(user=user)
+        """保留旧客户端响应字段，已下线的试用权益返回 false。"""
+        payload["is_pro"] = False
         return payload
 
     @staticmethod
@@ -517,7 +500,7 @@ class LoginService:
             "user_id": user.id,
             "email": user.email or "",
             "display_name": LoginService._resolve_user_display_name(user=user),
-            "is_pro": ProEntitlementResolver.is_pro_user(user=user),
+            "is_pro": False,
             "is_new_user": False,
             "sign_in_method": sign_in_method,
             "is_device_account": is_device_account,

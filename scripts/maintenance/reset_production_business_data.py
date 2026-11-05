@@ -71,8 +71,6 @@ def execute(apply=False, expected=None, test=False):
                 qs = m.objects.exclude(**{fields[0].attname+'__in':supers})
             else:
                 qs = m.objects.all()
-        elif app == 'ai_config' and name in {'TrialApplication','TrialApplicationRequest'}:
-            qs = m.objects.all()
         if qs is not None:
             selected[m].update(qs.values_list('pk', flat=True))
     # Include all dependent rows even when on_delete is PROTECT; fail closed on

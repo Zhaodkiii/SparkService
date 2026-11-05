@@ -21,7 +21,7 @@ class CeleryTaskRegistrationTests(SimpleTestCase):
         self.assertEqual(result['missing'], [missing])
 
     def test_inventory_contains_only_retained_apps(self):
-        self.assertTrue(all(n.startswith(('accounts.', 'notification_center.', 'ai_config.')) for n, _, _ in CELERY_MANAGED_TASKS))
+        self.assertTrue(all(n.startswith(('accounts.', 'notification_center.')) for n, _, _ in CELERY_MANAGED_TASKS))
 
     @patch.dict('os.environ', {'CELERY_QUEUES': 'celery,notification.security.high'}, clear=False)
     def test_worker_consumes_security_queue(self):

@@ -1,3 +1,5 @@
+from ai_production.backoffice import ProductionUsersView, ProductionQuotaResetView
+from ai_production.backoffice import ProductionAdminView, ProductionRefundView, ProductionReleaseView, ProductionControlView
 from django.urls import include, path
 
 from backoffice.blacklist_views import (
@@ -6,19 +8,6 @@ from backoffice.blacklist_views import (
     AdminAccessDenyRevokeView,
 )
 from backoffice.views import (
-    AdminAITrialActionView,
-    AdminAITrialDetailView,
-    AdminAITrialListView,
-    AdminAIModelCatalogDetailView,
-    AdminAIModelCatalogListView,
-    AdminAIProviderKeyDetailView,
-    AdminAIProviderKeyListView,
-    AdminAIToolOptionsView,
-    AdminAIScenarioBindingDetailView,
-    AdminAIScenarioBindingListCreateView,
-    AdminAIScenarioSummaryListView,
-    AdminSmallTaskDetailView,
-    AdminSmallTaskListCreateView,
     AdminAsyncTaskManagerControlView,
     AdminAsyncTaskManagerStatusView,
     AdminAsyncTaskDashboardView,
@@ -46,8 +35,6 @@ from backoffice.views import (
     AdminRolePermissionAssignView,
     AdminUserDetailView,
     AdminUserListView,
-    AdminUserProGrantView,
-    AdminUserProRecycleView,
     AdminUserRoleAssignView,
     AdminUserStatusView,
 )
@@ -59,6 +46,12 @@ from backoffice.system_log_views import (
 )
 
 urlpatterns = [
+    path("ai-production/control/", ProductionControlView.as_view()),
+    path("ai-production/users/<int:user_id>/reset/", ProductionQuotaResetView.as_view()),
+    path("ai-production/users/", ProductionUsersView.as_view()),
+    path("ai-production/", ProductionAdminView.as_view()),
+    path("ai-production/<uuid:task_id>/release/", ProductionReleaseView.as_view()),
+    path("ai-production/<uuid:task_id>/refund/", ProductionRefundView.as_view()),
     path("auth/login/", AdminAuthLoginView.as_view(), name="admin-auth-login"),
     path("auth/profile/", AdminAuthProfileView.as_view(), name="admin-auth-profile"),
     path("dashboard/overview/", AdminDashboardOverviewView.as_view(), name="admin-dashboard-overview"),
@@ -71,8 +64,6 @@ urlpatterns = [
     path("users/blacklist/<int:entry_id>/revoke/", AdminAccessDenyRevokeView.as_view(), name="admin-user-blacklist-revoke"),
     path("users/<int:user_id>/status/", AdminUserStatusView.as_view(), name="admin-user-status"),
     path("users/<int:user_id>/detail/", AdminUserDetailView.as_view(), name="admin-user-detail"),
-    path("users/<int:user_id>/pro/grant/", AdminUserProGrantView.as_view(), name="admin-user-pro-grant"),
-    path("users/<int:user_id>/pro/recycle/", AdminUserProRecycleView.as_view(), name="admin-user-pro-recycle"),
     path("users/<int:user_id>/roles/", AdminUserRoleAssignView.as_view(), name="admin-user-role-assign"),
     path("users/devices/", AdminDeviceListView.as_view(), name="admin-user-device-list"),
     path("users/devices/<int:device_id>/revoke/", AdminDeviceRevokeView.as_view(), name="admin-user-device-revoke"),
@@ -89,19 +80,6 @@ urlpatterns = [
     path("notifications/logs/<str:channel>/", AdminNotificationLogListView.as_view(), name="admin-notification-log-list"),
     path("notifications/logs/detail/<int:log_id>/", AdminNotificationLogDetailView.as_view(), name="admin-notification-log-detail"),
     path("notification-center/", include("notification_center.urls")),
-    path("ai/scenarios/", AdminAIScenarioSummaryListView.as_view(), name="admin-ai-scenario-summary"),
-    path("ai/tool-options/", AdminAIToolOptionsView.as_view(), name="admin-ai-tool-options"),
-    path("ai/scenarios/<str:scenario_key>/models/", AdminAIScenarioBindingListCreateView.as_view(), name="admin-ai-scenario-models"),
-    path("ai/scenario-models/<int:binding_id>/", AdminAIScenarioBindingDetailView.as_view(), name="admin-ai-scenario-binding-detail"),
-    path("ai/models/", AdminAIModelCatalogListView.as_view(), name="admin-ai-model-catalog-list"),
-    path("ai/models/<int:catalog_id>/", AdminAIModelCatalogDetailView.as_view(), name="admin-ai-model-catalog-detail"),
-    path("ai/small-tasks/", AdminSmallTaskListCreateView.as_view(), name="admin-ai-small-task-list"),
-    path("ai/small-tasks/<int:task_id>/", AdminSmallTaskDetailView.as_view(), name="admin-ai-small-task-detail"),
-    path("ai/providers/", AdminAIProviderKeyListView.as_view(), name="admin-ai-provider-list"),
-    path("ai/providers/<int:provider_id>/", AdminAIProviderKeyDetailView.as_view(), name="admin-ai-provider-detail"),
-    path("ai/trials/", AdminAITrialListView.as_view(), name="admin-ai-trial-list"),
-    path("ai/trials/<int:trial_id>/", AdminAITrialDetailView.as_view(), name="admin-ai-trial-detail"),
-    path("ai/trials/<int:trial_id>/<str:action>/", AdminAITrialActionView.as_view(), name="admin-ai-trial-action"),
     path("rbac/roles/", AdminRoleListCreateView.as_view(), name="admin-rbac-role-list-create"),
     path("rbac/roles/<int:role_id>/", AdminRoleDetailView.as_view(), name="admin-rbac-role-detail"),
     path("rbac/roles/<int:role_id>/permissions/", AdminRolePermissionAssignView.as_view(), name="admin-rbac-role-permission-assign"),
