@@ -212,8 +212,8 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'django_celery_results',
     'accounts',
-    'ai_config',
     'ai_production',
+    'ai_runtime',
     'file_manager',
     'diary_presets',
     'diary_customizations',
@@ -695,3 +695,10 @@ CACHES['material_pagination'] = {
 
 # Optional environment namespace when personal stickers share one OSS bucket.
 USER_STICKER_OSS_ENV_PREFIX = os.getenv("USER_STICKER_OSS_ENV_PREFIX", "").strip("/")
+
+# AI direct-connect configuration: explicit per-deployment secrets, never SECRET_KEY fallback.
+AI_RUNTIME_ALLOWED_HOSTS = [v.strip() for v in os.getenv("AI_RUNTIME_ALLOWED_HOSTS", "ark.cn-beijing.volces.com").split(",") if v.strip()]
+AI_RUNTIME_ENCRYPTION_KEYS = [v.strip() for v in os.getenv("AI_RUNTIME_ENCRYPTION_KEYS", "").split(",") if v.strip()]
+AI_RUNTIME_REQUIRE_CAPABILITIES = os.getenv("AI_RUNTIME_REQUIRE_CAPABILITIES", "false").lower() == "true"
+
+AI_RUNTIME_TEST_DOH_FALLBACK = os.getenv("AI_RUNTIME_TEST_DOH_FALLBACK", "false").lower() == "true"

@@ -182,7 +182,7 @@ class ProductionTests(TestCase):
         from .models import ProductionControl
         task = self.make()
         paused = transition(self.user, task.pk, "pause", task.version)
-        ProductionControl.objects.create(pk=1, accepting=False, reason="test")
+        ProductionControl.objects.update_or_create(pk=1, defaults={"accepting": False, "reason": "test"})
         snapshot = quota(self.user)
         self.assertFalse(snapshot["can_start"])
         self.assertIsNone(snapshot["next_eligible_at"])

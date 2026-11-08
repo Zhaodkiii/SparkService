@@ -3,6 +3,7 @@ import json
 import math
 from rest_framework.exceptions import APIException, ValidationError
 from rest_framework import serializers
+from common.exceptions import APIError
 
 
 class Conflict(APIException):
@@ -38,17 +39,57 @@ class FileInput(serializers.Serializer):
     page_count = serializers.IntegerField(min_value=1, max_value=500)
 
 
+SUPPORTED_EXPORTER_VERSIONS = ('print-v1', 'print-v2-split')
+
+
+class ExporterVersionField(serializers.ChoiceField):
+    def to_internal_value(self, data):
+        if data not in SUPPORTED_EXPORTER_VERSIONS:
+            raise APIError('当前印制服务暂不支持此生产稿版本，请稍后重试',
+                           details={'print_error': 'unsupported_exporter_version'})
+        return super().to_internal_value(data)
+
+
 class PageInput(serializers.Serializer):
     page_id = serializers.UUIDField()
     revision_id = serializers.UUIDField()
     role = serializers.ChoiceField(choices=['shell', 'interior'])
+    source_page_id = serializers.UUIDField(required=False)
+    source_half = serializers.ChoiceField(choices=['left', 'right'], required=False, allow_null=True)
 
 
 class SnapshotInput(serializers.Serializer):
     book_id = serializers.UUIDField()
     catalog_revision = serializers.UUIDField()
     pages = PageInput(many=True, min_length=1, max_length=501)
-    exporter_version = serializers.ChoiceField(choices=['print-v1'])
+    exporter_version = ExporterVersionField(choices=SUPPORTED_EXPORTER_VERSIONS)
+
+    def validate(self, data):
+        if data['exporter_version'] == 'print-v1':
+            if any('source_page_id' in p or 'source_half' in p for p in data['pages']):
+                raise serializers.ValidationError('拆页来源信息须使用 print-v2-split 版本')
+            return data
+        sources = {}
+        for index, page in enumerate(data['pages']):
+            if page['role'] == 'shell':
+                if 'source_page_id' in page or 'source_half' in page:
+                    raise serializers.ValidationError('外壳不应包含拆页来源信息')
+                continue
+            source = page.get('source_page_id')
+            if source is None:
+                raise serializers.ValidationError('内页缺少来源页面信息')
+            sources.setdefault(source, []).append((index, page))
+        for source, entries in sources.items():
+            halves = [p.get('source_half') for _, p in entries]
+            if halves == [None]:
+                if entries[0][1]['page_id'] != source:
+                    raise serializers.ValidationError('普通内页标识须与来源页面一致')
+            elif halves == ['left', 'right']:
+                if entries[1][0] != entries[0][0] + 1 or entries[0][1]['revision_id'] != entries[1][1]['revision_id']:
+                    raise serializers.ValidationError('跨页左右两面须相邻且来自同一版本')
+            else:
+                raise serializers.ValidationError('跨页须按左、右顺序完整提交，来源不能重复')
+        return data
 
 
 class OrderInput(serializers.Serializer):

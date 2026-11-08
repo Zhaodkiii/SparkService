@@ -183,6 +183,11 @@ class ItemsV2(AuthView):
         if scope == 'my' and (request.query_params.get('favorites') or request.query_params.get('library_id')): raise ValidationError('搜索范围冲突')
         pk = pk or request.query_params.get('library_id')
         if pk: pk=serializers.UUIDField().run_validation(pk)
+        if request.query_params.get('sort') == 'random' and not pk and scope == 'all' and not request.query_params.get('favorites') and request.query_params.get('type') == 'sticker':
+            raw = request.query_params.get('exclude', '')
+            options = StickerDrawInput(data=dict(count=request.query_params.get('limit', 6), theme=request.query_params.get('q', ''), exclude=raw.split(',') if raw else []))
+            options.is_valid(raise_exception=True)
+            return StickerDraw.draw(request, options.validated_data)
         qs = LibraryItem.objects.filter(version__library__in=visible(), material__active=True)
         if pk:
             lib = get_object_or_404(visible(), pk=pk)
@@ -217,16 +222,6 @@ class ItemsV2(AuthView):
                     if request.query_params.get('type') and row.material.material_type != request.query_params['type']: continue
                     if any(term not in (row.revision.name+' '.join(row.revision.keywords+row.revision.aliases)) for term in query_terms(request)): continue
                     rows.append(row);seen.add(row.material_id)
-        if request.query_params.get('sort') == 'random':
-            count = serializers.IntegerField(min_value=1, max_value=8).run_validation(request.query_params.get('limit', 6))
-            raw_excluded = request.query_params.get('exclude', '')
-            excluded = {str(serializers.UUIDField().run_validation(value)) for value in raw_excluded.split(',') if value}
-            if len(excluded) > 500: raise ValidationError('排除项过多')
-            eligible = [row for row in rows if str(row.material_id) not in excluded and row.material.active]
-            chosen = secrets.SystemRandom().sample(eligible, min(count, len(eligible)))
-            response = Response(dict(draw_scope="published_stickers", items=[item_data(row, request.user) for row in chosen], next_cursor=None))
-            response['Cache-Control'] = 'no-store'
-            return response
         if pk and not terms: rows.sort(key=lambda r:(r.position,r.pk))
         def serialize(row):
             if not row.material.active or (not pk and not LibraryItem.objects.filter(material_id=row.material_id,version__library__in=visible(),version_id=F('version__library__current_id')).exists()):
@@ -270,3 +265,64 @@ class Tags(AuthView):
         for content in visible().values_list('current__content',flat=True):
             tags.update(content.get('tags',[]))
         return Response(sorted(tags-disabled))
+
+class StickerDrawInput(serializers.Serializer):
+    count = serializers.IntegerField(min_value=1, max_value=8)
+    theme = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    exclude = serializers.ListField(child=serializers.UUIDField(), required=False)
+    recent = serializers.ListField(child=serializers.UUIDField(), required=False, max_length=16)
+
+
+class StickerDraw(AuthView):
+    def post(self, request):
+        data = StickerDrawInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        return self.draw(request, data.validated_data)
+
+    @staticmethod
+    def draw(request, options):
+        rng = secrets.SystemRandom()
+        theme = options.get('theme', '')
+        versions = list(visible().values_list('current_id', flat=True))
+        cache = caches['material_pagination']
+        theme_key = hashlib.sha256(theme.encode()).hexdigest()
+        keys = {v: f'sticker-draw-v1:{v}:{theme_key}' for v in versions}
+        cached = cache.get_many(list(keys.values())) if keys else {}
+        missing = [v for v in versions if keys[v] not in cached]
+        members = {v: [] for v in missing}
+        if missing:
+            qs = LibraryItem.objects.filter(version_id__in=missing, material__material_type='sticker')
+            if theme:
+                qs = qs.filter(Q(revision__name__icontains=theme) | Q(revision__keywords__icontains=theme) | Q(revision__aliases__icontains=theme))
+            for version, material, row in qs.order_by().values_list('version_id', 'material_id', 'pk'):
+                members[version].append((material, row))
+            additions = {keys[v]: members[v] for v in missing}
+            cache.set_many(additions, 300)
+            cached.update(additions)
+        excluded = set(options.get('exclude', []))
+        recent = set(options.get('recent', []))
+        groups = []
+        for version in versions:
+            group = [(material, row) for material, row in cached[keys[version]] if material not in excluded]
+            rng.shuffle(group)
+            groups.append(group)
+        selected = []
+        # Each round visits each pack once. Validate sampled rows against live availability.
+        for allow_recent in (False, True):
+            pools = [[pair for pair in group if (pair[0] in recent) == allow_recent] for group in groups]
+            while pools and len(selected) < options['count']:
+                rng.shuffle(pools)
+                for pool in pools:
+                    while pool and len(selected) < options['count']:
+                        material, pk = pool.pop()
+                        if material in excluded:
+                            continue
+                        excluded.add(material)
+                        row = LibraryItem.objects.select_related('version', 'revision__material', 'revision__resource', 'revision__thumbnail', 'material').filter(pk=pk, material__active=True, version__library__in=visible(), version_id=F('version__library__current_id')).first()
+                        if row:
+                            selected.append(item_data(row, request.user))
+                            break
+                pools = [pool for pool in pools if pool]
+        response = Response(dict(draw_scope='published_stickers', items=selected))
+        response['Cache-Control'] = 'no-store'
+        return response

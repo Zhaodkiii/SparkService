@@ -154,6 +154,7 @@ const fallbackMenus = [
     name: 'AI 制作',
     path: '/ai-config',
     children: [
+      { code: 'menu:ai:runtime', name: 'AI 服务配置', path: '/ai-config/runtime', children: [] },
       { code: 'menu:ai:production', name: 'AI 制作额度', path: '/ai-config/production', children: [] },
     ],
   },

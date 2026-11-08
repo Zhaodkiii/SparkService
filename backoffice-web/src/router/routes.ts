@@ -46,6 +46,7 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/notifications/suppressions', name: 'NotificationSuppressions', component: () => import('../views/NotificationSuppressionsView.vue'), meta: { title: '异常与抑制' } },
       { path: '/notifications/analytics', name: 'NotificationAnalytics', component: () => import('../views/NotificationAnalyticsView.vue'), meta: { title: '统计分析' } },
       { path: '/notifications/channel-settings', name: 'NotificationChannelSettings', component: () => import('../views/NotificationChannelSettingsView.vue'), meta: { title: '渠道设置' } },
+      { path: '/ai-config/runtime', name: 'AIRuntime', component: () => import('../views/AIRuntimeView.vue'), meta: { title: 'AI 服务配置', requiredPermission: 'menu:ai:runtime' } },
       { path: '/ai-config/production', name: 'AIProduction', component: () => import('../views/AIProductionView.vue'), meta: { title: 'AI 制作额度', requiredPermission: 'menu:ai:production' } },
       { path: '/rbac', name: 'RBAC', component: () => import('../views/RBACView.vue'), meta: { title: '权限管理' } },
       {

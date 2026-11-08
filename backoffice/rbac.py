@@ -76,6 +76,13 @@ def bootstrap_admin_permissions() -> None:
     )
 
     defaults = [
+        ("menu:ai:runtime", "AI 服务配置", "menu", "/ai-config/runtime", "menu:ai"),
+        ("button:ai:runtime:edit", "编辑 AI 配置", "button", "", "menu:ai:runtime"),
+        ("button:ai:runtime:credential", "维护 AI 凭证", "button", "", "menu:ai:runtime"),
+        ("button:ai:runtime:test", "测试 AI 配置", "button", "", "menu:ai:runtime"),
+        ("button:ai:runtime:publish", "发布 AI 配置", "button", "", "menu:ai:runtime"),
+        ("button:ai:runtime:control", "停用 AI 服务", "button", "", "menu:ai:runtime"),
+        ("button:ai:runtime:audit", "查看 AI 配置审计", "button", "", "menu:ai:runtime"),
         ("diary_presets.sync_template", "整本模板同步生产", "button", "", "menu:content:templates"),
         ("font_library.sync_fontfamily", "字体同步生产", "button", "", "menu:content:fonts"),
         ("font_library.view_fontfamily", "查看字体", "button", "", "menu:content:fonts"),

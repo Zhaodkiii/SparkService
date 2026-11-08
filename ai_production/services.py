@@ -115,13 +115,26 @@ def quota(user):
 
 
 @transaction.atomic
-def start(user, attempt_key, input_digest):
+def start(user, attempt_key, input_digest, client_capabilities=None, required_scenes=None):
     lock_account(user)
     existing = ProductionTask.objects.filter(account=user, attempt_key=attempt_key).first()
     if existing:
         if existing.input_digest != input_digest:
             raise APIError("本次制作参数已改变，请重新开始", code=40901, status_code=409)
+        if client_capabilities is not None:
+            from ai_runtime.models import Binding
+            binding = Binding.objects.filter(task=existing).first()
+            if not binding or sorted(binding.required_scenes) != sorted(required_scenes or []):
+                raise APIError("任务配置参数已改变，请结束旧任务后重新制作", status_code=409)
         return existing
+    from django.conf import settings
+    from ai_runtime.contracts import fail
+    runtime_release = None
+    if client_capabilities is not None:
+        from ai_runtime.services import resolve
+        runtime_release = resolve(client_capabilities, required_scenes)
+    elif required_scenes is not None or settings.AI_RUNTIME_REQUIRE_CAPABILITIES:
+        fail("UPGRADE_REQUIRED", "请更新客户端后开始制作", 426)
     now = timezone.now()
     expire(user, now)
     if ProductionTask.objects.filter(account=user, created_at__gt=now - timedelta(hours=5)).count() >= 30:
@@ -133,6 +146,10 @@ def start(user, attempt_key, input_digest):
         short_window=short, weekly_window=weekly,
         expires_at=now + timedelta(hours=policy.hold_hours),
     )
+    if runtime_release:
+        from ai_runtime.models import Binding
+        Binding.objects.create(task=task, release=runtime_release,
+                               required_scenes=required_scenes, capabilities=client_capabilities)
     record(task, "reserve", user)
     return task
 
@@ -165,6 +182,11 @@ def transition(user, task_id, action, version):
         task.version += 1
         task.save()
     elif action == "resume" and task.state == "expired":
+        from ai_runtime.models import Binding
+        from ai_runtime.services import channel, enforce_control
+        binding = Binding.objects.filter(task=task).select_related("release").first()
+        if binding:
+            enforce_control(channel(lock=True), binding.release.snapshot, binding.required_scenes)
         policy = policy_at(now)
         short, weekly = reserve(user, now, policy)
         task.short_window, task.weekly_window = short, weekly

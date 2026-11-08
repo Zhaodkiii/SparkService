@@ -11,6 +11,11 @@ from .models import ProductionTask
 class StartInput(serializers.Serializer):
     attempt_key = serializers.UUIDField()
     input_digest = serializers.RegexField(r"^[a-f0-9]{64}$")
+    from ai_runtime.views import CapInput
+    client_capabilities = CapInput(required=False)
+    required_scenes = serializers.ListField(child=serializers.ChoiceField(choices=[
+        "diary.layout", "diary.background.design", "diary.background.generate", "diary.background.review"
+    ]), min_length=1, max_length=4, required=False)
 
 
 class ActionInput(serializers.Serializer):

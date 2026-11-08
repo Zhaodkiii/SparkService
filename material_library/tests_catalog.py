@@ -29,6 +29,30 @@ class CatalogTests(TestCase):
         self.assertEqual(self.client.post(self.base+'publish/',self.publish,format='json').status_code,200)
         legacy_free('sticker_library',MaterialLibrary.objects.get(pk=self.pk))
 
+    def test_draw_spans_packs_and_respects_exclusions(self):
+        other = MaterialLibrary.objects.create(title='第二包', library_type='sticker', active=True)
+        version = LibraryVersion.objects.create(library=other, number=1)
+        other.current = version
+        other.save()
+        for index in range(4):
+            material = Material.objects.create(source_identity=f'draw:{index}', material_type='sticker')
+            rev = revision(material, dict(name='测试', kind='illustration', subcategory='botanical', keywords=[], aliases=[], resource_id=self.blob.pk, thumbnail_id=self.blob.pk, sources=[]))
+            LibraryItem.objects.create(version=version, material=material, revision=rev, position=index)
+        url = '/api/v1/materials/stickers/draw/'
+        def draw(**body):
+            response = self.client.post(url, body, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+            return response.data['items']
+        first = draw(count=2)
+        self.assertEqual(len({item['library_id'] for item in first}), 2)
+        excluded = [item['id'] for item in first]
+        second = draw(count=6, exclude=excluded)
+        self.assertEqual(len(second), 3)
+        self.assertFalse(set(excluded).intersection(item['id'] for item in second))
+        recent = [item['id'] for item in second]
+        self.assertEqual({item['id'] for item in draw(count=2, recent=recent)}, set(excluded))
+        self.assertEqual(draw(count=3, exclude=excluded + recent), [])
+
     @override_settings(MIDDLEWARE=['common.middleware.catalog_cache.CatalogConditionalGetMiddleware'])
     def test_catalog_conditional_get_rechecks_favorites(self):
         self.client = APIClient(); self.client.force_authenticate(self.user)

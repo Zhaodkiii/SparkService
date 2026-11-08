@@ -18,6 +18,8 @@ urlpatterns += [
  path('libraries/<uuid:pk>/', catalog.LibraryDetail.as_view()),
  path('items/<uuid:pk>/', catalog.ItemDetail.as_view()),
  path('tags/', catalog.Tags.as_view()),
+ path('stickers/draw/', catalog.StickerDraw.as_view()),
+ path('stickers/draw', catalog.StickerDraw.as_view()),
  path('previews/resolve/', catalog.Previews.as_view()),
  path('manage/libraries/', admin.Libraries.as_view()),
  path('manage/libraries/<uuid:pk>/draft/', admin.Draft.as_view()),

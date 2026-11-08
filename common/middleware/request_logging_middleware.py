@@ -163,7 +163,7 @@ class RequestLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if any(part in request.path for part in ("/ai-production/", "/content-sync/", "/preset-sync/", "/font-sync/", "/fonts/", "/billing/", "/regions/", "/material-sync/", "/materials/", "/diary-presets/", "/print/", "/diary-customizations/", "/support/", "/device/register/")):
+        if any(part in request.path for part in ("/ai-runtime/", "/ai-production/", "/content-sync/", "/preset-sync/", "/font-sync/", "/fonts/", "/billing/", "/regions/", "/material-sync/", "/materials/", "/diary-presets/", "/print/", "/diary-customizations/", "/support/", "/device/register/")):
             # STS responses and download URL maps contain bearer secrets.
             started = time.perf_counter()
             response = self.get_response(request)
@@ -179,7 +179,10 @@ class RequestLoggingMiddleware:
             dict(request.headers),
             redact_sensitive=is_chat_ai_path or is_sensitive_auth_path,
         )
-        request_body = _body_for_log(request.body, request.content_type)
+        is_runtime_path = request.path.startswith(("/api/v1/ai-runtime/", "/api/admin/v1/ai-runtime/"))
+        if is_runtime_path:
+            request_headers = _headers_for_log(dict(request.headers), redact_sensitive=True)
+        request_body = "[AI runtime body omitted]" if is_runtime_path else _body_for_log(request.body, request.content_type)
         if is_chat_ai_path:
             request_body = _redact_chat_ai_body(request_body)
         if is_sensitive_auth_path:
@@ -263,7 +266,7 @@ class RequestLoggingMiddleware:
         response_bytes = 0
         if hasattr(response, "streaming") and not getattr(response, "streaming", False):
             response_content = getattr(response, "content", b"")
-            response_body = _body_for_log(response_content, response_content_type)
+            response_body = "[AI runtime body omitted]" if is_runtime_path else _body_for_log(response_content, response_content_type)
             if is_chat_ai_path:
                 response_body = _redact_chat_ai_body(response_body)
             if is_sensitive_auth_path:

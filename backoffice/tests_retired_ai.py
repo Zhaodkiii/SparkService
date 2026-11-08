@@ -20,7 +20,7 @@ class RetiredAIConfigurationTests(TestCase):
                 resolve(path)
 
     def test_retired_models_absent_production_retained(self):
-        self.assertEqual(list(apps.get_app_config("ai_config").get_models()), [])
+        self.assertFalse(apps.is_installed("ai_config"))
         self.assertIsNotNone(apps.get_model("ai_production", "ProductionTask"))
 
     def test_account_can_use_production_without_trial(self):
