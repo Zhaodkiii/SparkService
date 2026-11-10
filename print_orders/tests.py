@@ -78,6 +78,26 @@ class PrintTests(TestCase):
         self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(retry.data, dict(id=first.data['id'], created=False))
 
+    def ai_faces(self, count):
+        from datetime import timedelta
+        from django.utils import timezone
+        from ai_production.models import ProductionPolicy, ProductionWindow, ProductionTask, ProductionLedger
+
+        now = timezone.now()
+        policy = ProductionPolicy.objects.create(name='测试', short_limit=100, weekly_limit=100)
+        windows = [ProductionWindow.objects.create(account=self.user, kind=kind, starts_at=now,
+                   ends_at=now+timedelta(days=1), policy=policy, limit=100) for kind in ('short', 'weekly')]
+        faces = []
+        for _ in range(count):
+            page = str(uuid.uuid4())
+            task = ProductionTask.objects.create(account=self.user, attempt_key=uuid.uuid4(), state='completed',
+                    input_digest='a'*64, short_window=windows[0], weekly_window=windows[1], expires_at=now,
+                    result={'page_id': page, 'faces': ['left']})
+            ProductionLedger.objects.create(task=task, reservation_id=task.reservation_id, event='settle',
+                                           short_window=windows[0], weekly_window=windows[1])
+            faces.append(dict(task=str(task.pk), page=page, revision=str(uuid.uuid4()), face='left', first_saved=now.isoformat()))
+        return faces
+
     def test_campaign_console_and_wallet(self):
         from datetime import timedelta
         from django.utils import timezone
@@ -106,7 +126,7 @@ class PrintTests(TestCase):
         self.client.force_authenticate(self.user)
         plan=self.client.get('/api/v1/print/campaign/').data
         response=self.client.post(f"/api/v1/print/campaign/{plan['id']}/join/",
-                                  dict(book_id=str(uuid.uuid4()),pages=40),format='json')
+                                  dict(book_id=str(uuid.uuid4()),pages=400,faces=self.ai_faces(40)),format='json')
         self.assertEqual(response.status_code,200,response.data)
         self.assertEqual(response.data['enrollment']['reported_pages'], 40)
         self.assertFalse(response.data['enrollment']['coupon_available'])
@@ -121,6 +141,31 @@ class PrintTests(TestCase):
         self.assertTrue(placement.data['enrollment']['coupon_available'])
         wallet=self.client.get('/api/v1/print/coupons/mine/').data
         self.assertEqual([c['name'] for c in wallet],['标准装订免费券'])
+
+    def test_ai_activity_evidence_binds_owner_page_face_and_window(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCampaign, PrintEnrollment
+
+        now = timezone.now()
+        plan = PrintCampaign.objects.create(title='AI内页', source='pages', active=True, product=self.product,
+            starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), cap_fen=100, quota=3)
+        url = f'/api/v1/print/campaign/{plan.pk}/join/'
+        data = dict(book_id=str(uuid.uuid4()), pages=999)
+        self.assertEqual(self.client.post(url, data, format='json').status_code, 400)
+        face, = self.ai_faces(1)
+        data['faces'] = [face, face, dict(face, page=str(uuid.uuid4())), dict(face, face='right')]
+        for _ in range(2):
+            self.assertEqual(self.client.post(url, data, format='json').data['enrollment']['reported_pages'], 1)
+        entry = PrintEnrollment.objects.get()
+        self.assertEqual(len(entry.page_evidence), 4)
+        self.client.force_authenticate(self.other)
+        response = self.client.post('/api/v1/print/campaign/', {'faces':[face]}, format='json')
+        self.assertTrue(response.data['assessed_faces'][0]['reason'])
+        self.client.force_authenticate(self.user)
+        plan.starts_at = timezone.now()
+        plan.save()
+        self.assertEqual(self.client.post(url, data, format='json').data['enrollment']['reported_pages'], 0)
 
     def test_book_experience_recovers_history_and_review_results(self):
         from datetime import timedelta
@@ -178,7 +223,7 @@ class PrintTests(TestCase):
         from .models import PrintCampaign, PrintEnrollment
 
         now = timezone.now()
-        plan = PrintCampaign.objects.create(title='审核反馈', source='pages', active=True, product=self.product,
+        plan = PrintCampaign.objects.create(title='审核反馈', ai_pages_only=False, source='pages', active=True, product=self.product,
             starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), cap_fen=2000, quota=1)
         book = self.body['snapshot']['book_id']
         entry = PrintEnrollment.objects.create(plan=plan, owner=self.user, book_id=book, reported_pages=40)
@@ -228,7 +273,7 @@ class PrintTests(TestCase):
         book_id = self.body['snapshot']['book_id']
         placement = self.client.get('/api/v1/print/campaign/', {'book': book_id}).data
         self.assertTrue(placement['unrestricted'])
-        joined = self.client.post(f"/api/v1/print/campaign/{created['id']}/join/", dict(book_id=book_id, pages=40), format='json')
+        joined = self.client.post(f"/api/v1/print/campaign/{created['id']}/join/", dict(book_id=book_id, pages=40, faces=self.ai_faces(40)), format='json')
         self.assertEqual(joined.status_code, 200, joined.data)
         self.client.force_authenticate(self.admin)
         entry = PrintEnrollment.objects.get()
@@ -256,7 +301,7 @@ class PrintTests(TestCase):
         from .models import PrintCampaign, PrintEnrollment
 
         now = timezone.now()
-        plan = PrintCampaign.objects.create(title='制作达标', source='pages', active=True,
+        plan = PrintCampaign.objects.create(title='制作达标', ai_pages_only=False, source='pages', active=True,
             product=self.product, starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1),
             cap_fen=2000, quota=1)
         base = f'/api/v1/print/campaign/{plan.pk}/'

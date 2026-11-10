@@ -28,6 +28,7 @@
           <a-descriptions-item label="作品 ID">{{selected.book_id || '—'}}</a-descriptions-item>
           <a-descriptions-item label="参与状态">{{participation(selected)}}</a-descriptions-item>
           <a-descriptions-item v-if="selected.review_reason" label="核验反馈">{{selected.review_reason}}</a-descriptions-item>
+          <a-descriptions-item label="页数口径">{{selected.ai_pages_only?'本期 AI 制作内页':'原报名规则'}}</a-descriptions-item>
           <a-descriptions-item label="申报 / 核验">{{selected.reported_pages}} / {{selected.approved_pages}} 页</a-descriptions-item>
           <a-descriptions-item label="优惠券">
             <router-link v-if="selected.coupon_id" :to="{path:'/print-coupons',query:{q:selected.coupon_id}}">{{selected.coupon_name}} · {{selected.coupon_state}}</router-link>
@@ -37,6 +38,9 @@
             <router-link :to="{path:'/print-orders',query:{order:selected.order_id}}">{{selected.order_id}}</router-link>
           </a-descriptions-item>
         </a-descriptions>
+        <details v-if="selected.page_evidence?.length"><summary>AI 制作内页依据（{{selected.page_evidence.length}} 条）</summary>
+          <p v-for="(face,i) in selected.page_evidence" :key="i">{{face.page}} · {{face.face==='right'?'右页':'左页'}} · {{face.reason||'已计入'}}</p>
+        </details>
         <h3 class="history">参与记录</h3>
         <a-timeline>
           <a-timeline-item v-for="(event,index) in selected.history" :key="index">
@@ -56,7 +60,7 @@ import http from '../api/http';
 
 type Participant={id:number,owner_id:number,username:string,book_id:string|null,created_at:string,withdrawn_at:string|null,
   reported_pages:number,approved_pages:number,review_decision:string,review_reason:string,half_threshold:number,full_threshold:number,reward_completed:boolean,coupon_id:string|null,coupon_name:string|null,coupon_state:string,order_id:string|null,
-  history:{event:string,at:string,book_id:string|null,reported_pages?:number,approved_pages?:number}[]};
+  ai_pages_only:boolean,page_evidence?:{page:string,face:string,reason:string}[],history:{event:string,at:string,book_id:string|null,reported_pages?:number,approved_pages?:number}[]};
 const route=useRoute();
 const title=ref(''), query=ref(''), status=ref(''), error=ref(''), page=ref(1), total=ref(0), loading=ref(false);
 const rows=ref<Participant[]>([]), selected=ref<Participant>();

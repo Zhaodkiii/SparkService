@@ -19,7 +19,7 @@
             </a-space></a-form-item>
           </a-card>
           <a-card title="奖励与名额">
-            <p v-if="form.source==='pages'">20 个有效内页享半价，40 个有效内页可升级免费档。申报和报名使用同一截止时间。</p>
+            <p v-if="form.source==='pages'">{{ aiOnly ? '仅累计活动期间通过 AI 制作并保存到本册的有效内页。' : '历史活动沿用原内页规则。' }}20 个有效内页享半价，40 个有效内页可升级免费档。申报和报名使用同一截止时间。</p>
             <a-form-item v-else label="首购赠券"><a-select v-model:value="form.annual_percent" :options="[{value:50,label:'半价券'},{value:100,label:'标准装订抵扣券'}]" /></a-form-item>
             <a-form-item label="适用印制规格" name="product"><a-select v-model:value="form.product" :options="[{value:unrestricted,label:'不限印制规格'}, ...products.map(p=>({value:p.id,label:p.title}))]" placeholder="请选择适用规格" /></a-form-item>
             <a-space wrap align="start">
@@ -78,9 +78,10 @@ const types=[{value:'pages',label:'制作达标赠券'},{value:'annual',label:'�
 const unrestricted='all';
 const defaults={title:'',source:'pages',product:'',annual_product_id:'',annual_percent:100,included_pages:20,quota:null as number|null,valid_days:30};
 const form=reactive({...defaults});
-type Plan=Omit<typeof defaults,'product'> & {product:string|null,id:number,draft:boolean,version:string,starts_at:string,ends_at:string,cap_fen:number};
+type Plan=Omit<typeof defaults,'product'> & {product:string|null,ai_pages_only:boolean,id:number,draft:boolean,version:string,starts_at:string,ends_at:string,cap_fen:number};
 type SampleQuote={product:string,pages:number,region:string,production:number,shipping:number,samples:{percent:number,discount:number,payable:number}[]};
 type Sample=SampleQuote & {maximum:number,quotes?:SampleQuote[]};
+const aiOnly=ref(true);
 const products=ref<{id:string,title:string}[]>([]);
 const start=ref(''),end=ref(''),cap=ref(0),error=ref(''),version=ref('');
 const editing=ref<number>(),readonly=ref(false),busy=ref(false),loading=ref(false),ready=ref(false),confirm=ref(false);
@@ -121,7 +122,7 @@ watch(()=>[route.query.id,route.query.copy,retry.value] as const,async ([id,copy
   let current=true;
   onCleanup(()=>{current=false});
   ready.value=false;loading.value=true;error.value='';readonly.value=false;editing.value=undefined;
-  Object.assign(form,defaults);start.value='';end.value='';cap.value=0;
+  aiOnly.value=true;Object.assign(form,defaults);start.value='';end.value='';cap.value=0;
   try {
     const [catalog,plan]=await Promise.all([
       http.get(url) as unknown as Promise<{products:typeof products.value}>,
@@ -130,6 +131,7 @@ watch(()=>[route.query.id,route.query.copy,retry.value] as const,async ([id,copy
     if(!current)return;
     products.value=catalog.products;
     if(plan){
+      aiOnly.value=!!copy || plan.ai_pages_only;
       for(const key of Object.keys(defaults) as (keyof typeof defaults)[]) Object.assign(form,{[key]:plan[key]});
       form.product=plan.product ?? unrestricted;
       cap.value=plan.cap_fen/100;

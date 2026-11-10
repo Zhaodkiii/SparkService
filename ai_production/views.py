@@ -91,10 +91,14 @@ class TaskCompleteView(APIView):
     def post(self, request, task_id):
         class Input(serializers.Serializer):
             digest = serializers.RegexField(r"^[a-f0-9]{64}$")
+            page_id = serializers.UUIDField(required=False)
+            faces = serializers.ListField(child=serializers.ChoiceField(choices=["left","right"]), max_length=2, required=False)
         data = Input(data=request.data)
         data.is_valid(raise_exception=True)
         if not ProductionTask.objects.filter(account=request.user, pk=task_id).exists():
             raise APIError("制作任务不存在", status_code=404)
         task = services.settle_verified_result(
-            request.user, task_id, {"digest": data.validated_data["digest"]})
+            request.user, task_id, dict(digest=data.validated_data["digest"], **(
+                {"page_id": str(data.validated_data["page_id"]), "faces": sorted(set(data.validated_data["faces"]))}
+                if data.validated_data.get("page_id") and data.validated_data.get("faces") else {})))
         return success_response(payload(task))

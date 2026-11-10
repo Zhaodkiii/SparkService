@@ -132,7 +132,8 @@ class CampaignForm(serializers.ModelSerializer):
 
     class Meta:
         model=PrintCampaign
-        fields=['id','title','source','product','annual_product_id','annual_percent','included_pages',
+        read_only_fields=['ai_pages_only']
+        fields=['ai_pages_only','id','title','source','product','annual_product_id','annual_percent','included_pages',
                 'quota','cap_fen','valid_days','starts_at','ends_at','active']
 
     def validate(self, data):
@@ -199,7 +200,7 @@ def participant_data(row):
     history = row.participation_history or [dict(event='joined', at=row.created_at.isoformat(), book_id=row.book_id)]
     return dict(id=row.pk, owner_id=row.owner_id, username=row.owner.get_username(), book_id=row.book_id,
                 created_at=row.created_at, withdrawn_at=row.withdrawn_at, reported_pages=row.reported_pages,
-                approved_pages=row.approved_pages, half_threshold=HALF_PAGE_THRESHOLD, full_threshold=FULL_PAGE_THRESHOLD, review_decision=row.review_decision, review_reason=row.review_reason, coupon_id=coupon.pk if coupon else None, coupon_state=state,
+                ai_pages_only=row.plan.ai_pages_only and not row.legacy_page_rule, page_evidence=row.page_evidence, approved_pages=row.approved_pages, half_threshold=HALF_PAGE_THRESHOLD, full_threshold=FULL_PAGE_THRESHOLD, review_decision=row.review_decision, review_reason=row.review_reason, coupon_id=coupon.pk if coupon else None, coupon_state=state,
                 reward_completed=bool(coupon and coupon.percent==100), coupon_name=coupon.name if coupon else None, order_id=order.pk if order else None, history=history)
 
 

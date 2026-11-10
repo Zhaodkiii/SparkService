@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
+from django.core import signing
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -38,9 +39,11 @@ def reserve(plan, owner, book_id=None):
     if occupied_enrollments(plan).count() >= plan.quota:
         raise Conflict('本期活动名额已满')
     if not entry:
-        return PrintEnrollment.objects.create(plan=plan, owner=owner, book_id=book_id)
+        return PrintEnrollment.objects.create(plan=plan, owner=owner, book_id=book_id, legacy_page_rule=not plan.ai_pages_only)
     if not entry.participation_history:
         entry.record_participation('joined', entry.created_at)
+    entry.legacy_page_rule = not plan.ai_pages_only
+    entry.page_evidence = []
     entry.book_id = book_id
     entry.reported_pages = 0
     entry.approved_pages = 0
@@ -50,7 +53,7 @@ def reserve(plan, owner, book_id=None):
     entry.review_page_ids = []
     entry.attempt += 1
     entry.record_participation('joined', timezone.now())
-    entry.save(update_fields=['book_id', 'reported_pages', 'approved_pages', 'withdrawn_at', 'attempt', 'participation_history', 'review_decision', 'review_reason', 'review_page_ids'])
+    entry.save(update_fields=['legacy_page_rule','page_evidence','book_id', 'reported_pages', 'approved_pages', 'withdrawn_at', 'attempt', 'participation_history', 'review_decision', 'review_reason', 'review_page_ids'])
     return entry
 
 
@@ -162,12 +165,73 @@ def book_experience(plan, entry, local_pages=0, blocked=None):
                 can_withdraw=bool(entry and not entry.withdrawn_at))
 
 
+class FaceClaim(serializers.Serializer):
+    task = serializers.UUIDField()
+    page = serializers.UUIDField()
+    face = serializers.ChoiceField(choices=['left', 'right'])
+    revision = serializers.UUIDField()
+    first_saved = serializers.DateTimeField()
+    save_anchor = serializers.CharField(required=False, max_length=512)
+
+
+def activity_anchor(owner, plan, book):
+    return signing.dumps([owner.pk, plan.pk, str(book), plan.starts_at.isoformat()], salt='print-ai-save')
+
+
+def assess_faces(claims, owner, plan, now, book, *, bind=False):
+    from .models import PrintPageBinding
+    from ai_production.models import ProductionLedger
+    claims = FaceClaim(many=True, max_length=5000, data=claims)
+    claims.is_valid(raise_exception=True)
+    rows = claims.validated_data
+    receipts = {ledger.task_id: ledger for ledger in ProductionLedger.objects.select_related('task').filter(
+        task_id__in={row['task'] for row in rows}, task__account=owner, task__state='completed', event='settle')}
+    bindings = PrintPageBinding.objects.in_bulk(receipts)
+    expected_anchor = [owner.pk, plan.pk, str(book), plan.starts_at.isoformat()]
+    seen = set()
+    assessed = []
+    for row in rows:
+        receipt = receipts.get(row['task'])
+        key = (row['page'], row['face'])
+        result = receipt.task.result if receipt else {}
+        try:
+            anchored = signing.loads(row.get('save_anchor', ''), salt='print-ai-save') == expected_anchor
+        except signing.BadSignature:
+            anchored = False
+        if row['task'] in bindings and str(bindings[row['task']].book_id) != str(book):
+            reason = '制作结果已绑定其他作品'
+        elif result.get('page_id') != str(row['page']) or row['face'] not in result.get('faces', []):
+            reason = '制作凭据无法匹配'
+        elif key in seen:
+            reason = '内页重复'
+        elif receipt.created_at < plan.starts_at and not anchored:
+            reason = '制作凭据不在活动期间，待核实'
+        elif now >= plan.ends_at:
+            reason = '申报已截止'
+        else:
+            # Settlement precedes publication. Receipt of this saved snapshot precedes the deadline.
+            reason = ''
+            if bind:
+                binding, _ = PrintPageBinding.objects.get_or_create(task_id=row['task'], defaults={'book_id': book})
+                if str(binding.book_id) != str(book):
+                    reason = '制作结果已绑定其他作品'
+            if not reason:
+                seen.add(key)
+        assessed.append({**{k: str(v) for k,v in row.items() if k != 'save_anchor'}, 'reason': reason})
+    return assessed
+
+
 class Placement(APIView):
     permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        return self.get(request)
 
     def get(self, request):
         now=timezone.now()
         book=request.query_params.get('book')
+        if book:
+            book = str(serializers.UUIDField().run_validation(book))
         existing=None
         if book:
             field=serializers.UUIDField()
@@ -200,19 +264,26 @@ class Placement(APIView):
         else:
             blocked = '本期活动名额已满' if not enrolled and occupied_enrollments(plan).count() >= plan.quota else None
         local_pages = serializers.IntegerField(min_value=0, max_value=5000).run_validation(request.query_params.get('pages', 0))
+        evidence = []
+        ai_only = plan.ai_pages_only and not (enrolled and not enrolled.withdrawn_at and enrolled.legacy_page_rule)
+        if ai_only:
+            evidence = assess_faces(request.data.get('faces', []), request.user, plan, now, book)
+            local_pages = sum(not face['reason'] for face in evidence)
         visible_entry = enrolled if not another_book or enrolled.withdrawn_at else None
         experience = book_experience(plan, visible_entry, local_pages, blocked)
         standard = PrintCoupon(percent=100, included_pages=plan.included_pages, cap_fen=plan.cap_fen)
         product = plan.product
         discount = coupon_amount(standard, product, plan.included_pages) if product else None
         covered = bool(product and discount and discount == product.base_fen + product.page_fen * plan.included_pages)
+        save_anchor = activity_anchor(request.user, plan, str(book).lower()) if (
+            ai_only and book and plan.starts_at <= now < plan.ends_at) else None
         previous = []
         if book:
             old_entries = PrintEnrollment.objects.filter(owner=request.user, book_id=book, plan__source='pages').exclude(plan=plan).select_related('plan__product', 'coupon__order').order_by('-pk')
             for old in old_entries:
                 state = book_experience(old.plan, old)
                 previous.append(dict(title=old.plan.title, heading=state['heading'], detail=state['detail']))
-        return Response(dict(id=plan.pk,title=plan.title,cap_fen=plan.cap_fen,included_pages=plan.included_pages,
+        return Response(dict(save_anchor=save_anchor, ai_pages_only=ai_only, assessed_faces=evidence, id=plan.pk,title=plan.title,cap_fen=plan.cap_fen,included_pages=plan.included_pages,
                              product=product_scope_label(plan.product),ends_at=plan.ends_at, enrollment=enrollment_data(enrolled) if not another_book or enrolled.withdrawn_at else None,
                              blocked_reason=blocked,
                              standard_discount_fen=discount,
@@ -249,19 +320,31 @@ class Enroll(APIView):
                 raise Conflict('报名已变化，请重新打开活动')
             if previous.withdrawn_at and not data.validated_data['rejoin']:
                 raise Conflict('已退出活动，请重新报名')
-        row=reserve(plan,request.user,data.validated_data['book_id'])
+        evidence = []
         pages = data.validated_data['pages']
+        ai_only = plan.ai_pages_only and not (previous and not previous.withdrawn_at and previous.legacy_page_rule)
+        if ai_only:
+            if 'faces' not in request.data:
+                raise serializers.ValidationError('请更新客户端后同步本册 AI 制作记录')
+            evidence = assess_faces(request.data['faces'], request.user, plan, now, data.validated_data['book_id'], bind=True)
+            pages = sum(not face['reason'] for face in evidence)
+        row=reserve(plan,request.user,data.validated_data['book_id'])
+        evidence_changed = ai_only and row.page_evidence != evidence
+        if evidence_changed:
+            row.page_evidence = evidence
         resubmission = row.review_decision in ('returned', 'rejected')
         if resubmission:
             row.review_decision = 'pending'
             row.review_reason = ''
             row.review_page_ids = []
-        if pages != row.reported_pages or resubmission:
+        if pages != row.reported_pages or resubmission or evidence_changed:
             if not row.participation_history:
                 row.record_participation('joined', row.created_at)
             row.reported_pages = pages
             row.record_participation('progress', timezone.now())
-            row.save(update_fields=['reported_pages', 'participation_history', 'review_decision', 'review_reason', 'review_page_ids'])
+            if ai_only:
+                row.participation_history[-1]['page_evidence'] = evidence
+            row.save(update_fields=['page_evidence', 'reported_pages', 'participation_history', 'review_decision', 'review_reason', 'review_page_ids'])
         message = '申请已登记，达标后由运营审核发券' if row.reported_pages >= HALF_PAGE_THRESHOLD else '已报名，请继续制作并更新进度'
         return Response(dict(message=message, enrollment=enrollment_data(row)))
 

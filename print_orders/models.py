@@ -239,6 +239,7 @@ class PrintCoupon(models.Model):
 
 
 class PrintCampaign(models.Model):
+    ai_pages_only = models.BooleanField(default=True)
     title = models.CharField(max_length=100)
     source = models.CharField(max_length=12, choices=[('pages','制作达标'), ('annual','年费首购')])
     draft = models.BooleanField(default=False)
@@ -254,7 +255,14 @@ class PrintCampaign(models.Model):
     valid_days = models.PositiveIntegerField(default=30)
 
 
+class PrintPageBinding(models.Model):
+    task_id = models.UUIDField(primary_key=True)
+    book_id = models.UUIDField()
+
+
 class PrintEnrollment(models.Model):
+    legacy_page_rule = models.BooleanField(default=False)
+    page_evidence = models.JSONField(default=list)
     plan = models.ForeignKey(PrintCampaign, on_delete=models.PROTECT)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     book_id = models.UUIDField(null=True, blank=True)
