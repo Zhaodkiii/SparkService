@@ -26,7 +26,7 @@ python manage.py migrate
 
 API 默认地址为 `http://127.0.0.1:2026/`，管理后台为 `http://localhost:6018/`。管理前端首次使用 pnpm 安装依赖。生产默认 MySQL；ASGI 仅处理 HTTP，不再提供聊天 WebSocket。
 
-`start.sh` 默认同时启动 API、管理后台、Celery Worker 和 Beat。Redis 与数据库需预先启动。支持 `--check`、`--no-frontend`、`--no-async`；通过 `./scripts/status.sh` 查看状态，`./scripts/stop.sh` 停止项目进程。详细说明见 [本地启停](scripts/后台管理/README.md)。
+`start.sh` 默认同时启动 API、管理后台、Celery Worker 和 Beat，并按需启动本机 Redis。数据库需预先启动。支持 `--check`、`--no-frontend`、`--no-async`。通过 `./scripts/status.sh` 查看状态，通过 `./scripts/stop.sh` 停止项目进程。详细说明见 [本地启停](scripts/后台管理/README.md)。
 
 下面是手动运行异步服务的替代命令；使用一键启动后无需再次执行（已启用的手帐资源 Worker 也随一键启动运行，配置见 `scripts/后台管理/README.md`）：
 

@@ -4,11 +4,13 @@ import argparse
 import importlib
 import os
 from pathlib import Path
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import time
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -62,6 +64,55 @@ def check_port(port):
             return True
     except OSError:
         return False
+
+
+def check_broker(autostart=False):
+    import redis
+
+    url = settings().CELERY_BROKER_URL
+    client = redis.Redis.from_url(url, socket_connect_timeout=2, socket_timeout=2)
+    try:
+        try:
+            client.ping()
+        except redis.ConnectionError as error:
+            if not autostart:
+                raise
+            broker = urlparse(url)
+            if (
+                broker.scheme != 'redis'
+                or broker.hostname not in ('127.0.0.1', 'localhost')
+                or broker.username is not None
+                or broker.password is not None
+                or broker.query
+            ):
+                raise RuntimeError('请先启动 CELERY_BROKER_URL 配置的 Redis。') from error
+            port = broker.port if broker.port is not None else 6379
+            if check_port(port):
+                raise
+            redis_server = shutil.which('redis-server')
+            if not redis_server:
+                raise RuntimeError('请先安装 redis-server，或启动已配置的 Redis。') from error
+            data_dir = RUN / 'redis'
+            data_dir.mkdir(parents=True, exist_ok=True)
+            LOG.mkdir(exist_ok=True)
+            log_file = LOG / 'redis.log'
+            subprocess.run([
+                redis_server, '--bind', '127.0.0.1', '--port', str(port),
+                '--dir', str(data_dir), '--pidfile', str(data_dir / 'redis.pid'),
+                '--logfile', str(log_file), '--daemonize', 'yes',
+            ], check=True, timeout=10)
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    client.ping()
+                    break
+                except redis.ConnectionError as retry_error:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'Redis 未就绪，请查看 {log_file}：{retry_error}') from retry_error
+                    time.sleep(0.2)
+    finally:
+        client.close()
+    print('Redis: 连接正常')
 
 
 def command(name):
@@ -146,7 +197,7 @@ def start(name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['start', 'stop', 'status', 'check-broker', 'check-processor', 'queues'])
+    parser.add_argument('action', choices=['start', 'stop', 'status', 'check-broker', 'ensure-broker', 'check-processor', 'queues'])
     parser.add_argument('name', nargs='?', choices=NAMES)
     args = parser.parse_args()
     if args.action == 'queues':
@@ -160,14 +211,8 @@ def main():
             print('手帐资源处理: 本机配置完整')
         else:
             print('手帐资源处理: 独立部署，本机不托管')
-    elif args.action == 'check-broker':
-        import redis
-        client = redis.Redis.from_url(settings().CELERY_BROKER_URL, socket_connect_timeout=2, socket_timeout=2)
-        try:
-            client.ping()
-        finally:
-            client.close()
-        print('Redis: 连接正常')
+    elif args.action in ('check-broker', 'ensure-broker'):
+        check_broker(autostart=args.action == 'ensure-broker')
     elif args.action == 'status':
         for name in NAMES:
             pid = pid_for(name)

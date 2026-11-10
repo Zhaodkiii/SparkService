@@ -12,7 +12,9 @@
 ./scripts/start.sh --no-async      # 不启动异步处理进程，不检查 Redis
 ```
 
-首次准备 Python `.venv`、安装 `requirements.txt`，在 `backoffice-web` 执行 `pnpm install --frozen-lockfile`，配置根目录 `.env`，启动数据库和 Redis，然后执行 `python manage.py migrate`。启动脚本不自动安装依赖、不执行数据库迁移，也不启停共享数据库或 Redis。
+首次准备 Python `.venv`、安装 `requirements.txt`，在 `backoffice-web` 执行 `pnpm install --frozen-lockfile`，配置根目录 `.env`，启动数据库，然后执行 `python manage.py migrate`。
+
+启动和重启时会复用已就绪的 Redis。使用默认 `redis://127.0.0.1:6379/0` 等无认证、无 URL 查询参数的本地 Redis 地址时，如果端口空闲，脚本会通过 PATH 中的 `redis-server` 拉起实例，等 Redis 响应后再启动应用。实例仅监听 `127.0.0.1`，数据保存在 `run/redis/`，日志写入 `logs/redis.log`。`stop.sh` 停止应用进程，Redis 可供下次启动复用。使用远程或带认证的 Redis 时，请先启动配置对应的实例。
 
 API 默认地址为 `http://127.0.0.1:2026/`，管理后台为 `http://localhost:6018/`。可通过 `BACKEND_HOST`、`BACKEND_PORT`、`FRONTEND_HOST`、`FRONTEND_PORT`、`VENV_PYTHON`、`DJANGO_SETTINGS_MODULE` 覆盖本地配置。管理后台直接运行已安装的 Vite，端口冲突会报错，不会自动换端口。
 

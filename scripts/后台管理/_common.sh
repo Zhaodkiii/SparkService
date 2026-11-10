@@ -21,7 +21,7 @@ parse_options() {
       --check) CHECK_ONLY=1 ;;
       --help|-h)
         echo "用法: $0 [--no-frontend] [--no-async] [--check]"
-        echo "默认启动 API、管理后台、Celery Worker、Beat 与手帐资源处理 Worker。Redis/数据库需预先运行。"
+        echo "默认启动 API、管理后台、Celery Worker、Beat 与启用的手帐资源处理 Worker，并按需启动本机 Redis。数据库需预先运行。"
         echo "--check 仅检查环境、数据库迁移状态与 Redis，不启动服务。"
         exit 0 ;;
       *) echo "未知参数: $1" >&2; exit 2 ;;
@@ -44,8 +44,10 @@ require_prereqs() {
     echo "环境检查失败；如有未应用迁移，请先执行 python manage.py migrate。" >&2; exit 1;
   }
   if [[ "$START_ASYNC" == 1 ]]; then
-    runtime check-broker || { echo "请先启动配置的 Redis，或使用 --no-async。" >&2; exit 1; }
     runtime check-processor
+    local broker_action=ensure-broker
+    if [[ "$CHECK_ONLY" == 1 ]]; then broker_action=check-broker; fi
+    runtime "$broker_action" || { echo "请检查 Redis 配置；仅调试 HTTP 时可使用 --no-async。" >&2; exit 1; }
   fi
 }
 
