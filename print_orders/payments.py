@@ -49,6 +49,9 @@ def apply_result(pk, result):
             a.state='pending' if result['state']=='absent' else result['state']
             if a.state in ('closed','failed'): a.active_slot=None
             a.save()
+            if a.active_slot is None and o.state=='cancelled':
+                from .services import release_cancelled_coupon
+                release_cancelled_coupon(o)
     return PaymentAttempt.objects.select_related('config','order').get(pk=pk)
 
 

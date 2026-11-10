@@ -93,6 +93,7 @@ class SnapshotInput(serializers.Serializer):
 
 
 class OrderInput(serializers.Serializer):
+    coupon_id = serializers.UUIDField(required=False)
     key = serializers.UUIDField()
     revise_order_id = serializers.UUIDField(required=False)
     order_revision = serializers.IntegerField(min_value=1, required=False)

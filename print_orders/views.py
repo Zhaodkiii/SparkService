@@ -15,6 +15,7 @@ from .models import Product, Order, Production, Event, Shipment, Receipt
 from .domain import AddressInput, OrderInput, Conflict, Unavailable, spec, quote, digest, validate_manifest
 from .services import event, cancel, reconcile
 from . import storage, wechat
+from .coupons import available_coupons, coupon_amount
 from .operations import capabilities, can_download, operate, CHECKLISTS
 
 
@@ -60,6 +61,9 @@ def order_data(o, admin=False, user=None, summary=False):
         checks=p.result.get('checks', []) if p else [],
         can_download=can_download(o, user) if admin and user else False,
         checklists=CHECKLISTS if admin else {})
+    if o.coupon_snapshot:
+        result.update(production_fen=o.coupon_snapshot['production_fen'], shipping_fen=o.coupon_snapshot['shipping_fen'],
+                      selected_coupon=o.coupon_snapshot)
     if not summary:
         from .payment_views import transaction_data, refund_data
         from .models import PaymentRefund
@@ -99,12 +103,25 @@ class Quote(APIView):
             quantity = serializers.IntegerField(min_value=1, max_value=100)
             region = serializers.CharField(max_length=120)
             address = AddressInput(required=False)
+            coupon_selection = serializers.CharField(required=False, max_length=64)
         s = Input(data=request.data); s.is_valid(raise_exception=True); d = s.validated_data
         p = get_object_or_404(Product, pk=d['product_id'])
         from regions.services import normalize_address
         address = normalize_address(d['address'], p) if d.get('address') else None
         shipping_region = address['region'] if address else d['region']
-        return Response(dict(**quote(p, d['page_count'], d['quantity'], shipping_region), product_revision=p.revision))
+        result = quote(p, d['page_count'], d['quantity'], shipping_region)
+        selection = d.get('coupon_selection')
+        if selection:
+            candidates = [dict(id=str(c.pk), name=c.name, discount_fen=coupon_amount(c, p, d['page_count']))
+                          for c in available_coupons(request.user, p)]
+            candidates = sorted((c for c in candidates if c['discount_fen']), key=lambda c: -c['discount_fen'])
+            selected = candidates[0] if candidates and selection == 'auto' else next((c for c in candidates if c['id']==selection), None)
+            if not selected and selection not in ('auto', 'none'):
+                raise Conflict('所选优惠券已不可用，请重新选券')
+            result.update(candidates=candidates, selected_coupon=selected)
+            if selected:
+                result['total_fen'] -= selected['discount_fen']
+        return Response(dict(**result, product_revision=p.revision))
 
 
 class Orders(APIView):
@@ -134,6 +151,18 @@ class Orders(APIView):
         from regions.services import normalize_address
         address = normalize_address(d['address'], p)
         q = quote(p, d['page_count'], d['quantity'], address['region'])
+        coupon = None
+        snapshot = {}
+        if d.get('coupon_id'):
+            coupon = available_coupons(request.user, p).select_for_update().filter(pk=d['coupon_id']).first()
+            if not coupon:
+                raise Conflict('优惠券已占用或失效，请重新确认')
+            discount = coupon_amount(coupon, p, d['page_count'])
+            if not discount:
+                raise Conflict('当前订单无法使用优惠券')
+            snapshot = dict(id=str(coupon.pk), name=coupon.name, discount_fen=discount,
+                            production_fen=q['production_fen'], shipping_fen=q['shipping_fen'])
+            q['total_fen'] -= discount
         if q['total_fen'] != d['quote_total_fen']: raise Conflict('报价已更新，请重新确认')
         validate_manifest(d)
         inner = sum(page['role']=='interior' for page in d['snapshot']['pages'])
@@ -142,6 +171,11 @@ class Orders(APIView):
         o = Order.objects.create(owner=request.user, product=p, creation_key=d['key'], request_hash=fingerprint,
             title=d['title'], spec=spec(p), address=address, snapshot=d['snapshot'],
             quantity=d['quantity'], page_count=d['page_count'], total_fen=q['total_fen'], payment_state='not_required' if q['total_fen']==0 else 'unpaid')
+        if coupon:
+            coupon.order = o
+            coupon.save(update_fields=['order'])
+            o.coupon_snapshot = snapshot
+            o.save(update_fields=['coupon_snapshot'])
         prod = Production.objects.create(order=o, manifest=d['files'], confirmed_hash=digest(d['files']))
         o.current_production = prod; o.save()
         Event.objects.create(order=o, actor=request.user, action='created', message='订单已创建，等待上传生产文件')

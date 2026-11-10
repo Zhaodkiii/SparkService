@@ -1,6 +1,6 @@
 <template>
  <div class="print-console">
-  <header class="heading"><div><h1>印制订单</h1><p class="muted">从印前审核到交付，处理每一本实物手帐。</p></div><a-space><a-button :loading="listBusy" @click="refreshAll">刷新</a-button><a-button @click="productsOpen=true">印制规格</a-button></a-space></header>
+  <header class="heading"><div><h1>印制订单</h1><p class="muted">从印前审核到交付，处理每一本实物手帐。</p></div><a-space><router-link to="/print-coupons">定向发券</router-link><a-button :loading="listBusy" @click="refreshAll">刷新</a-button><a-button @click="productsOpen=true">印制规格</a-button></a-space></header>
   <div class="queue-grid"><button v-for="item in queues" :key="item.key" class="queue" :class="{selected:state===item.key}" @click="filter(item.key)"><span>{{item.name}}</span><strong>{{counts[item.key]||0}}</strong><small>{{item.hint}}</small></button></div>
   <a-alert v-if="pageError" type="error" show-icon :message="pageError" class="gap" />
   <section class="orders-panel"><div class="filters"><a-input-search v-model:value="search" placeholder="订单号或作品名称" @search="filter(state)" allow-clear style="max-width:320px"/><a-select v-model:value="state" style="width:170px" @change="filter(state)"><a-select-option value="">全部订单</a-select-option><a-select-option v-for="(name,key) in states" :key="key" :value="key">{{name}}</a-select-option><a-select-option value="after_sale">售后待办</a-select-option><a-select-option value="exception">异常订单</a-select-option></a-select><span class="muted">共 {{total}} 单 · 每 30 秒同步</span></div>

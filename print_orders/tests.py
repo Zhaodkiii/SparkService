@@ -35,6 +35,292 @@ class PrintTests(TestCase):
         self.body['title']='changed'
         self.assertEqual(self.client.post('/api/v1/print/orders/',self.body,format='json').status_code,409)
         self.assertEqual(Order.objects.count(),1)
+    def test_paid_annual_event_is_idempotent_and_refund_expires_coupon(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from billing.models import BillingIdentity, CurrencyEvent
+        from billing.tasks import process_event
+        from .models import PrintCampaign, PrintCoupon
+        now=timezone.now()
+        identity=BillingIdentity.objects.create(account=self.user,rc_project_id='coupon-test',wallet_domain='production')
+        PrintCampaign.objects.create(title='年费开通礼',source='annual',active=True,starts_at=now-timedelta(days=1),
+            ends_at=now+timedelta(days=1),product=self.product,annual_product_id='annual-test',cap_fen=2000,quota=1)
+        data=dict(app_user_id=str(identity.rc_app_user_id),type='INITIAL_PURCHASE',environment='PRODUCTION',
+            entitlement_ids=['member'],price_in_purchased_currency=99,currency='CNY',store='APP_STORE',
+            product_id='annual-test',transaction_id='tx-1',app_id='app',purchased_at_ms=int(now.timestamp()*1000),
+            event_timestamp_ms=int(now.timestamp()*1000))
+        for i in range(2):
+            event=CurrencyEvent.objects.create(event_id=f'purchase-{i}',payload=data)
+            process_event(event.pk)
+        coupon=PrintCoupon.objects.get(owner=self.user)
+        self.assertGreater(coupon.expires_at,now)
+        event=CurrencyEvent.objects.create(event_id='refund-annual',payload={**data,'type':'CANCELLATION','cancel_reason':'CUSTOMER_SUPPORT'})
+        process_event(event.pk)
+        coupon.refresh_from_db()
+        self.assertLessEqual(coupon.expires_at,timezone.now())
+
+    def test_coupon_preview_binds_terms_and_retry_returns_original(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCoupon
+        self.client.force_authenticate(self.admin)
+        url = '/api/admin/v1/print/coupons/'
+        body = dict(owner=self.user.pk, product=str(self.product.pk), percent=50, included_pages=2,
+                    cap_fen=500, expires_at=(timezone.now()+timedelta(days=1)).isoformat(), ticket='case-1')
+        self.assertEqual(self.client.post(url, body, format='json').status_code, 409)
+        preview = self.client.post(url, dict(body, preview=True), format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(PrintCoupon.objects.count(), 0)
+        body['confirmation'] = preview.data['confirmation']
+        self.assertEqual(self.client.post(url, dict(body, cap_fen=300), format='json').status_code, 409)
+        first = self.client.post(url, body, format='json')
+        retry = self.client.post(url, body, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(retry.data, dict(id=first.data['id'], created=False))
+
+    def test_campaign_console_and_wallet(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintEnrollment
+        url='/api/admin/v1/print/campaigns/'
+        self.assertEqual(self.client.get(url).status_code,403)
+        self.client.force_authenticate(self.admin)
+        now=timezone.now()
+        body=dict(action='create', title='测试装订活动', source='pages', active=False, product=str(self.product.pk),
+                  starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), included_pages=20,
+                  cap_fen=2000, valid_days=30, quota=1)
+        response=self.client.post(url,body,format='json')
+        self.assertEqual(response.status_code,200,response.data)
+        created = response.data
+        preview = self.client.post(url, dict(body, action='preview'), format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual([s['percent'] for s in preview.data['samples']], [50, 100])
+        updated = self.client.post(url, dict(body, action='update', id=created['id'],
+                                             version=created['version'], title='修订活动'), format='json')
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(self.client.post(url, dict(action='publish', id=created['id'],
+                                                    version=created['version']), format='json').status_code, 409)
+        published = self.client.post(url, dict(action='publish', id=created['id'],
+                                               version=updated.data['version']), format='json')
+        self.assertEqual(published.status_code, 200, published.data)
+        self.client.force_authenticate(self.user)
+        plan=self.client.get('/api/v1/print/campaign/').data
+        response=self.client.post(f"/api/v1/print/campaign/{plan['id']}/join/",
+                                  dict(book_id=str(uuid.uuid4()),pages=20),format='json')
+        self.assertEqual(response.status_code,200,response.data)
+        self.assertEqual(response.data['enrollment']['reported_pages'], 20)
+        self.assertFalse(response.data['enrollment']['coupon_available'])
+        self.client.force_authenticate(self.admin)
+        for tier in (10,20,20):
+            response=self.client.post(url,dict(action='approve',id=PrintEnrollment.objects.get().pk,tier=tier),format='json')
+            self.assertEqual(response.status_code,200,response.data)
+        self.client.force_authenticate(self.user)
+        placement = self.client.get('/api/v1/print/campaign/', {'book': str(PrintEnrollment.objects.get().book_id)})
+        self.assertEqual(placement.data['enrollment']['approved_pages'], 20)
+        self.assertEqual(placement.data['enrollment']['coupon_percent'], 100)
+        self.assertTrue(placement.data['enrollment']['coupon_available'])
+        wallet=self.client.get('/api/v1/print/coupons/mine/').data
+        self.assertEqual([c['name'] for c in wallet],['标准装订免费券'])
+
+    def test_book_experience_recovers_history_and_review_results(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCampaign, PrintEnrollment, PrintCoupon
+        from .campaigns import book_experience
+
+        now = timezone.now()
+        self.assertEqual(self.client.get('/api/v1/print/campaign/').data['experience']['status'], 'no_activity')
+        plan = PrintCampaign.objects.create(title='定制页状态测试', source='pages', active=True, product=self.product,
+            starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), cap_fen=400, quota=5)
+        self.assertEqual(book_experience(plan, None)['action'], 'join')
+        entry = PrintEnrollment.objects.create(plan=plan, owner=self.user, book_id=self.body['snapshot']['book_id'],
+                                               reported_pages=2)
+        self.assertEqual(book_experience(plan, entry)['progress'], 0.1)
+        self.assertEqual(book_experience(plan, entry, 10)['status'], 'submit_half')
+        entry.reported_pages = 10
+        self.assertEqual(book_experience(plan, entry)['status'], 'half_pending')
+        entry.reported_pages = 42
+        self.assertEqual(book_experience(plan, entry)['heading'], '20 页档核验中')
+        coupon = PrintCoupon.objects.create(owner=self.user, product=self.product, name='测试券', percent=50,
+            included_pages=20, cap_fen=400, expires_at=now+timedelta(days=30), grant_key='context')
+        entry.coupon = coupon
+        entry.approved_pages = 10
+        entry.reported_pages = 10
+        self.assertEqual(book_experience(plan, entry)['action_title'], '继续做到 20 页')
+        self.assertEqual(book_experience(plan, entry, 20)['status'], 'submit_full')
+        self.assertEqual(book_experience(plan, entry)['rewards'][0]['title'], '装订抵扣 ¥4.00')
+        entry.approved_pages = 20
+        coupon.percent = 100
+        coupon.save()
+        self.assertEqual(book_experience(plan, entry)['action'], 'checkout')
+        entry.save()
+        plan.ends_at = now-timedelta(hours=1)
+        plan.active = False
+        plan.save()
+        context = self.client.get('/api/v1/print/campaign/', {'book': entry.book_id}).data
+        self.assertTrue(context['experience']['historical'])
+        self.assertEqual(context['experience']['coupon_id'], str(coupon.pk))
+        self.assertEqual(context['experience']['status'], 'full_ready')
+
+        order = self.create()
+        coupon.order = order
+        coupon.percent = 50
+        coupon.save()
+        entry.coupon = coupon
+        self.assertEqual(book_experience(plan, entry)['status'], 'upgrade_waiting')
+        order.transaction_id = 'verified-payment'
+        order.save()
+        self.assertEqual(book_experience(plan, entry)['status'], 'used')
+
+    def test_review_feedback_resubmits_same_count_and_preserves_reason(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCampaign, PrintEnrollment
+
+        now = timezone.now()
+        plan = PrintCampaign.objects.create(title='审核反馈', source='pages', active=True, product=self.product,
+            starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), cap_fen=2000, quota=1)
+        book = self.body['snapshot']['book_id']
+        entry = PrintEnrollment.objects.create(plan=plan, owner=self.user, book_id=book, reported_pages=20)
+        admin_url = '/api/admin/v1/print/campaigns/'
+        page_id = self.body['snapshot']['pages'][1]['page_id']
+        self.client.force_authenticate(self.admin)
+        result = self.client.post(admin_url, dict(action='return', id=entry.pk, attempt=1, reason='第 2 页需补充内容',
+                                                  page_ids=[page_id]), format='json')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(self.client.get(admin_url).data['total_pending'], 0)
+        self.assertEqual(self.client.post(admin_url, dict(action='approve', id=entry.pk, attempt=1,tier=20),
+                                         format='json').status_code, 409)
+        self.client.force_authenticate(self.user)
+        experience = self.client.get('/api/v1/print/campaign/', {'book': book}).data['experience']
+        self.assertEqual(experience['status'], 'returned')
+        self.assertEqual(experience['review_page_ids'], [page_id])
+        self.assertTrue(experience['can_resubmit'])
+        submitted = self.client.post(f'/api/v1/print/campaign/{plan.pk}/join/', dict(book_id=book,pages=20,attempt=1), format='json')
+        self.assertEqual(submitted.status_code, 200, submitted.data)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get(admin_url).data['total_pending'], 1)
+        result = self.client.post(admin_url, dict(action='approve', id=entry.pk,attempt=1,tier=20), format='json')
+        self.assertEqual(result.status_code, 200, result.data)
+        entry.refresh_from_db()
+        self.assertEqual(entry.participation_history[1]['reason'], '第 2 页需补充内容')
+
+    def test_unrestricted_campaign_coupon_quotes_multiple_products_and_locks_once(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintEnrollment
+
+        now = timezone.now()
+        second = Product.objects.create(title='B5', active=True, proof_approved=True, paper='纸', binding='装订',
+                                        base_fen=2000, shipping_fen=300, regions=['上海'])
+        admin_url = '/api/admin/v1/print/campaigns/'
+        body = dict(title='不限规格活动', source='pages', product=None, active=False,
+                    starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1),
+                    included_pages=20, cap_fen=5000, valid_days=30, quota=5)
+        self.client.force_authenticate(self.admin)
+        preview = self.client.post(admin_url, dict(body, action='preview'), format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual([q['product'] for q in preview.data['quotes']], ['A5', 'B5'])
+        created = self.client.post(admin_url, dict(body, action='create'), format='json').data
+        publish = self.client.post(admin_url, dict(action='publish', id=created['id'], version=created['version']), format='json')
+        self.assertEqual(publish.status_code, 200, publish.data)
+        self.client.force_authenticate(self.user)
+        book_id = self.body['snapshot']['book_id']
+        placement = self.client.get('/api/v1/print/campaign/', {'book': book_id}).data
+        self.assertTrue(placement['unrestricted'])
+        joined = self.client.post(f"/api/v1/print/campaign/{created['id']}/join/", dict(book_id=book_id, pages=20), format='json')
+        self.assertEqual(joined.status_code, 200, joined.data)
+        self.client.force_authenticate(self.admin)
+        entry = PrintEnrollment.objects.get()
+        approved = self.client.post(admin_url, dict(action='approve', id=entry.pk, tier=20), format='json')
+        self.assertEqual(approved.status_code, 200, approved.data)
+        entry.refresh_from_db()
+        self.assertIsNone(entry.coupon.product_id)
+        self.client.force_authenticate(self.user)
+        wallet = self.client.get('/api/v1/print/coupons/mine/').data
+        self.assertEqual(wallet[0]['product'], '不限印制规格')
+        coupon_id = str(entry.coupon_id)
+        for product, payable in ((self.product, 0), (second, 300)):
+            result = self.client.post('/api/v1/print/quotes/', dict(product_id=str(product.pk), page_count=2,
+                quantity=1, region='上海', coupon_selection=coupon_id), format='json')
+            self.assertEqual(result.status_code, 200, result.data)
+            self.assertEqual(result.data['total_fen'], payable)
+        self.body.update(product_id=str(second.pk), coupon_id=coupon_id, quote_total_fen=300)
+        self.create()
+        self.body.update(key=str(uuid.uuid4()), product_id=str(self.product.pk), quote_total_fen=0)
+        self.assertEqual(self.client.post('/api/v1/print/orders/', self.body, format='json').status_code, 409)
+
+    def test_campaign_withdrawal_releases_only_unrewarded_places(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCampaign, PrintEnrollment
+
+        now = timezone.now()
+        plan = PrintCampaign.objects.create(title='制作达标', source='pages', active=True,
+            product=self.product, starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1),
+            cap_fen=2000, quota=1)
+        base = f'/api/v1/print/campaign/{plan.pk}/'
+        admin_url = '/api/admin/v1/print/campaigns/'
+        book_id = str(uuid.uuid4())
+        body = dict(book_id=book_id, pages=20)
+        self.assertEqual(self.client.post(base+'join/', body, format='json').status_code, 200)
+        entry = PrintEnrollment.objects.get()
+        withdrawal = dict(book_id=book_id, attempt=1)
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post(base+'withdraw/', withdrawal, format='json').status_code, 404)
+        self.client.force_authenticate(self.user)
+        first = self.client.post(base+'withdraw/', withdrawal, format='json')
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(self.client.post(base+'withdraw/', withdrawal, format='json').data, first.data)
+        self.assertEqual(self.client.post(base+'join/', body, format='json').status_code, 409)
+
+        self.client.force_authenticate(self.admin)
+        approve = dict(action='approve', id=entry.pk, tier=20, attempt=1)
+        self.assertEqual(self.client.post(admin_url, approve, format='json').status_code, 409)
+        console = self.client.get(admin_url).data
+        self.assertEqual(console['plans'][0]['remaining'], 1)
+        self.assertEqual(console['total_pending'], 0)
+        participants = self.client.get(admin_url, {'participants': plan.pk, 'status': 'withdrawn', 'q': book_id}).data
+        self.assertEqual(participants['total'], 1)
+        self.assertEqual([e['event'] for e in participants['participants'][0]['history']],
+                         ['joined', 'progress', 'withdrawn'])
+
+        self.client.force_authenticate(self.user)
+        rejoined = self.client.post(base+'join/', dict(body, rejoin=True, attempt=1), format='json')
+        self.assertEqual(rejoined.status_code, 200, rejoined.data)
+        self.assertEqual(rejoined.data['enrollment']['attempt'], 2)
+        self.assertEqual(self.client.post(base+'withdraw/', withdrawal, format='json').status_code, 409)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.post(admin_url, approve, format='json').status_code, 409)
+        self.assertEqual(self.client.post(admin_url, dict(approve, attempt=2), format='json').status_code, 200)
+
+        self.client.force_authenticate(self.user)
+        result = self.client.post(base+'withdraw/', dict(withdrawal, attempt=2), format='json')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertTrue(result.data['enrollment']['coupon_available'])
+        self.assertEqual(self.client.post(base+'join/', dict(body, rejoin=True, attempt=2), format='json').status_code, 409)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get(admin_url).data['plans'][0]['remaining'], 0)
+
+    def test_coupon_limits_discount_to_one_copy_and_releases_on_cancel(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCoupon
+        coupon = PrintCoupon.objects.create(owner=self.user, product=self.product, percent=100,
+            name='标准装订券', included_pages=2, cap_fen=5000, grant_key='test:1',
+            expires_at=timezone.now()+timedelta(days=1))
+        self.product.shipping_fen = 500
+        self.product.save()
+        self.body.update(quantity=2, coupon_id=str(coupon.pk), quote_total_fen=1520)
+        order = self.create()
+        coupon.refresh_from_db()
+        self.assertEqual(coupon.order_id, order.pk)
+        self.body['key'] = str(uuid.uuid4())
+        self.assertEqual(self.client.post('/api/v1/print/orders/',self.body,format='json').status_code,409)
+        self.assertEqual(self.action(order,'cancel').status_code,200)
+        coupon.refresh_from_db()
+        self.assertIsNone(coupon.order_id)
+
     def test_snapshot_survives_product_change(self):
         o=self.create();self.product.title='different';self.product.base_fen=5000;self.product.save()
         o.refresh_from_db();self.assertEqual(o.spec['title'],'A5');self.assertEqual(o.total_fen,1020)

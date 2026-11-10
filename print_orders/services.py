@@ -13,6 +13,7 @@ def event(order, action, message='', actor=None, details=None):
         order.stage_started_at = timezone.now()
     order.revision += 1
     order.save()
+    release_cancelled_coupon(order)
     Event.objects.create(order=order, actor=actor, action=action, message=message, details=details or {})
 
 
@@ -30,3 +31,23 @@ def cancel(order, actor):
         order.payment_state = 'refund_pending'; order.refund_state = 'pending'
         order.refund_reason = '用户或管理员取消订单'
     event(order, 'cancelled', '订单已取消' + ('，退款处理中' if order.transaction_id else ''), actor)
+
+def release_cancelled_coupon(order):
+    if not order.coupon_snapshot or order.state != 'cancelled':
+        return
+    if order.payment_state not in ('unpaid','not_required','refunded'):
+        return
+    if order.payments.filter(active_slot=1).exists() or order.events.filter(action='start').exists():
+        return
+    from .models import PrintCoupon, PrintEnrollment
+    from .campaigns import award
+    coupon_id = PrintCoupon.objects.filter(order=order).values_list('pk', flat=True).first()
+    if coupon_id is None:
+        return
+    entry = PrintEnrollment.objects.select_for_update().filter(coupon_id=coupon_id).first()
+    coupon = PrintCoupon.objects.select_for_update().filter(pk=coupon_id, order=order).first()
+    if coupon:
+        coupon.order=None
+        coupon.save(update_fields=['order'])
+        if entry and not entry.withdrawn_at and entry.approved_pages >= 20:
+            award(entry,100)

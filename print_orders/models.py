@@ -46,6 +46,7 @@ class Order(models.Model):
     snapshot = models.JSONField()
     quantity = models.PositiveIntegerField()
     page_count = models.PositiveIntegerField()
+    coupon_snapshot = models.JSONField(default=dict, blank=True)
     total_fen = models.PositiveIntegerField()
     file_state = models.CharField(max_length=24, default='uploading')
     payment_state = models.CharField(max_length=24, default='unpaid')
@@ -221,3 +222,59 @@ class PaymentProbe(models.Model):
     def order(self):
         from types import SimpleNamespace
         return SimpleNamespace(title='管理员支付联调（自动原路退款）')
+
+
+class PrintCoupon(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
+    name = models.CharField(max_length=100)
+    percent = models.PositiveSmallIntegerField(choices=[(50, '半价'), (100, '免费')])
+    included_pages = models.PositiveIntegerField()
+    cap_fen = models.PositiveIntegerField()
+    expires_at = models.DateTimeField()
+    grant_key = models.CharField(max_length=160, unique=True)
+    order = models.OneToOneField(Order, null=True, blank=True, on_delete=models.PROTECT)
+    issued_at = models.DateTimeField(auto_now_add=True)
+
+
+class PrintCampaign(models.Model):
+    title = models.CharField(max_length=100)
+    source = models.CharField(max_length=12, choices=[('pages','制作达标'), ('annual','年费首购')])
+    draft = models.BooleanField(default=False)
+    active = models.BooleanField(default=False)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, null=True, blank=True)
+    annual_product_id = models.CharField(max_length=200, blank=True)
+    annual_percent = models.PositiveSmallIntegerField(default=100, choices=PrintCoupon._meta.get_field('percent').choices)
+    included_pages = models.PositiveIntegerField(default=20)
+    cap_fen = models.PositiveIntegerField()
+    quota = models.PositiveIntegerField()
+    valid_days = models.PositiveIntegerField(default=30)
+
+
+class PrintEnrollment(models.Model):
+    plan = models.ForeignKey(PrintCampaign, on_delete=models.PROTECT)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    book_id = models.UUIDField(null=True, blank=True)
+    reported_pages = models.PositiveIntegerField(default=0)
+    approved_pages = models.PositiveIntegerField(default=0)
+    coupon = models.OneToOneField(PrintCoupon, null=True, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    attempt = models.PositiveIntegerField(default=1)
+    review_decision = models.CharField(max_length=16, default='pending', choices=[
+        ('pending', '待核验'), ('returned', '退回补充'), ('rejected', '未通过')])
+    review_reason = models.CharField(max_length=500, blank=True)
+    review_page_ids = models.JSONField(default=list, blank=True)
+    participation_history = models.JSONField(default=list, blank=True)
+
+    def record_participation(self, event, at):
+        self.participation_history = [*self.participation_history, {
+            'event': event, 'at': at.isoformat(), 'book_id': str(self.book_id),
+            'reported_pages': self.reported_pages, 'approved_pages': self.approved_pages,
+        }]
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['plan','owner'], name='print_plan_owner_once')]

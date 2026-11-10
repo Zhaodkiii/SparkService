@@ -88,3 +88,5 @@ def process_event(pk):
     event.state='processed';event.save()
     from .reporting import project
     project(event)
+    from print_orders.campaigns import annual_gift
+    annual_gift(identity,data)
