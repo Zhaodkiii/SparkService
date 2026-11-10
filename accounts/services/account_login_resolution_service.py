@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Any, Callable
 
 from django.contrib.auth import get_user_model
@@ -29,6 +30,46 @@ class AccountLoginResolutionService:
         SocialIdentity.Provider.PHONE,
         SocialIdentity.Provider.EMAIL,
     }
+
+    @staticmethod
+    def _rename_upgraded_device_user(*, user, provider, provider_uid):
+        original = re.fullmatch(r"(device_[0-9a-f]{12})_[0-9a-f]{16}", user.username)
+        if original is None:
+            return
+
+        if provider == SocialIdentity.Provider.APPLE:
+            base = f"apple_{provider_uid[:16]}"
+        elif provider == SocialIdentity.Provider.PHONE:
+            digits = "".join(c for c in provider_uid if c.isdigit())
+            base = f"phone_{digits[-11:]}"
+        else:
+            return
+        device_name = original.group(1)
+        name = (user.first_name or "").strip()
+        # Preserve custom nicknames; clear only the generated device name.
+        clear_name = not name or bool(re.fullmatch(
+            re.escape(device_name) + r"(?:_[2-9]|_[1-9][0-9]+)?", name,
+        ))
+        User = get_user_model()
+        suffix = 1
+        while True:
+            candidate = base if suffix == 1 else f"{base}_{suffix}"
+            if User.objects.exclude(pk=user.pk).filter(username=candidate).exists():
+                suffix += 1
+                continue
+            try:
+                with transaction.atomic():
+                    user.username = candidate
+                    fields = ["username"]
+                    if clear_name:
+                        user.first_name = ""
+                        fields.append("first_name")
+                    user.save(update_fields=fields)
+                return
+            except IntegrityError:
+                if not User.objects.exclude(pk=user.pk).filter(username=candidate).exists():
+                    raise
+                suffix += 1
 
     @staticmethod
     def _load_identity_for_update(*, identity_scope: str, provider: str, provider_uid: str):
@@ -170,6 +211,9 @@ class AccountLoginResolutionService:
                             ),
                         },
                     )
+                AccountLoginResolutionService._rename_upgraded_device_user(
+                    user=user, provider=provider, provider_uid=provider_uid,
+                )
                 if on_existing_user is not None:
                     on_existing_user(user)
             else:
@@ -196,12 +240,13 @@ class AccountLoginResolutionService:
             ):
                 user = device_identity.user
                 try:
-                    SocialIdentity.objects.create(
-                        user=user,
-                        bundle_id=scope,
-                        provider=provider,
-                        provider_uid=provider_uid,
-                    )
+                    with transaction.atomic():
+                        SocialIdentity.objects.create(
+                            user=user,
+                            bundle_id=scope,
+                            provider=provider,
+                            provider_uid=provider_uid,
+                        )
                 except IntegrityError:
                     # 并发下正式身份可能已被创建：回读并按已有身份处理。
                     formal = AccountLoginResolutionService._load_identity_for_update(
@@ -218,6 +263,9 @@ class AccountLoginResolutionService:
                     if on_existing_user is not None:
                         on_existing_user(user)
                 else:
+                    AccountLoginResolutionService._rename_upgraded_device_user(
+                        user=user, provider=provider, provider_uid=provider_uid,
+                    )
                     device_identity.delete()
                     DeviceLoginService.revoke_active_sessions_for_user(
                         user=user,

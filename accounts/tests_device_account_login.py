@@ -1,11 +1,16 @@
-from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
-from rest_framework.test import APIClient
+from datetime import timedelta
 from unittest.mock import patch
 
-from accounts.models import AccountDeviceSession, DeviceLoginCredential, SocialIdentity
+from django.contrib.auth import get_user_model
+from django.test import TestCase, override_settings
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from accounts.models import AccountDeviceSession, DeviceLoginCredential, PhoneOTP, SocialIdentity
 from accounts.services.account_login_resolution_service import AccountLoginResolutionService
 from accounts.services.device_login_service import DeviceLoginService
+from accounts.services.otp_service import OTPService
+from backoffice.serializers import AdminUserSerializer
 from common.exceptions import APIError
 
 User = get_user_model()
@@ -43,6 +48,68 @@ class DeviceAccountLoginTests(TestCase):
         self.assertEqual(
             verify_mock.call_args.kwargs["device_secret"], self.device_secret
         )
+
+    @patch("accounts.services.login_service.AppleIdentityService.verify_identity_token")
+    def test_mobile_apple_login_updates_new_and_legacy_device_names(self, verify_token):
+        client = APIClient()
+        device = {
+            "bundle_id": self.bundle_id, "device_id": self.device_id,
+            "device_secret": self.device_secret,
+        }
+        response = client.post("/api/v1/auth/device/login/", device, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        user = User.objects.get(username__startswith="device_")
+        original_username, original_name = user.username, user.first_name
+        subject = "12345678901234567890"
+        verify_token.return_value = ({"sub": subject}, self.bundle_id)
+        login = {**device, "identity_token": "test-token", "full_name": "Apple 姓名"}
+        User.objects.create(username="apple_1234567890123456")
+
+        response = client.post("/api/v1/auth/apple/login/", login, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        user.refresh_from_db()
+        self.assertEqual(user.username, "apple_1234567890123456_2")
+        self.assertEqual(AdminUserSerializer(user).data["display_name"], "Apple 姓名")
+        self.assertTrue(SocialIdentity.objects.filter(user=user, provider="apple").exists())
+
+        # An account upgraded by the old server still has the original fields.
+        user.username, user.first_name = original_username, original_name + "_2"
+        user.save(update_fields=["username", "first_name"])
+        response = client.post(
+            "/api/v1/auth/apple/login/",
+            {**login, "full_name": "", "device_secret": ""}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        user.refresh_from_db()
+        self.assertEqual(user.username, "apple_1234567890123456_2")
+        self.assertEqual(AdminUserSerializer(user).data["display_name"], user.username)
+
+    def test_mobile_phone_login_upgrades_device_name(self):
+        client = APIClient()
+        device = {
+            "bundle_id": self.bundle_id, "device_id": self.device_id,
+            "device_secret": self.device_secret,
+        }
+        response = client.post("/api/v1/auth/device/login/", device, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        user = User.objects.get(username__startswith="device_")
+        phone, code = "+8613800000001", "989898"
+        otp = PhoneOTP.objects.create(
+            otp_id="upgrade-phone-test", phone_number=phone,
+            code_hash=OTPService._hash_code(code),
+            expires_at=timezone.now() + timedelta(minutes=5),
+            bundle_id=self.bundle_id, device_id=self.device_id,
+        )
+        response = client.post(
+            "/api/v1/otp/phone/verify/",
+            {**device, "phone_number": phone, "otp_id": otp.otp_id, "code": code},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        user.refresh_from_db()
+        self.assertEqual(user.username, "phone_13800000001")
+        self.assertEqual(AdminUserSerializer(user).data["display_name"], user.username)
+        self.assertTrue(SocialIdentity.objects.filter(user=user, provider="phone").exists())
 
     def test_first_device_login_creates_user_and_identity(self):
         result = DeviceLoginService.authenticate_and_issue_tokens(
