@@ -59,15 +59,15 @@ class EnrollmentAdmin(admin.ModelAdmin):
 
     def approve(self, queryset, threshold):
         with transaction.atomic():
-            for entry in queryset.filter(plan__source='pages',withdrawn_at__isnull=True,reported_pages__gte=threshold).select_for_update():
-                award(entry,100 if threshold==20 else 50)
+            for entry in queryset.exclude(coupon__percent=100).filter(plan__source='pages',withdrawn_at__isnull=True,reported_pages__gte=threshold).select_for_update():
+                award(entry,100 if threshold==40 else 50)
                 entry.approved_pages=max(entry.approved_pages,threshold)
                 entry.save(update_fields=['approved_pages'])
 
-    @admin.action(description='确认已核验 10 页，发半价券')
+    @admin.action(description='确认已核验 20 页，发半价券')
     def approve_half(self, request, queryset):
-        self.approve(queryset,10)
-
-    @admin.action(description='确认已核验 20 页，发免费券')
-    def approve_free(self, request, queryset):
         self.approve(queryset,20)
+
+    @admin.action(description='确认已核验 40 页，发免费券')
+    def approve_free(self, request, queryset):
+        self.approve(queryset,40)

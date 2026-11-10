@@ -113,7 +113,7 @@ class Grants(APIView):
 
 
 from .models import PrintCampaign, PrintEnrollment
-from .campaigns import award
+from .campaigns import award, HALF_PAGE_THRESHOLD, FULL_PAGE_THRESHOLD
 
 
 class ManageCampaign(BasePermission):
@@ -122,6 +122,12 @@ class ManageCampaign(BasePermission):
 
 
 class CampaignForm(serializers.ModelSerializer):
+    title = serializers.CharField(max_length=100, trim_whitespace=True, error_messages={
+        'required': '请输入活动标题',
+        'blank': '请输入活动标题',
+        'max_length': '活动标题最多 100 个字',
+    })
+
     product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), allow_null=True)
 
     class Meta:
@@ -193,8 +199,8 @@ def participant_data(row):
     history = row.participation_history or [dict(event='joined', at=row.created_at.isoformat(), book_id=row.book_id)]
     return dict(id=row.pk, owner_id=row.owner_id, username=row.owner.get_username(), book_id=row.book_id,
                 created_at=row.created_at, withdrawn_at=row.withdrawn_at, reported_pages=row.reported_pages,
-                approved_pages=row.approved_pages, review_decision=row.review_decision, review_reason=row.review_reason, coupon_id=coupon.pk if coupon else None, coupon_state=state,
-                coupon_name=coupon.name if coupon else None, order_id=order.pk if order else None, history=history)
+                approved_pages=row.approved_pages, half_threshold=HALF_PAGE_THRESHOLD, full_threshold=FULL_PAGE_THRESHOLD, review_decision=row.review_decision, review_reason=row.review_reason, coupon_id=coupon.pk if coupon else None, coupon_state=state,
+                reward_completed=bool(coupon and coupon.percent==100), coupon_name=coupon.name if coupon else None, order_id=order.pk if order else None, history=history)
 
 
 class CampaignConsole(APIView):
@@ -225,8 +231,8 @@ class CampaignConsole(APIView):
         if request.query_params.get('id'):
             plan = get_object_or_404(PrintCampaign, pk=request.query_params['id'])
             return Response(dict(CampaignForm(plan).data, draft=plan.draft, version=campaign_version(plan)))
-        pending=PrintEnrollment.objects.filter(plan__source='pages',withdrawn_at__isnull=True,review_decision='pending').filter(
-            Q(reported_pages__gte=10,approved_pages__lt=10)|Q(reported_pages__gte=20,approved_pages__lt=20))
+        pending=PrintEnrollment.objects.filter(plan__source='pages',withdrawn_at__isnull=True,review_decision='pending').exclude(coupon__percent=100).filter(
+            Q(reported_pages__gte=HALF_PAGE_THRESHOLD,approved_pages__lt=HALF_PAGE_THRESHOLD)|Q(reported_pages__gte=FULL_PAGE_THRESHOLD,approved_pages__lt=FULL_PAGE_THRESHOLD))
         pending_counts={row['plan_id']:row['count'] for row in pending.values('plan_id').annotate(count=Count('pk'))}
         plans=[]
         for plan in PrintCampaign.objects.annotate(taken=Count('printenrollment',filter=Q(printenrollment__withdrawn_at__isnull=True)|Q(printenrollment__coupon__isnull=False))).order_by('-pk')[:100]:
@@ -240,7 +246,7 @@ class CampaignConsole(APIView):
         pending=pending.order_by('created_at','pk')
         page=serializers.IntegerField(min_value=1).run_validation(request.query_params.get('page',1))
         return Response(dict(plans=plans,products=list(Product.objects.filter(active=True,proof_approved=True).values('id','title')),
-            total_pending=pending.count(),entries=list(pending[(page-1)*20:page*20].values('id','plan_id','plan__title','owner_id','book_id','reported_pages','approved_pages','created_at','attempt','coupon__percent','coupon__order_id','coupon__order__payment_state','coupon__order__file_state'))))
+            half_threshold=HALF_PAGE_THRESHOLD, full_threshold=FULL_PAGE_THRESHOLD, total_pending=pending.count(),entries=list(pending[(page-1)*20:page*20].values('id','plan_id','plan__title','owner_id','book_id','reported_pages','approved_pages','created_at','attempt','coupon__percent','coupon__order_id','coupon__order__payment_state','coupon__order__file_state'))))
 
     @transaction.atomic
     def post(self,request):
@@ -288,7 +294,7 @@ class CampaignConsole(APIView):
                 raise Conflict('报名已变化，请重新打开审核申请')
             reason = serializers.CharField(max_length=500).run_validation(request.data.get('reason'))
             pages = serializers.ListField(child=serializers.UUIDField(), max_length=100).run_validation(request.data.get('page_ids', []))
-            if row.approved_pages >= min(row.reported_pages, 20) or row.reported_pages < 10:
+            if row.approved_pages >= min(row.reported_pages, FULL_PAGE_THRESHOLD) or row.reported_pages < HALF_PAGE_THRESHOLD:
                 raise Conflict('当前申请没有待核验档位')
             row.review_decision = 'returned' if action == 'return' else 'rejected'
             row.review_reason = reason
@@ -311,9 +317,9 @@ class CampaignConsole(APIView):
             if request.data.get('attempt', 1) != row.attempt:
                 raise Conflict('报名已变化，请重新打开审核申请')
             tier=request.data.get('tier')
-            if tier not in (10,20) or row.reported_pages<tier:
+            if tier not in (HALF_PAGE_THRESHOLD,FULL_PAGE_THRESHOLD) or row.reported_pages<tier:
                 raise Conflict('当前进度未达此档位')
-            award(row,100 if tier==20 else 50)
+            award(row,100 if tier==FULL_PAGE_THRESHOLD else 50)
             if tier > row.approved_pages:
                 if not row.participation_history:
                     row.record_participation('joined', row.created_at)
@@ -321,14 +327,14 @@ class CampaignConsole(APIView):
                 row.record_participation('approved', timezone.now())
                 row.save(update_fields=['approved_pages', 'participation_history'])
             coupon=PrintCoupon.objects.select_related('order').get(pk=row.coupon_id)
-            if tier==20 and coupon.percent<100 and coupon.order:
+            if tier==FULL_PAGE_THRESHOLD and coupon.percent<100 and coupon.order:
                 order=coupon.order
                 used=order.payment_state in ('paid','refunded','refund_pending') or (
                     order.payment_state=='not_required' and order.file_state=='ready')
-                result_message=('20 页已核验，原半价券已使用。符合返券条件时将升级' if used
-                                else '20 页已核验，原半价券释放后将升级')
+                result_message=(f'{FULL_PAGE_THRESHOLD} 页已核验，原半价券已使用。符合返券条件时将升级' if used
+                                else f'{FULL_PAGE_THRESHOLD} 页已核验，原半价券释放后将升级')
             else:
-                result_message='20 页已核验，免费券已到账' if tier==20 else '10 页已核验，优惠券已到账'
+                result_message=f'{FULL_PAGE_THRESHOLD} 页已核验，抵扣券已到账' if tier==FULL_PAGE_THRESHOLD else f'{HALF_PAGE_THRESHOLD} 页已核验，优惠券已到账'
         else:
             raise serializers.ValidationError('不支持的操作')
         from django.contrib.admin.models import LogEntry, CHANGE

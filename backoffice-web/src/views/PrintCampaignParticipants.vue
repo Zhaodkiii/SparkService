@@ -55,7 +55,7 @@ import {useRoute} from 'vue-router';
 import http from '../api/http';
 
 type Participant={id:number,owner_id:number,username:string,book_id:string|null,created_at:string,withdrawn_at:string|null,
-  reported_pages:number,approved_pages:number,review_decision:string,review_reason:string,coupon_id:string|null,coupon_name:string|null,coupon_state:string,order_id:string|null,
+  reported_pages:number,approved_pages:number,review_decision:string,review_reason:string,half_threshold:number,full_threshold:number,reward_completed:boolean,coupon_id:string|null,coupon_name:string|null,coupon_state:string,order_id:string|null,
   history:{event:string,at:string,book_id:string|null,reported_pages?:number,approved_pages?:number}[]};
 const route=useRoute();
 const title=ref(''), query=ref(''), status=ref(''), error=ref(''), page=ref(1), total=ref(0), loading=ref(false);
@@ -67,9 +67,10 @@ const formatter=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateSt
 const date=(value:string)=>formatter.format(new Date(value));
 function participation(row:Participant){
   if(row.withdrawn_at)return '已退出';
+  if(row.reward_completed)return '奖励已完成';
   if(row.review_decision==='returned')return '待补充';
   if(row.review_decision==='rejected')return '未通过';
-  if(row.reported_pages>=20 && row.approved_pages<20 || row.reported_pages>=10 && row.approved_pages<10)return '待核验';
+  if(row.reported_pages>=row.full_threshold && row.approved_pages<row.full_threshold || row.reported_pages>=row.half_threshold && row.approved_pages<row.half_threshold)return '待核验';
   return '参与中';
 }
 function eventLabel(event:Participant['history'][number]){

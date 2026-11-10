@@ -40,7 +40,7 @@ def release_cancelled_coupon(order):
     if order.payments.filter(active_slot=1).exists() or order.events.filter(action='start').exists():
         return
     from .models import PrintCoupon, PrintEnrollment
-    from .campaigns import award
+    from .campaigns import award, FULL_PAGE_THRESHOLD
     coupon_id = PrintCoupon.objects.filter(order=order).values_list('pk', flat=True).first()
     if coupon_id is None:
         return
@@ -49,5 +49,5 @@ def release_cancelled_coupon(order):
     if coupon:
         coupon.order=None
         coupon.save(update_fields=['order'])
-        if entry and not entry.withdrawn_at and entry.approved_pages >= 20:
+        if entry and not entry.withdrawn_at and entry.approved_pages >= FULL_PAGE_THRESHOLD:
             award(entry,100)

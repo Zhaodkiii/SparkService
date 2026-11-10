@@ -13,6 +13,10 @@ from .domain import Conflict
 from .coupons import coupon_amount, product_scope_label
 
 
+HALF_PAGE_THRESHOLD = 20
+FULL_PAGE_THRESHOLD = 40
+
+
 def open_plans(source, at):
     scope = Q(product__active=True, product__proof_approved=True)
     if Product.objects.filter(active=True, proof_approved=True).exists():
@@ -98,31 +102,31 @@ def book_experience(plan, entry, local_pages=0, blocked=None):
     available = bool(coupon and not order and coupon.expires_at > now)
     reported = entry.reported_pages if entry else 0
     approved = entry.approved_pages if entry else 0
-    progress = min(max(reported, local_pages), 20) / 20 if entry and not entry.withdrawn_at else 0
-    status, heading, detail, action, label = 'available', '制作手帐领装订优惠', '满 10 个有效内页可申请第一档奖励', 'join', '用这本参加'
+    progress = min(max(reported, local_pages), FULL_PAGE_THRESHOLD) / FULL_PAGE_THRESHOLD if entry and not entry.withdrawn_at else 0
+    status, heading, detail, action, label = 'available', '制作手帐领装订优惠', f'满 {HALF_PAGE_THRESHOLD} 个有效内页可申请第一档奖励', 'join', '用这本参加'
     if blocked:
         status, heading, detail, action, label = 'unavailable', '活动暂不可报名', blocked, 'close', '返回作品'
     if entry:
-        status, heading, detail, action, label = 'making', '本册装订礼', f'已申报 {reported} 页，距下一档还差 {max(0, (10 if reported < 10 else 20)-max(reported,local_pages))} 页', 'continue', '继续制作'
-        if reported >= 10 and approved < 10:
-            status, heading, detail = 'half_pending', '第一档核验中', f'已提交 {reported} 页，可继续制作冲击 20 页档'
-        if reported >= 20 and approved < 20:
-            status, heading, detail, label = 'full_pending', '20 页档核验中', f'已提交 {reported} 页，等待核验', '返回作品'
+        status, heading, detail, action, label = 'making', '本册装订礼', f'已申报 {reported} 页，距下一档还差 {max(0, (HALF_PAGE_THRESHOLD if reported < HALF_PAGE_THRESHOLD else FULL_PAGE_THRESHOLD)-max(reported,local_pages))} 页', 'continue', '继续制作'
+        if reported >= HALF_PAGE_THRESHOLD and approved < HALF_PAGE_THRESHOLD:
+            status, heading, detail = 'half_pending', '第一档核验中', f'已提交 {reported} 页，可继续制作冲击 {FULL_PAGE_THRESHOLD} 页档'
+        if reported >= FULL_PAGE_THRESHOLD and approved < FULL_PAGE_THRESHOLD:
+            status, heading, detail, label = 'full_pending', f'{FULL_PAGE_THRESHOLD} 页档核验中', f'已提交 {reported} 页，等待核验', '返回作品'
         if coupon and coupon.percent == 50:
-            status, heading, detail, action, label = 'half_ready', '第一档优惠券已到账', '继续制作可申请 20 页档', 'continue', '继续做到 20 页'
-        if reported >= 20 and approved < 20:
-            status, heading, detail = 'full_pending', '20 页档核验中', f'已提交 {reported} 页，等待核验'
+            status, heading, detail, action, label = 'half_ready', '第一档优惠券已到账', f'继续制作可申请 {FULL_PAGE_THRESHOLD} 页档', 'continue', f'继续做到 {FULL_PAGE_THRESHOLD} 页'
+        if reported >= FULL_PAGE_THRESHOLD and approved < FULL_PAGE_THRESHOLD:
+            status, heading, detail = 'full_pending', f'{FULL_PAGE_THRESHOLD} 页档核验中', f'已提交 {reported} 页，等待核验'
         if available and coupon.percent == 100:
             status, heading, detail, action, label = 'full_ready', '装订抵扣券已到账', '使用本券定制这本手帐', 'checkout', '用券定制'
         if coupon and not order and coupon.expires_at <= now:
             status, heading, detail, action, label = 'expired', '活动优惠券已到期', '可继续查看印制规格与价格', 'checkout', '预览并定制'
         if order:
             status, heading, detail, action, label = 'used' if used else 'locked', '本期奖励已使用' if used else '优惠券被订单占用', '在原订单查看印制与付款进度', 'order', '查看原订单'
-            if approved >= 20 and coupon.percent < 100 and not used:
-                status, heading, detail = 'upgrade_waiting', '20 页已核验', '原半价券释放后将升级'
-        next_tier = 20 if approved >= 10 or reported >= 10 else 10
+            if approved >= FULL_PAGE_THRESHOLD and coupon.percent < 100 and not used:
+                status, heading, detail = 'upgrade_waiting', f'{FULL_PAGE_THRESHOLD} 页已核验', '原半价券释放后将升级'
+        next_tier = FULL_PAGE_THRESHOLD if approved >= HALF_PAGE_THRESHOLD or reported >= HALF_PAGE_THRESHOLD else HALF_PAGE_THRESHOLD
         if active_period and not order and (not coupon or coupon.percent < 100) and local_pages >= next_tier and reported < next_tier:
-            status, heading, detail, action, label = 'submit_full' if next_tier == 20 else 'submit_half', f'本册可申报 {next_tier} 页档', '提交后由运营核验有效内页', 'submit', f'提交 {next_tier} 页档核验'
+            status, heading, detail, action, label = 'submit_full' if next_tier == FULL_PAGE_THRESHOLD else 'submit_half', f'本册可申报 {next_tier} 页档', '提交后由运营核验有效内页', 'submit', f'提交 {next_tier} 页档核验'
         if entry.review_decision in ('returned', 'rejected') and active_period and not order:
             status = entry.review_decision
             heading = '请补充作品内容' if status == 'returned' else '本次核验未通过'
@@ -136,7 +140,7 @@ def book_experience(plan, entry, local_pages=0, blocked=None):
             status, heading, detail, action, label = 'ended', '活动已结束', '保留本次报名与核验记录', 'checkout', '预览并定制'
     product = plan.product
     rewards = []
-    for threshold, percent in ((10, 50), (20, 100)):
+    for threshold, percent in ((HALF_PAGE_THRESHOLD, 50), (FULL_PAGE_THRESHOLD, 100)):
         amount = coupon_amount(PrintCoupon(percent=percent, included_pages=plan.included_pages, cap_fen=plan.cap_fen), product, plan.included_pages) if product else None
         text = f'装订抵扣 ¥{amount/100:.2f}' if amount is not None else f'装订抵扣 · 最高 ¥{plan.cap_fen/100:.2f}'
         rewards.append(dict(threshold=threshold, title=text, discount_fen=amount))
@@ -144,7 +148,7 @@ def book_experience(plan, entry, local_pages=0, blocked=None):
     token = ':'.join(map(str, [plan.pk, plan.active, plan.ends_at.isoformat(), status, approved, entry.review_reason if entry else '',
                                coupon.pk if coupon else '', coupon.percent if coupon else '', order.pk if order else '']))
     return dict(status=status, heading=heading, detail=detail, action=action, action_title=label,
-                progress=progress, pending=status in ('half_pending', 'full_pending'), completed=approved >= 20,
+                progress=progress, pending=status in ('half_pending', 'full_pending'), completed=approved >= FULL_PAGE_THRESHOLD or bool(coupon and coupon.percent == 100),
                 coupon_id=str(coupon.pk) if coupon else None, product_id=str(coupon.product_id) if coupon and coupon.product_id else None, coupon_available=available,
                 order_id=str(order.pk) if order else None, result_key=token,
                 coupon_expires_at=coupon.expires_at if coupon else None,
@@ -258,7 +262,7 @@ class Enroll(APIView):
             row.reported_pages = pages
             row.record_participation('progress', timezone.now())
             row.save(update_fields=['reported_pages', 'participation_history', 'review_decision', 'review_reason', 'review_page_ids'])
-        message = '申请已登记，达标后由运营审核发券' if row.reported_pages >= 10 else '已报名，请继续制作并更新进度'
+        message = '申请已登记，达标后由运营审核发券' if row.reported_pages >= HALF_PAGE_THRESHOLD else '已报名，请继续制作并更新进度'
         return Response(dict(message=message, enrollment=enrollment_data(row)))
 
 

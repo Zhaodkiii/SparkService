@@ -87,7 +87,7 @@ class PrintTests(TestCase):
         self.client.force_authenticate(self.admin)
         now=timezone.now()
         body=dict(action='create', title='测试装订活动', source='pages', active=False, product=str(self.product.pk),
-                  starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), included_pages=20,
+                  starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), included_pages=40,
                   cap_fen=2000, valid_days=30, quota=1)
         response=self.client.post(url,body,format='json')
         self.assertEqual(response.status_code,200,response.data)
@@ -106,17 +106,17 @@ class PrintTests(TestCase):
         self.client.force_authenticate(self.user)
         plan=self.client.get('/api/v1/print/campaign/').data
         response=self.client.post(f"/api/v1/print/campaign/{plan['id']}/join/",
-                                  dict(book_id=str(uuid.uuid4()),pages=20),format='json')
+                                  dict(book_id=str(uuid.uuid4()),pages=40),format='json')
         self.assertEqual(response.status_code,200,response.data)
-        self.assertEqual(response.data['enrollment']['reported_pages'], 20)
+        self.assertEqual(response.data['enrollment']['reported_pages'], 40)
         self.assertFalse(response.data['enrollment']['coupon_available'])
         self.client.force_authenticate(self.admin)
-        for tier in (10,20,20):
+        for tier in (20,40,40):
             response=self.client.post(url,dict(action='approve',id=PrintEnrollment.objects.get().pk,tier=tier),format='json')
             self.assertEqual(response.status_code,200,response.data)
         self.client.force_authenticate(self.user)
         placement = self.client.get('/api/v1/print/campaign/', {'book': str(PrintEnrollment.objects.get().book_id)})
-        self.assertEqual(placement.data['enrollment']['approved_pages'], 20)
+        self.assertEqual(placement.data['enrollment']['approved_pages'], 40)
         self.assertEqual(placement.data['enrollment']['coupon_percent'], 100)
         self.assertTrue(placement.data['enrollment']['coupon_available'])
         wallet=self.client.get('/api/v1/print/coupons/mine/').data
@@ -135,21 +135,21 @@ class PrintTests(TestCase):
         self.assertEqual(book_experience(plan, None)['action'], 'join')
         entry = PrintEnrollment.objects.create(plan=plan, owner=self.user, book_id=self.body['snapshot']['book_id'],
                                                reported_pages=2)
-        self.assertEqual(book_experience(plan, entry)['progress'], 0.1)
-        self.assertEqual(book_experience(plan, entry, 10)['status'], 'submit_half')
-        entry.reported_pages = 10
+        self.assertEqual(book_experience(plan, entry)['progress'], 0.05)
+        self.assertEqual(book_experience(plan, entry, 20)['status'], 'submit_half')
+        entry.reported_pages = 20
         self.assertEqual(book_experience(plan, entry)['status'], 'half_pending')
         entry.reported_pages = 42
-        self.assertEqual(book_experience(plan, entry)['heading'], '20 页档核验中')
+        self.assertEqual(book_experience(plan, entry)['heading'], '40 页档核验中')
         coupon = PrintCoupon.objects.create(owner=self.user, product=self.product, name='测试券', percent=50,
-            included_pages=20, cap_fen=400, expires_at=now+timedelta(days=30), grant_key='context')
+            included_pages=40, cap_fen=400, expires_at=now+timedelta(days=30), grant_key='context')
         entry.coupon = coupon
-        entry.approved_pages = 10
-        entry.reported_pages = 10
-        self.assertEqual(book_experience(plan, entry)['action_title'], '继续做到 20 页')
-        self.assertEqual(book_experience(plan, entry, 20)['status'], 'submit_full')
-        self.assertEqual(book_experience(plan, entry)['rewards'][0]['title'], '装订抵扣 ¥4.00')
         entry.approved_pages = 20
+        entry.reported_pages = 20
+        self.assertEqual(book_experience(plan, entry)['action_title'], '继续做到 40 页')
+        self.assertEqual(book_experience(plan, entry, 40)['status'], 'submit_full')
+        self.assertEqual(book_experience(plan, entry)['rewards'][0]['title'], '装订抵扣 ¥4.00')
+        entry.approved_pages = 40
         coupon.percent = 100
         coupon.save()
         self.assertEqual(book_experience(plan, entry)['action'], 'checkout')
@@ -181,7 +181,7 @@ class PrintTests(TestCase):
         plan = PrintCampaign.objects.create(title='审核反馈', source='pages', active=True, product=self.product,
             starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1), cap_fen=2000, quota=1)
         book = self.body['snapshot']['book_id']
-        entry = PrintEnrollment.objects.create(plan=plan, owner=self.user, book_id=book, reported_pages=20)
+        entry = PrintEnrollment.objects.create(plan=plan, owner=self.user, book_id=book, reported_pages=40)
         admin_url = '/api/admin/v1/print/campaigns/'
         page_id = self.body['snapshot']['pages'][1]['page_id']
         self.client.force_authenticate(self.admin)
@@ -189,18 +189,18 @@ class PrintTests(TestCase):
                                                   page_ids=[page_id]), format='json')
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(self.client.get(admin_url).data['total_pending'], 0)
-        self.assertEqual(self.client.post(admin_url, dict(action='approve', id=entry.pk, attempt=1,tier=20),
+        self.assertEqual(self.client.post(admin_url, dict(action='approve', id=entry.pk, attempt=1,tier=40),
                                          format='json').status_code, 409)
         self.client.force_authenticate(self.user)
         experience = self.client.get('/api/v1/print/campaign/', {'book': book}).data['experience']
         self.assertEqual(experience['status'], 'returned')
         self.assertEqual(experience['review_page_ids'], [page_id])
         self.assertTrue(experience['can_resubmit'])
-        submitted = self.client.post(f'/api/v1/print/campaign/{plan.pk}/join/', dict(book_id=book,pages=20,attempt=1), format='json')
+        submitted = self.client.post(f'/api/v1/print/campaign/{plan.pk}/join/', dict(book_id=book,pages=40,attempt=1), format='json')
         self.assertEqual(submitted.status_code, 200, submitted.data)
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.client.get(admin_url).data['total_pending'], 1)
-        result = self.client.post(admin_url, dict(action='approve', id=entry.pk,attempt=1,tier=20), format='json')
+        result = self.client.post(admin_url, dict(action='approve', id=entry.pk,attempt=1,tier=40), format='json')
         self.assertEqual(result.status_code, 200, result.data)
         entry.refresh_from_db()
         self.assertEqual(entry.participation_history[1]['reason'], '第 2 页需补充内容')
@@ -216,7 +216,7 @@ class PrintTests(TestCase):
         admin_url = '/api/admin/v1/print/campaigns/'
         body = dict(title='不限规格活动', source='pages', product=None, active=False,
                     starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1),
-                    included_pages=20, cap_fen=5000, valid_days=30, quota=5)
+                    included_pages=40, cap_fen=5000, valid_days=30, quota=5)
         self.client.force_authenticate(self.admin)
         preview = self.client.post(admin_url, dict(body, action='preview'), format='json')
         self.assertEqual(preview.status_code, 200, preview.data)
@@ -228,11 +228,11 @@ class PrintTests(TestCase):
         book_id = self.body['snapshot']['book_id']
         placement = self.client.get('/api/v1/print/campaign/', {'book': book_id}).data
         self.assertTrue(placement['unrestricted'])
-        joined = self.client.post(f"/api/v1/print/campaign/{created['id']}/join/", dict(book_id=book_id, pages=20), format='json')
+        joined = self.client.post(f"/api/v1/print/campaign/{created['id']}/join/", dict(book_id=book_id, pages=40), format='json')
         self.assertEqual(joined.status_code, 200, joined.data)
         self.client.force_authenticate(self.admin)
         entry = PrintEnrollment.objects.get()
-        approved = self.client.post(admin_url, dict(action='approve', id=entry.pk, tier=20), format='json')
+        approved = self.client.post(admin_url, dict(action='approve', id=entry.pk, tier=40), format='json')
         self.assertEqual(approved.status_code, 200, approved.data)
         entry.refresh_from_db()
         self.assertIsNone(entry.coupon.product_id)
@@ -262,7 +262,7 @@ class PrintTests(TestCase):
         base = f'/api/v1/print/campaign/{plan.pk}/'
         admin_url = '/api/admin/v1/print/campaigns/'
         book_id = str(uuid.uuid4())
-        body = dict(book_id=book_id, pages=20)
+        body = dict(book_id=book_id, pages=40)
         self.assertEqual(self.client.post(base+'join/', body, format='json').status_code, 200)
         entry = PrintEnrollment.objects.get()
         withdrawal = dict(book_id=book_id, attempt=1)
@@ -275,7 +275,7 @@ class PrintTests(TestCase):
         self.assertEqual(self.client.post(base+'join/', body, format='json').status_code, 409)
 
         self.client.force_authenticate(self.admin)
-        approve = dict(action='approve', id=entry.pk, tier=20, attempt=1)
+        approve = dict(action='approve', id=entry.pk, tier=40, attempt=1)
         self.assertEqual(self.client.post(admin_url, approve, format='json').status_code, 409)
         console = self.client.get(admin_url).data
         self.assertEqual(console['plans'][0]['remaining'], 1)

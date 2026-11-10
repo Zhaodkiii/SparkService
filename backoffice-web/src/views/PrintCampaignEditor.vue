@@ -8,25 +8,25 @@
     </a-alert>
     <a-spin :spinning="loading">
       <div v-if="ready" class="editor">
-        <a-form layout="vertical" :disabled="busy || readonly">
+        <a-form ref="formRef" layout="vertical" :model="validationModel" :rules="rules" :disabled="busy || readonly">
           <a-card title="活动与投放">
-            <a-form-item label="活动标题"><a-input v-model:value="form.title" :maxlength="100" /></a-form-item>
+            <a-form-item label="活动标题" name="title"><a-input v-model:value="form.title" placeholder="例如：旅行手帐制作达标礼" :maxlength="100" show-count /></a-form-item>
             <a-form-item label="参与方式"><a-select v-model:value="form.source" :options="types" /></a-form-item>
-            <a-form-item v-if="form.source==='annual'" label="年费商品 ID"><a-input v-model:value="form.annual_product_id" /></a-form-item>
-            <a-form-item label="报名开始 / 截止（北京时间）"><a-space wrap>
+            <a-form-item v-if="form.source==='annual'" label="年费商品 ID" name="annual_product_id"><a-input v-model:value="form.annual_product_id" /></a-form-item>
+            <a-form-item label="报名开始 / 截止（北京时间）" name="schedule"><a-space wrap>
               <input v-model="start" type="datetime-local" :disabled="busy || readonly" aria-label="开始时间"/>
               <input v-model="end" type="datetime-local" :disabled="busy || readonly" aria-label="截止时间"/>
             </a-space></a-form-item>
           </a-card>
           <a-card title="奖励与名额">
-            <p v-if="form.source==='pages'">10 个有效内页享半价，20 个有效内页可升级免费档。申报和报名使用同一截止时间。</p>
+            <p v-if="form.source==='pages'">20 个有效内页享半价，40 个有效内页可升级免费档。申报和报名使用同一截止时间。</p>
             <a-form-item v-else label="首购赠券"><a-select v-model:value="form.annual_percent" :options="[{value:50,label:'半价券'},{value:100,label:'标准装订抵扣券'}]" /></a-form-item>
-            <a-form-item label="适用印制规格"><a-select v-model:value="form.product" :options="[{value:unrestricted,label:'不限印制规格'}, ...products.map(p=>({value:p.id,label:p.title}))]" placeholder="请选择适用规格" /></a-form-item>
+            <a-form-item label="适用印制规格" name="product"><a-select v-model:value="form.product" :options="[{value:unrestricted,label:'不限印制规格'}, ...products.map(p=>({value:p.id,label:p.title}))]" placeholder="请选择适用规格" /></a-form-item>
             <a-space wrap align="start">
-              <a-form-item label="活动名额"><a-input-number v-model:value="form.quota" :min="1" :precision="0"/></a-form-item>
-              <a-form-item label="优惠覆盖的印制页数"><a-input-number v-model:value="form.included_pages" :min="1" :precision="0"/></a-form-item>
-              <a-form-item label="每券最高抵扣（元）"><a-input-number v-model:value="cap" :min="0.01" :precision="2"/></a-form-item>
-              <a-form-item label="到账后有效天数"><a-input-number v-model:value="form.valid_days" :min="1" :precision="0"/></a-form-item>
+              <a-form-item label="活动名额" name="quota"><a-input-number v-model:value="form.quota" :min="1" :precision="0"/></a-form-item>
+              <a-form-item label="优惠覆盖的印制页数" name="included_pages"><a-input-number v-model:value="form.included_pages" :min="1" :precision="0"/></a-form-item>
+              <a-form-item label="每券最高抵扣（元）" name="cap"><a-input-number v-model:value="cap" :min="0.01" :precision="2"/></a-form-item>
+              <a-form-item label="到账后有效天数" name="valid_days"><a-input-number v-model:value="form.valid_days" :min="1" :precision="0"/></a-form-item>
             </a-space>
             <p>券有效期至少覆盖活动截止日，运费另计。</p>
           </a-card>
@@ -34,7 +34,7 @@
         <aside>
           <a-card title="投放预览">
             <h3>{{ form.title || '活动标题' }}</h3>
-            <p>{{ form.source==='pages' ? '完成画布后在作品预览展示。10 页半价，20 页免费档。' : '在指定年费套餐旁展示首次付费赠礼。' }}</p>
+            <p>{{ form.source==='pages' ? '完成画布后在作品预览展示。20 页半价，40 页免费档。' : '在指定年费套餐旁展示首次付费赠礼。' }}</p>
             <p v-if="form.product===unrestricted">适用于所有已开放印制规格，按所选规格计算抵扣。</p>
             <p>每券最高减 {{ money(Math.round(cap*100)) }} · 运费另计</p>
             <p v-if="form.quota">最高承诺 {{ form.quota }} × {{ money(Math.round(cap*100)) }} = {{ money(Math.round(cap*100)*form.quota) }}</p>
@@ -58,7 +58,7 @@
     </a-spin>
     <a-modal v-model:open="confirm" title="确认投放" ok-text="确认发布" :confirm-loading="busy" @ok="publish">
       <h3>{{ form.title }}</h3>
-      <p>{{ form.source==='pages' ? '制作达标用户 · 10 页半价，20 页免费档' : '指定年费首购用户 · '+form.annual_product_id }}</p>
+      <p>{{ form.source==='pages' ? '制作达标用户 · 20 页半价，40 页免费档' : '指定年费首购用户 · '+form.annual_product_id }}</p>
       <p>{{ start.replace('T',' ') }} 至 {{ end.replace('T',' ') }}（北京时间）</p>
       <p v-if="sample">最高承诺 {{ money(sample.maximum) }} · {{ (sample.quotes || [sample]).map(q=>q.product+' 样单实付 '+q.samples.map(s=>money(s.payable)).join(' / ')).join('；') }}</p>
     </a-modal>
@@ -66,9 +66,10 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { message } from 'ant-design-vue';
+import type { FormInstance, FormProps } from 'ant-design-vue';
 import http from '../api/http';
 
 const url='/api/admin/v1/print/campaigns/';
@@ -86,10 +87,33 @@ const editing=ref<number>(),readonly=ref(false),busy=ref(false),loading=ref(fals
 const sample=ref<Sample>(),retry=ref(0);
 const money=(fen:number)=>'¥'+(fen/100).toFixed(2);
 function beijingInput(value:string){return new Date(Date.parse(value)+8*3600000).toISOString().slice(0,19)}
+const formRef=ref<FormInstance>();
+const validationModel=computed(()=>({...form,cap:cap.value,schedule:[start.value,end.value]}));
+const rules: NonNullable<FormProps['rules']> = {
+  title:[{required:true,whitespace:true,message:'请输入活动标题'},{max:100,message:'活动标题最多 100 个字'}],
+  product:[{required:true,message:'请选择适用印制规格'}],
+  annual_product_id:[{validator:async()=>{
+    if(form.source==='annual' && !form.annual_product_id.trim())throw new Error('请输入年费商品 ID');
+  }}],
+  schedule:[{validator:async()=>{
+    if(!start.value || !end.value)throw new Error('请选择报名开始和截止时间');
+    const begins=Date.parse(start.value+'+08:00'),ends=Date.parse(end.value+'+08:00');
+    if(!Number.isFinite(begins)||!Number.isFinite(ends))throw new Error('请填写有效的报名时间');
+    if(begins>=ends)throw new Error('报名截止时间须晚于开始时间');
+    if(!readonly.value && ends<=Date.now())throw new Error('报名截止时间须晚于当前时间');
+  }}],
+  quota:[{type:'integer',required:true,min:1,message:'请输入大于零的整数名额'}],
+  included_pages:[{type:'integer',required:true,min:1,message:'请输入大于零的整数页数'}],
+  valid_days:[{type:'integer',required:true,min:1,message:'请输入大于零的整数天数'}],
+  cap:[{type:'number',required:true,min:0.01,message:'抵扣上限至少为 0.01 元'}],
+};
+function errorMessage(value:unknown){
+  return value instanceof Error ? value.message : '请求失败，请重试';
+}
 function payload(){
   if (!start.value || !end.value) throw new Error('请选择报名开始和截止时间');
   if (!form.product) throw new Error('请选择适用印制规格');
-  return {...form,product:form.product===unrestricted?null:form.product,cap_fen:Math.round(cap.value*100),starts_at:new Date(start.value+'+08:00').toISOString(),
+  return {...form,title:form.title.trim(),annual_product_id:form.annual_product_id.trim(),product:form.product===unrestricted?null:form.product,cap_fen:Math.round(cap.value*100),starts_at:new Date(start.value+'+08:00').toISOString(),
     ends_at:new Date(end.value+'+08:00').toISOString(),active:false};
 }
 watch([form,start,end,cap],()=>{sample.value=undefined},{deep:true});
@@ -117,7 +141,7 @@ watch(()=>[route.query.id,route.query.copy,retry.value] as const,async ([id,copy
       }
     }
     ready.value=true;
-  } catch(e){if(current)error.value=String(e)}
+  } catch(e){if(current)error.value=errorMessage(e)}
   finally{if(current)loading.value=false}
 },{immediate:true});
 async function save(){
@@ -127,7 +151,18 @@ async function save(){
 async function run(action:()=>Promise<void>){
   if(busy.value)return;
   busy.value=true;error.value='';
-  try{await action()}catch(e){error.value=String(e)}finally{busy.value=false}
+  try{
+    await formRef.value?.validate();
+    await action();
+  }catch(e){
+    const fields=(e as {errorFields?:{name:(string|number)[]}[]})?.errorFields;
+    if(fields?.length){
+      error.value='请检查标红的必填项';
+      formRef.value?.scrollToField(fields[0]!.name,{block:'center'});
+    }else{
+      error.value=errorMessage(e);
+    }
+  }finally{busy.value=false}
 }
 function saveAndReturn(){return run(async()=>{await save();message.success('草稿已保存');await router.push('/print-campaigns')})}
 function preview(publishing:boolean){

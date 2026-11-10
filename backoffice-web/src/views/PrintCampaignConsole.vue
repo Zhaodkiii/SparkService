@@ -19,7 +19,7 @@
           :locale="{emptyText:error?'活动列表加载失败':plans.length?'没有符合筛选的活动':'暂无活动'}">
           <template #bodyCell="{column,record:p}">
             <router-link v-if="column.key==='title'" :to="{path:editor,query:{id:p.id}}">{{p.title}}</router-link>
-            <span v-else-if="column.key==='reward'">{{p.source==='pages'?'10 页半价 · 20 页免费档':p.annual_percent===50?'年费首购 · 半价券':'年费首购 · 标准装订抵扣券'}}</span>
+            <span v-else-if="column.key==='reward'">{{p.source==='pages'?'20 页半价 · 40 页免费档':p.annual_percent===50?'年费首购 · 半价券':'年费首购 · 标准装订抵扣券'}}</span>
             <span v-else-if="column.key==='schedule'">{{date(p.starts_at)}} 至 {{date(p.ends_at)}}</span>
             <template v-else-if="column.key==='quota'">
               {{p.quota-p.remaining}} / {{p.quota}}
@@ -63,9 +63,9 @@
         </a-descriptions>
         <a-alert class="review-note" type="info" message="页面展示用户申报记录，请核对作品依据后确认。" />
         <a-space v-if="canReview" wrap>
-          <a-popconfirm v-for="tier in [10,20].filter(n=>n<=selected!.reported_pages && n>selected!.approved_pages)"
+          <a-popconfirm v-for="tier in [halfThreshold,fullThreshold].filter(n=>n<=selected!.reported_pages && n>selected!.approved_pages)"
             :key="tier" :title="'确认已核验 '+tier+' 个有效内页？'" @confirm="approve(tier)">
-            <a-button type="primary" :loading="busy">{{tier===20?'通过 20 页核验':'通过 10 页核验'}}</a-button>
+            <a-button type="primary" :loading="busy">{{'通过 '+tier+' 页核验'}}</a-button>
           </a-popconfirm>
         </a-space>
         <a-form v-if="canReview" layout="vertical" class="review-note">
@@ -99,6 +99,7 @@ type Entry={id:number,attempt:number,plan__title:string,owner_id:number,book_id:
 const plans=ref<Plan[]>([]),entries=ref<Entry[]>([]),selected=ref<Entry>();
 const tab=ref('plans'),source=ref(''),state=ref(''),dates=ref<[Dayjs,Dayjs]>();
 const reviewPlan=ref<number>();
+const halfThreshold=ref(20),fullThreshold=ref(40);
 const pending=ref<number|null>(null),page=ref(1),loading=ref(false),busy=ref(false),error=ref('');
 const types=[{value:'',label:'全部类型'},{value:'pages',label:'制作达标'},{value:'annual',label:'年费首购'}];
 const states=['','草稿','待开始','进行中','已满额','已暂停','已结束'].map(value=>({value,label:value||'全部状态'}));
@@ -121,12 +122,12 @@ async function load(){
   const key=++sequence;
   loading.value=true;error.value='';
   try{
-    const data=await http.get(url,{params:{page:page.value,review_plan:reviewPlan.value}}) as unknown as {plans:Plan[],entries:Entry[],total_pending:number};
+    const data=await http.get(url,{params:{page:page.value,review_plan:reviewPlan.value}}) as unknown as {plans:Plan[],entries:Entry[],total_pending:number,half_threshold:number,full_threshold:number};
     if(key!==sequence)return;
     if(!Number.isInteger(data.total_pending) || !Array.isArray(data.entries) || !Array.isArray(data.plans))throw new Error('活动接口响应不完整');
     const last=Math.max(1,Math.ceil(data.total_pending/20));
     if(page.value>last){page.value=last;await load();return}
-    plans.value=data.plans;entries.value=data.entries;pending.value=data.total_pending;
+    halfThreshold.value=data.half_threshold ?? 20;fullThreshold.value=data.full_threshold ?? 40;plans.value=data.plans;entries.value=data.entries;pending.value=data.total_pending;
   }catch(e){if(key===sequence){error.value=String(e);pending.value=null;entries.value=[];plans.value=[]}}
   finally{if(key===sequence)loading.value=false}
 }
