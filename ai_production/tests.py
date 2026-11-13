@@ -21,6 +21,22 @@ class ProductionTests(TestCase):
     def make(self, key=None):
         return start(self.user, key or uuid.uuid4(), "a" * 64)
 
+    def test_device_account_uses_same_quota_and_settlement(self):
+        from accounts.models import SocialIdentity
+        from accounts.services.device_login_service import DeviceLoginService
+        guest = get_user_model().objects.create_user(username="device-maker")
+        SocialIdentity.objects.create(user=guest, bundle_id="test.travel",
+            provider=SocialIdentity.Provider.DEVICE, provider_uid="production-test-device")
+        self.assertTrue(DeviceLoginService.is_device_account(user=guest))
+        self.assertEqual([w["limit"] for w in quota(guest)["windows"]],
+                         [w["limit"] for w in quota(self.user)["windows"]])
+        task = start(guest, self.key, "a" * 64)
+        self.assertEqual(start(guest, self.key, "a" * 64).pk, task.pk)
+        settle_verified_result(guest, task.pk, {"asset": "verified"})
+        settle_verified_result(guest, task.pk, {"asset": "verified"})
+        self.assertEqual([w["used"] for w in quota(guest)["windows"]], [1, 1])
+        self.assertEqual([w["used"] for w in quota(self.user)["windows"]], [0, 0])
+
     def test_double_start_and_digest_conflict(self):
         first = self.make(self.key)
         self.assertEqual(first.pk, self.make(self.key).pk)
