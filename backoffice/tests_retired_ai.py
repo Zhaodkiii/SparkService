@@ -25,46 +25,37 @@ class RetiredAIConfigurationTests(TestCase):
 
     def test_account_can_use_production_without_trial(self):
         user = get_user_model().objects.create_user(username="developer")
-        ProductionPolicy.objects.create(name="development", short_limit=3, weekly_limit=10, reason="test")
+        ProductionPolicy.objects.create(name="development", short_limit_points=3, weekly_limit_points=10, reason="test")
         client = APIClient()
         client.force_authenticate(user)
         response = client.get("/api/v1/ai-production/quota/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["data"]["entitled"])
-        self.assertTrue(response.data["data"]["can_start"])
+        self.assertEqual(response.data["data"]["service_status"], "available")
 
 
-    def test_user_quota_list_only_includes_accounts_with_usage_history(self):
+    def test_user_quota_lookup_does_not_start_windows(self):
         from ai_production.models import ProductionWindow
-        from ai_production.services import start, transition
-        import uuid
+
         admin = get_user_model().objects.create_superuser(username="quota-list-admin", password="test")
-        user = get_user_model().objects.create_user(username="quota-reader")
-        ProductionPolicy.objects.create(name="list", short_limit=3, weekly_limit=10, reason="test")
+        get_user_model().objects.create_user(username="quota-reader")
+        ProductionPolicy.objects.create(name="list", short_limit_points=3, weekly_limit_points=10)
         client = APIClient()
         client.force_authenticate(admin)
         url = "/api/admin/v1/ai-production/users/"
-        self.assertEqual(client.get(url).data["data"]["items"], [])
+        items = client.get(url, {"q": "quota-reader"}).data["data"]["items"]
+        self.assertEqual(items, [])
         self.assertEqual(ProductionWindow.objects.count(), 0)
-        task = start(user, uuid.uuid4(), "a" * 64)
-        transition(user, task.pk, "cancel", task.version)
-        response = client.get(url)
-        self.assertEqual(response.data["data"]["pagination"]["total"], 1)
-        self.assertEqual(response.data["data"]["items"][0]["username"], "quota-reader")
-        self.assertEqual(client.get(url, {"q":"nonexistent"}).data["data"]["items"], [])
+        self.assertEqual(client.get(url, {"q": "nonexistent"}).data["data"]["items"], [])
 
     def test_user_quota_list_pagination_and_access(self):
-        from ai_production.services import start
-        import uuid
         admin = get_user_model().objects.create_superuser(username="quota-page-admin", password="test")
         customer = get_user_model().objects.create_user(username="quota-customer")
-        ProductionPolicy.objects.create(name="list", short_limit=3, weekly_limit=10, reason="test")
-        start(admin, uuid.uuid4(), "a" * 64)
-        start(customer, uuid.uuid4(), "a" * 64)
+        ProductionPolicy.objects.create(name="list", short_limit_points=3, weekly_limit_points=10, reason="test")
         client = APIClient()
         client.force_authenticate(customer)
         self.assertEqual(client.get("/api/admin/v1/ai-production/users/").status_code, 403)
         client.force_authenticate(admin)
         response = client.get("/api/admin/v1/ai-production/users/", {"page_size":1})
-        self.assertEqual(response.data["data"]["pagination"]["total"], 2)
-        self.assertEqual(len(response.data["data"]["items"]), 1)
+        self.assertEqual(response.data["data"]["pagination"]["total"], 0)
+        self.assertEqual(response.data["data"]["items"], [])

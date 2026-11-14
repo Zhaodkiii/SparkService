@@ -79,22 +79,15 @@ class PrintTests(TestCase):
         self.assertEqual(retry.data, dict(id=first.data['id'], created=False))
 
     def ai_faces(self, count):
-        from datetime import timedelta
         from django.utils import timezone
-        from ai_production.models import ProductionPolicy, ProductionWindow, ProductionTask, ProductionLedger
+        from ai_production.models import ProductionTask
 
         now = timezone.now()
-        policy = ProductionPolicy.objects.create(name='测试', short_limit=100, weekly_limit=100)
-        windows = [ProductionWindow.objects.create(account=self.user, kind=kind, starts_at=now,
-                   ends_at=now+timedelta(days=1), policy=policy, limit=100) for kind in ('short', 'weekly')]
         faces = []
         for _ in range(count):
             page = str(uuid.uuid4())
             task = ProductionTask.objects.create(account=self.user, attempt_key=uuid.uuid4(), state='completed',
-                    input_digest='a'*64, short_window=windows[0], weekly_window=windows[1], expires_at=now,
-                    result={'page_id': page, 'faces': ['left']})
-            ProductionLedger.objects.create(task=task, reservation_id=task.reservation_id, event='settle',
-                                           short_window=windows[0], weekly_window=windows[1])
+                    input_digest='a'*64, completed_at=now, result={'page_id': page, 'faces': ['left']})
             faces.append(dict(task=str(task.pk), page=page, revision=str(uuid.uuid4()), face='left', first_saved=now.isoformat()))
         return faces
 

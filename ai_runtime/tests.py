@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from common.exceptions import APIError
 from ai_production.models import ProductionPolicy, ProductionTask, ProductionWindow
-from ai_production.services import start, transition, settle_verified_result
+from ai_production.services import start, transition, complete, authorize
 from . import models as m, services as s
 from .contracts import digest, endpoint
 from .tasks import PinnedHTTPSConnection, run_test
@@ -39,7 +39,11 @@ class RuntimeTests(TestCase):
         self.ch.draft = {'minimum_build': 1, 'scenes': {'diary.layout': {
             'model': str(self.model.pk), 'credential_slot': str(self.slot.pk), 'parameters': {}, 'timeout_seconds': 180}}}
         self.ch.save()
-        ProductionPolicy.objects.create(name='runtime', short_limit=10, weekly_limit=10, reason='test')
+        ProductionPolicy.objects.create(name='runtime', short_limit_points=10, weekly_limit_points=10, rates={
+            'model-a': dict(category='text_ai', mode='tokens', input_rate='1', cached_input_rate='1',
+                            output_rate='1', minimum_charge='0.1', max_input_tokens=1000,
+                            max_output_tokens=4096, usage_timeout_seconds=420),
+        }, reason='test')
         self.release = self.publish()
 
     def tested(self, snap=None, versions=None):
@@ -79,13 +83,11 @@ class RuntimeTests(TestCase):
         transition(self.user,task.pk,'cancel',task.version)
         with self.assertRaises(APIError): self.config(task)
 
-    def test_pause_resume_and_expiry(self):
+    def test_pause_resume(self):
         task=self.make(); paused=transition(self.user,task.pk,'pause',task.version)
         with self.assertRaises(APIError):self.config(task)
         transition(self.user,task.pk,'resume',paused.version)
         self.assertEqual(self.config(task)['task_id'],str(task.pk))
-        ProductionTask.objects.filter(pk=task.pk).update(expires_at=timezone.now()-timedelta(seconds=1))
-        with self.assertRaises(APIError):self.config(task)
 
     def test_new_release_does_not_change_existing_task(self):
         task=self.make()
@@ -110,7 +112,7 @@ class RuntimeTests(TestCase):
         key=uuid.uuid4();task=self.make(key)
         self.assertEqual(task.pk,self.make(key).pk)
         with self.assertRaises(APIError):self.make(key,['diary.background.generate'])
-        self.assertEqual(list(ProductionWindow.objects.values_list('reserved',flat=True)),[1,1])
+        self.assertFalse(ProductionWindow.objects.exists())
 
     def test_emergency_control_affects_old_bindings(self):
         task=self.make(); m.Channel.objects.filter(pk=1).update(disabled_scenes=['diary.layout'])
@@ -171,18 +173,43 @@ class RuntimeTests(TestCase):
             {'version':2,'expected_version':1,'request_key':str(uuid.uuid4()),'reason':'rotate'},format='json')
         self.assertEqual(response.status_code,422)
 
-    def test_legacy_task_rejected_and_legacy_cutover(self):
-        task=start(self.user,uuid.uuid4(),'a'*64)
-        with self.assertRaises(APIError):self.config(task)
-        with override_settings(AI_RUNTIME_REQUIRE_CAPABILITIES=True):
-            with self.assertRaises(APIError):start(self.user,uuid.uuid4(),'a'*64)
+    def test_old_client_cannot_start_unmetered_task(self):
+        self.api.force_authenticate(self.user)
+        response = self.api.post('/api/v1/ai-production/tasks/', {
+            'attempt_key': str(uuid.uuid4()), 'input_digest': 'a' * 64,
+            'required_scenes': ['diary.layout'], 'client_capabilities': CAP,
+        }, format='json')
+        self.assertEqual(response.status_code, 426)
 
-    def test_complete_stays_idempotent(self):
-        task=self.make();self.config(task);self.config(task)
-        settle_verified_result(self.user,task.pk,{'digest':'b'*64})
-        settle_verified_result(self.user,task.pk,{'digest':'b'*64})
-        self.assertEqual(list(ProductionWindow.objects.values_list('used',flat=True)),[1,1])
-        with self.assertRaises(APIError):self.config(task)
+    def test_complete_records_result_without_deducting_quota(self):
+        task = self.make()
+        authorize(self.user, task.pk, uuid.uuid4(), 'diary.layout', 'b' * 64, {'max_output_tokens': 4096})
+        complete(self.user, task.pk, {'digest': 'b' * 64})
+        complete(self.user, task.pk, {'digest': 'b' * 64})
+        self.assertEqual(list(ProductionWindow.objects.values_list('used_points', flat=True)), [0, 0])
+        with self.assertRaises(APIError):
+            self.config(task)
+
+    def test_metered_task_authorization_and_report(self):
+        self.api.force_authenticate(self.user)
+        response = self.api.post('/api/v1/ai-production/tasks/', {
+            'usage_metering': True, 'attempt_key': str(uuid.uuid4()), 'input_digest': 'a' * 64,
+            'required_scenes': ['diary.layout'], 'client_capabilities': CAP,
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        root = f"/api/v1/ai-production/tasks/{response.data['data']['id']}/calls/"
+        call_id = str(uuid.uuid4())
+        inputs = {'call_id': call_id, 'scene': 'diary.layout', 'input_digest': 'b' * 64,
+                  'parameters': {'max_output_tokens': 4096}}
+        self.assertEqual(self.api.post(root, inputs, format='json').status_code, 200)
+        self.assertEqual(self.api.post(root, inputs, format='json').status_code, 200)
+        self.assertEqual(self.api.post(root, dict(inputs, call_id=str(uuid.uuid4())), format='json').status_code, 409)
+        response = self.api.post(root + call_id + '/usage/', {
+            'event_id': str(uuid.uuid4()), 'execution_state': 'completed',
+            'usage': {'input_tokens': 500, 'output_tokens': 500},
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([w['remaining_ratio'] for w in response.data['data']['quota']['windows']], [0.9, 0.9])
 
     @override_settings(AI_RUNTIME_TEST_DOH_FALLBACK=False)
     def test_probe_rejects_private_dns_before_connection(self):

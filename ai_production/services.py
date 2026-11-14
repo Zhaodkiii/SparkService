@@ -1,279 +1,319 @@
 from datetime import timedelta
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 import uuid
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from common.exceptions import APIError
-from .models import ProductionControl, ProductionLedger, ProductionPolicy, ProductionTask, ProductionWindow
+from ai_runtime.contracts import digest
+from .models import (
+    ProductionCall, ProductionControl, ProductionLedger, ProductionPolicy, ProductionQuotaReset,
+    ProductionTask, ProductionWindow,
+)
+
+PRECISION = Decimal("0.000001")
+WINDOWS = (("short", 5), ("weekly", 168))
 
 
 def lock_account(user):
     get_user_model().objects.select_for_update().get(pk=user.pk)
 
 
-def policy_at(now):
-    policy = ProductionPolicy.objects.filter(effective_at__lte=now).order_by("-effective_at", "-pk").first()
-    if not policy or not policy.enabled or ProductionControl.objects.filter(pk=1, accepting=False).exists():
-        raise APIError("AI 制作暂未开放，请稍后重试", code=50301, status_code=503)
-    return policy
+def current_policy(now):
+    return ProductionPolicy.objects.filter(effective_at__lte=now).order_by("-effective_at", "-pk").first()
 
 
-def record(task, event, actor=None, reason=""):
-    ProductionLedger.objects.create(
-        task=task, reservation_id=task.reservation_id, event=event,
-        short_window=task.short_window, weekly_window=task.weekly_window,
-        actor=actor, reason=reason,
-    )
-
-
-def release(task, state, actor=None, reason=""):
-    for window in (task.short_window, task.weekly_window):
-        window.reserved -= 1
-        window.save(update_fields=["reserved"])
-    task.state = state
-    task.version += 1
-    task.save()
-    record(task, "release", actor, reason)
-
-
-def expire(user, now):
-    tasks = ProductionTask.objects.filter(
-        account=user, state__in=["reserved", "paused"], expires_at__lte=now,
-    ).select_related("short_window", "weekly_window")
-    # Refresh each window because multiple tasks may reference the same window.
-    for task in tasks:
-        task.short_window.refresh_from_db()
-        task.weekly_window.refresh_from_db()
-        release(task, "expired", reason="预占到期")
+def accepting(policy):
+    return bool(policy and policy.enabled and not ProductionControl.objects.filter(pk=1, accepting=False).exists())
 
 
 def windows(user, now, policy):
-    result = []
-    for kind, hours, limit in (("short", 5, policy.short_limit), ("weekly", 168, policy.weekly_limit)):
-        window = ProductionWindow.objects.filter(
-            account=user, kind=kind, starts_at__lte=now, ends_at__gt=now,
-        ).order_by("-starts_at").first()
-        if window is None:
-            window = ProductionWindow(
-                account=user, kind=kind, starts_at=now, ends_at=now + timedelta(hours=hours),
-                limit=limit, policy=policy,
-            )
-        result.append(window)
-    return result
+    return [
+        ProductionWindow.objects.filter(account=user, kind=kind, starts_at__lte=now, ends_at__gt=now)
+        .order_by("-starts_at", "-pk").first()
+        or ProductionWindow(account=user, kind=kind, starts_at=now, ends_at=now + timedelta(hours=hours),
+                            limit_points=getattr(policy, f"{kind}_limit_points"), policy=policy)
+        for kind, hours in WINDOWS
+    ]
 
 
-def reserve(user, now, policy):
-    selected = windows(user, now, policy)
-    blocked = [w for w in selected if w.limit <= w.used + w.reserved]
-    if blocked:
-        raise APIError(
-            "制作额度已用完，请查看恢复时间", code=42901, status_code=429,
-            details={"windows": [w.kind for w in blocked],
-                     "reset_at": max(w.ends_at for w in blocked).isoformat()},
-        )
-    for window in selected:
-        window.reserved += 1
-        window.save()
-    return selected
+def remaining(window):
+    return max(Decimal(0), window.limit_points - window.used_points)
 
 
-@transaction.atomic
-def quota(user):
-    lock_account(user)
+def quota(user, *, admin=False):
     now = timezone.now()
-    expire(user, now)
-    policy = ProductionPolicy.objects.filter(effective_at__lte=now).order_by("-effective_at", "-pk").first()
-    maintenance = not policy or not policy.enabled or ProductionControl.objects.filter(pk=1, accepting=False).exists()
-    if not policy:
-        return {"server_time": now.isoformat(), "policy_version": 0, "service_status": "unconfigured",
-                "can_start": False, "blocked_reasons": ["unconfigured"], "next_eligible_at": None, "windows": []}
-    selected = windows(user, now, policy)
-    blocked = [w for w in selected if w.limit <= w.used + w.reserved]
-    recoverable = blocked and all(w.pk and w.limit > 0 for w in blocked)
-    return {
-        "server_time": now.isoformat(), "policy_version": policy.pk,
-        "service_status": "maintenance" if maintenance else "available",
-        "can_start": not blocked and not maintenance,
-        "blocked_reasons": (["maintenance"] if maintenance else []) + [w.kind + "_limit" for w in blocked],
-        "next_eligible_at": max(w.ends_at for w in blocked).isoformat() if recoverable and not maintenance else None,
-        "windows": [
-            {"window_id": w.pk, "kind": w.kind, "limit": w.limit,
-             "used": w.used, "reserved": w.reserved,
-             "available": max(0, w.limit - w.used - w.reserved),
-             "status": "active" if w.pk else (
-                 "awaiting_first_use" if ProductionWindow.objects.filter(account=user, kind=w.kind).exists()
-                 else "not_started"),
-             "starts_at": w.starts_at.isoformat() if w.pk else None,
-             "reset_at": w.ends_at.isoformat() if w.pk else None,
-             "duration_seconds": 18000 if w.kind == "short" else 604800,
-             "policy_version": w.policy_id}
-            for w in selected
-        ],
-    }
+    policy = current_policy(now)
+    active = windows(user, now, policy) if policy else []
+    pending = ProductionCall.objects.filter(task__account=user, accounting_state="pending").exists()
+    items = []
+    for w in active:
+        status = "active" if w.pk else (
+            "awaiting_first_use" if ProductionWindow.objects.filter(account=user, kind=w.kind).exists() else "not_started"
+        )
+        item = dict(kind=w.kind, status=status, remaining_ratio=float(remaining(w) / w.limit_points) if w.limit_points else 0,
+                    starts_at=w.starts_at.isoformat() if w.pk else None, reset_at=w.ends_at.isoformat() if w.pk else None,
+                    duration_seconds=dict(WINDOWS)[w.kind] * 3600)
+        if admin:
+            item.update(limit_points=str(w.limit_points), used_points=str(w.used_points), remaining_points=str(remaining(w)))
+        items.append(item)
+    return dict(server_time=now.isoformat(), policy_version=policy.pk if policy else 0, windows=items,
+                pending_usage=pending, entitled=user.is_active,
+                service_status="available" if accepting(policy) else "maintenance" if policy else "unconfigured")
 
 
 @transaction.atomic
-def start(user, attempt_key, input_digest, client_capabilities=None, required_scenes=None):
+def start(user, attempt_key, input_digest, client_capabilities, required_scenes):
+    from ai_runtime.models import Binding
+    from ai_runtime.services import resolve
+
     lock_account(user)
     existing = ProductionTask.objects.filter(account=user, attempt_key=attempt_key).first()
     if existing:
-        if existing.input_digest != input_digest:
-            raise APIError("本次制作参数已改变，请重新开始", code=40901, status_code=409)
-        if client_capabilities is not None:
-            from ai_runtime.models import Binding
-            binding = Binding.objects.filter(task=existing).first()
-            if not binding or sorted(binding.required_scenes) != sorted(required_scenes or []):
-                raise APIError("任务配置参数已改变，请结束旧任务后重新制作", status_code=409)
+        binding = Binding.objects.filter(task=existing).first()
+        if existing.input_digest != input_digest or not binding or set(binding.required_scenes) != set(required_scenes):
+            raise APIError("制作请求内容已改变", status_code=409)
         return existing
-    from django.conf import settings
-    from ai_runtime.contracts import fail
-    runtime_release = None
-    if client_capabilities is not None:
-        from ai_runtime.services import resolve
-        runtime_release = resolve(client_capabilities, required_scenes)
-    elif required_scenes is not None or settings.AI_RUNTIME_REQUIRE_CAPABILITIES:
-        fail("UPGRADE_REQUIRED", "请更新客户端后开始制作", 426)
-    now = timezone.now()
-    expire(user, now)
-    if ProductionTask.objects.filter(account=user, created_at__gt=now - timedelta(hours=5)).count() >= 30:
-        raise APIError("制作尝试过于频繁，请稍后再试", code=42902, status_code=429)
-    policy = policy_at(now)
-    short, weekly = reserve(user, now, policy)
-    task = ProductionTask.objects.create(
-        account=user, attempt_key=attempt_key, input_digest=input_digest,
-        short_window=short, weekly_window=weekly,
-        expires_at=now + timedelta(hours=policy.hold_hours),
-    )
-    if runtime_release:
-        from ai_runtime.models import Binding
-        Binding.objects.create(task=task, release=runtime_release,
-                               required_scenes=required_scenes, capabilities=client_capabilities)
-    record(task, "reserve", user)
+
+    release = resolve(client_capabilities, required_scenes)
+    task = ProductionTask.objects.create(account=user, attempt_key=attempt_key, input_digest=input_digest)
+    Binding.objects.create(task=task, release=release, required_scenes=required_scenes, capabilities=client_capabilities)
+    return task
+
+
+def get_task(user, task_id):
+    task = ProductionTask.objects.filter(account=user, pk=task_id).first()
+    if not task:
+        raise APIError("制作任务不存在", status_code=404)
     return task
 
 
 @transaction.atomic
 def transition(user, task_id, action, version):
     lock_account(user)
-    task = ProductionTask.objects.filter(account=user, pk=task_id).select_related(
-        "short_window", "weekly_window",
-    ).first()
-    if task is None:
-        raise APIError("制作任务不存在", status_code=404)
-    # Idempotent terminal operations are safe even when the previous response was lost.
-    if action == "cancel" and task.state == "cancelled":
+    task = get_task(user, task_id)
+    states = {"resume": "ready", "pause": "paused", "cancel": "cancelled"}
+    target = states[action]
+    if task.state == target:
         return task
-    if task.version != version:
-        raise APIError("任务状态已更新，请刷新后继续", code=40902, status_code=409)
-    now = timezone.now()
-    if task.state in ("reserved", "paused") and task.expires_at <= now:
-        release(task, "expired", reason="预占到期")
-    if action == "cancel" and task.state in ("reserved", "paused"):
-        release(task, "cancelled", user, "用户结束制作")
-    elif action == "cancel" and task.state == "expired":
-        task.state = "cancelled"
-        task.version += 1
-        task.save()
-    elif action == "pause" and task.state == "reserved":
-        task.state = "paused"
-        task.expires_at = now + timedelta(hours=task.short_window.policy.hold_hours)
-        task.version += 1
-        task.save()
-    elif action == "resume" and task.state == "expired":
-        from ai_runtime.models import Binding
-        from ai_runtime.services import channel, enforce_control
-        binding = Binding.objects.filter(task=task).select_related("release").first()
-        if binding:
-            enforce_control(channel(lock=True), binding.release.snapshot, binding.required_scenes)
-        policy = policy_at(now)
-        short, weekly = reserve(user, now, policy)
-        task.short_window, task.weekly_window = short, weekly
-        task.reservation_id = uuid.uuid4()
-        task.state = "reserved"
-        task.expires_at = now + timedelta(hours=policy.hold_hours)
-        task.version += 1
-        task.save()
-        record(task, "reserve", user)
-    elif action == "resume" and task.state == "paused":
-        task.state = "reserved"
-        task.version += 1
-        task.save()
-    elif not (action == "resume" and task.state == "reserved") and not (
-        action == "pause" and task.state == "paused"
-    ):
-        raise APIError("当前任务不能执行此操作", code=40903, status_code=409)
+    if task.version != version or task.state not in ("ready", "paused"):
+        raise APIError("请刷新制作任务状态", status_code=409)
+    task.state = target
+    task.version += 1
+    task.save(update_fields=["state", "version", "updated_at"])
     return task
 
 
 @transaction.atomic
-def settle_verified_result(user, task_id, verified_result):
-    """Called by the trusted result-verification worker, never by a client claim."""
+def complete(user, task_id, result):
     lock_account(user)
-    task = ProductionTask.objects.select_related("short_window", "weekly_window").get(
-        account=user, pk=task_id,
-    )
-    if task.state == "completed":
-        if task.result != verified_result and (not verified_result.get("digest") or task.result.get("digest") != verified_result.get("digest")):
-            raise APIError("成果已结算", status_code=409)
+    task = get_task(user, task_id)
+    if task.state == "completed" and task.result == result:
         return task
-    if task.state not in ("reserved", "paused"):
-        raise APIError("任务已结束", status_code=409)
-    for window in (task.short_window, task.weekly_window):
-        window.reserved -= 1
-        window.used += 1
-        window.save(update_fields=["reserved", "used"])
+    if task.state not in ("ready", "paused") or not task.calls.exists():
+        raise APIError("当前制作无法记录成果", status_code=409)
     task.state = "completed"
-    task.result = verified_result
+    task.completed_at = timezone.now()
+    task.result = result
     task.version += 1
     task.save()
-    record(task, "settle", user)
     return task
+
+
+def points(rate, usage, parameters):
+    if rate["mode"] == "images":
+        count = usage.get("generated_images")
+        if count is None:
+            return None
+        return Decimal(rate["image_rates"][parameters["size"]]) * count
+
+    input_tokens = usage.get("input_tokens", 0 if rate["category"] == "image_ai" else None)
+    output_tokens = usage.get("output_tokens")
+    cached = usage.get("cached_input_tokens", 0)
+    if input_tokens is None or output_tokens is None or cached > input_tokens:
+        return None
+    return ((input_tokens - cached) * Decimal(rate["input_rate"]) + cached * Decimal(rate["cached_input_rate"])
+            + output_tokens * Decimal(rate["output_rate"])) / 1000
 
 
 @transaction.atomic
-def refund(actor, task_id, reason):
-    target = ProductionTask.objects.get(pk=task_id)
-    lock_account(target.account)
-    task = ProductionTask.objects.select_related("short_window", "weekly_window").get(pk=task_id)
-    if ProductionLedger.objects.filter(reservation_id=task.reservation_id, event="refund").exists():
-        return task
-    if task.state != "completed":
-        raise APIError("仅已结算任务可以退回次数", status_code=409)
-    for window in (task.short_window, task.weekly_window):
-        window.used -= 1
-        window.save(update_fields=["used"])
-    record(task, "refund", actor, reason)
-    return task
+def authorize(user, task_id, call_id, scene, input_digest, parameters):
+    from ai_runtime.models import Binding
+    from ai_runtime.services import channel, enforce_control
+
+    lock_account(user)
+    task = get_task(user, task_id)
+    existing = ProductionCall.objects.filter(pk=call_id).first()
+    if existing:
+        if (existing.task_id, existing.scene, existing.input_digest, existing.parameters) != (task.pk, scene, input_digest, parameters):
+            raise APIError("调用请求内容已改变", status_code=409)
+        return existing
+    now = timezone.now()
+    policy = current_policy(now)
+    ProductionControl.objects.select_for_update().get(pk=1)
+    if not user.is_active or not accepting(policy):
+        raise APIError("AI 制作暂不可用", status_code=503)
+    if task.state != "ready":
+        raise APIError("请先恢复制作任务", status_code=409)
+    if ProductionCall.objects.filter(task__account=user, created_at__gt=now - timedelta(minutes=1)).count() >= 30:
+        raise APIError("调用过于频繁，请稍后重试", status_code=429,
+                       details={"error_key": "RATE_LIMITED", "retry_after_seconds": 60})
+    binding = Binding.objects.select_related("release").filter(task=task).first()
+    if not binding or scene not in binding.required_scenes:
+        raise APIError("未授权的模型场景", status_code=403)
+    snapshot = binding.release.snapshot
+    enforce_control(channel(lock=True), snapshot, [scene])
+    config = snapshot["scenes"][scene]
+    model = config["model_id"]
+    category = "image_ai" if config["adapter_id"] == "ark_images_v1" else "text_ai"
+    rate = policy.rates.get(model)
+    if not rate or rate["category"] != category:
+        raise APIError("模型用量策略尚未配置", status_code=503, details={"error_key": "PRICING_UNCONFIGURED"})
+    expire_calls(user)
+    if ProductionCall.objects.filter(task__account=user, accounting_state="pending").exists():
+        raise APIError("当前账号有调用处理中", status_code=409, details={"error_key": "CALL_IN_PROGRESS"})
+    if category == "image_ai":
+        size = parameters.get("size")
+        if not isinstance(size, str):
+            raise APIError("图片规格无效")
+        if size not in rate["image_rates"] or size != config["parameters"].get("size", "2K"):
+            raise APIError("图片规格未配置")
+        budget = points(rate, {"generated_images": rate["max_images"]}, parameters) if rate["mode"] == "images" else token_budget(rate, rate["max_output_tokens"])
+    else:
+        limit = parameters.get("max_output_tokens")
+        configured_limit = config["parameters"].get("max_output_tokens")
+        if type(limit) is not int or not 1 <= limit <= rate["max_output_tokens"] or (configured_limit and limit != configured_limit):
+            raise APIError("最大输出 token 超出模型策略")
+        budget = token_budget(rate, limit)
+    budget = max(budget, Decimal(rate["minimum_charge"])).quantize(PRECISION, rounding=ROUND_CEILING)
+    selected = windows(user, now, policy)
+    blocked = [w for w in selected if not w.limit_points or remaining(w) < budget]
+    if blocked:
+        reset = max(w.ends_at for w in blocked).isoformat() if all(w.pk and w.limit_points >= budget for w in blocked) else None
+        raise APIError("制作额度不足", status_code=429, details={
+            "error_key": "QUOTA_INSUFFICIENT", "blocked_windows": [w.kind for w in blocked], "next_eligible_at": reset,
+        })
+    for window in selected:
+        if not window.pk:
+            window.save()
+    return ProductionCall.objects.create(
+        id=call_id, task=task, scene=scene, model=model, category=category, input_digest=input_digest,
+        parameters=parameters, policy=policy, rate=rate, budget=budget, short_window=selected[0],
+        weekly_window=selected[1], usage_due_at=now + timedelta(seconds=rate["usage_timeout_seconds"]),
+    )
+
+
+def token_budget(rate, output_limit):
+    input_rate = max(Decimal(rate["input_rate"]), Decimal(rate["cached_input_rate"]))
+    return (rate["max_input_tokens"] * input_rate + output_limit * Decimal(rate["output_rate"])) / 1000
+
+
+def get_call(user, task_id, call_id):
+    call = ProductionCall.objects.filter(task__account=user, task_id=task_id, pk=call_id).first()
+    if not call:
+        raise APIError("模型调用不存在", status_code=404, details={"error_key": "CALL_NOT_FOUND"})
+    return call
+
+
+def write_usage(call, event_id, usage, source, execution_state, provider_request_id="", reason=""):
+    fingerprint = digest([str(call.pk), usage, source, execution_state, provider_request_id, reason])
+    previous = ProductionLedger.objects.filter(event_id=event_id).first()
+    if previous:
+        if previous.payload_digest != fingerprint:
+            raise APIError("用量事件内容已改变", status_code=409)
+        return call
+    charge = points(call.rate, usage, call.parameters)
+    if charge is None:
+        if source != "estimated":
+            raise APIError("用量字段不完整")
+        charge = Decimal(call.rate["minimum_charge"])
+    if not charge and execution_state in ("failed", "cancelled"):
+        charge = Decimal(call.rate["minimum_charge"])
+    charge = charge.quantize(PRECISION, rounding=ROUND_HALF_UP)
+    delta = charge - call.charged_points
+    event = "charge" if call.accounting_state == "pending" else "measurement_adjustment"
+    ProductionWindow.objects.filter(pk__in=[call.short_window_id, call.weekly_window_id]).update(
+        used_points=F("used_points") + delta,
+    )
+    ProductionLedger.objects.create(call=call, event_id=event_id, payload_digest=fingerprint, event=event,
+                                    delta_points=delta, resulting_points=charge, usage_source=source, reason=reason)
+    call.accounting_state = "estimated" if source == "estimated" else "actual"
+    call.charged_points = charge
+    call.execution_state = execution_state
+    call.usage_source = source
+    call.usage = usage
+    call.provider_request_id = provider_request_id or call.provider_request_id
+    call.version += 1
+    call.save()
+    return call
+
+
+@transaction.atomic
+def report(user, task_id, call_id, event_id, execution_state, usage, provider_request_id):
+    lock_account(user)
+    call = get_call(user, task_id, call_id)
+    if provider_request_id and ProductionCall.objects.filter(
+        task__account=user, model=call.model, provider_request_id=provider_request_id,
+    ).exclude(pk=call.pk).exists():
+        raise APIError("供应商请求已记录", status_code=409)
+    if points(call.rate, usage, call.parameters) is None:
+        if call.accounting_state == "pending" and execution_state in ("failed", "cancelled"):
+            return write_usage(call, event_id, {}, "estimated", execution_state, provider_request_id, "调用未返回用量")
+        if call.accounting_state == "pending":
+            call.execution_state = execution_state
+            call.provider_request_id = provider_request_id
+            call.save(update_fields=["execution_state", "provider_request_id"])
+        return call
+    if call.accounting_state == "actual":
+        if call.usage_source == "admin_verified" or call.usage == usage:
+            return call
+        raise APIError("用量已入账", status_code=409)
+    return write_usage(call, event_id, usage, "client_reported", execution_state, provider_request_id)
+
+
+def expire_calls(user):
+    expired = ProductionCall.objects.filter(task__account=user, accounting_state="pending", usage_due_at__lte=timezone.now())
+    for call in expired:
+        write_usage(call, uuid.uuid4(), {}, "estimated", call.execution_state, reason="用量等待超时")
+
+
+@transaction.atomic
+def expire_account_calls(user):
+    lock_account(user)
+    expire_calls(user)
+
+
+@transaction.atomic
+def adjust(call_id, request_key, version, usage, reason):
+    target = ProductionCall.objects.select_related("task__account").filter(pk=call_id).first()
+    if not target:
+        raise APIError("模型调用不存在", status_code=404)
+    user = target.task.account
+    lock_account(user)
+    call = get_call(user, target.task_id, call_id)
+    if not ProductionLedger.objects.filter(event_id=request_key).exists() and call.version != version:
+        raise APIError("用量记录已更新，请刷新", status_code=409)
+    return write_usage(call, request_key, usage, "admin_verified", call.execution_state, reason=reason)
 
 
 @transaction.atomic
 def reset_quota(actor, user, request_key, scope, reason):
-    from .models import ProductionQuotaReset
-
     lock_account(user)
-    existing = ProductionQuotaReset.objects.filter(request_key=request_key).first()
-    if existing:
-        if (existing.account_id, existing.scope, existing.reason) != (user.pk, scope, reason):
-            raise APIError("重置请求内容已改变，请重新操作", status_code=409)
-        return existing
+    reset = ProductionQuotaReset.objects.filter(request_key=request_key).first()
+    if reset:
+        if (reset.account_id, reset.scope, reset.reason) != (user.pk, scope, reason):
+            raise APIError("重置请求内容已改变", status_code=409)
+        return reset
     now = timezone.now()
     kinds = ["short", "weekly"] if scope == "both" else [scope]
+    selected = ProductionWindow.objects.filter(account=user, kind__in=kinds, starts_at__lte=now, ends_at__gt=now)
     snapshots = []
-    active = ProductionWindow.objects.filter(
-        account=user, kind__in=kinds, starts_at__lte=now, ends_at__gt=now,
-    ).order_by("kind", "pk")
-    for window in active:
-        snapshots.append({
-            "id": window.pk, "kind": window.kind, "starts_at": window.starts_at.isoformat(),
-            "previous_ends_at": window.ends_at.isoformat(), "used": window.used,
-            "reserved": window.reserved, "limit": window.limit,
-        })
-        # Existing tasks retain these windows; completion/release remains on the original ledger.
-        window.ends_at = now
-        window.save(update_fields=["ends_at"])
-    return ProductionQuotaReset.objects.create(
-        account=user, request_key=request_key, scope=scope, reason=reason,
-        actor=actor, windows=snapshots,
-    )
+    for w in selected:
+        snapshots.append(dict(id=w.pk, kind=w.kind, used_points=str(w.used_points), reset_at=w.ends_at.isoformat()))
+        w.ends_at = now
+        w.save(update_fields=["ends_at"])
+    return ProductionQuotaReset.objects.create(account=user, actor=actor, request_key=request_key,
+                                                scope=scope, reason=reason, windows=snapshots)

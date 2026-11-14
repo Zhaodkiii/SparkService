@@ -419,6 +419,7 @@ CELERY_TASK_ROUTES = {
 }
 
 CELERY_BEAT_SCHEDULE = {
+    "expire-ai-production-usage": {"task": "ai_production.tasks.expire_usage", "schedule": 60.0},
     "support-center-cleanup": {"task": "support_center.tasks.cleanup_support_data", "schedule": 3600.0, "options": {"queue": "cleanup"}},
     "print-orders-reconcile-payments": {
         "task": "print_orders.tasks.reconcile_payments", "schedule": crontab(minute="*/1"),

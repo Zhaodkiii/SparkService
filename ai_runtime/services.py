@@ -146,13 +146,11 @@ def configuration(user, task_id, cap, request_id):
         fail('TASK_NOT_FOUND', '制作任务不存在', 404)
     if not user.is_active:
         fail('AI_DISABLED', '账号不可用', 403)
-    if task.expires_at <= timezone.now():
-        fail('TASK_EXPIRED', '制作预占已到期，请先恢复任务', 410)
-    if task.state != 'reserved':
+    if task.state != 'ready':
         fail('TASK_STATE_CONFLICT', '请先恢复制作任务')
     binding = Binding.objects.select_related('release').filter(task=task).first()
     if not binding:
-        fail('LEGACY_TASK', '旧任务未绑定配置，请保留作品并结束旧任务后重新制作')
+        fail('CONFIG_UNAVAILABLE', '制作任务未绑定配置，请重新制作')
     snap = binding.release.snapshot
     compatible(cap, snap, binding.required_scenes)
     ch = channel(lock=True)
@@ -167,5 +165,5 @@ def configuration(user, task_id, cap, request_id):
                             request_id=request_id, code='OK', credential_versions=versions)
     return {'schema_version': 1, 'task_id': str(task.pk), 'release_id': str(binding.release_id),
             'config_hash': binding.release.config_hash, 'control_version': ch.version,
-            'server_time': now.isoformat(), 'lease_expires_at': min(task.expires_at, now+timedelta(minutes=15)).isoformat(),
+            'server_time': now.isoformat(), 'lease_expires_at': (now + timedelta(minutes=15)).isoformat(),
             'scenes': scenes, 'credentials': secrets}

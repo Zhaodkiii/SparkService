@@ -180,12 +180,13 @@ def activity_anchor(owner, plan, book):
 
 def assess_faces(claims, owner, plan, now, book, *, bind=False):
     from .models import PrintPageBinding
-    from ai_production.models import ProductionLedger
+    from ai_production.models import ProductionTask
     claims = FaceClaim(many=True, max_length=5000, data=claims)
     claims.is_valid(raise_exception=True)
     rows = claims.validated_data
-    receipts = {ledger.task_id: ledger for ledger in ProductionLedger.objects.select_related('task').filter(
-        task_id__in={row['task'] for row in rows}, task__account=owner, task__state='completed', event='settle')}
+    receipts = ProductionTask.objects.filter(
+        account=owner, state='completed', completed_at__isnull=False,
+    ).in_bulk({row['task'] for row in rows})
     bindings = PrintPageBinding.objects.in_bulk(receipts)
     expected_anchor = [owner.pk, plan.pk, str(book), plan.starts_at.isoformat()]
     seen = set()
@@ -193,7 +194,7 @@ def assess_faces(claims, owner, plan, now, book, *, bind=False):
     for row in rows:
         receipt = receipts.get(row['task'])
         key = (row['page'], row['face'])
-        result = receipt.task.result if receipt else {}
+        result = receipt.result if receipt else {}
         try:
             anchored = signing.loads(row.get('save_anchor', ''), salt='print-ai-save') == expected_anchor
         except signing.BadSignature:
@@ -204,12 +205,12 @@ def assess_faces(claims, owner, plan, now, book, *, bind=False):
             reason = '制作凭据无法匹配'
         elif key in seen:
             reason = '内页重复'
-        elif receipt.created_at < plan.starts_at and not anchored:
+        elif receipt.completed_at < plan.starts_at and not anchored:
             reason = '制作凭据不在活动期间，待核实'
         elif now >= plan.ends_at:
             reason = '申报已截止'
         else:
-            # Settlement precedes publication. Receipt of this saved snapshot precedes the deadline.
+            # The recorded result precedes publication.
             reason = ''
             if bind:
                 binding, _ = PrintPageBinding.objects.get_or_create(task_id=row['task'], defaults={'book_id': book})

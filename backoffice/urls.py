@@ -1,5 +1,5 @@
 from ai_production.backoffice import ProductionUsersView, ProductionQuotaResetView
-from ai_production.backoffice import ProductionAdminView, ProductionRefundView, ProductionReleaseView, ProductionControlView
+from ai_production.backoffice import ProductionAdminView, ProductionCallsView, ProductionAdjustView, ProductionControlView, ProductionPricingPreviewView, ProductionAuditView
 from django.urls import include, path
 
 from backoffice.blacklist_views import (
@@ -49,9 +49,12 @@ urlpatterns = [
     path("ai-production/control/", ProductionControlView.as_view()),
     path("ai-production/users/<int:user_id>/reset/", ProductionQuotaResetView.as_view()),
     path("ai-production/users/", ProductionUsersView.as_view()),
+    path("ai-production/pricing/preview/", ProductionPricingPreviewView.as_view()),
+    path("ai-production/audit/", ProductionAuditView.as_view()),
+    path("ai-production/calls/", ProductionCallsView.as_view()),
+    path("ai-production/calls/<uuid:call_id>/", ProductionCallsView.as_view()),
+    path("ai-production/calls/<uuid:call_id>/adjustments/", ProductionAdjustView.as_view()),
     path("ai-production/", ProductionAdminView.as_view()),
-    path("ai-production/<uuid:task_id>/release/", ProductionReleaseView.as_view()),
-    path("ai-production/<uuid:task_id>/refund/", ProductionRefundView.as_view()),
     path("auth/login/", AdminAuthLoginView.as_view(), name="admin-auth-login"),
     path("auth/profile/", AdminAuthProfileView.as_view(), name="admin-auth-profile"),
     path("dashboard/overview/", AdminDashboardOverviewView.as_view(), name="admin-dashboard-overview"),
