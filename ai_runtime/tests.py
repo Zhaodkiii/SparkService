@@ -9,7 +9,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
 from common.exceptions import APIError
-from ai_production.models import ProductionPolicy, ProductionTask, ProductionWindow
+from ai_production.models import ProductionControl, ProductionPolicy, ProductionTask, ProductionWindow
 from ai_production.services import start, transition, complete, authorize
 from . import models as m, services as s
 from .contracts import digest, endpoint
@@ -35,7 +35,8 @@ class RuntimeTests(TestCase):
         self.model = m.Model.objects.create(provider=self.provider, name='layout', model_id='model-a',
             adapter_id='ark_responses_v1', endpoint='https://ark.cn-beijing.volces.com/api/v3/responses',
             capabilities=['vision', 'tools', 'stream'])
-        self.ch = m.Channel.objects.get(pk=1)
+        ProductionControl.objects.get_or_create(pk=1)
+        self.ch, _ = m.Channel.objects.get_or_create(pk=1)
         self.ch.draft = {'minimum_build': 1, 'scenes': {'diary.layout': {
             'model': str(self.model.pk), 'credential_slot': str(self.slot.pk), 'parameters': {}, 'timeout_seconds': 180}}}
         self.ch.save()
@@ -186,7 +187,7 @@ class RuntimeTests(TestCase):
         authorize(self.user, task.pk, uuid.uuid4(), 'diary.layout', 'b' * 64, {'max_output_tokens': 4096})
         complete(self.user, task.pk, {'digest': 'b' * 64})
         complete(self.user, task.pk, {'digest': 'b' * 64})
-        self.assertEqual(list(ProductionWindow.objects.values_list('used_points', flat=True)), [0, 0])
+        self.assertEqual(list(ProductionWindow.objects.values_list('used_points', flat=True)), [0])
         with self.assertRaises(APIError):
             self.config(task)
 
@@ -209,7 +210,40 @@ class RuntimeTests(TestCase):
             'usage': {'input_tokens': 500, 'output_tokens': 500},
         }, format='json')
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual([w['remaining_ratio'] for w in response.data['data']['quota']['windows']], [0.9, 0.9])
+        self.assertEqual([w['remaining_ratio'] for w in response.data['data']['quota']['windows']], [0.9])
+
+    def test_pro_authorization_binds_both_windows_and_downgrade_keeps_weekly_balance(self):
+        from django.conf import settings
+        from billing.models import BillingIdentity, MembershipSnapshot
+        from ai_production.services import quota, report
+
+        now = timezone.now()
+        identity = BillingIdentity.objects.create(account=self.user, rc_project_id=settings.REVENUECAT_PROJECT_ID,
+                                                  wallet_domain="production")
+        membership = MembershipSnapshot.objects.create(identity=identity, verified_at=now, needs_sync=False)
+        policy = ProductionPolicy.objects.get()
+        policy.free_weekly_limit_points = 6
+        policy.weekly_limit_points = 20
+        policy.save()
+        task = self.make()
+        params = {"max_output_tokens": 4096}
+        free = authorize(self.user, task.pk, uuid.uuid4(), "diary.layout", "b" * 64, params)
+        self.assertIsNone(free.short_window_id)
+        report(self.user, task.pk, free.pk, uuid.uuid4(), "completed", {"input_tokens": 500, "output_tokens": 500}, "")
+        membership.active_until = now + timedelta(hours=1)
+        membership.save(update_fields=["active_until"])
+        pro = authorize(self.user, task.pk, uuid.uuid4(), "diary.layout", "b" * 64, params)
+        self.assertEqual(pro.plan_at_authorization, "pro")
+        self.assertIsNotNone(pro.short_window_id)
+        self.assertEqual(pro.weekly_window_id, free.weekly_window_id)
+        membership.active_until = now - timedelta(seconds=1)
+        membership.save(update_fields=["active_until"])
+        report(self.user, task.pk, pro.pk, uuid.uuid4(), "failed", {"input_tokens": 500, "output_tokens": 500}, "")
+        self.assertEqual(ProductionWindow.objects.get(pk=pro.short_window_id).used_points, 1)
+        after = quota(self.user, admin=True)
+        self.assertEqual(after["plan"], "free")
+        self.assertEqual([w["kind"] for w in after["windows"]], ["weekly"])
+        self.assertEqual(float(after["windows"][0]["remaining_points"]), 4)
 
     @override_settings(AI_RUNTIME_TEST_DOH_FALLBACK=False)
     def test_probe_rejects_private_dns_before_connection(self):

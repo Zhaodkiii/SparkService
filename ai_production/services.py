@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from common.exceptions import APIError
 from ai_runtime.contracts import digest
+from .entitlements import entitlement, identity_for_account
 from .models import (
     ProductionCall, ProductionControl, ProductionLedger, ProductionPolicy, ProductionQuotaReset,
     ProductionTask, ProductionWindow,
@@ -30,37 +31,54 @@ def accepting(policy):
     return bool(policy and policy.enabled and not ProductionControl.objects.filter(pk=1, accepting=False).exists())
 
 
-def windows(user, now, policy):
-    return [
-        ProductionWindow.objects.filter(account=user, kind=kind, starts_at__lte=now, ends_at__gt=now)
-        .order_by("-starts_at", "-pk").first()
-        or ProductionWindow(account=user, kind=kind, starts_at=now, ends_at=now + timedelta(hours=hours),
-                            limit_points=getattr(policy, f"{kind}_limit_points"), policy=policy)
-        for kind, hours in WINDOWS
-    ]
+def limit_for(policy, kind, plan):
+    if kind == "short":
+        return policy.short_limit_points
+    return policy.weekly_limit_points if plan == "pro" else policy.free_weekly_limit_points
 
 
-def remaining(window):
-    return max(Decimal(0), window.limit_points - window.used_points)
+def windows(user, now, policy, plan):
+    selected = {}
+    for kind, hours in WINDOWS:
+        if kind == "short" and plan != "pro":
+            continue
+        window = (ProductionWindow.objects.filter(account=user, kind=kind, starts_at__lte=now, ends_at__gt=now)
+                  .select_related("policy").order_by("-starts_at", "-pk").first())
+        if window is None:
+            window = ProductionWindow(account=user, kind=kind, starts_at=now, ends_at=now + timedelta(hours=hours),
+                                      limit_points=limit_for(policy, kind, plan), policy=policy)
+        selected[kind] = window
+    return selected
 
 
-def quota(user, *, admin=False):
-    now = timezone.now()
+def remaining(window, limit):
+    return max(Decimal(0), limit - window.used_points)
+
+
+def quota(user, *, admin=False, identity=None, now=None):
+    now = now or timezone.now()
     policy = current_policy(now)
-    active = windows(user, now, policy) if policy else []
+    identity = identity if identity is not None else identity_for_account(user)
+    plan, membership = entitlement(identity, now)
+    active = windows(user, now, policy, plan) if policy and plan else {}
     pending = ProductionCall.objects.filter(task__account=user, accounting_state="pending").exists()
     items = []
-    for w in active:
+    for w in active.values():
+        limit = limit_for(w.policy, w.kind, plan)
+        balance = remaining(w, limit)
         status = "active" if w.pk else (
             "awaiting_first_use" if ProductionWindow.objects.filter(account=user, kind=w.kind).exists() else "not_started"
         )
-        item = dict(kind=w.kind, status=status, remaining_ratio=float(remaining(w) / w.limit_points) if w.limit_points else 0,
+        item = dict(kind=w.kind, status=status, remaining_ratio=float(balance / limit) if limit else 0,
                     starts_at=w.starts_at.isoformat() if w.pk else None, reset_at=w.ends_at.isoformat() if w.pk else None,
-                    duration_seconds=dict(WINDOWS)[w.kind] * 3600)
+                    duration_seconds=dict(WINDOWS)[w.kind] * 3600, window_policy_version=w.policy_id)
         if admin:
-            item.update(limit_points=str(w.limit_points), used_points=str(w.used_points), remaining_points=str(remaining(w)))
+            item.update(limit_points=str(limit), used_points=str(w.used_points), remaining_points=str(balance))
         items.append(item)
     return dict(server_time=now.isoformat(), policy_version=policy.pk if policy else 0, windows=items,
+                plan=plan, entitlement_state="verified" if plan else "unavailable",
+                membership_expires_at=membership.active_until if membership else None,
+                membership_verified_at=membership.verified_at if membership else None,
                 pending_usage=pending, entitled=user.is_active,
                 service_status="available" if accepting(policy) else "maintenance" if policy else "unconfigured")
 
@@ -140,7 +158,7 @@ def points(rate, usage, parameters):
 
 
 @transaction.atomic
-def authorize(user, task_id, call_id, scene, input_digest, parameters):
+def authorize(user, task_id, call_id, scene, input_digest, parameters, *, identity=None):
     from ai_runtime.models import Binding
     from ai_runtime.services import channel, enforce_control
 
@@ -152,8 +170,8 @@ def authorize(user, task_id, call_id, scene, input_digest, parameters):
             raise APIError("调用请求内容已改变", status_code=409)
         return existing
     now = timezone.now()
-    policy = current_policy(now)
     ProductionControl.objects.select_for_update().get(pk=1)
+    policy = current_policy(timezone.now())
     if not user.is_active or not accepting(policy):
         raise APIError("AI 制作暂不可用", status_code=503)
     if task.state != "ready":
@@ -181,29 +199,51 @@ def authorize(user, task_id, call_id, scene, input_digest, parameters):
             raise APIError("图片规格无效")
         if size not in rate["image_rates"] or size != config["parameters"].get("size", "2K"):
             raise APIError("图片规格未配置")
-        budget = points(rate, {"generated_images": rate["max_images"]}, parameters) if rate["mode"] == "images" else token_budget(rate, rate["max_output_tokens"])
     else:
         limit = parameters.get("max_output_tokens")
         configured_limit = config["parameters"].get("max_output_tokens")
         if type(limit) is not int or not 1 <= limit <= rate["max_output_tokens"] or (configured_limit and limit != configured_limit):
             raise APIError("最大输出 token 超出模型策略")
-        budget = token_budget(rate, limit)
-    budget = max(budget, Decimal(rate["minimum_charge"])).quantize(PRECISION, rounding=ROUND_CEILING)
-    selected = windows(user, now, policy)
-    blocked = [w for w in selected if not w.limit_points or remaining(w) < budget]
+    budget = call_budget(rate, parameters)
+    identity = identity if identity is not None else identity_for_account(user)
+    plan, membership = entitlement(identity, lock=True)
+    if not plan:
+        raise APIError("会员状态暂时无法确认，请重试", status_code=503,
+                       details={"error_key": "MEMBERSHIP_UNAVAILABLE"})
+    now = timezone.now()
+    selected = windows(user, now, policy, plan)
+    blocked = [w for w in selected.values() if remaining(w, limit_for(w.policy, w.kind, plan)) < budget]
     if blocked:
-        reset = max(w.ends_at for w in blocked).isoformat() if all(w.pk and w.limit_points >= budget for w in blocked) else None
+        if any(limit_for(w.policy, w.kind, plan) < budget and limit_for(policy, w.kind, plan) < budget
+               for w in blocked):
+            raise APIError("单次调用所需额度超过周期上限，请调整请求", status_code=422,
+                           details={"error_key": "CALL_BUDGET_EXCEEDS_LIMIT"})
+        reset = max(w.ends_at for w in blocked).isoformat() if all(
+            w.pk and limit_for(policy, w.kind, plan) >= budget for w in blocked) else None
         raise APIError("制作额度不足", status_code=429, details={
-            "error_key": "QUOTA_INSUFFICIENT", "blocked_windows": [w.kind for w in blocked], "next_eligible_at": reset,
+            "error_key": "QUOTA_INSUFFICIENT", "plan": plan, "blocked_windows": [w.kind for w in blocked],
+            "next_eligible_at": reset,
         })
-    for window in selected:
+    for window in selected.values():
         if not window.pk:
             window.save()
     return ProductionCall.objects.create(
         id=call_id, task=task, scene=scene, model=model, category=category, input_digest=input_digest,
-        parameters=parameters, policy=policy, rate=rate, budget=budget, short_window=selected[0],
-        weekly_window=selected[1], usage_due_at=now + timedelta(seconds=rate["usage_timeout_seconds"]),
+        parameters=parameters, policy=policy, rate=rate, budget=budget, short_window=selected.get("short"),
+        plan_at_authorization=plan, membership_verified_at=membership.verified_at if membership else None,
+        weekly_window=selected["weekly"], usage_due_at=now + timedelta(seconds=rate["usage_timeout_seconds"]),
     )
+
+
+def call_budget(rate, parameters):
+    if rate["mode"] == "images":
+        budget = points(rate, {"generated_images": rate["max_images"]}, {"size": parameters.get("size", "2K")})
+    else:
+        output_limit = rate["max_output_tokens"]
+        if rate["category"] == "text_ai":
+            output_limit = parameters.get("max_output_tokens") or output_limit
+        budget = token_budget(rate, output_limit)
+    return max(budget, Decimal(rate["minimum_charge"])).quantize(PRECISION, rounding=ROUND_CEILING)
 
 
 def token_budget(rate, output_limit):
@@ -300,7 +340,7 @@ def adjust(call_id, request_key, version, usage, reason):
 
 
 @transaction.atomic
-def reset_quota(actor, user, request_key, scope, reason):
+def reset_quota(actor, user, request_key, scope, reason, expected_plan=None):
     lock_account(user)
     reset = ProductionQuotaReset.objects.filter(request_key=request_key).first()
     if reset:
@@ -308,12 +348,19 @@ def reset_quota(actor, user, request_key, scope, reason):
             raise APIError("重置请求内容已改变", status_code=409)
         return reset
     now = timezone.now()
+    plan, _ = entitlement(identity_for_account(user), lock=True)
+    if not plan or (expected_plan and plan != expected_plan) or (plan == "free" and scope != "weekly"):
+        raise APIError("会员等级或可重置周期已变化，请刷新", status_code=409)
+    expire_calls(user)
+    if ProductionCall.objects.filter(task__account=user, accounting_state="pending").exists():
+        raise APIError("有调用待记账，请稍后重试", status_code=409)
     kinds = ["short", "weekly"] if scope == "both" else [scope]
     selected = ProductionWindow.objects.filter(account=user, kind__in=kinds, starts_at__lte=now, ends_at__gt=now)
     snapshots = []
     for w in selected:
-        snapshots.append(dict(id=w.pk, kind=w.kind, used_points=str(w.used_points), reset_at=w.ends_at.isoformat()))
+        snapshots.append(dict(id=w.pk, kind=w.kind, used_points=str(w.used_points), limit_points=str(limit_for(w.policy, w.kind, plan)),
+                              policy_version=w.policy_id, reset_at=w.ends_at.isoformat()))
         w.ends_at = now
         w.save(update_fields=["ends_at"])
     return ProductionQuotaReset.objects.create(account=user, actor=actor, request_key=request_key,
-                                                scope=scope, reason=reason, windows=snapshots)
+                                                scope=scope, reason=reason, windows=snapshots, plan=plan)

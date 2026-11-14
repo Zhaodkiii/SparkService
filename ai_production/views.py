@@ -2,9 +2,11 @@ from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from billing.identity import BillingError, identity_for
 from common.response import success_response
 from common.exceptions import APIError
 from . import services
+from .entitlements import prepare_identity
 from .models import ProductionTask
 
 
@@ -35,7 +37,11 @@ class QuotaView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return success_response(services.quota(request.user))
+        identity = prepare_identity(request)
+        services.expire_account_calls(request.user)
+        response = success_response(services.quota(request.user, identity=identity))
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class TaskListView(APIView):
@@ -128,7 +134,9 @@ class CallListView(APIView):
     def post(self, request, task_id):
         data = CallInput(data=request.data)
         data.is_valid(raise_exception=True)
-        return success_response(call_payload(services.authorize(request.user, task_id, **data.validated_data)))
+        identity = prepare_identity(request)
+        services.expire_account_calls(request.user)
+        return success_response(call_payload(services.authorize(request.user, task_id, identity=identity, **data.validated_data)))
 
 
 class CallDetailView(APIView):
@@ -146,4 +154,9 @@ class CallUsageView(APIView):
         data = ReportInput(data=request.data)
         data.is_valid(raise_exception=True)
         call = services.report(request.user, task_id, call_id, **data.validated_data)
-        return success_response({**call_payload(call), "quota": services.quota(request.user)})
+        try:
+            identity = identity_for(request) if request.headers.get("X-Billing-Session") else None
+        except BillingError:
+            # Usage still belongs to the authorized call, even after its billing session expires.
+            return success_response(call_payload(call))
+        return success_response({**call_payload(call), "quota": services.quota(request.user, identity=identity)})

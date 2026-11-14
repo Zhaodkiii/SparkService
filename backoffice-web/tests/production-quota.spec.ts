@@ -10,14 +10,14 @@ const original=http.defaults.adapter;
 afterEach(()=>{wrapper?.unmount();http.defaults.adapter=original;document.body.innerHTML='';});
 it('shows the published quota and separates per-user reset from policy time',async()=>{
  http.defaults.adapter=async config=>({config,status:200,statusText:'OK',headers:{},data:{
- current_policy:{id:1,name:'开发验收策略',short_limit_points:'25',weekly_limit_points:'100',rates:{},enabled:true},
+ current_policy:{id:1,name:'开发验收策略',free_weekly_limit_points:'10',short_limit_points:'25',weekly_limit_points:'100',rates:{},enabled:true},
  policies:[],tasks:[],ledger:[],account_quota:null,pagination:{total:0,page:1,page_size:25},
  service_control:{accepting:true,version:1,reason:''}}});
  wrapper=mount(View,{attachTo:document.body,global:{plugins:[Antd]}});
  await flushPromises();
  expect(wrapper.text()).toContain('开发验收策略');
  expect(wrapper.text()).toContain('AI 制作用量');
- expect(wrapper.text()).toContain('5 小时积分');
+ expect(wrapper.text()).toContain('Pro · 5 小时');
  const button=wrapper.findAll('button').find(b=>b.text()==='新建策略');
  await button!.trigger('click');await flushPromises();
  expect(document.body.textContent).toContain('预览发布');

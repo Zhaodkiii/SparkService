@@ -69,7 +69,8 @@ def status(identity, force=False):
     synced = refresh(identity, force=force)
     row = MembershipSnapshot.objects.filter(identity=identity).first()
     now = timezone.now()
-    fresh = bool(row and row.verified_at and row.verified_at >= now-timedelta(hours=1))
+    from ai_production.services import accepting, current_policy
+    production_policy = current_policy(now)
     active = is_active(row, identity, now)
     return dict(active=active, expires_at=row.active_until if row else None,
                 verified_at=row.verified_at if row else None, sync_state='fresh' if synced else 'stale',
@@ -78,6 +79,7 @@ def status(identity, force=False):
                 period_ends_at=row.period_ends_at if row else None,
                 product_id=row.product_id if row else '', wallet_domain=identity.wallet_domain,
                 sales_enabled=enabled('MEMBERSHIP_SALES_ENABLED', identity),
+                ai_production_included=bool(accepting(production_policy) and production_policy.rates),
                 member_content_count=ContentOffer.objects.filter(state='active', current_policy_revision__access_mode__in=['pro_only','pro_or_diamond']).count())
 
 

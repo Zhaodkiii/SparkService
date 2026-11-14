@@ -43,12 +43,21 @@ class ModelRateInput(serializers.Serializer):
 class PolicyInput(serializers.ModelSerializer):
     rates = serializers.DictField(child=ModelRateInput(), allow_empty=False)
     publish_key = serializers.UUIDField()
+    free_weekly_limit_points = serializers.DecimalField(max_digits=24, decimal_places=6, min_value=Decimal("0.000001"))
     short_limit_points = serializers.DecimalField(max_digits=24, decimal_places=6, min_value=Decimal("0.000001"))
     weekly_limit_points = serializers.DecimalField(max_digits=24, decimal_places=6, min_value=Decimal("0.000001"))
 
     class Meta:
         model = ProductionPolicy
-        fields = ("id", "publish_key", "name", "effective_at", "short_limit_points", "weekly_limit_points", "rates", "enabled", "reason")
+        fields = ("id", "publish_key", "name", "effective_at", "free_weekly_limit_points", "short_limit_points", "weekly_limit_points", "rates", "enabled", "reason")
+
+    def validate(self, values):
+        free = values["free_weekly_limit_points"]
+        short = values["short_limit_points"]
+        weekly = values["weekly_limit_points"]
+        if not free <= short <= weekly or free >= weekly:
+            raise serializers.ValidationError("积分上限须满足：免费 7 天 ≤ Pro 5 小时 ≤ Pro 7 天，且 Pro 7 天大于免费 7 天")
+        return values
 
     def validate_rates(self, rates):
         result = {}
@@ -73,7 +82,8 @@ def admin_call(call):
     return {**call_payload(call), "account": call.task.account_id, "task_id": str(call.task_id),
             "category": call.category, "scene": call.scene, "model": call.model,
             "points": str(call.charged_points), "source": call.usage_source,
-            "created_at": call.created_at, "version": call.version}
+            "created_at": call.created_at, "version": call.version,
+            "plan_at_authorization": call.plan_at_authorization, "policy_version": call.policy_id}
 
 
 class ProductionAdminView(APIView):
@@ -107,13 +117,25 @@ class ProductionAdminView(APIView):
         from ai_runtime.models import Channel
         channel = Channel.objects.select_related("current").filter(pk=1).first()
         if values.get("enabled", True) and channel and channel.current:
+            from .services import call_budget
             missing = set()
-            for scene in channel.current.snapshot["scenes"].values():
+            too_large = []
+            for name, scene in channel.current.snapshot["scenes"].items():
                 model = scene["model_id"]
                 category = "image_ai" if scene["adapter_id"] == "ark_images_v1" else "text_ai"
                 rate = values["rates"].get(model)
                 if not rate or rate["category"] != category:
                     missing.add(model)
+                    continue
+                params = scene["parameters"]
+                if category == "image_ai" and params.get("size", "2K") not in rate["image_rates"]:
+                    raise serializers.ValidationError({"rates": f"{name} 的图片尺寸未配置费率"})
+                if category == "text_ai" and params.get("max_output_tokens", 0) > rate["max_output_tokens"]:
+                    raise serializers.ValidationError({"rates": f"{name} 的输出 token 超出费率配置"})
+                if call_budget(rate, params) > values["free_weekly_limit_points"]:
+                    too_large.append(name)
+            if too_large:
+                raise serializers.ValidationError({"free_weekly_limit_points": "以下场景预算超过免费额度：" + "、".join(too_large)})
             if missing:
                 raise serializers.ValidationError({"rates": "请配置已发布场景的模型费率：" + "、".join(sorted(missing))})
         policy = data.save()
@@ -219,11 +241,13 @@ class ProductionUsersView(APIView):
     def get(self, request):
         from django.db.models import Q
         from .services import quota
+        from .entitlements import filter_accounts
 
         class Query(serializers.Serializer):
             page = serializers.IntegerField(min_value=1, default=1)
             page_size = serializers.IntegerField(min_value=1, max_value=100, default=25)
             q = serializers.CharField(required=False, allow_blank=True, max_length=100)
+            plan = serializers.ChoiceField(choices=["free", "pro", "unavailable"], required=False)
 
         query = Query(data=request.query_params)
         query.is_valid(raise_exception=True)
@@ -236,14 +260,19 @@ class ProductionUsersView(APIView):
             if term.isdigit():
                 match |= Q(pk=int(term))
             users = users.filter(match)
+        now = timezone.now()
+        if values.get("plan"):
+            users = filter_accounts(users, values["plan"], now)
         paginator = Paginator(users, values["page_size"])
         page = paginator.get_page(values["page"])
         items = []
         for user in page:
-            snapshot = quota(user, admin=True)
+            snapshot = quota(user, admin=True, now=now)
             items.append({
                 "id": user.pk, "username": user.get_username(),
                 "windows": snapshot["windows"], "pending_usage": snapshot["pending_usage"],
+                "plan": snapshot["plan"], "membership_expires_at": snapshot["membership_expires_at"],
+                "membership_verified_at": snapshot["membership_verified_at"],
             })
         return success_response({
             "items": items,
@@ -264,6 +293,7 @@ class ProductionQuotaResetView(APIView):
         class Input(serializers.Serializer):
             request_key = serializers.UUIDField()
             scope = serializers.ChoiceField(choices=["short", "weekly", "both"])
+            expected_plan = serializers.ChoiceField(choices=["free", "pro"])
             reason = serializers.CharField(max_length=500, trim_whitespace=True)
         data = Input(data=request.data)
         data.is_valid(raise_exception=True)
@@ -274,7 +304,7 @@ class ProductionQuotaResetView(APIView):
         write_audit_log(request, action="production.quota.reset", resource_type="production_quota_reset",
                         resource_id=str(reset.pk),
                         response_payload={"account": user_id, "scope": reset.scope,
-                                          "windows": reset.windows})
+                                          "windows": reset.windows, "plan": reset.plan})
         return success_response({"reset_id": reset.pk, "quota": quota(user, admin=True)})
 
 

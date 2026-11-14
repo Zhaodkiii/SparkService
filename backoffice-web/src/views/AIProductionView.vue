@@ -17,12 +17,12 @@ type Rate = {
   max_output_tokens: number; max_images: number; usage_timeout_seconds: number;
 };
 type Policy = {
-  id: number; name: string; short_limit_points: string; weekly_limit_points: string;
+  id: number; name: string; free_weekly_limit_points: string; short_limit_points: string; weekly_limit_points: string;
   effective_at: string; enabled: boolean; rates: Record<string, Rate>;
 };
 type Control = { accepting: boolean; version: number };
-type Window = { kind: string; remaining_points: string; used_points: string; limit_points: string; remaining_ratio: number; reset_at: string | null };
-type User = { id: number; username: string; windows: Window[]; pending_usage: boolean };
+type Window = { kind: string; window_policy_version: number; remaining_points: string; used_points: string; limit_points: string; remaining_ratio: number; reset_at: string | null };
+type User = { id: number; username: string; plan: "free" | "pro" | null; membership_expires_at: string | null; membership_verified_at: string | null; windows: Window[]; pending_usage: boolean };
 type Call = {
   call_id: string; account: number; task_id: string; model: string; category: string;
   accounting_state: string; execution_state: string; points: string; source: string;
@@ -40,6 +40,8 @@ const audit = ref<Record<string, unknown>[]>([]);
 const total = ref(0);
 const page = ref(1);
 const q = ref('');
+const planFilter = ref<string>();
+const planName = (plan: User['plan']) => plan === 'pro' ? 'Pro' : plan === 'free' ? '免费' : '待同步';
 const account = ref(String(route.query.account || ''));
 const category = ref<string>();
 const model = ref('');
@@ -60,7 +62,7 @@ async function load() {
   try {
     const params = { page: page.value, page_size: 25 };
     if (tab.value === 'users') {
-      const data = await http.get<unknown, Page<User>>(base + 'users/', { params: { ...params, q: q.value } });
+      const data = await http.get<unknown, Page<User>>(base + 'users/', { params: { ...params, q: q.value, plan: planFilter.value } });
       if (stamp === sequence) { users.value = data.items; total.value = data.pagination.total; }
     } else if (tab.value === 'calls' || tab.value === 'corrections') {
       const data = await http.get<unknown, Page<Call>>(base + 'calls/', {
@@ -91,7 +93,7 @@ watch(tab, () => {
 }, { immediate: true });
 
 const settingsOpen = ref(false);
-const draft = ref({ name: '', short_limit_points: '', weekly_limit_points: '', effective_at: '', enabled: true, reason: '' });
+const draft = ref({ name: '', free_weekly_limit_points: '', short_limit_points: '', weekly_limit_points: '', effective_at: '', enabled: true, reason: '' });
 const draftRates = ref<(Rate & { model: string; sizes: string })[]>([]);
 const publishKey = ref('');
 const publishPreview = ref(false);
@@ -102,8 +104,8 @@ function addRate() {
 }
 function editSettings() {
   const current = overview.value?.current_policy;
-  draft.value = { name: '', short_limit_points: current?.short_limit_points ?? '',
-    weekly_limit_points: current?.weekly_limit_points ?? '', effective_at: '', enabled: true, reason: '' };
+  draft.value = { name: '', free_weekly_limit_points: current?.free_weekly_limit_points ?? '10',
+    short_limit_points: current?.short_limit_points ?? '30', weekly_limit_points: current?.weekly_limit_points ?? '100', effective_at: '', enabled: true, reason: '' };
   draftRates.value = Object.entries(current?.rates ?? {}).map(([key, rate]) => ({
     ...rate, model: key, sizes: Object.entries(rate.image_rates).map(([size, price]) => size + '=' + price).join(', '),
   }));
@@ -160,13 +162,13 @@ const reason = ref('');
 const key = ref('');
 const controlOpen = ref(false);
 function openReset(user: User) {
-  resetTarget.value = user; resetScope.value = 'both'; reason.value = ''; key.value = crypto.randomUUID();
+  resetTarget.value = user; resetScope.value = user.plan === 'pro' ? 'both' : 'weekly'; reason.value = ''; key.value = crypto.randomUUID();
 }
 async function reset() {
   const user = resetTarget.value;
   if (!user) return;
   await mutate(async () => {
-    await http.post(base + 'users/' + user.id + '/reset/', { scope: resetScope.value, reason: reason.value, request_key: key.value });
+    await http.post(base + 'users/' + user.id + '/reset/', { scope: resetScope.value, expected_plan: user.plan, reason: reason.value, request_key: key.value });
     resetTarget.value = undefined; message.success('额度已重置'); await load();
   });
 }
@@ -225,7 +227,7 @@ const callColumns = [{ title: '调用时间', key: 'created_at' }, { title: '账
   { title: '模型', dataIndex: 'model' }, { title: '类型', key: 'category' }, { title: '执行', key: 'execution_state' },
   { title: '记账', key: 'accounting_state' }, { title: '积分', dataIndex: 'points' }, { title: '来源', key: 'source' },
   { title: '操作', key: 'actions' }];
-const userColumns = [{ title: '账号', dataIndex: 'username' }, { title: '5 小时', key: 'short' },
+const userColumns = [{ title: '账号', dataIndex: 'username' }, { title: '会员', key: 'plan' }, { title: '5 小时', key: 'short' },
   { title: '7 天', key: 'weekly' }, { title: '状态', key: 'state' }, { title: '操作', key: 'actions' }];
 const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作者', dataIndex: 'operator' },
   { title: '动作', dataIndex: 'action' }, { title: '记录', dataIndex: 'resource_id' }];
@@ -257,7 +259,7 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
         <p>生效策略 {{ overview?.current_policy?.name ?? '尚未配置' }}</p>
         <a-table :data-source="overview?.policies ?? []" row-key="id" :pagination="false"
           :columns="[{title:'版本',dataIndex:'id'},{title:'名称',dataIndex:'name'},
-            {title:'5 小时积分',dataIndex:'short_limit_points'},{title:'7 天积分',dataIndex:'weekly_limit_points'},
+            {title:'免费 · 7 天',dataIndex:'free_weekly_limit_points'},{title:'Pro · 5 小时',dataIndex:'short_limit_points'},{title:'Pro · 7 天',dataIndex:'weekly_limit_points'},
             {title:'生效时间',key:'time'}]">
           <template #bodyCell="{ column, record }"><span v-if="column.key === 'time'">{{ time(record.effective_at) }}</span></template>
         </a-table>
@@ -274,11 +276,23 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
     </a-card>
 
     <template v-if="tab === 'users'">
-      <a-input-search v-model:value="q" placeholder="账号 ID 或用户名" class="search" @search="search" />
+      <a-space wrap class="filters">
+        <a-input-search v-model:value="q" placeholder="账号 ID 或用户名" @search="search" />
+        <a-select v-model:value="planFilter" allow-clear placeholder="全部会员等级" style="width: 150px" @change="search">
+          <a-select-option value="free">免费</a-select-option>
+          <a-select-option value="pro">Pro</a-select-option>
+          <a-select-option value="unavailable">待同步</a-select-option>
+        </a-select>
+      </a-space>
       <a-table :columns="userColumns" :data-source="users" :loading="loading" row-key="id" :pagination="false"
         :locale="{ emptyText: q.trim() ? '未找到有额度消耗记录的账号' : '暂无额度消耗记录' }">
         <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'plan'">
+            <div>{{ planName(record.plan) }}</div>
+            <small v-if="record.plan === 'pro' && record.membership_expires_at">{{ time(record.membership_expires_at) }}</small>
+          </template>
           <template v-if="column.key === 'short' || column.key === 'weekly'">
+            <span v-if="!record.windows.some((w: Window) => w.kind === column.key)">—</span>
             <div v-for="window in record.windows.filter((w: Window) => w.kind === column.key)" :key="window.kind">
               {{ window.remaining_points }} / {{ window.limit_points }} 积分 · {{ (window.remaining_ratio * 100).toFixed(1) }}%
               <div>{{ time(window.reset_at) }}</div>
@@ -287,7 +301,7 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
           <span v-if="column.key === 'state'">{{ record.pending_usage ? '用量更新中' : '—' }}</span>
           <a-space v-if="column.key === 'actions'">
             <a-button type="link" @click="userDetail = record">详情</a-button>
-            <a-button v-if="can('reset')" type="link" @click="openReset(record)">重置额度</a-button>
+            <a-button v-if="can('reset')" :disabled="!record.plan || record.pending_usage" type="link" @click="openReset(record)">重置额度</a-button>
           </a-space>
         </template>
       </a-table>
@@ -332,8 +346,9 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
       <a-form layout="vertical">
         <a-form-item label="策略名称"><a-input v-model:value="draft.name" /></a-form-item>
         <a-space wrap>
-          <a-form-item label="5 小时积分上限"><a-input v-model:value="draft.short_limit_points" /></a-form-item>
-          <a-form-item label="7 天积分上限"><a-input v-model:value="draft.weekly_limit_points" /></a-form-item>
+          <a-form-item label="免费 · 7 天积分上限"><a-input v-model:value="draft.free_weekly_limit_points" /></a-form-item>
+          <a-form-item label="Pro · 5 小时积分上限"><a-input v-model:value="draft.short_limit_points" /></a-form-item>
+          <a-form-item label="Pro · 7 天积分上限"><a-input v-model:value="draft.weekly_limit_points" /></a-form-item>
           <a-form-item label="生效时间（可选）"><input v-model="draft.effective_at" type="datetime-local"></a-form-item>
           <a-form-item label="启用"><a-switch v-model:checked="draft.enabled" /></a-form-item>
         </a-space>
@@ -385,21 +400,25 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
       </a-form>
     </a-drawer>
     <a-modal v-model:open="publishPreview" title="发布额度策略" :confirm-loading="busy" @ok="publish">
-      <p>{{ draft.name }} · 5 小时 {{ draft.short_limit_points }} 积分 · 7 天 {{ draft.weekly_limit_points }} 积分</p>
+      <p>额度上限从新周期生效。</p>
+      <p v-if="overview?.current_policy">当前额度：免费 7 天 {{ overview.current_policy.free_weekly_limit_points }}、Pro 5 小时 {{ overview.current_policy.short_limit_points }}、Pro 7 天 {{ overview.current_policy.weekly_limit_points }} 积分</p>
+      <p>{{ draft.name }} · 免费 7 天 {{ draft.free_weekly_limit_points }} 积分 · Pro 5 小时 {{ draft.short_limit_points }} 积分、7 天 {{ draft.weekly_limit_points }} 积分</p>
       <p>模型 {{ draftRates.map(rate => rate.model).join('、') }}</p>
     </a-modal>
 
     <a-drawer :open="!!userDetail" title="用户额度" @close="userDetail = undefined">
       <template v-if="userDetail">
-        <p>{{ userDetail.username }} · {{ userDetail.id }}</p>
-        <p v-for="window in userDetail.windows" :key="window.kind">{{ period(window.kind) }} · 已用 {{ window.used_points }} · 剩余 {{ window.remaining_points }} 积分</p>
+        <p>{{ userDetail.username }} · {{ userDetail.id }} · {{ planName(userDetail.plan) }}</p>
+        <p v-if="userDetail.membership_verified_at">会员验证时间 {{ time(userDetail.membership_verified_at) }}</p>
+        <p v-for="window in userDetail.windows" :key="window.kind">{{ period(window.kind) }} · 已用 {{ window.used_points }} / {{ window.limit_points }} 积分 · 剩余 {{ (window.remaining_ratio * 100).toFixed(1) }}% · 策略 v{{ window.window_policy_version }} · {{ time(window.reset_at) }}</p>
         <a-button @click="account = String(userDetail.id); userDetail = undefined; tab = 'calls'">查看调用记录</a-button>
       </template>
     </a-drawer>
     <a-modal :open="!!resetTarget" title="重置额度" :confirm-loading="busy" :ok-button-props="{ disabled: !reason.trim() }"
       @cancel="resetTarget = undefined" @ok="reset">
-      <p>{{ resetTarget?.username }} · 下次调用开始新周期</p>
-      <a-radio-group v-model:value="resetScope" :options="[{label:'5 小时',value:'short'},{label:'7 天',value:'weekly'},{label:'两者',value:'both'}]" />
+      <p v-if="resetTarget">{{ resetTarget.username }} · {{ planName(resetTarget.plan) }} · 下次调用开始新周期</p>
+      <p v-for="window in resetTarget?.windows" :key="window.kind">{{ period(window.kind) }}剩余 {{ window.remaining_points }} / {{ window.limit_points }} 积分</p>
+      <a-radio-group v-model:value="resetScope" :options="resetTarget?.plan === 'pro' ? [{label:'5 小时',value:'short'},{label:'7 天',value:'weekly'},{label:'两者',value:'both'}] : [{label:'7 天',value:'weekly'}]" />
       <a-textarea v-model:value="reason" placeholder="操作原因" />
     </a-modal>
     <a-modal v-model:open="controlOpen" :title="overview?.service_control.accepting ? '暂停新调用' : '恢复新调用'"
