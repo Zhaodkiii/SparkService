@@ -90,3 +90,8 @@ def process_event(pk):
     project(event)
     from print_orders.campaigns import annual_gift
     annual_gift(identity,data)
+
+@shared_task
+def deliver_development_webhooks():
+    from .routing import deliver_pending
+    deliver_pending()

@@ -33,7 +33,10 @@ def bootstrap(user,jws):
     if not user.social_identities.exclude(provider='device').exists():
         raise BillingError('FORMAL_ACCOUNT_REQUIRED','请先绑定正式账号',403)
     domain = verify_environment(jws)
-    identity,_ = BillingIdentity.objects.get_or_create(account=user,rc_project_id=settings.REVENUECAT_PROJECT_ID,wallet_domain=domain)
+    from .routing import new_identity_id
+    if settings.BILLING_DEPLOYMENT == 'development' and domain != 'sandbox':
+        raise BillingError('DEVELOPMENT_SANDBOX_REQUIRED', '本地测试服务仅支持沙盒购买', 403)
+    identity,_ = BillingIdentity.objects.get_or_create(account=user,rc_project_id=settings.REVENUECAT_PROJECT_ID,wallet_domain=domain, defaults={'rc_app_user_id': new_identity_id()})
     if identity.state != 'active': raise BillingError('WALLET_UNDER_REVIEW','钱包正在核验')
     WalletGate.objects.get_or_create(identity=identity)
     WalletSnapshot.objects.get_or_create(identity=identity)

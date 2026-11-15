@@ -25,3 +25,5 @@ urlpatterns += [path('manage/sales-settings/',SalesSettings.as_view())]
 
 from .batch_pricing import BatchPricing
 urlpatterns += [path('manage/batch-pricing/<str:action>/', BatchPricing.as_view())]
+
+urlpatterns += [path('relay-webhook/', v.RelayWebhook.as_view())]

@@ -707,3 +707,12 @@ AI_RUNTIME_REQUIRE_CAPABILITIES = os.getenv("AI_RUNTIME_REQUIRE_CAPABILITIES", "
 AI_RUNTIME_TEST_DOH_FALLBACK = os.getenv("AI_RUNTIME_TEST_DOH_FALLBACK", "false").lower() == "true"
 
 CELERY_BEAT_SCHEDULE['invitation-recovery'] = {'task': 'public_experience.tasks.process_invitation_rewards', 'schedule': 30.0}
+
+# Backend deployment and Apple sandbox are separate dimensions.
+BILLING_DEPLOYMENT = os.getenv('BILLING_DEPLOYMENT', 'production')
+if BILLING_DEPLOYMENT not in ('production', 'development'):
+    raise ValueError('Invalid BILLING_DEPLOYMENT')
+BILLING_DEV_RELAY_URL = os.getenv('BILLING_DEV_RELAY_URL', '')
+BILLING_RELAY_TOKEN = os.getenv('BILLING_RELAY_TOKEN', '')
+
+CELERY_BEAT_SCHEDULE['billing-dev-delivery'] = {'task': 'billing.tasks.deliver_development_webhooks', 'schedule': 30.0}

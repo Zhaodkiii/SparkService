@@ -43,6 +43,7 @@ def prepare(candidate, previous=None):
             raise ValueError('同步凭证标识与生产记录不同，请使用新的 KEY_ID 轮换凭证')
         keys[key] = {'environment': source, 'secret': secret}
     values = {
+        'BILLING_DEPLOYMENT': 'production',
         'MATERIAL_SYNC_ENVIRONMENT_ID': 'production',
         'MATERIAL_SYNC_SOURCE_ENABLED': 'false',
         'MATERIAL_SYNC_RECEIVER_ENABLED': 'true',

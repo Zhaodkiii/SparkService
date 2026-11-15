@@ -9,7 +9,8 @@ SECURE_SSL_REDIRECT = False
 SECRET_KEY = 'traveldiary-tests-only-key-never-use-for-deployment'
 SIMPLE_JWT = {**SIMPLE_JWT, 'SIGNING_KEY': SECRET_KEY}
 DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}}
-MIGRATION_MODULES = {name.rsplit('.', 1)[-1]: None for name in INSTALLED_APPS}
+from django.apps import AppConfig
+MIGRATION_MODULES = {AppConfig.create(name).label: None for name in INSTALLED_APPS}
 CELERY_BROKER_URL = 'memory://'
 CELERY_RESULT_BACKEND = 'cache+memory://'
 EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'

@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 class UUIDRecord(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -269,3 +270,11 @@ class SalesControl(models.Model):
     revision = models.PositiveIntegerField(default=0)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
     updated_at = models.DateTimeField(auto_now=True)
+
+class WebhookDelivery(models.Model):
+    """Durable, idempotent delivery to the development backend."""
+    event = models.OneToOneField(CurrencyEvent, on_delete=models.PROTECT)
+    attempts = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    delivered_at = models.DateTimeField(null=True)
+    last_status = models.PositiveIntegerField(default=0)

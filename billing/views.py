@@ -19,7 +19,7 @@ class AuthView(APIView):
 class Bootstrap(AuthView):
     def post(self,request):
         session=bootstrap(request.user,request.data.get('signed_app_transaction'))
-        return Response(dict(session_id=str(session.pk),rc_app_user_id=str(session.identity.rc_app_user_id),wallet_domain=session.identity.wallet_domain,public_key=settings.REVENUECAT_PUBLIC_KEY,expires_at=session.expires_at,flags=client_flags(session.identity)))
+        return Response(dict(session_id=str(session.pk),rc_app_user_id=str(session.identity.rc_app_user_id),wallet_domain=session.identity.wallet_domain,deployment=settings.BILLING_DEPLOYMENT,public_key=settings.REVENUECAT_PUBLIC_KEY,expires_at=session.expires_at,flags=client_flags(session.identity)))
 
 class Wallet(AuthView):
     def get(self,request): return Response(services.wallet(identity_for(request),refresh=True))
@@ -88,9 +88,8 @@ class Webhook(APIView):
         if getattr(self,'sandbox_only',False) and event.get('purchase_environment',event.get('environment'))!='SANDBOX':
             return Response(status=403)
         # Persist authenticated events before processing, including unknown identities.
-        obj,_=CurrencyEvent.objects.get_or_create(event_id=settings.REVENUECAT_PROJECT_ID+':'+event['id'],defaults={'payload':event})
-        from .tasks import process_event
-        process_event(obj.pk)
+        from .routing import ingest
+        ingest(event)
         return Response({'received':True})
 
 class ContentAccess(AuthView):
@@ -144,3 +143,21 @@ class Membership(AuthView):
     def post(self, request):
         from .membership import status
         return Response(status(identity_for(request), force=True))
+
+class RelayWebhook(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    def post(self, request):
+        expected = settings.BILLING_RELAY_TOKEN
+        if settings.BILLING_DEPLOYMENT != 'development' or not expected or not hmac.compare_digest(request.headers.get('Authorization', ''), expected):
+            return Response(status=403)
+        event = request.data.get('event') if isinstance(request.data, dict) else None
+        if not isinstance(event, dict) or not isinstance(event.get('id'), str) or not 1 <= len(event['id']) <= 150:
+            return Response(status=400)
+        if event.get('app_id') != settings.REVENUECAT_APP_ID:
+            return Response(status=403)
+        if event.get('type') != 'TRANSFER' and event.get('purchase_environment', event.get('environment')) != 'SANDBOX':
+            return Response(status=403)
+        from .routing import ingest
+        accepted = ingest(event, relay=True)
+        return Response({'received': accepted}, status=200 if accepted else 409)
