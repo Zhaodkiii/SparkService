@@ -10,7 +10,7 @@
 </a-tabs>
 <p>当前展示最近 100 个活动、200 位参与者及 200 条奖励；参与人数为实际 App 验证账号数。</p>
 <a-drawer v-model:open="open" title="新建邀请活动" width="min(560px,100vw)">
-<a-alert v-if="error" :message="error" type="error"/><a-form layout="vertical" @finish="save">
+<a-alert v-if="error" :message="error" type="error"/><a-form :model="form" layout="vertical" @finish="save">
 <a-form-item label="活动名称"><a-input v-model:value="form.title" required/></a-form-item>
 <a-form-item label="开始时间"><input v-model="starts" type="datetime-local" required/></a-form-item><a-form-item label="结束时间"><input v-model="ends" type="datetime-local" required/></a-form-item>
 <a-form-item label="App Store 官方产品链接"><a-input v-model:value="form.download_url" placeholder="https://apps.apple.com/…/id…" required/></a-form-item>
