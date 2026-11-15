@@ -52,7 +52,10 @@ if [[ ! -f "$STAGE/candidate.env" ]]; then
   cp "$BASE/.deploy.env" "$STAGE/candidate.env"
 fi
 # 目标已由 RELEASE_TARGET_IP 和 SSH guard 校验；在候选副本合并生产已有接收凭证。
-python3 "$STAGE/server/bin/prepare_production_env.py" "$STAGE/candidate.env" "$BASE/.deploy.env"
+JWT_ARGS=()
+[[ ! -f "$STAGE/production.jwt" ]] || JWT_ARGS=("$STAGE/production.jwt")
+python3 "$STAGE/server/bin/prepare_production_env.py" "$STAGE/candidate.env" "$BASE/.deploy.env" "${JWT_ARGS[@]}"
+rm -f "$STAGE/production.jwt"
 chmod 600 "$STAGE/candidate.env"
 export DEPLOY_ENV_PATH="$STAGE/candidate.env"
 export SPARK_BACKEND_IMAGE="localhost/traveldiary-backend:$RELEASE_ID"

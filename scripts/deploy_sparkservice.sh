@@ -19,6 +19,8 @@ REMOTE_BASE="${REMOTE_BASE:-/root/2026}"
 # 保持历史行为：本地 .env 默认参与发布；候选副本按已校验生产目标转换同步身份。
 DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-$SRC_DIR/.env}"
 SYNC_DEPLOY_ENV="${SYNC_DEPLOY_ENV:-1}"
+# Explicit one-off production rotation; normal releases preserve the server key.
+DEPLOY_JWT_KEY_FILE="${DEPLOY_JWT_KEY_FILE:-}"
 BUILD_FRONTEND_LOCAL="${BUILD_FRONTEND_LOCAL:-1}"
 USE_RSYNC="${USE_RSYNC:-1}"
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}"
@@ -80,6 +82,12 @@ if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
 fi
 [[ "$MODE" != --preflight ]] || { echo '本地预检通过，未连接服务器。'; exit 0; }
 
+if [[ -n "$DEPLOY_JWT_KEY_FILE" ]]; then
+  [[ -s "$DEPLOY_JWT_KEY_FILE" ]] || { echo '生产 JWT 密钥文件不存在。' >&2; exit 2; }
+  cp "$DEPLOY_JWT_KEY_FILE" "$LOCAL_STAGE/production.jwt"
+  chmod 600 "$LOCAL_STAGE/production.jwt"
+fi
+
 PHASE=frontend-build
 if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
   (cd "$FRONTEND_DIR" && pnpm install --frozen-lockfile && VITE_API_BASE_URL="$VITE_API_BASE_URL" pnpm build)
@@ -129,6 +137,10 @@ if [[ "$SYNC_DEPLOY_ENV" == 1 ]]; then
 fi
 if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
   rsync -az -e "ssh ${SSH_OPTIONS[*]}" "$FRONTEND_DIR/dist/" "$REMOTE_HOST:$REMOTE_STAGE/frontend/"
+fi
+
+if [[ -f "$LOCAL_STAGE/production.jwt" ]]; then
+  scp "${SSH_OPTIONS[@]}" "$LOCAL_STAGE/production.jwt" "$REMOTE_HOST:$REMOTE_STAGE/production.jwt"
 fi
 
 PHASE=remote-release

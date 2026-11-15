@@ -19,8 +19,30 @@ def read_sync(path):
     return values
 
 
-def prepare(candidate, previous=None):
+def jwt_assignment(previous, key_file=None):
+    if key_file:
+        key = Path(key_file).read_text().strip()
+        if len(key) < 32 or not all(c.isalnum() or c in '-_' for c in key):
+            raise ValueError('Invalid production JWT key file')
+        return 'JWT_SIGNING_KEY=' + key
+    if previous and Path(previous).exists():
+        assignments = {}
+        for line in Path(previous).read_text().splitlines():
+            name, sep, raw = line.strip().removeprefix('export ').partition('=')
+            if sep and name.strip() in ('JWT_SIGNING_KEY', 'DJANGO_SECRET_KEY'):
+                assignments[name.strip()] = raw
+        raw = assignments.get('JWT_SIGNING_KEY', assignments.get('DJANGO_SECRET_KEY'))
+        if raw is None or not shlex.split(raw, comments=True):
+            raise ValueError('Production JWT key missing; explicit initialization required')
+        return 'JWT_SIGNING_KEY=' + raw
+    if previous:
+        raise ValueError('Production JWT key missing; explicit initialization required')
+    return None
+
+
+def prepare(candidate, previous=None, key_file=None):
     path = Path(candidate)
+    jwt_line = jwt_assignment(previous, key_file)
     incoming = read_sync(candidate)
     existing = read_sync(previous)
     keys = {}
@@ -53,8 +75,9 @@ def prepare(candidate, previous=None):
         'MATERIAL_SYNC_TARGET_BASE_URL': '',
     }
     lines = [line for line in path.read_text().splitlines()
-             if line.strip().removeprefix('export ').partition('=')[0].strip() not in values
+             if line.strip().removeprefix('export ').partition('=')[0].strip() not in {*values, 'JWT_SIGNING_KEY'}
              and line != '# 发布目标决定生产同步身份；本地原始 .env 保持不变。']
+    if jwt_line: lines.append(jwt_line)
     temporary = path.with_name(path.name + '.production-next')
     temporary.write_text('\n'.join(lines) + '\n# 发布目标决定生产同步身份；本地原始 .env 保持不变。\n' +
                          '\n'.join(k + '=' + v for k, v in values.items()) + '\n')
