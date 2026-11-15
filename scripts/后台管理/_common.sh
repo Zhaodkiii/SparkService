@@ -9,6 +9,8 @@ export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${BACKEND_PORT:-2026}"
 export FRONTEND_HOST="${FRONTEND_HOST:-localhost}"
 export FRONTEND_PORT="${FRONTEND_PORT:-6018}"
+export PUBLIC_WEB_HOST="${PUBLIC_WEB_HOST:-0.0.0.0}"
+export PUBLIC_WEB_PORT="${PUBLIC_WEB_PORT:-6028}"
 START_FRONTEND=1
 START_ASYNC=1
 CHECK_ONLY=0
@@ -21,7 +23,7 @@ parse_options() {
       --check) CHECK_ONLY=1 ;;
       --help|-h)
         echo "用法: $0 [--no-frontend] [--no-async] [--check]"
-        echo "默认启动 API、管理后台、Celery Worker、Beat 与启用的手帐资源处理 Worker，并按需启动本机 Redis。数据库需预先运行。"
+        echo "默认启动 API、管理后台、分享 Web、Celery Worker、Beat 与启用的手帐资源处理 Worker，并按需启动本机 Redis。数据库需预先运行。"
         echo "--check 仅检查环境、数据库迁移状态与 Redis，不启动服务。"
         exit 0 ;;
       *) echo "未知参数: $1" >&2; exit 2 ;;
@@ -38,6 +40,9 @@ require_prereqs() {
     command -v node >/dev/null || { echo "请先安装 Node.js" >&2; exit 1; }
     [[ -f "$SPARK_ROOT/backoffice-web/node_modules/vite/bin/vite.js" ]] || {
       echo "请先在 backoffice-web 执行 pnpm install --frozen-lockfile" >&2; exit 1;
+    }
+    [[ -f "$SPARK_ROOT/public-web/node_modules/vite/bin/vite.js" ]] || {
+      echo "请先在 public-web 执行 npm ci" >&2; exit 1;
     }
   fi
   (cd "$SPARK_ROOT" && "$VENV_PYTHON" manage.py check && "$VENV_PYTHON" manage.py migrate --check) || {
@@ -58,10 +63,14 @@ start_all() {
     runtime start celery_beat
     runtime start preset_processor
   fi
-  if [[ "$START_FRONTEND" == 1 ]]; then runtime start frontend; fi
+  if [[ "$START_FRONTEND" == 1 ]]; then
+    runtime start frontend
+    runtime start public_web
+  fi
 }
 
 stop_all() {
+  runtime stop public_web
   runtime stop frontend
   runtime stop preset_processor
   runtime stop celery_beat
@@ -73,5 +82,6 @@ print_status() {
   runtime status
   echo "API: http://${BACKEND_HOST}:${BACKEND_PORT}/"
   echo "管理后台: http://${FRONTEND_HOST}:${FRONTEND_PORT}/"
+  echo "分享 Web: http://localhost:${PUBLIC_WEB_PORT}/"
   echo "日志: $SPARK_ROOT/logs/<服务名>.stdout.log / .stderr.log"
 }

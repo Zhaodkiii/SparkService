@@ -9,3 +9,6 @@ urlpatterns += [
     path('books/<uuid:pk>/<int:number>/pages/<str:page_id>/projection/', books.projection),
 ]
 urlpatterns += [path('books/<uuid:pk>/<int:number>/pages/<str:page_id>/slots/', books.slots)]
+
+from .invitation_api import Landing
+urlpatterns += [path('invitations/<uuid:token>/',Landing.as_view())]

@@ -19,6 +19,7 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: '/diary-customizations/packages', name: 'CustomizationPackages', component: () => import('../views/CustomizationPackagesView.vue'), meta: { title: '数字定制套餐', requiredPermission: 'billing.publish_pricing' } },
       { path: '/diary-customizations', name: 'DiaryCustomizations', component: () => import('../views/CustomizationRequestsView.vue'), meta: { title: '专属定制', requiredPermission: 'diary_presets.change_template' } },
       { path: '/print-payments', name: 'PrintPayments', component: () => import('../views/PrintPaymentsView.vue'), meta: { title: '支付管理', paymentAccess: true } },
+      { path: '/growth/invitations', component: () => import('../views/InvitationConsole.vue'), meta: {title:'分享邀请与奖励',requiredPermission:'public_experience.view_invitationcampaign'} },
       { path: '/print-campaigns/participants', component: () => import('../views/PrintCampaignParticipants.vue'), meta: {title:'参与用户',requiredPermission:'print_orders.change_printcampaign'} },
       { path: '/print-campaigns/configure', component: () => import('../views/PrintCampaignEditor.vue'), meta: {title:'活动配置',requiredPermission:'print_orders.change_printcampaign'} },
       { path: '/print-campaigns', component: () => import('../views/PrintCampaignConsole.vue'), meta: {title:'实体书优惠活动',requiredPermission:'print_orders.change_printcampaign'} },

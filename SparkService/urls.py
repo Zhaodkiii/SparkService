@@ -33,6 +33,8 @@ from diary_presets.resource_queue import Processor as ResourceProcessor
 
 
 urlpatterns = [
+    path("api/v1/experience/", include("public_experience.app_urls")),
+    path("api/admin/v1/experience/", include("public_experience.admin_urls")),
     path("api/admin/v1/content-sync/", include("backoffice.content_sync_urls")),
     path("api/v1/preset-sync/", include("diary_presets.sync_urls")),
     path("api/v1/font-sync/", include("font_library.sync_urls")),

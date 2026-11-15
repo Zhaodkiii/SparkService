@@ -1,5 +1,4 @@
 import {createApp} from 'vue'
-import BookApp from './BookApp.vue'
-import './book.css'
-import './reader.css'
-createApp(BookApp).mount('#app')
+import PublicApp from './PublicApp.vue'
+import router from './router'
+createApp(PublicApp).use(router).mount('#app')

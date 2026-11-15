@@ -16,7 +16,7 @@ Back up MySQL first; run `python manage.py migrate billing` then `python manage.
 
 The worker executes `billing.tasks.process_pending` every 30 seconds through Beat. `python manage.py process_billing_operations` is available for an explicit recovery sweep. All provider HTTP occurs outside database transactions. Operation rows retain request hashes, fixed idempotency keys and fencing leases.
 
-The normal webhook is `/api/v1/billing/revenuecat/webhook/`. The dedicated sandbox endpoint is `/api/v1/billing/sandbox-webhook/`, which rejects production events. Both require an exact authorization header. The Nginx snippet in `deployment/billing/sandbox-webhook.nginx` forwards only the sandbox endpoint to the existing local FRP tunnel.
+The normal webhook is `/api/v1/billing/revenuecat/webhook/`. The dedicated sandbox endpoint is `/api/v1/billing/sandbox-webhook/`, which rejects production events. Both require an exact authorization header. Both endpoints must terminate at the online SparkService (`127.0.0.1:12026`) on `https://diary.dreamwhale.top`; sandbox callbacks must never be forwarded to the local FRP tunnel. Apple-signed purchase environment still separates sandbox and production identities and reporting. The optional Nginx snippet in `deployment/billing/sandbox-webhook.nginx` preserves the sandbox-only endpoint and uses the online upstream. See `docs/billing/unified-online-routing.md` for deployment verification and existing-purchase recovery.
 
 ## Administration
 

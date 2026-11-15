@@ -105,6 +105,10 @@ class BindIdentityView(APIView):
             authorization_code=data.get("authorization_code", ""),
             user_identifier=data.get("user_identifier", ""),
         )
+        from public_experience.signals import record_identity_events
+        from django.conf import settings
+        if data["bundle_id"] == settings.BILLING_BUNDLE_ID:
+            record_identity_events(request.user)
         return success_response(result, msg="bound", code=0, status_code=status.HTTP_200_OK)
 
 

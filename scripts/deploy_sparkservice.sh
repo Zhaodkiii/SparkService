@@ -86,6 +86,13 @@ if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
   [[ -s "$FRONTEND_DIR/dist/index.html" ]] || { echo '后台构建未生成 index.html。' >&2; exit 2; }
 fi
 
+# Public invitation SPA is versioned and rolled back with the admin artifact.
+if [[ "$BUILD_FRONTEND_LOCAL" == 1 ]]; then
+  (cd "$SRC_DIR/public-web" && npm ci && npm run build)
+  mkdir -p "$FRONTEND_DIR/dist/public"
+  cp -R "$SRC_DIR/public-web/dist/." "$FRONTEND_DIR/dist/public/"
+fi
+
 PHASE=package
 RELEASE_ID="$(date +%Y%m%d_%H%M%S)_$$_${RANDOM}"
 PKG_NAME=sparkservice.tgz

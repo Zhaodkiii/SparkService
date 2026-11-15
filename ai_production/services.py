@@ -340,7 +340,7 @@ def adjust(call_id, request_key, version, usage, reason):
 
 
 @transaction.atomic
-def reset_quota(actor, user, request_key, scope, reason, expected_plan=None):
+def reset_quota(actor, user, request_key, scope, reason, expected_plan=None, identity=None):
     lock_account(user)
     reset = ProductionQuotaReset.objects.filter(request_key=request_key).first()
     if reset:
@@ -348,7 +348,7 @@ def reset_quota(actor, user, request_key, scope, reason, expected_plan=None):
             raise APIError("重置请求内容已改变", status_code=409)
         return reset
     now = timezone.now()
-    plan, _ = entitlement(identity_for_account(user), lock=True)
+    plan, _ = entitlement(identity if identity is not None else identity_for_account(user), lock=True)
     if not plan or (expected_plan and plan != expected_plan) or (plan == "free" and scope != "weekly"):
         raise APIError("会员等级或可重置周期已变化，请刷新", status_code=409)
     expire_calls(user)

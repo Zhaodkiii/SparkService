@@ -34,7 +34,7 @@
         <aside>
           <a-card title="投放预览">
             <h3>{{ form.title || '活动标题' }}</h3>
-            <p>{{ form.source==='pages' ? '完成画布后在作品预览展示。20 页半价，40 页免费档。' : '在指定年费套餐旁展示首次付费赠礼。' }}</p>
+            <p>{{ form.source==='pages' ? '完成画布后在作品预览展示。20 页半价，40 页免费档。' : form.source==='invitation' ? '在邀请有礼中配置5人半价、10人免费里程碑。' : '在指定年费套餐旁展示首次付费赠礼。' }}</p>
             <p v-if="form.product===unrestricted">适用于所有已开放印制规格，按所选规格计算抵扣。</p>
             <p>每券最高减 {{ money(Math.round(cap*100)) }} · 运费另计</p>
             <p v-if="form.quota">最高承诺 {{ form.quota }} × {{ money(Math.round(cap*100)) }} = {{ money(Math.round(cap*100)*form.quota) }}</p>
@@ -58,7 +58,7 @@
     </a-spin>
     <a-modal v-model:open="confirm" title="确认投放" ok-text="确认发布" :confirm-loading="busy" @ok="publish">
       <h3>{{ form.title }}</h3>
-      <p>{{ form.source==='pages' ? '制作达标用户 · 20 页半价，40 页免费档' : '指定年费首购用户 · '+form.annual_product_id }}</p>
+      <p>{{ form.source==='pages' ? '制作达标用户 · 20 页半价，40 页免费档' : form.source==='invitation' ? '通过邀请活动确认的好友人数达标用户' : '指定年费首购用户 · '+form.annual_product_id }}</p>
       <p>{{ start.replace('T',' ') }} 至 {{ end.replace('T',' ') }}（北京时间）</p>
       <p v-if="sample">最高承诺 {{ money(sample.maximum) }} · {{ (sample.quotes || [sample]).map(q=>q.product+' 样单实付 '+q.samples.map(s=>money(s.payable)).join(' / ')).join('；') }}</p>
     </a-modal>
@@ -74,7 +74,7 @@ import http from '../api/http';
 
 const url='/api/admin/v1/print/campaigns/';
 const route=useRoute(), router=useRouter();
-const types=[{value:'pages',label:'制作达标赠券'},{value:'annual',label:'年费开通赠券'}];
+const types=[{value:'pages',label:'制作达标赠券'},{value:'annual',label:'年费开通赠券'},{value:'invitation',label:'邀请好友赠券'}];
 const unrestricted='all';
 const defaults={title:'',source:'pages',product:'',annual_product_id:'',annual_percent:100,included_pages:20,quota:null as number|null,valid_days:30};
 const form=reactive({...defaults});

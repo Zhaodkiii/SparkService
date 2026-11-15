@@ -14,3 +14,6 @@ urlpatterns = [
     path("tasks/<production_uuid:task_id>/", TaskDetailView.as_view()),
     path("tasks/<production_uuid:task_id>/<str:action>/", TaskActionView.as_view()),
 ]
+
+from .reset_cards import ResetCardView
+urlpatterns += [path('reset-cards/<uuid:card_id>/<str:action>/', ResetCardView.as_view())]

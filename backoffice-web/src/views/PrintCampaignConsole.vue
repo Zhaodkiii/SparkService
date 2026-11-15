@@ -19,7 +19,7 @@
           :locale="{emptyText:error?'活动列表加载失败':plans.length?'没有符合筛选的活动':'暂无活动'}">
           <template #bodyCell="{column,record:p}">
             <router-link v-if="column.key==='title'" :to="{path:editor,query:{id:p.id}}">{{p.title}}</router-link>
-            <span v-else-if="column.key==='reward'">{{p.source==='pages'?'20 页半价 · 40 页免费档':p.annual_percent===50?'年费首购 · 半价券':'年费首购 · 标准装订抵扣券'}}</span>
+            <span v-else-if="column.key==='reward'">{{p.source==='pages'?'20 页半价 · 40 页免费档':p.source==='invitation'?'邀请 5 人半价 · 10 人免费':p.annual_percent===50?'年费首购 · 半价券':'年费首购 · 标准装订抵扣券'}}</span>
             <span v-else-if="column.key==='schedule'">{{date(p.starts_at)}} 至 {{date(p.ends_at)}}</span>
             <template v-else-if="column.key==='quota'">
               {{p.quota-p.remaining}} / {{p.quota}}

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import "./book.css"
+import "./reader.css"
 import {ref,computed,onMounted} from 'vue'
 import {api,base,image} from './book-api'
 import {createId} from './id'

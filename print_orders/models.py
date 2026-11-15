@@ -241,7 +241,7 @@ class PrintCoupon(models.Model):
 class PrintCampaign(models.Model):
     ai_pages_only = models.BooleanField(default=True)
     title = models.CharField(max_length=100)
-    source = models.CharField(max_length=12, choices=[('pages','制作达标'), ('annual','年费首购')])
+    source = models.CharField(max_length=12, choices=[('pages','制作达标'), ('annual','年费首购'), ('invitation','邀请有礼')])
     draft = models.BooleanField(default=False)
     active = models.BooleanField(default=False)
     starts_at = models.DateTimeField()

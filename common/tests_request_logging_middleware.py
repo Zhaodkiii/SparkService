@@ -34,3 +34,9 @@ class RequestLoggingSensitiveAuthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class InvitationLoggingTests(unittest.TestCase):
+    def test_invitation_contact_is_redacted(self):
+        from common.middleware.request_logging_middleware import _is_sensitive_auth_path
+        self.assertTrue(_is_sensitive_auth_path('/api/public/v1/invitations/test/'))
+        self.assertEqual(_redact_sensitive_auth_body({'contact':'private@example.com'})['contact'],'<redacted>')

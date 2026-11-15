@@ -34,7 +34,7 @@ const canGrant=auth.user?.is_superuser || auth.hasPermission('print_orders.add_p
 const q=ref(''),state=ref(''),source=ref(''),page=ref(1),total=ref(0),loading=ref(false),err=ref(''),open=ref(false),preview=ref(''),receipt=ref('');
 const confirmation=ref('');
 const products=ref<{id:string,title:string}[]>([]);
-const sources=[['','全部来源'],['manual','定向'],['annual','年费'],['campaign','制作达标']].map(([value,label])=>({value,label}));
+const sources=[['','全部来源'],['manual','定向'],['annual','年费'],['campaign','制作达标'],['invite','邀请奖励']].map(([value,label])=>({value,label}));
 const states=['','可用','已使用','订单占用','已到期'].map(value=>({value,label:value||'全部状态'}));
 function search(){page.value=1;void load()}
 const url='/api/admin/v1/print/coupons/';

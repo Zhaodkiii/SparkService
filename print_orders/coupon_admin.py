@@ -48,7 +48,7 @@ class Grants(APIView):
                 pass
             rows=rows.filter(match)
         source=params.get('source')
-        if source in ('manual','campaign','annual'):
+        if source in ('manual','campaign','annual','invite'):
             rows=rows.filter(grant_key__startswith=source+':')
         now=timezone.now()
         used=Q(order__payment_state__in=['paid','refunded','refund_pending'])|Q(order__payment_state='not_required',order__file_state='ready')
@@ -63,7 +63,7 @@ class Grants(APIView):
             state='可用' if c.expires_at>now else '已到期'
             if c.order_id:
                 state='已使用' if c.order.payment_state in ('paid','refunded','refund_pending') or c.order.payment_state=='not_required' and c.order.file_state=='ready' else '订单占用'
-            result.append(dict(id=c.pk,owner_id=c.owner_id,name=c.name,product=product_scope_label(c.product),source={'annual':'年费','manual':'定向','campaign':'制作达标'}.get(kind,'其他'),
+            result.append(dict(id=c.pk,owner_id=c.owner_id,name=c.name,product=product_scope_label(c.product),source={'annual':'年费','manual':'定向','campaign':'制作达标','invite':'邀请奖励'}.get(kind,'其他'),
                 ticket=key.partition(':')[2] if kind=='manual' else '',state=state,issued_at=c.issued_at,expires_at=c.expires_at,order_id=c.order_id))
         return Response(dict(results=result,total=rows.count(),products=list(Product.objects.filter(active=True,proof_approved=True).values('id','title','base_fen','page_fen','shipping_fen','min_pages','max_pages'))))
 
@@ -168,7 +168,7 @@ def campaign_product_preview(data, product):
         raise serializers.ValidationError({'product': '请先配置配送地区'})
     pages = max(product.min_pages, min(data['included_pages'], product.max_pages))
     price = quote(product, pages, 1, product.regions[0])
-    rates = (50, 100) if data['source'] == 'pages' else (data.get('annual_percent', 100),)
+    rates = (50, 100) if data['source'] in ('pages','invitation') else (data.get('annual_percent', 100),)
     samples = []
     for rate in rates:
         coupon = PrintCoupon(percent=rate, included_pages=data['included_pages'], cap_fen=data['cap_fen'])

@@ -173,6 +173,7 @@ const fallbackMenus = [
 const legacyMenus = computed(() => {
   const supportChildren=[['tickets','反馈工单','view_ticket'],['content','帮助内容','edit_help'],['config','服务配置','manage_config']].filter(([, ,permission])=>auth.hasPermission('support_center.'+permission)).map(([path,name])=>({code:'menu:support:'+path,name:name!,path:'/support/'+path,children:[]}));
   const source = [...(auth.menus.length ? auth.menus : fallbackMenus)];
+  if ((auth.user?.is_superuser || auth.hasPermission("public_experience.view_invitationcampaign")) && !source.some(m=>m.path==="/growth/invitations")) source.push({code:"menu:invitations",name:"分享邀请与奖励",path:"/growth/invitations",children:[]});
   if ((auth.user?.is_superuser || auth.hasPermission('print_orders.add_printcoupon') || auth.hasPermission('print_orders.view_printcoupon')) && !source.some(m=>m.path==='/print-coupons')) source.push({code:'menu:print-coupons',name:'印制优惠券',path:'/print-coupons',children:[]});
   if ((auth.user?.is_superuser || auth.hasPermission('print_orders.change_printcampaign')) && !source.some(m=>m.path==='/print-campaigns')) source.push({code:'menu:print-campaigns',name:'实体书优惠活动',path:'/print-campaigns',children:[]});
   if(supportChildren.length&&!source.some(m=>m.path==='/support')) source.push({code:'menu:support',name:'帮助与反馈',path:'/support',children:supportChildren});

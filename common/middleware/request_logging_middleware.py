@@ -123,12 +123,13 @@ def _redact_chat_ai_body(value):
 
 
 def _is_sensitive_auth_path(path: str) -> bool:
-    return path.startswith("/api/auth/") or path.startswith("/api/v1/auth/")
+    return path.startswith("/api/auth/") or path.startswith("/api/v1/auth/") or path.startswith("/api/public/v1/invitations/")
 
 
 def _redact_sensitive_auth_body(value):
     """Keep authentication request shape while removing reusable credentials."""
     sensitive_keys = {
+        "contact", "phone", "email",
         "authorization",
         "authorization_code",
         "code",

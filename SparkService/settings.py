@@ -55,6 +55,7 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes", "y")
 
+INVITATION_WEB_ORIGIN = os.getenv("INVITATION_WEB_ORIGIN", "https://diary.dreamwhale.top").rstrip("/")
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
 
 # Apple Sign-In security hardening:
@@ -213,6 +214,7 @@ INSTALLED_APPS = [
     'django_celery_results',
     'accounts',
     'ai_production',
+    'public_experience.apps.PublicExperienceConfig',
     'ai_runtime',
     'file_manager',
     'diary_presets',
@@ -703,3 +705,5 @@ AI_RUNTIME_ENCRYPTION_KEYS = [v.strip() for v in os.getenv("AI_RUNTIME_ENCRYPTIO
 AI_RUNTIME_REQUIRE_CAPABILITIES = os.getenv("AI_RUNTIME_REQUIRE_CAPABILITIES", "false").lower() == "true"
 
 AI_RUNTIME_TEST_DOH_FALLBACK = os.getenv("AI_RUNTIME_TEST_DOH_FALLBACK", "false").lower() == "true"
+
+CELERY_BEAT_SCHEDULE['invitation-recovery'] = {'task': 'public_experience.tasks.process_invitation_rewards', 'schedule': 30.0}

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 RUN = ROOT / 'run'
 LOG = ROOT / 'logs'
-NAMES = ('backend', 'frontend', 'celery_worker', 'celery_beat', 'preset_processor')
+NAMES = ('backend', 'frontend', 'public_web', 'celery_worker', 'celery_beat', 'preset_processor')
 CHILDREN = {}
 
 
@@ -121,6 +121,11 @@ def command(name):
         return [python, str(ROOT / 'manage.py'), 'runserver', f"{os.environ.get('BACKEND_HOST', '127.0.0.1')}:{os.environ.get('BACKEND_PORT', '2026')}", '--noreload']
     if name == 'frontend':
         return ['node', str(ROOT / 'backoffice-web/node_modules/vite/bin/vite.js'), str(ROOT / 'backoffice-web'), '--host', os.environ.get('FRONTEND_HOST', 'localhost'), '--port', os.environ.get('FRONTEND_PORT', '6018'), '--strictPort']
+    if name == 'public_web':
+        web_root = ROOT / 'public-web'
+        return ['node', str(web_root / 'node_modules/vite/bin/vite.js'), str(web_root),
+                '--host', os.environ.get('PUBLIC_WEB_HOST', '0.0.0.0'),
+                '--port', os.environ.get('PUBLIC_WEB_PORT', '6028'), '--strictPort']
     if name == 'preset_processor':
         return [python, str(ROOT / 'manage.py'), 'run_preset_processor']
     base = [python, '-m', 'celery', '--workdir', str(ROOT), '-A', 'SparkService']
@@ -168,7 +173,9 @@ def start(name):
     if owned(pid_for(name)):
         print(f'{name}: 已在运行')
         return
-    port = int(os.environ.get('BACKEND_PORT', '2026')) if name == 'backend' else int(os.environ.get('FRONTEND_PORT', '6018')) if name == 'frontend' else None
+    ports = {'backend': ('BACKEND_PORT', '2026'), 'frontend': ('FRONTEND_PORT', '6018'),
+             'public_web': ('PUBLIC_WEB_PORT', '6028')}
+    port = int(os.environ.get(*ports[name])) if name in ports else None
     if port and check_port(port):
         raise RuntimeError(f'{name}: 端口 {port} 已占用，请检查占用者或更换端口')
     RUN.mkdir(exist_ok=True)

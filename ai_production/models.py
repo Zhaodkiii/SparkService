@@ -105,3 +105,12 @@ class ProductionQuotaReset(models.Model):
     windows = models.JSONField(default=list)
     plan = models.CharField(max_length=4, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+class ProductionResetCard(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT)
+    grant_key = models.CharField(max_length=180,unique=True)
+    issued_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_reset = models.OneToOneField(ProductionQuotaReset,null=True,on_delete=models.PROTECT)
+    revoked_at = models.DateTimeField(null=True)

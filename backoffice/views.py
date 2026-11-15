@@ -682,6 +682,9 @@ class AdminAuthProfileView(APIView):
         for code in ['view_ticket','view_all_tickets','reply_ticket','assign_ticket','close_ticket','reopen_ticket','view_contact','redact_content','edit_help','publish_help','manage_config']:
             if request.user.has_perm('support_center.'+code):
                 permission_codes.append('support_center.'+code)
+        for code in ('view_invitationcampaign','change_invitationcampaign','add_invitationreward'):
+            if request.user.has_perm('public_experience.'+code):
+                permission_codes.append('public_experience.'+code)
         if request.user.has_perm('diary_presets.change_template'):
             permission_codes = list(set(permission_codes) | {'diary_presets.change_template'})
         payload = {
