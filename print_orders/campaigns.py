@@ -432,7 +432,8 @@ class AnnualOffer(APIView):
         if (enrollment and enrollment.coupon_id) or (not enrollment and PrintEnrollment.objects.filter(plan=plan).count()>=plan.quota):
             return Response({})
         return Response(dict(id=plan.pk,title=plan.title,sku=plan.annual_product_id,
-            percent=plan.annual_percent,cap_fen=plan.cap_fen,product=product_scope_label(plan.product)))
+            percent=plan.annual_percent,cap_fen=plan.cap_fen,product=product_scope_label(plan.product),
+            included_pages=plan.included_pages,valid_days=plan.valid_days,ends_at=plan.ends_at))
 
     @transaction.atomic
     def post(self,request):
