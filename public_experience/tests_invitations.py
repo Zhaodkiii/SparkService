@@ -22,6 +22,31 @@ class InvitationFlowTests(TestCase):
         plan=PrintCampaign.objects.create(title='邀请印制',source='invitation',product=product,starts_at=now-timedelta(days=1),ends_at=now+timedelta(days=30),cap_fen=10000,quota=100)
         self.c=InvitationCampaign.objects.create(title='邀请',active=True,starts_at=now-timedelta(days=1),ends_at=now+timedelta(days=30),download_url='https://apps.apple.com/cn/app/id123456',print_campaign=plan,rules='标准20页，不含运费',cards_per_invite=1)
         self.link=join(self.owner,self.c)
+    def test_joined_owner_keeps_invitation_when_slots_full(self):
+        self.c.participant_limit = 1
+        self.c.save()
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        data = client.get('/api/v1/experience/invitations/me/').data['data']
+        self.assertTrue(data['campaign']['joined'])
+        self.assertEqual(data['campaign']['remaining_slots'], 0)
+        self.assertTrue(data['campaign']['available'])
+        self.assertEqual(data['invite_token'], str(self.link.pk))
+        newcomer = get_user_model().objects.create_user('new-inviter')
+        client.force_authenticate(newcomer)
+        data = client.get('/api/v1/experience/invitations/me/').data['data']
+        self.assertFalse(data['campaign']['joined'])
+        self.assertEqual(data['campaign']['remaining_slots'], 0)
+        self.assertIsNone(data['invite_token'])
+
+    def test_invitation_records_include_actual_expiry(self):
+        registration = register(self.link, 'email', 'guest@example.com')
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        records = client.get('/api/v1/experience/invitations/me/').data['data']['records']
+        self.assertEqual(records[0]['expires_at'], registration.expires_at)
+        self.assertEqual(records[0]['status'], 'awaiting_app')
+
     def test_share_address_follows_request_environment(self):
         client = APIClient()
         client.force_authenticate(self.owner)

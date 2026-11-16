@@ -25,7 +25,8 @@ class CampaignSerializer(serializers.ModelSerializer):
 def campaign_data(c):
     return dict(id=c.pk,title=c.title,rules=c.rules,ends_at=c.ends_at,download_url=c.download_url,
         cards_per_invite=c.cards_per_invite,card_days=c.card_days,card_invite_limit=c.card_invite_limit,
-        automatic=c.automatic,attribution_days=c.attribution_days,available=svc.available(c))
+        automatic=c.automatic,attribution_days=c.attribution_days,available=svc.available(c),
+        remaining_slots=max(0,c.participant_limit-InvitationLink.objects.filter(campaign=c).count()))
 
 class Landing(APIView):
     permission_classes=[AllowAny]
@@ -46,7 +47,7 @@ class Landing(APIView):
         values=data.validated_data
         if not values['consent']: raise ValidationError('请先阅读并同意活动规则与隐私政策')
         r=invitation_otp.verify_and_register(link,values['contact_kind'],values['contact'],values['challenge_id'],values['code'])
-        return success_response(dict(registration_id=str(r.pk),status='awaiting_app',download_url=link.campaign.download_url))
+        return success_response(dict(registration_id=str(r.pk),status='awaiting_app',expires_at=r.expires_at,download_url=link.campaign.download_url))
 
 class InvitationCode(Landing):
     http_method_names = ['post', 'options']
@@ -74,10 +75,12 @@ class MyInvitation(APIView):
         records=[]; count=0
         if link:
             count=InvitationConversion.objects.filter(registration__link=link).count()
-            records=[dict(id=str(r.pk),created_at=r.created_at,status='confirmed' if hasattr(r,'invitationconversion') else 'expired' if r.expires_at<=now else 'awaiting_app') for r in InvitationRegistration.objects.filter(link=link).order_by('-created_at')[:100]]
+            records=[dict(id=str(r.pk),created_at=r.created_at,expires_at=r.expires_at,status='confirmed' if hasattr(r,'invitationconversion') else 'expired' if r.expires_at<=now else 'awaiting_app') for r in InvitationRegistration.objects.filter(link=link).order_by('-created_at')[:100]]
         path = f'/invite/{link.pk}' if link else None
         # Older clients still consume link; derive it from this request, never a fixed environment setting.
-        return success_response(dict(campaign=campaign_data(c),
+        campaign=campaign_data(c)
+        campaign['joined']=link is not None
+        return success_response(dict(campaign=campaign,
             invite_token=str(link.pk) if link else None, invite_path=path,
             link=request.build_absolute_uri(path) if path else None, count=count,records=records))
     def post(self,request):
