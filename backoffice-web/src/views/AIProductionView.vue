@@ -21,7 +21,7 @@ type Policy = {
   effective_at: string; enabled: boolean; rates: Record<string, Rate>;
 };
 type Control = { accepting: boolean; version: number };
-type Window = { kind: string; window_policy_version: number; remaining_points: string; used_points: string; limit_points: string; remaining_ratio: number; reset_at: string | null };
+type Window = { kind: string; overage_points?: string; window_policy_version: number; remaining_points: string; used_points: string; limit_points: string; remaining_ratio: number; reset_at: string | null };
 type User = { id: number; username: string; plan: "free" | "pro" | null; membership_expires_at: string | null; membership_verified_at: string | null; windows: Window[]; pending_usage: boolean };
 type Call = {
   call_id: string; account: number; task_id: string; model: string; category: string;
@@ -295,6 +295,7 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
             <span v-if="!record.windows.some((w: Window) => w.kind === column.key)">—</span>
             <div v-for="window in record.windows.filter((w: Window) => w.kind === column.key)" :key="window.kind">
               {{ window.remaining_points }} / {{ window.limit_points }} 积分 · {{ (window.remaining_ratio * 100).toFixed(1) }}%
+              <span v-if="Number(window.overage_points)>0"> · 超额消耗 {{ window.overage_points }} 积分</span>
               <div>{{ time(window.reset_at) }}</div>
             </div>
           </template>
@@ -410,7 +411,8 @@ const auditColumns = [{ title: '时间', key: 'created_at' }, { title: '操作�
       <template v-if="userDetail">
         <p>{{ userDetail.username }} · {{ userDetail.id }} · {{ planName(userDetail.plan) }}</p>
         <p v-if="userDetail.membership_verified_at">会员验证时间 {{ time(userDetail.membership_verified_at) }}</p>
-        <p v-for="window in userDetail.windows" :key="window.kind">{{ period(window.kind) }} · 已用 {{ window.used_points }} / {{ window.limit_points }} 积分 · 剩余 {{ (window.remaining_ratio * 100).toFixed(1) }}% · 策略 v{{ window.window_policy_version }} · {{ time(window.reset_at) }}</p>
+        <p v-for="window in userDetail.windows" :key="window.kind">{{ period(window.kind) }} · 已用 {{ window.used_points }} / {{ window.limit_points }} 积分 · 剩余 {{ (window.remaining_ratio * 100).toFixed(1) }}%
+              <span v-if="Number(window.overage_points)>0"> · 超额消耗 {{ window.overage_points }} 积分</span> · 策略 v{{ window.window_policy_version }} · {{ time(window.reset_at) }}</p>
         <a-button @click="account = String(userDetail.id); userDetail = undefined; tab = 'calls'">查看调用记录</a-button>
       </template>
     </a-drawer>

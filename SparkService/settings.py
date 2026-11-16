@@ -55,7 +55,6 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() in ("1", "true", "yes", "y")
 
-INVITATION_WEB_ORIGIN = os.getenv("INVITATION_WEB_ORIGIN", "https://diary.dreamwhale.top").rstrip("/")
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if h.strip()]
 
 # Apple Sign-In security hardening:

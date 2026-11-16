@@ -68,3 +68,16 @@ class InvitationAudit(models.Model):
     target = models.CharField(max_length=160)
     reason = models.CharField(max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class InvitationOTP(models.Model):
+    """One locked delivery budget per hashed contact, shared across invitation links."""
+    contact_hash = models.CharField(max_length=64, primary_key=True)
+    challenge_id = models.UUIDField(default=uuid.uuid4, unique=True)
+    link = models.ForeignKey(InvitationLink, on_delete=models.CASCADE)
+    code_hash = models.CharField(max_length=128, blank=True)
+    expires_at = models.DateTimeField()
+    sent_at = models.DateTimeField(null=True)
+    window_started_at = models.DateTimeField()
+    send_count = models.PositiveSmallIntegerField(default=0)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True)

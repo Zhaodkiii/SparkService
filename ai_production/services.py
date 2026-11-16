@@ -73,7 +73,7 @@ def quota(user, *, admin=False, identity=None, now=None):
                     starts_at=w.starts_at.isoformat() if w.pk else None, reset_at=w.ends_at.isoformat() if w.pk else None,
                     duration_seconds=dict(WINDOWS)[w.kind] * 3600, window_policy_version=w.policy_id)
         if admin:
-            item.update(limit_points=str(limit), used_points=str(w.used_points), remaining_points=str(balance))
+            item.update(limit_points=str(limit), used_points=str(w.used_points), remaining_points=str(balance), overage_points=str(max(Decimal(0), w.used_points-limit)))
         items.append(item)
     return dict(server_time=now.isoformat(), policy_version=policy.pk if policy else 0, windows=items,
                 plan=plan, entitlement_state="verified" if plan else "unavailable",
@@ -212,15 +212,13 @@ def authorize(user, task_id, call_id, scene, input_digest, parameters, *, identi
                        details={"error_key": "MEMBERSHIP_UNAVAILABLE"})
     now = timezone.now()
     selected = windows(user, now, policy, plan)
-    blocked = [w for w in selected.values() if remaining(w, limit_for(w.policy, w.kind, plan)) < budget]
+    # Admit one call while every enabled window still has a positive balance.
+    # budget is diagnostic only: never reserve it or use it to reject a call.
+    blocked = [w for w in selected.values() if remaining(w, limit_for(w.policy, w.kind, plan)) <= 0]
     if blocked:
-        if any(limit_for(w.policy, w.kind, plan) < budget and limit_for(policy, w.kind, plan) < budget
-               for w in blocked):
-            raise APIError("单次调用所需额度超过周期上限，请调整请求", status_code=422,
-                           details={"error_key": "CALL_BUDGET_EXCEEDS_LIMIT"})
         reset = max(w.ends_at for w in blocked).isoformat() if all(
-            w.pk and limit_for(policy, w.kind, plan) >= budget for w in blocked) else None
-        raise APIError("制作额度不足", status_code=429, details={
+            w.pk and limit_for(policy, w.kind, plan) > 0 for w in blocked) else None
+        raise APIError("制作额度已用完", status_code=429, details={
             "error_key": "QUOTA_INSUFFICIENT", "plan": plan, "blocked_windows": [w.kind for w in blocked],
             "next_eligible_at": reset,
         })

@@ -154,3 +154,38 @@ class UsageAccountingTests(TestCase):
             reset_quota(self.admin, self.user, uuid.uuid4(), "weekly", "test")
         self.windows[1].refresh_from_db()
         self.assertGreater(self.windows[1].ends_at, timezone.now())
+
+class PositiveBalanceAdmissionTests(TestCase):
+    def setUp(self):
+        from ai_runtime.models import Release, Binding
+        self.user=get_user_model().objects.create_user(username='positive-balance')
+        ProductionControl.objects.get_or_create(pk=1)
+        rate=dict(category='text_ai',mode='tokens',input_rate='0.05',cached_input_rate='0.01',output_rate='0.15',minimum_charge='0.05',max_input_tokens=128000,max_output_tokens=8192,usage_timeout_seconds=420)
+        self.policy=ProductionPolicy.objects.create(free_weekly_limit_points=10,rates={'model':rate})
+        self.task=ProductionTask.objects.create(account=self.user,attempt_key=uuid.uuid4(),input_digest='a'*64)
+        release=Release.objects.create(sequence=1,request_key=uuid.uuid4(),snapshot={'scenes':{'diary.layout':{'model_id':'model','adapter_id':'text','parameters':{'max_output_tokens':4096}}}})
+        Binding.objects.create(task=self.task,release=release,required_scenes=['diary.layout'],capabilities={})
+        self.window=ProductionWindow.objects.create(account=self.user,kind='weekly',starts_at=timezone.now()-timedelta(hours=1),ends_at=timezone.now()+timedelta(days=6),policy=self.policy,limit_points=10,used_points='9.999999')
+    def authorize(self):
+        from unittest.mock import patch
+        from .services import authorize
+        with patch('ai_runtime.services.channel'),patch('ai_runtime.services.enforce_control'):
+            return authorize(self.user,self.task.pk,uuid.uuid4(),'diary.layout','a'*64,{'max_output_tokens':4096})
+    def test_last_fraction_admitted_then_full_actual_usage_blocks_next(self):
+        call=self.authorize()
+        self.assertGreater(call.budget,10-Decimal(self.window.used_points))
+        report(self.user,self.task.pk,call.pk,uuid.uuid4(),'failed',{'input_tokens':1000,'output_tokens':1000},'')
+        self.window.refresh_from_db()
+        self.assertGreater(self.window.used_points,10)
+        with self.assertRaises(APIError):self.authorize()
+        from .services import quota
+        q=quota(self.user,admin=True)
+        self.assertEqual(q['windows'][0]['remaining_ratio'],0)
+        self.assertGreater(Decimal(q['windows'][0]['overage_points']),0)
+    def test_zero_and_overdrawn_block(self):
+        for used in [10,11]:
+            self.window.used_points=used;self.window.save()
+            with self.assertRaises(APIError):self.authorize()
+    def test_pending_call_still_blocks(self):
+        self.authorize()
+        with self.assertRaises(APIError):self.authorize()

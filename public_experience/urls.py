@@ -10,5 +10,7 @@ urlpatterns += [
 ]
 urlpatterns += [path('books/<uuid:pk>/<int:number>/pages/<str:page_id>/slots/', books.slots)]
 
-from .invitation_api import Landing
+from .invitation_api import Landing, InvitationCode
 urlpatterns += [path('invitations/<uuid:token>/',Landing.as_view())]
+
+urlpatterns += [path('invitations/<uuid:token>/code/', InvitationCode.as_view())]

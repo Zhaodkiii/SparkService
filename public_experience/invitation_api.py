@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils import timezone
@@ -11,6 +10,7 @@ from rest_framework.exceptions import ValidationError,PermissionDenied
 from common.response import success_response
 from .models import *
 from . import invitations as svc
+from . import invitation_otp
 
 class PublicLimit(AnonRateThrottle):
     rate='20/hour'
@@ -25,7 +25,7 @@ class CampaignSerializer(serializers.ModelSerializer):
 def campaign_data(c):
     return dict(id=c.pk,title=c.title,rules=c.rules,ends_at=c.ends_at,download_url=c.download_url,
         cards_per_invite=c.cards_per_invite,card_days=c.card_days,card_invite_limit=c.card_invite_limit,
-        automatic=c.automatic,available=svc.available(c))
+        automatic=c.automatic,attribution_days=c.attribution_days,available=svc.available(c))
 
 class Landing(APIView):
     permission_classes=[AllowAny]
@@ -39,22 +39,47 @@ class Landing(APIView):
         class Input(serializers.Serializer):
             contact_kind=serializers.ChoiceField(choices=['phone','email'])
             contact=serializers.CharField(max_length=254)
+            challenge_id=serializers.UUIDField()
+            code=serializers.RegexField(r'^[0-9]{6}$')
+            consent=serializers.BooleanField()
         data=Input(data=request.data);data.is_valid(raise_exception=True)
-        r=svc.register(link,data.validated_data['contact_kind'],data.validated_data['contact'])
+        values=data.validated_data
+        if not values['consent']: raise ValidationError('请先阅读并同意活动规则与隐私政策')
+        r=invitation_otp.verify_and_register(link,values['contact_kind'],values['contact'],values['challenge_id'],values['code'])
         return success_response(dict(registration_id=str(r.pk),status='awaiting_app',download_url=link.campaign.download_url))
+
+class InvitationCode(Landing):
+    http_method_names = ['post', 'options']
+
+    def post(self, request, token):
+        link = get_object_or_404(InvitationLink.objects.select_related('campaign', 'owner'), pk=token)
+        class Input(serializers.Serializer):
+            contact_kind = serializers.ChoiceField(choices=['phone', 'email'])
+            contact = serializers.CharField(max_length=254)
+            consent = serializers.BooleanField()
+        data = Input(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        if not values['consent']:
+            raise ValidationError('请先阅读并同意活动规则与隐私政策')
+        return success_response(invitation_otp.request_code(link, values['contact_kind'], values['contact']))
 
 class MyInvitation(APIView):
     permission_classes=[IsAuthenticated]
     def get(self,request):
         now=timezone.now()
         c=InvitationCampaign.objects.filter(active=True,starts_at__lte=now,ends_at__gt=now).order_by('-pk').first()
-        if not c: return success_response(dict(campaign=None,link=None,count=0,records=[]))
+        if not c: return success_response(dict(campaign=None,link=None,invite_token=None,invite_path=None,count=0,records=[]))
         link=InvitationLink.objects.filter(campaign=c,owner=request.user).first()
         records=[]; count=0
         if link:
             count=InvitationConversion.objects.filter(registration__link=link).count()
             records=[dict(id=str(r.pk),created_at=r.created_at,status='confirmed' if hasattr(r,'invitationconversion') else 'expired' if r.expires_at<=now else 'awaiting_app') for r in InvitationRegistration.objects.filter(link=link).order_by('-created_at')[:100]]
-        return success_response(dict(campaign=campaign_data(c),link=f'{settings.INVITATION_WEB_ORIGIN}/invite/{link.pk}' if link else None,count=count,records=records))
+        path = f'/invite/{link.pk}' if link else None
+        # Older clients still consume link; derive it from this request, never a fixed environment setting.
+        return success_response(dict(campaign=campaign_data(c),
+            invite_token=str(link.pk) if link else None, invite_path=path,
+            link=request.build_absolute_uri(path) if path else None, count=count,records=records))
     def post(self,request):
         c=get_object_or_404(InvitationCampaign,pk=request.data.get('campaign_id'))
         svc.join(request.user,c)

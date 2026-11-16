@@ -22,6 +22,28 @@ class InvitationFlowTests(TestCase):
         plan=PrintCampaign.objects.create(title='邀请印制',source='invitation',product=product,starts_at=now-timedelta(days=1),ends_at=now+timedelta(days=30),cap_fen=10000,quota=100)
         self.c=InvitationCampaign.objects.create(title='邀请',active=True,starts_at=now-timedelta(days=1),ends_at=now+timedelta(days=30),download_url='https://apps.apple.com/cn/app/id123456',print_campaign=plan,rules='标准20页，不含运费',cards_per_invite=1)
         self.link=join(self.owner,self.c)
+    def test_share_address_follows_request_environment(self):
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        for host in ('diary.dreamwhale.top', 'diary-dev.dreamwhale.top'):
+            with self.subTest(host=host), self.settings(ALLOWED_HOSTS=[host], INVITATION_WEB_ORIGIN='https://wrong.example'):
+                response = client.get('/api/v1/experience/invitations/me/', HTTP_HOST=host, secure=True)
+                self.assertEqual(response.status_code, 200)
+                data = response.data['data']
+                self.assertEqual(data['invite_token'], str(self.link.pk))
+                self.assertEqual(data['invite_path'], f'/invite/{self.link.pk}')
+                self.assertEqual(data['link'], f'https://{host}/invite/{self.link.pk}')
+
+    def test_no_campaign_has_no_share_address(self):
+        self.c.active = False
+        self.c.save()
+        client = APIClient()
+        client.force_authenticate(self.owner)
+        data = client.get('/api/v1/experience/invitations/me/').data['data']
+        self.assertIsNone(data['invite_token'])
+        self.assertIsNone(data['invite_path'])
+        self.assertIsNone(data['link'])
+
     def convert(self,n):
         email=f'friend{n}@example.com';reg=register(self.link,'email',email)
         user=get_user_model().objects.create_user(f'friend{n}')
@@ -64,11 +86,10 @@ class InvitationFlowTests(TestCase):
     def test_admin_rejects_ordinary_user(self):
         client=APIClient();client.force_authenticate(self.owner)
         self.assertEqual(client.get('/api/admin/v1/experience/invitations/').status_code,403)
-    def test_public_register_no_auth_and_no_sensitive_persistence(self):
+    def test_public_register_rejects_missing_verification(self):
         response=APIClient().post(f'/api/public/v1/invitations/{self.link.pk}/',{'contact_kind':'email','contact':'new@example.com'},format='json')
-        self.assertEqual(response.status_code,200)
-        self.assertEqual(response.data['data']['status'],'awaiting_app')
-        self.assertNotIn('new@example.com',str(list(InvitationRegistration.objects.values())))
+        self.assertEqual(response.status_code,400)
+        self.assertFalse(InvitationRegistration.objects.exists())
 
 class ResetCardTests(TestCase):
     def setUp(self):
