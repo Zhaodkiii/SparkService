@@ -141,3 +141,12 @@ class RoutingTests(TestCase):
                                     content_type='application/json')
         self.assertIn(response.status_code, (401, 403))
         verify.assert_not_called()
+
+    @patch('billing.identity.verify_environment', return_value='sandbox')
+    def test_subscription_bootstrap_does_not_create_wallet(self, verify):
+        from billing.identity import bootstrap
+        from billing.models import WalletGate, WalletSnapshot
+        session = bootstrap(self.user, 'proof', initialize_wallet=False)
+        self.assertEqual(session.identity.account_id,self.user.pk)
+        self.assertFalse(WalletGate.objects.filter(identity=session.identity).exists())
+        self.assertFalse(WalletSnapshot.objects.filter(identity=session.identity).exists())

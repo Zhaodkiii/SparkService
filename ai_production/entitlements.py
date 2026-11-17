@@ -37,16 +37,16 @@ def entitlement(identity, now=None, *, lock=False):
         identity = BillingIdentity.objects.select_for_update().get(pk=identity.pk)
         rows = rows.select_for_update()
     row = rows.filter(identity=identity).first()
-    if (identity.state != "active" or not row or row.needs_sync or not row.verified_at
-            or row.verified_at < now - timedelta(hours=1)):
+    if (identity.state != "active" or not row or not row.verified_at
+            or row.verified_at < now - timedelta(hours=24)):
         return None, row
     return ("pro" if is_active(row, identity, now) else "free"), row
 
 
 def filter_accounts(users, plan, now):
     identities = production_identities()
-    verified = identities.filter(state="active", membershipsnapshot__needs_sync=False,
-                                 membershipsnapshot__verified_at__gte=now - timedelta(hours=1))
+    verified = identities.filter(state="active",
+                                 membershipsnapshot__verified_at__gte=now - timedelta(hours=24))
     pro = verified.filter(
         Q(membershipsnapshot__active_until__gt=now)
         | Q(membershipsnapshot__access_granted=True, membershipsnapshot__subscription_status="in_grace_period",

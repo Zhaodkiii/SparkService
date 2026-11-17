@@ -27,3 +27,5 @@ from .batch_pricing import BatchPricing
 urlpatterns += [path('manage/batch-pricing/<str:action>/', BatchPricing.as_view())]
 
 urlpatterns += [path('relay-webhook/', v.RelayWebhook.as_view())]
+
+urlpatterns += [path('subscription-bootstrap/', v.SubscriptionBootstrap.as_view())]

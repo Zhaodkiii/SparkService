@@ -715,3 +715,11 @@ BILLING_DEV_RELAY_URL = os.getenv('BILLING_DEV_RELAY_URL', '')
 BILLING_RELAY_TOKEN = os.getenv('BILLING_RELAY_TOKEN', '')
 
 CELERY_BEAT_SCHEDULE['billing-dev-delivery'] = {'task': 'billing.tasks.deliver_development_webhooks', 'schedule': 30.0}
+
+# Shared across API workers and Celery: serialize RevenueCat reads and honor 429 backoff.
+CACHES['billing'] = {
+    'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+    'LOCATION': os.getenv('BILLING_REDIS_URL', CELERY_BROKER_URL),
+    'KEY_PREFIX': 'traveldiary:billing:v1',
+    'OPTIONS': {'socket_connect_timeout': 2, 'socket_timeout': 2},
+}

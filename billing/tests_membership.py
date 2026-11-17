@@ -1,6 +1,8 @@
 from datetime import timedelta
 from unittest.mock import patch
 from django.test import TransactionTestCase, override_settings
+from django.core.cache import caches
+cache = caches['billing']
 from django.contrib.auth.models import User
 from django.utils import timezone
 from .models import BillingIdentity, MembershipSnapshot, CurrencyEvent
@@ -11,6 +13,7 @@ from .tasks import process_event
 @override_settings(REVENUECAT_MEMBER_ENTITLEMENT_ID='member-internal', REVENUECAT_PROJECT_ID='test', REVENUECAT_APP_ID='app')
 class MembershipTests(TransactionTestCase):
     def setUp(self):
+        cache.clear()
         self.identity=BillingIdentity.objects.create(account=User.objects.create_user('member'),rc_project_id='test',wallet_domain='sandbox')
         self.future=timezone.now()+timedelta(days=30)
     def customer(self, until=None):
@@ -47,7 +50,7 @@ class MembershipTests(TransactionTestCase):
         rc.return_value.customer.return_value=ProviderResult(503,{})
         data=status(self.identity,True)
         self.assertTrue(data['active']);self.assertEqual(data['sync_state'],'stale')
-        MembershipSnapshot.objects.filter(identity=self.identity).update(verified_at=timezone.now()-timedelta(hours=2))
+        MembershipSnapshot.objects.filter(identity=self.identity).update(verified_at=timezone.now()-timedelta(hours=25))
         self.assertFalse(status(self.identity,True)['active'])
     @patch('billing.membership.RevenueCat')
     def test_incomplete_entitlements_do_not_revoke(self, rc):
@@ -98,3 +101,36 @@ class MembershipTests(TransactionTestCase):
             rc.return_value.subscriptions.return_value=self.subscriptions(state='expired',access=False)
             refresh(self.identity,True)
             self.assertFalse(describe(request,offer.target_kind,offer.target_id)['access']['can_use'])
+
+    @patch('billing.membership.RevenueCat')
+    def test_details_failure_preserves_last_known_subscription(self, rc):
+        row = MembershipSnapshot.objects.create(identity=self.identity, active_until=self.future,
+            verified_at=timezone.now(), product_id='yearly', auto_renewal_status='will_not_renew')
+        rc.return_value.customer.return_value=self.customer(self.future)
+        rc.return_value.subscriptions.return_value=ProviderResult(503,{})
+        self.assertFalse(refresh(self.identity,True))
+        row.refresh_from_db()
+        self.assertEqual(row.product_id,'yearly')
+        self.assertEqual(row.auto_renewal_status,'will_not_renew')
+        self.assertTrue(is_active(row,self.identity))
+
+    @patch('billing.membership.RevenueCat')
+    def test_failed_refresh_is_backed_off(self, rc):
+        rc.return_value.customer.return_value=ProviderResult(429,{},retry_after=60)
+        self.assertFalse(refresh(self.identity,True))
+        self.assertFalse(refresh(self.identity,True))
+        self.assertEqual(rc.return_value.customer.call_count,1)
+
+    @patch('billing.membership.RevenueCat')
+    def test_production_entitlement_cannot_unlock_sandbox_identity(self, rc):
+        rc.return_value.customer.return_value = self.customer(self.future)
+        rc.return_value.subscriptions.return_value = self.subscriptions(environment='production')
+        self.assertFalse(status(self.identity, True)['active'])
+
+    @patch('billing.membership.RevenueCat')
+    def test_missing_new_customer_is_not_perpetual_sync_failure(self, rc):
+        rc.return_value.customer.return_value = ProviderResult(404, {})
+        value = status(self.identity, True)
+        self.assertFalse(value['active'])
+        self.assertEqual(value['sync_state'], 'fresh')
+        rc.return_value.subscriptions.assert_not_called()

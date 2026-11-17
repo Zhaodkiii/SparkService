@@ -21,3 +21,5 @@ APNS_AUTH_KEY_PATH = ''
 LOGGING_CONFIG = None
 
 CACHES = {**CACHES, 'material_pagination': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'material-pagination-tests'}}
+
+CACHES['billing'] = {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'billing-tests'}

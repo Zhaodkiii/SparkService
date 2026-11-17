@@ -21,6 +21,13 @@ class Bootstrap(AuthView):
         session=bootstrap(request.user,request.data.get('signed_app_transaction'))
         return Response(dict(session_id=str(session.pk),rc_app_user_id=str(session.identity.rc_app_user_id),wallet_domain=session.identity.wallet_domain,deployment=settings.BILLING_DEPLOYMENT,public_key=settings.REVENUECAT_PUBLIC_KEY,expires_at=session.expires_at,flags=client_flags(session.identity)))
 
+class SubscriptionBootstrap(AuthView):
+    def post(self, request):
+        session = bootstrap(request.user, request.data.get('signed_app_transaction'), initialize_wallet=False)
+        return Response(dict(session_id=str(session.pk), rc_app_user_id=str(session.identity.rc_app_user_id),
+            wallet_domain=session.identity.wallet_domain, deployment=settings.BILLING_DEPLOYMENT,
+            public_key=settings.REVENUECAT_PUBLIC_KEY, expires_at=session.expires_at, flags=client_flags(session.identity)))
+
 class Wallet(AuthView):
     def get(self,request): return Response(services.wallet(identity_for(request),refresh=True))
     def post(self,request): return self.get(request)

@@ -29,7 +29,7 @@ def verify_environment(jws):
             continue
     raise BillingError('ENVIRONMENT_UNVERIFIED','商店凭证无效，请从 App Store 或 TestFlight 安装')
 
-def bootstrap(user,jws):
+def bootstrap(user,jws, *, initialize_wallet=True):
     # Authenticated device accounts can purchase without providing personal information.
     if not user.is_authenticated or not user.is_active:
         raise BillingError('ACCOUNT_UNAVAILABLE', '使用身份不可用', 403)
@@ -39,8 +39,9 @@ def bootstrap(user,jws):
         raise BillingError('DEVELOPMENT_SANDBOX_REQUIRED', '本地测试服务仅支持沙盒购买', 403)
     identity,_ = BillingIdentity.objects.get_or_create(account=user,rc_project_id=settings.REVENUECAT_PROJECT_ID,wallet_domain=domain, defaults={'rc_app_user_id': new_identity_id()})
     if identity.state != 'active': raise BillingError('WALLET_UNDER_REVIEW','钱包正在核验')
-    WalletGate.objects.get_or_create(identity=identity)
-    WalletSnapshot.objects.get_or_create(identity=identity)
+    if initialize_wallet:
+        WalletGate.objects.get_or_create(identity=identity)
+        WalletSnapshot.objects.get_or_create(identity=identity)
     session = WalletSession.objects.create(identity=identity,expires_at=timezone.now()+timedelta(hours=12),proof_digest=hashlib.sha256(jws.encode()).hexdigest())
     return session
 

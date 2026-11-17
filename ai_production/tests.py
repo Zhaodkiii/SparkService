@@ -147,6 +147,13 @@ class UsageAccountingTests(TestCase):
             reset_quota(self.admin, self.user, uuid.uuid4(), "short", "test")
         member.needs_sync = True
         member.save(update_fields=["needs_sync"])
+        self.assertEqual(quota(self.user)["plan"], "free")
+        member.active_until = now + timedelta(hours=1)
+        member.save(update_fields=["active_until"])
+        self.assertEqual(quota(self.user)["plan"], "pro")
+        self.assertEqual(self.used(), [Decimal(0), Decimal("1.75")])
+        member.verified_at = now - timedelta(hours=25)
+        member.save(update_fields=["verified_at"])
         self.assertIsNone(quota(self.user)["plan"])
 
     def test_pending_call_blocks_weekly_reset(self):

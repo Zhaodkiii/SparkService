@@ -52,7 +52,7 @@ def wallet(identity,refresh=False):
         except ValueError:
             WalletSnapshot.objects.filter(identity=identity,version=version).update(sync_state='stale')
         snapshot.refresh_from_db()
-    gate=WalletGate.objects.get(identity=identity)
+    gate,_=WalletGate.objects.get_or_create(identity=identity)
     return dict(currency='DIAMOND',balance=snapshot.provider_balance,version=snapshot.version,balance_state=snapshot.sync_state,wallet_domain=identity.wallet_domain,fetched_at=snapshot.fetched_at,can_redeem=enabled('DIAMOND_REDEMPTION_ENABLED',identity) and gate.state=='ready',pending_order_id=str(gate.active_operation.order_id) if gate.active_operation_id and gate.active_operation.order_id else None)
 
 def quote(identity,offer):
@@ -67,6 +67,7 @@ def prepare(identity,quote_id,offer_id,client_key):
     try: key=uuid.UUID(str(client_key))
     except (ValueError,TypeError): raise BillingError('INVALID_IDEMPOTENCY_KEY',status=400)
     request_hash=digest({'quote_id':str(quote_id),'offer_id':str(offer_id)})
+    WalletGate.objects.get_or_create(identity=identity)
     gate=WalletGate.objects.select_for_update().get(identity=identity)
     previous=RedemptionOrder.objects.filter(identity=identity,client_request_key=key).first()
     if previous:

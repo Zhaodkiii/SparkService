@@ -59,6 +59,24 @@ class PrintTests(TestCase):
         coupon.refresh_from_db()
         self.assertLessEqual(coupon.expires_at,timezone.now())
 
+    def test_expired_annual_reservation_releases_capacity(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import PrintCampaign, PrintEnrollment
+        from .campaigns import occupied_enrollments, expire_annual_reservations, reserve
+        now = timezone.now()
+        plan = PrintCampaign.objects.create(title='annual', source='annual', active=True,
+            starts_at=now-timedelta(days=1), ends_at=now+timedelta(days=1),
+            product=self.product, annual_product_id='annual-test', cap_fen=2000, quota=1)
+        old = reserve(plan, self.user)
+        PrintEnrollment.objects.filter(pk=old.pk).update(created_at=now-timedelta(minutes=31))
+        self.assertEqual(occupied_enrollments(plan).count(), 0)
+        expire_annual_reservations(plan, now)
+        reserve(plan, self.other)
+        self.assertEqual(occupied_enrollments(plan).count(), 1)
+        old.refresh_from_db()
+        self.assertIsNotNone(old.withdrawn_at)
+
     def test_coupon_preview_binds_terms_and_retry_returns_original(self):
         from datetime import timedelta
         from django.utils import timezone

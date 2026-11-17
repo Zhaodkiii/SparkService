@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta, timezone as dt_timezone
 from django.conf import settings
 from django.db import connection, transaction
+from django.core.cache import caches
+cache = caches['billing']
 from django.utils import timezone
 from .models import MembershipSnapshot, ContentOffer
 from .provider import RevenueCat
@@ -15,6 +17,18 @@ def timestamp(value):
 
 
 def refresh(identity, force=False):
+    key = 'membership-refresh:' + str(identity.pk)
+    if cache.get(key + ':backoff'): return False
+    if not cache.add(key, True, timeout=600): return False
+    try:
+        result = _refresh(identity, force)
+        if not result and not cache.get(key + ':backoff'): cache.set(key + ':backoff', True, timeout=30)
+        return result
+    finally:
+        cache.delete(key)
+
+
+def _refresh(identity, force=False):
     if connection.in_atomic_block: return False
     started = timezone.now()
     cached = MembershipSnapshot.objects.filter(identity=identity).first()
@@ -22,7 +36,14 @@ def refresh(identity, force=False):
         return True
     provider = RevenueCat()
     result = provider.customer(identity)
-    if result.status != 200: return False
+    if result.status == 404 and cached is None:
+        # A newly created purchase identity may not exist in RevenueCat until its first SDK request.
+        MembershipSnapshot.objects.get_or_create(identity=identity, defaults=dict(
+            verified_at=started, needs_sync=False, subscription_status='inactive'))
+        return True
+    if result.status != 200:
+        cache.set('membership-refresh:' + str(identity.pk) + ':backoff', True, timeout=result.retry_after)
+        return False
     active = result.body.get('active_entitlements')
     if not isinstance(active, dict) or not isinstance(active.get('items'), list): return False
     until = None
@@ -30,10 +51,12 @@ def refresh(identity, force=False):
         if item.get('entitlement_id') == settings.REVENUECAT_MEMBER_ENTITLEMENT_ID:
             until = timestamp(item.get('expires_at'))
             if until is None: return False
-    if until is None and active.get('next_page'): return False
+    if active.get('next_page'): return False
     details = provider.subscriptions(identity)
     detail = None
     details_complete = details.status == 200 and isinstance(details.body.get('items'), list) and not details.body.get('next_page')
+    if not details_complete:
+        return False
     if details_complete:
         candidates = [s for s in details.body['items'] if s.get('environment') == identity.wallet_domain and
                       any(e.get('id') == settings.REVENUECAT_MEMBER_ENTITLEMENT_ID for e in s.get('entitlements', {}).get('items', []))]
@@ -44,7 +67,10 @@ def refresh(identity, force=False):
         # Ignore HTTP results started before a newer refresh or webhook invalidation.
         if (row.verified_at and row.verified_at > started) or (row.last_event_at and row.last_event_at > started): return False
         row.access_granted = bool(detail and detail.get('gives_access') is True)
-        row.active_until = until
+        # Customer entitlements can aggregate environments. Only matching subscription
+        # details authorize this identity, and never beyond its own verified period.
+        period_end = timestamp(detail.get('current_period_ends_at')) if detail else None
+        row.active_until = min(until, period_end) if until and period_end and row.access_granted else None
         row.verified_at = started
         row.needs_sync = False
         if detail:
@@ -85,7 +111,7 @@ def status(identity, force=False):
 
 def is_active(row, identity, now=None):
     now = now or timezone.now()
-    if not row or identity.state != 'active' or not row.verified_at or row.verified_at < now-timedelta(hours=1): return False
+    if not row or identity.state != 'active' or not row.verified_at or row.verified_at < now-timedelta(hours=24): return False
     if row.active_until and row.active_until > now: return True
     # A verified grace period can extend access beyond the paid period; short cache only.
     return bool(row.access_granted and row.subscription_status == 'in_grace_period' and row.verified_at > now-timedelta(minutes=5))

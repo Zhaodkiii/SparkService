@@ -36,7 +36,25 @@ class RevenueCat:
         return self.request('GET',f'/customers/{identity.rc_app_user_id}')
 
     def subscriptions(self, identity):
-        return self.request('GET',f'/customers/{identity.rc_app_user_id}/subscriptions?environment={identity.wallet_domain}&limit=100')
+        path = f'/customers/{identity.rc_app_user_id}/subscriptions?environment={identity.wallet_domain}&limit=100'
+        items, seen = [], set()
+        prefix = '/v2/projects/' + quote(settings.REVENUECAT_PROJECT_ID, safe='')
+        for _ in range(20):
+            if path in seen: return ProviderResult(502, {'type': 'pagination_loop'})
+            seen.add(path)
+            result = self.request('GET', path)
+            if result.status != 200: return result
+            if not isinstance(result.body.get('items'), list): return ProviderResult(502, {'type': 'invalid_response'})
+            items.extend(result.body['items'])
+            next_page = result.body.get('next_page')
+            if not next_page: return ProviderResult(200, {'items': items})
+            from urllib.parse import urlsplit
+            parsed = urlsplit(next_page)
+            if parsed.netloc and parsed.netloc != 'api.revenuecat.com': return ProviderResult(502, {'type': 'invalid_pagination'})
+            if not parsed.path.startswith(prefix + f'/customers/{identity.rc_app_user_id}/subscriptions'):
+                return ProviderResult(502, {'type': 'invalid_pagination'})
+            path = parsed.path[len(prefix):] + ('?' + parsed.query if parsed.query else '')
+        return ProviderResult(502, {'type': 'pagination_limit'})
 
     def balance(self, identity):
         return self.request('GET',f'/customers/{identity.rc_app_user_id}/virtual_currencies?include_empty_balances=true')

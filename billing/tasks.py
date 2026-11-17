@@ -15,7 +15,16 @@ def process_pending():
     from datetime import timedelta
     from .membership import refresh
     due=MembershipSnapshot.objects.filter(Q(needs_sync=True)|Q(active_until__isnull=False, verified_at__lt=timezone.now()-timedelta(minutes=15))).select_related('identity')
-    for row in due.order_by('verified_at')[:100]: refresh(row.identity,force=True)
+    # A throttled customer must not repeatedly occupy the first batch slots.
+    from django.core.cache import caches
+    cache = caches['billing']
+    attempted = 0
+    for row in due.order_by('verified_at', 'pk').iterator(chunk_size=100):
+        if cache.get('membership-refresh:' + str(row.identity_id) + ':backoff'):
+            continue
+        refresh(row.identity, force=True)
+        attempted += 1
+        if attempted >= 100: break
 
 @transaction.atomic
 def process_event(pk):
@@ -47,7 +56,7 @@ def process_event(pk):
         ReconciliationCase.objects.get_or_create(identity=identity,kind='event_environment_unverified',evidence={'event_id':event.event_id})
         return
     if environment!=identity.wallet_domain:
-        identity.state='quarantined';identity.save();gate.state='quarantined';gate.save()
+        # Quarantine the conflicting event, not unrelated existing wallet rights.
         event.state='quarantined';event.save()
         ReconciliationCase.objects.create(identity=identity,kind='environment_mismatch',evidence={'event_id':event.event_id});return
     from .topups import observe

@@ -25,7 +25,10 @@ def open_plans(source, at):
     return PrintCampaign.objects.filter(source=source, active=True, starts_at__lte=at, ends_at__gt=at).filter(scope).order_by('-pk')
 
 def occupied_enrollments(plan):
-    return PrintEnrollment.objects.filter(plan=plan).filter(Q(withdrawn_at__isnull=True) | Q(coupon__isnull=False))
+    rows = PrintEnrollment.objects.filter(plan=plan).filter(Q(withdrawn_at__isnull=True) | Q(coupon__isnull=False))
+    if plan.source == 'annual':
+        rows = rows.filter(Q(coupon__isnull=False) | Q(created_at__gte=timezone.now()-timedelta(minutes=30)))
+    return rows
 
 
 def reserve(plan, owner, book_id=None):
@@ -376,6 +379,11 @@ class Withdraw(APIView):
                              enrollment=enrollment_data(entry)))
 
 
+def expire_annual_reservations(plan, now):
+    PrintEnrollment.objects.filter(plan=plan, coupon__isnull=True, withdrawn_at__isnull=True,
+        created_at__lt=now-timedelta(minutes=30)).update(withdrawn_at=now)
+
+
 def annual_gift(identity, data):
     from billing.reporting import stamp
     from billing.models import StorePayment
@@ -416,7 +424,7 @@ def annual_gift(identity, data):
             award(existing,plan.annual_percent)
             PrintCoupon.objects.filter(pk=existing.coupon_id).update(grant_key="annual:"+digest)
         return
-    if PrintEnrollment.objects.filter(plan=plan).count() < plan.quota:
+    if occupied_enrollments(plan).count() < plan.quota:
         entry=reserve(plan,identity.account)
         award(entry,plan.annual_percent)
         PrintCoupon.objects.filter(pk=entry.coupon_id).update(grant_key="annual:"+digest)
@@ -429,7 +437,7 @@ class AnnualOffer(APIView):
         if not plan:
             return Response({})
         enrollment=PrintEnrollment.objects.filter(plan=plan,owner=request.user).first()
-        if (enrollment and enrollment.coupon_id) or (not enrollment and PrintEnrollment.objects.filter(plan=plan).count()>=plan.quota):
+        if (enrollment and enrollment.coupon_id) or (not enrollment and occupied_enrollments(plan).count()>=plan.quota):
             return Response({})
         return Response(dict(id=plan.pk,title=plan.title,sku=plan.annual_product_id,
             percent=plan.annual_percent,cap_fen=plan.cap_fen,product=product_scope_label(plan.product),
@@ -454,8 +462,12 @@ class AnnualOffer(APIView):
             annual_product_id=data.validated_data['sku']).first()
         if not plan:
             raise Conflict('赠券活动已变更，请刷新会员页')
-        reserve(plan,request.user)
-        return Response(dict(message='已预留赠礼'))
+        now = timezone.now()
+        expire_annual_reservations(plan, now)
+        entry = reserve(plan,request.user)
+        if not entry.coupon_id:
+            PrintEnrollment.objects.filter(pk=entry.pk).update(created_at=now)
+        return Response(dict(message='已预留赠礼，有效期30分钟'))
 
 
 class Wallet(APIView):
