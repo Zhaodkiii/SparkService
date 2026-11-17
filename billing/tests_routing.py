@@ -83,11 +83,8 @@ class RoutingTests(TestCase):
     def test_bootstrap_reuses_existing_identity(self, verify):
         from billing.identity import bootstrap
         identity=BillingIdentity.objects.create(account=self.user, rc_project_id='test', wallet_domain='sandbox')
-        # Formal-account guard is unrelated to routing; isolate it without relying on social schema.
-        with patch.object(type(self.user), 'social_identities', new=Mock()) as social:
-            social.exclude.return_value.exists.return_value=True
-            first=bootstrap(self.user,'proof')
-            second=bootstrap(self.user,'proof')
+        first=bootstrap(self.user,'proof')
+        second=bootstrap(self.user,'proof')
         self.assertEqual(first.identity.rc_app_user_id,identity.rc_app_user_id)
         self.assertEqual(second.identity_id,identity.pk)
 
@@ -95,8 +92,52 @@ class RoutingTests(TestCase):
     @patch('billing.identity.verify_environment', return_value='production')
     def test_development_bootstrap_rejects_real_store(self, verify):
         from billing.identity import bootstrap, BillingError
-        with patch.object(type(self.user), 'social_identities', new=Mock()) as social:
-            social.exclude.return_value.exists.return_value=True
-            with self.assertRaises(BillingError): bootstrap(self.user,'proof')
+        with self.assertRaises(BillingError): bootstrap(self.user,'proof')
         self.assertFalse(BillingIdentity.objects.exists())
 
+
+    @patch('billing.identity.verify_environment', return_value='sandbox')
+    def test_guest_bootstrap_without_personal_identity(self, verify):
+        from billing.identity import bootstrap
+        self.assertFalse(self.user.social_identities.exists())
+        first = bootstrap(self.user, 'proof')
+        second = bootstrap(self.user, 'proof')
+        self.assertEqual(first.identity.account_id, self.user.pk)
+        self.assertEqual(first.identity_id, second.identity_id)
+        self.assertEqual(first.identity.wallet_domain, 'sandbox')
+
+    @patch('billing.identity.verify_environment')
+    def test_inactive_guest_cannot_bootstrap(self, verify):
+        from billing.identity import bootstrap, BillingError
+        self.user.is_active = False
+        with self.assertRaises(BillingError):
+            bootstrap(self.user, 'proof')
+        verify.assert_not_called()
+
+    @patch('billing.identity.verify_environment', return_value='sandbox')
+    def test_guest_session_cannot_be_used_by_another_account(self, verify):
+        from billing.identity import bootstrap, identity_for, BillingError
+        session = bootstrap(self.user, 'proof')
+        other = User.objects.create_user('different-guest')
+        request = Mock(user=other, headers={'X-Billing-Session': str(session.pk)})
+        with self.assertRaises(BillingError):
+            identity_for(request)
+
+    @patch('billing.identity.verify_environment', return_value='sandbox')
+    def test_guest_upgrade_keeps_billing_identity(self, verify):
+        from billing.identity import bootstrap
+        from accounts.models import SocialIdentity
+        before = bootstrap(self.user, 'proof')
+        SocialIdentity.objects.create(user=self.user, bundle_id='test',
+                                      provider='phone', provider_uid='test-upgraded-identity')
+        after = bootstrap(self.user, 'proof')
+        self.assertEqual(before.identity_id, after.identity_id)
+        self.assertEqual(before.identity.rc_app_user_id, after.identity.rc_app_user_id)
+
+    @patch('billing.identity.verify_environment')
+    def test_bootstrap_still_requires_authenticated_device_session(self, verify):
+        response = self.client.post('/api/v1/billing/bootstrap/',
+                                    {'signed_app_transaction': 'proof'},
+                                    content_type='application/json')
+        self.assertIn(response.status_code, (401, 403))
+        verify.assert_not_called()

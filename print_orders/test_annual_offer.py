@@ -29,3 +29,17 @@ class AnnualOfferPresentationTests(TestCase):
         self.assertEqual(response.data['valid_days'], 30)
         self.assertEqual(response.data['ends_at'], plan.ends_at)
         self.assertEqual(response.data['cap_fen'], 8800)
+
+        # No phone/email/social identity is required to reserve the advertised gift.
+        self.assertFalse(user.social_identities.exists())
+        payload = {'plan_id': plan.pk, 'sku': plan.annual_product_id}
+        response = client.post('/api/v1/print/campaign/annual/', payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        response = client.post('/api/v1/print/campaign/annual/', payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        from .models import PrintEnrollment
+        self.assertEqual(PrintEnrollment.objects.filter(plan=plan, owner=user).count(), 1)
+        response = client.post('/api/v1/print/campaign/annual/',
+                               {**payload, 'cancelled': True}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(PrintEnrollment.objects.filter(plan=plan, owner=user).exists())

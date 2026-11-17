@@ -30,8 +30,9 @@ def verify_environment(jws):
     raise BillingError('ENVIRONMENT_UNVERIFIED','商店凭证无效，请从 App Store 或 TestFlight 安装')
 
 def bootstrap(user,jws):
-    if not user.social_identities.exclude(provider='device').exists():
-        raise BillingError('FORMAL_ACCOUNT_REQUIRED','请先绑定正式账号',403)
+    # Authenticated device accounts can purchase without providing personal information.
+    if not user.is_authenticated or not user.is_active:
+        raise BillingError('ACCOUNT_UNAVAILABLE', '使用身份不可用', 403)
     domain = verify_environment(jws)
     from .routing import new_identity_id
     if settings.BILLING_DEPLOYMENT == 'development' and domain != 'sandbox':

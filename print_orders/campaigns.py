@@ -437,8 +437,7 @@ class AnnualOffer(APIView):
 
     @transaction.atomic
     def post(self,request):
-        from .views import identity_required
-        identity_required(request.user)
+        # Reserving a digital subscription gift must not require registration.
         class Input(serializers.Serializer):
             plan_id=serializers.IntegerField(min_value=1)
             sku=serializers.CharField(max_length=200)
